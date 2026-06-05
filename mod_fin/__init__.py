@@ -62,8 +62,8 @@ def carregar_faixas(codigo: str) -> list:
                 for i in range(1, int(tab.get("parcelas_max", 12)) + 1)]
 
     if tipo == "flex":
-        taxa = float(tab.get("taxa_juros_mensal_pct", 2.0))
-        return [{"parcelas": i, "custo_pct": taxa, "label": f"{i}x"}
+        # custo_pct=0: o painel Total Flex gerencia o total direto
+        return [{"parcelas": i, "custo_pct": 0.0, "label": f"{i}x"}
                 for i in range(1, int(tab.get("parcelas_max", 12)) + 1)]
 
     return []
@@ -98,3 +98,6 @@ def listar_modalidades() -> list:
 from .aymore           import calcular as calcular_aymore
 from .cartao           import calcular as calcular_cartao
 from .venda_programada import calcular as calcular_venda_programada
+from .total_flex       import calcular as calcular_total_flex
+from .total_flex       import inicializar as tf_inicializar
+from .total_flex       import recalcular  as tf_recalcular

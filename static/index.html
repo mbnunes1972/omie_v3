@@ -572,6 +572,74 @@ body{overflow:hidden}
       </div>
     </div>
 
+    <!-- Painel Total Flex -->
+    <div class="mod-panel" id="painel-tf" style="display:none">
+      <div class="mod-panel-title">&#x26A1; Total Flex — Parcelamento Livre</div>
+      <div class="mod-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+        <div>
+          <label>Entrada (R$) <span id="tf-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
+          <input type="number" id="tf-entrada" value="0" min="0" step="100" oninput="tfEntradaChange()">
+          <div id="tf-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
+        </div>
+        <div>
+          <label>Data do Contrato</label>
+          <input type="date" id="tf-data-contrato" oninput="tfDataContratoChange()">
+        </div>
+        <div>
+          <label>Prazo (meses) <span style="font-size:9px;color:var(--muted)">1 a 12</span></label>
+          <input type="number" id="tf-prazo" value="6" min="1" max="12" step="1" oninput="tfPrazoChange()">
+        </div>
+        <div>
+          <label>Prazo limite <span style="font-size:9px;color:var(--muted)">(maximo 12 meses)</span></label>
+          <div id="tf-data-limite" style="padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace">—</div>
+        </div>
+      </div>
+      <div id="tf-aviso" style="display:none;font-size:10px;color:var(--err);margin-bottom:10px;padding:7px 12px;background:rgba(220,53,69,.08);border-radius:6px;border-left:3px solid var(--err)"></div>
+      <div id="tf-resumo" style="display:none">
+        <div class="contrato-grid">
+          <div class="card-teal">
+            <div class="c-label">Loja Recebe (a vista)</div>
+            <div id="tf-c-avista" class="c-value">R$ —</div>
+            <div id="tf-c-avista-sub" class="c-sub">Parcelado direto, sem retencao</div>
+          </div>
+          <div class="card-amber">
+            <div class="c-label">Cliente Paga (total)</div>
+            <div id="tf-c-total" class="c-value">R$ —</div>
+            <div id="tf-c-total-sub" class="c-sub">Inclui juros compostos</div>
+          </div>
+        </div>
+        <div class="cards-3x2">
+          <div class="c-card"><div class="c-card-lbl">Loja Recebe</div><div id="tf-r-avista" class="c-card-val ok">—</div></div>
+          <div class="c-card"><div class="c-card-lbl">Total Juros</div><div id="tf-r-juros" class="c-card-val warn">—</div></div>
+          <div class="c-card"><div class="c-card-lbl">Parcela Ref. (PMT)</div><div id="tf-r-pmt" class="c-card-val">—</div></div>
+          <div class="c-card"><div class="c-card-lbl">Total Pago</div><div id="tf-r-total-pago" class="c-card-val">—</div></div>
+          <div class="c-card"><div class="c-card-lbl">Ultima Parcela</div><div id="tf-r-ultima" class="c-card-val ok">—</div></div>
+          <div class="c-card"><div class="c-card-lbl">Status Prazo</div><div id="tf-r-status" class="c-card-val ok">—</div></div>
+        </div>
+        <div class="plano-wrap">
+          <div class="plano-hdr">Plano de Pagamento
+            <span style="font-size:10px;font-weight:400;color:var(--muted)">— edite valores e datas; última parcela fecha o saldo automaticamente</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="plano-tbl" style="min-width:860px">
+              <thead><tr>
+                <th style="width:28px">#</th>
+                <th style="width:90px">Status</th>
+                <th style="min-width:130px">Data</th>
+                <th style="text-align:right;min-width:110px">Valor Digitado</th>
+                <th style="text-align:right;min-width:100px">Valor Efetivo</th>
+                <th style="text-align:right;min-width:100px">Saldo Anterior</th>
+                <th style="text-align:right;color:var(--warn);min-width:90px">Juros</th>
+                <th style="text-align:right;min-width:100px">Amortizacao</th>
+                <th style="text-align:right;min-width:90px">Saldo Apos</th>
+              </tr></thead>
+              <tbody id="tf-parc-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Resumo e total -->
     <div class="card" style="margin-bottom:14px">
       <div class="total-contract">
@@ -1362,6 +1430,7 @@ async function onPagamentoChange(){
     ayMostrarPainel(codigo === 'aymore');
     cartaoMostrarPainel(codigo === 'cartao_credito' || codigo === 'cartao_credito_x');
     vpMostrarPainel(codigo === 'venda_programada');
+    tfMostrarPainel(codigo === 'total_flex');
   } catch(e){
     console.error('[PAG] Erro ao carregar faixas:', e);
     _faixasAtivas=[]; _tipoAtivo='avista'; _descontoAvista=0; _acrescimoFin=0;
@@ -1369,6 +1438,7 @@ async function onPagamentoChange(){
     ayMostrarPainel(false);
     cartaoMostrarPainel(false);
     vpMostrarPainel(false);
+    tfMostrarPainel(false);
   }
   agendarCalculo();
 }
@@ -1382,6 +1452,7 @@ function onParcelasChange(){
   _descricaoPag = modalDesc + (n > 1 ? ' '+n+'x' : '');
   console.log('[PAG] parcelas='+n+' custo_pct='+_acrescimoFin);
   if (_codigoPagAtivo === 'venda_programada') _vpDatas = [];
+  if (_codigoPagAtivo === 'total_flex') { _tfValores = []; _tfDatas = []; }
   agendarCalculo();
 }
 
@@ -1858,6 +1929,308 @@ function vpRenderTabela(d) {
   </tr>`;
 }
 
+// ---- Painel Total Flex -------------------------------------------------------
+let _tfTimer         = null;
+let _tfValores       = [];   // valores livres das parcelas 1..n-1 (última é auto)
+let _tfDatas         = [];   // datas de todas as parcelas (ISO strings)
+let _tfUltimoEditIdx = null; // índice da última parcela editada pelo usuário
+let _tfRevertendo    = false;
+
+function _parseValorBR(str) {
+  return parseFloat(String(str||'').trim().replace(/\./g,'').replace(',','.')) || 0;
+}
+
+function tfValorFocus(input, idx) {
+  const raw = _tfValores[idx] != null ? _tfValores[idx]
+            : _parseValorBR(input.dataset.raw || input.value);
+  input.value = raw > 0 ? String(raw.toFixed(2)).replace('.', ',') : '';
+}
+
+function tfValorBlur(input, idx) {
+  const raw = _parseValorBR(input.value);
+  _tfValores[idx]  = raw;
+  _tfUltimoEditIdx = idx;
+  input.value = fmt(raw);
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 150);
+}
+
+function tfValorInput(input, idx) {
+  _tfValores[idx]  = _parseValorBR(input.value);
+  _tfUltimoEditIdx = idx;
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 500);
+}
+
+function tfFecharAviso() {
+  document.getElementById('modal-tf-aviso').style.display = 'none';
+  if (_tfUltimoEditIdx != null) {
+    _tfValores[_tfUltimoEditIdx] = 0;
+  }
+  _tfRevertendo = false;
+  atualizarTF();
+}
+
+function tfMostrarPainel(mostrar) {
+  document.getElementById('painel-tf').style.display = mostrar ? 'block' : 'none';
+  if (mostrar) {
+    const hoje = new Date().toISOString().split('T')[0];
+    const dc = document.getElementById('tf-data-contrato');
+    if (!dc.value) dc.value = hoje;
+    const prazo = document.getElementById('tf-prazo');
+    if (!prazo.value) prazo.value = '6';
+    _tfValores = []; _tfDatas = [];
+    tfAtualizarLimite();
+    tfEntradaChange();
+    atualizarTF();
+  }
+}
+
+function tfDataContratoChange() {
+  _tfDatas = []; _tfValores = [];
+  tfAtualizarLimite();
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 300);
+}
+
+function tfAtualizarLimite() {
+  const dc    = document.getElementById('tf-data-contrato').value;
+  const prazo = parseInt(document.getElementById('tf-prazo').value) || 12;
+  if (!dc) return;
+  const d = new Date(dc + 'T12:00:00');
+  d.setMonth(d.getMonth() + prazo);
+  const limIso = d.toISOString().split('T')[0];
+  const [y, m, dd] = limIso.split('-');
+  const el = document.getElementById('tf-data-limite');
+  el.textContent = dd + '/' + m + '/' + y;
+  el.dataset.iso = limIso;
+}
+
+function tfPrazoChange() {
+  _tfDatas = [];
+  tfAtualizarLimite();
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 400);
+}
+
+function tfEntradaChange() {
+  const valorVenda = _ayGetValorVenda();
+  const entrada    = parseFloat(document.getElementById('tf-entrada').value) || 0;
+  const pct = valorVenda > 0 ? (entrada / valorVenda * 100) : 0;
+  document.getElementById('tf-entrada-pct').textContent =
+    pct.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) + '%';
+  const financiado = Math.max(0, valorVenda - entrada);
+  const hint = document.getElementById('tf-hint-financiado');
+  hint.textContent = financiado > 0 ? 'Financiado: R$ ' + fmt(financiado) : '';
+  hint.style.color = (entrada >= valorVenda && valorVenda > 0) ? 'var(--err)' : 'var(--ok)';
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 300);
+}
+
+
+function tfDataChange(input, idx) {
+  _tfDatas[idx] = input.value;
+  clearTimeout(_tfTimer);
+  _tfTimer = setTimeout(atualizarTF, 300);
+}
+
+async function atualizarTF() {
+  const valorAvista = _ayGetValorVenda();
+  const entrada  = parseFloat(document.getElementById('tf-entrada').value) || 0;
+  const n        = parseInt(document.getElementById('neg-parcelas').value)  || 2;
+  const prazo    = parseInt(document.getElementById('tf-prazo').value)      || 6;
+  const dc       = document.getElementById('tf-data-contrato').value;
+
+  if (!dc || !valorAvista) {
+    document.getElementById('tf-resumo').style.display = 'none';
+    return;
+  }
+  const financiado = Math.max(0, valorAvista - entrada);
+  if (financiado <= 0) {
+    document.getElementById('tf-resumo').style.display = 'none';
+    return;
+  }
+
+  let d;
+  try {
+    const semEdicoes = _tfDatas.length < n || _tfValores.length < n - 1;
+    if (semEdicoes) {
+      const r = await fetch('/api/fin/total_flex/inicializar', {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          valor_financiado: financiado,
+          n_parcelas:       n,
+          prazo_meses:      prazo,
+          data_contrato:    dc,
+        }),
+      });
+      d = await r.json();
+      if (d.ok) {
+        _tfValores = d.parcelas.filter(p => !p.ultima).map(p => p.valor_digitado);
+        _tfDatas   = d.parcelas.map(p => p.data_iso);
+      }
+    } else {
+      const parcInput = _tfDatas.slice(0, n).map((dt, i) => ({
+        numero:         i + 1,
+        data:           dt,
+        valor_digitado: i < n - 1 ? (_tfValores[i] ?? 0) : null,
+      }));
+      const r = await fetch('/api/fin/total_flex/recalcular', {
+        method:  'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          valor_financiado:   financiado,
+          data_contrato:      dc,
+          prazo_maximo_meses: prazo,
+          parcelas:           parcInput,
+        }),
+      });
+      d = await r.json();
+    }
+  } catch(e) { console.error('[TF]', e); return; }
+  if (!d.parcelas) { console.warn('[TF]', d.erro || d.erros); return; }
+
+  // Bloqueia se última parcela ficaria negativa
+  if (d.ultima_negativa && !_tfRevertendo) {
+    _tfRevertendo = true;
+    document.getElementById('modal-tf-aviso').style.display = 'flex';
+    return;
+  }
+  _tfRevertendo = false;
+
+  const res    = d.resumo;
+  const parc   = d.parcelas;
+  const ultima = parc[parc.length - 1];
+  const n_parc = parc.length;
+
+  document.getElementById('tf-resumo').style.display = 'block';
+
+  // Cards resumo
+  document.getElementById('tf-r-avista').textContent    = 'R$ ' + fmt(valorAvista);
+  document.getElementById('tf-r-juros').textContent     = 'R$ ' + fmt(res.total_juros);
+  document.getElementById('tf-r-pmt').textContent       = 'R$ ' + fmt(parc[0] ? parc[0].valor_efetivo : 0);
+  document.getElementById('tf-r-total-pago').textContent= 'R$ ' + fmt(res.total_pago);
+  document.getElementById('tf-r-ultima').textContent    = 'R$ ' + fmt(ultima.valor_efetivo);
+
+  const limIso  = document.getElementById('tf-data-limite').dataset.iso || '';
+  const excede  = limIso && ultima.data_iso > limIso;
+  const statusEl = document.getElementById('tf-r-status');
+  if (excede) {
+    statusEl.textContent = '⚠ Excede prazo';
+    statusEl.style.color = 'var(--err)';
+  } else {
+    statusEl.textContent = '✓ Dentro do prazo';
+    statusEl.style.color = 'var(--ok)';
+  }
+
+  // Aviso de erros/alertas
+  const aviso = document.getElementById('tf-aviso');
+  const msgs  = [...(d.erros || []), ...(d.avisos || [])];
+  if (msgs.length) {
+    aviso.innerHTML     = '⚠ ' + msgs.join('<br>⚠ ');
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+
+  // Contratos grandes
+  const totalCliente = Math.round((entrada + res.total_pago) * 100) / 100;
+  document.getElementById('tf-c-avista').textContent     = 'R$ ' + fmt(valorAvista);
+  document.getElementById('tf-c-avista-sub').textContent = 'Parcelado direto, sem retencao';
+  document.getElementById('tf-c-total').textContent      = 'R$ ' + fmt(totalCliente);
+  document.getElementById('tf-c-total-sub').textContent  =
+    n_parc + 'x — juros R$ ' + fmt(res.total_juros) +
+    (entrada > 0 ? ' | entrada R$ ' + fmt(entrada) : '');
+
+  // Total final
+  const elTot = document.getElementById('neg-total-final');
+  if (elTot && !elTot._editando) elTot.value = fmt(totalCliente);
+
+  tfRenderTabela(d, valorAvista, entrada);
+  atualizarResumoParcelas(entrada, n_parc, ultima.valor_efetivo, totalCliente);
+}
+
+function tfRenderTabela(d, valorAvista, entrada) {
+  const limIso  = document.getElementById('tf-data-limite').dataset.iso || '';
+  const tbody   = document.getElementById('tf-parc-body');
+  const R       = (v) => 'R$ ' + fmt(v);
+
+  const inputStyle = (excede, disabled) =>
+    `background:${disabled ? 'var(--surface)' : 'var(--surface)'};` +
+    `border:1px solid ${excede ? 'var(--err)' : 'var(--border)'};` +
+    `border-radius:6px;padding:4px 7px;` +
+    `color:${disabled ? 'var(--muted)' : (excede ? 'var(--err)' : 'var(--text)')};` +
+    `font-family:inherit;font-size:12px;width:100%;outline:none;text-align:right;` +
+    (disabled ? 'cursor:not-allowed;opacity:.6;' : '');
+
+  const cell = (v, right=true, bold=false, clr='', extra='') =>
+    `<td style="padding:6px 10px;${right?'text-align:right;':''}${bold?'font-weight:700;':''}${clr?'color:'+clr+';':''}${extra}">${v}</td>`;
+  const muted = (v) => cell(v, true, false, 'var(--muted)');
+
+  const rows = (d.parcelas || []).map(p => {
+    const isUltima = p.ultima;
+    const idx      = p.numero - 1;
+    const excedeDt = limIso && p.data_iso > limIso;
+
+    const statusLabel = isUltima
+      ? '<span style="background:rgba(93,202,165,.18);color:var(--ok);border-radius:4px;padding:2px 6px;font-size:10px;border:1px solid rgba(93,202,165,.4)">&#9664; ULTIMA</span>'
+      : '<span style="background:rgba(93,202,165,.08);color:var(--ok);border-radius:4px;padding:2px 6px;font-size:10px;border:1px solid rgba(93,202,165,.25)">&#x2713; Ativa</span>';
+
+    const dataBg  = isUltima ? 'rgba(93,202,165,.06)' : 'transparent';
+    const rowBg   = isUltima ? 'rgba(93,202,165,.06)' : 'transparent';
+
+    const dataCell = `<td style="padding:4px 8px;background:${dataBg}">
+      <input type="date" value="${esc(p.data_iso)}" max="${esc(limIso)}"
+             style="${inputStyle(excedeDt, false)}"
+             oninput="tfDataChange(this,${idx})">
+    </td>`;
+
+    let valorDigCell;
+    if (isUltima) {
+      valorDigCell = `<td style="padding:4px 8px;background:rgba(93,202,165,.06)">
+        <input type="text" value="${fmt(p.valor_digitado)}" disabled
+               title="Valor calculado automaticamente para fechar o saldo."
+               style="${inputStyle(false, true)}">
+      </td>`;
+    } else {
+      valorDigCell = `<td style="padding:4px 8px">
+        <input type="text" inputmode="decimal"
+               value="${fmt(p.valor_digitado)}"
+               data-raw="${p.valor_digitado}"
+               style="${inputStyle(false, false)}"
+               onfocus="tfValorFocus(this, ${idx})"
+               onblur="tfValorBlur(this, ${idx})"
+               oninput="tfValorInput(this, ${idx})">
+      </td>`;
+    }
+
+    const saldoAposCell = p.saldo_apos > 0.005
+      ? cell(R(p.saldo_apos), true)
+      : `<td style="padding:6px 10px;text-align:right;color:var(--ok);font-weight:700">0,00 &#x2713;</td>`;
+
+    return `<tr style="background:${rowBg}">
+      ${cell(p.numero, false)}
+      ${cell(statusLabel, false)}
+      ${dataCell}
+      ${valorDigCell}
+      ${cell(R(p.valor_efetivo), true)}
+      ${cell(R(p.saldo_anterior), true, false, 'var(--muted)')}
+      ${cell(R(p.juros), true, false, 'var(--warn)')}
+      ${cell(R(p.amortizacao), true)}
+      ${saldoAposCell}
+    </tr>`;
+  });
+
+  const totalPago = Math.round(((entrada || 0) + (d.resumo ? d.resumo.total_pago : 0)) * 100) / 100;
+  rows.push(`<tr style="border-top:2px solid var(--border2)">
+    <td colspan="5" style="padding:10px 12px;color:var(--muted);font-size:11px">Total pago pelo cliente</td>
+    <td colspan="4" style="padding:10px 12px;text-align:right;font-weight:900;color:var(--ok)">R$ ${fmt(totalPago)}</td>
+  </tr>`);
+
+  tbody.innerHTML = rows.join('');
+}
+
 // Os parametros estruturais (arq, fidelidade, viagem) vem de projetoAtivo.margens.
 function lerMargensNegociacao(){
   const m = (projetoAtivo && projetoAtivo.margens) || {};
@@ -1950,6 +2323,9 @@ async function executarCalculo(){
   }
   if (document.getElementById('painel-vp').style.display !== 'none') {
     clearTimeout(_vpTimer); _vpTimer = setTimeout(atualizarVP, 200);
+  }
+  if (document.getElementById('painel-tf').style.display !== 'none') {
+    clearTimeout(_tfTimer); _tfTimer = setTimeout(atualizarTF, 200);
   }
 }
 function totalComDescontoAmb(){
@@ -2481,5 +2857,40 @@ document.addEventListener('DOMContentLoaded', function(){
 
 loadConfig();
 </script>
+
+<!-- Modal: Total Flex — Aviso parcela negativa -->
+<div id="modal-tf-aviso"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600;
+            align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--card);border:1px solid rgba(240,153,123,.35);border-radius:16px;
+              padding:32px 28px;max-width:380px;width:92%;animation:mIn .2s ease;
+              box-shadow:0 24px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+      <div style="width:42px;height:42px;flex-shrink:0;border-radius:10px;
+                  background:rgba(240,153,123,.14);border:1px solid rgba(240,153,123,.3);
+                  display:flex;align-items:center;justify-content:center;font-size:20px">
+        &#x26A0;
+      </div>
+      <div>
+        <div style="font-family:'Epilogue',sans-serif;font-weight:900;font-size:15px;
+                    color:var(--err);letter-spacing:-.2px">Valor inválido</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;letter-spacing:.5px">
+          TOTAL FLEX
+        </div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text);line-height:1.8;margin-bottom:24px">
+      O valor digitado faz a <strong style="color:var(--err)">última parcela ficar negativa</strong>.<br>
+      O campo foi zerado — revise os valores das parcelas anteriores.
+    </div>
+    <button onclick="tfFecharAviso()"
+            style="width:100%;padding:11px;border-radius:9px;border:none;cursor:pointer;
+                   background:var(--err);color:#fff;font-family:'Epilogue',sans-serif;
+                   font-weight:700;font-size:13px;letter-spacing:.3px;transition:.15s"
+            onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+      Entendi
+    </button>
+  </div>
+</div>
 </body>
 </html>

@@ -4,8 +4,9 @@
   "tipo": "flex",
   "recebimento": "parcelado",
   "gerar_boleto": true,
-  "parcelas_max": 6,
-  "prazo_maximo_dias": 365,
-  "taxa_juros_mensal_pct": 2.0,
-  "observacao": "Datas e valores livres. Juros compostos mensais sobre saldo devedor. Ultima parcela fecha o saldo automaticamente."
+  "parcelas_min": 2,
+  "parcelas_max": 12,
+  "prazo_maximo_meses": 12,
+  "prazo_negociado_meses": 6,
+  "observacao": "Datas e valores livres. Juros compostos diarios sobre saldo devedor. Ultima parcela fecha o saldo automaticamente."
 }

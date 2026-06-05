@@ -32,7 +32,7 @@ from mod_omie import (
     _buscar_projetos_omie, _projeto_path, carregar_xmls
 )
 from mod_margens import calcular_margens, _normalizar_faixas
-from mod_fin import calcular_aymore, calcular_cartao, calcular_venda_programada
+from mod_fin import calcular_aymore, calcular_cartao, calcular_venda_programada, calcular_total_flex
 
 # HTML servido como arquivo estático
 _STATIC_DIR = os.path.join(_BASE_DIR, "static")
@@ -377,6 +377,42 @@ class Handler(BaseHTTPRequestHandler):
                 n_parcelas     = int(req.get("n_parcelas", 1)),
                 data_contrato  = req.get("data_contrato", ""),
                 datas_parcelas = req.get("datas_parcelas", []),
+            )
+            self.send_json(resultado)
+
+        elif path == "/api/fin/total_flex/inicializar":
+            req = json.loads(body)
+            from mod_fin import tf_inicializar as _tf_ini
+            resultado = _tf_ini(
+                valor_financiado = float(req.get("valor_financiado", 0)),
+                n_parcelas       = int(req.get("n_parcelas", 2)),
+                prazo_meses      = int(req.get("prazo_meses", 6)),
+                data_contrato    = req.get("data_contrato", ""),
+            )
+            self.send_json(resultado)
+
+        elif path == "/api/fin/total_flex/recalcular":
+            req = json.loads(body)
+            from mod_fin import tf_recalcular as _tf_rec
+            resultado = _tf_rec(
+                valor_financiado   = float(req.get("valor_financiado", 0)),
+                data_contrato      = req.get("data_contrato", ""),
+                prazo_maximo_meses = int(req.get("prazo_maximo_meses", 12)),
+                parcelas_input     = req.get("parcelas", []),
+            )
+            self.send_json(resultado)
+
+        elif path == "/calcular_total_flex":
+            req = json.loads(body)
+            from mod_fin import calcular_total_flex as _calc_tf
+            resultado = _calc_tf(
+                valor_avista     = float(req.get("valor_avista", 0)),
+                entrada          = float(req.get("entrada", 0)),
+                n_parcelas       = int(req.get("n_parcelas", 2)),
+                taxa_mensal_pct  = 0,
+                data_contrato    = req.get("data_contrato", ""),
+                valores_parcelas = req.get("valores_parcelas", []),
+                datas_parcelas   = req.get("datas_parcelas",   []),
             )
             self.send_json(resultado)
 

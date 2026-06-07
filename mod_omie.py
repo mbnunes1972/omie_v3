@@ -256,6 +256,52 @@ def _adicionar_ambientes(nome_safe, arquivos_xml):
     _salvar_projeto(projeto)
     return projeto
 
+def bloquear_projeto(nome_safe: str) -> dict:
+    """
+    Marca o projeto como aprovado/bloqueado.
+    Calcula SHA-256 de cada XML em xmls/ e salva em hashes_xml.
+    Após isso, nenhuma alteração de ambiente é permitida pelo backend.
+    """
+    import hashlib
+    proj = _carregar_projeto(nome_safe)
+    if not proj:
+        raise FileNotFoundError("Projeto nao encontrado: %s" % nome_safe)
+    pasta_xmls = os.path.join(_projeto_path(nome_safe), "xmls")
+    hashes = {}
+    if os.path.isdir(pasta_xmls):
+        for fname in sorted(os.listdir(pasta_xmls)):
+            fpath = os.path.join(pasta_xmls, fname)
+            if os.path.isfile(fpath):
+                with open(fpath, "rb") as f:
+                    hashes[fname] = hashlib.sha256(f.read()).hexdigest()
+    proj["bloqueado"]    = True
+    proj["bloqueado_em"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    proj["hashes_xml"]   = hashes
+    _salvar_projeto(proj)
+    return proj
+
+
+def verificar_integridade_xmls(nome_safe: str) -> dict:
+    """Verifica se os XMLs ainda correspondem aos hashes gravados na aprovação."""
+    import hashlib
+    proj = _carregar_projeto(nome_safe)
+    if not proj or not proj.get("bloqueado"):
+        return {"ok": True, "bloqueado": False}
+    hashes_ok  = proj.get("hashes_xml", {})
+    pasta_xmls = os.path.join(_projeto_path(nome_safe), "xmls")
+    erros = []
+    for fname, h_esperado in hashes_ok.items():
+        fpath = os.path.join(pasta_xmls, fname)
+        if not os.path.isfile(fpath):
+            erros.append("Arquivo ausente: %s" % fname)
+            continue
+        with open(fpath, "rb") as f:
+            h_atual = hashlib.sha256(f.read()).hexdigest()
+        if h_atual != h_esperado:
+            erros.append("Hash diferente (possivel adulteracao): %s" % fname)
+    return {"ok": len(erros) == 0, "bloqueado": True, "erros": erros}
+
+
 # == LÓGICA DE GRUPOS OMIE ==
 _categoria_cache = [None]
 _cc_cache        = [None]

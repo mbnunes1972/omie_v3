@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Omie V3 — Login</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Epilogue:wght@400;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d160d;
+      --card:    #111d11;
+      --border:  #1e2e1e;
+      --accent:  #9FE1CB;
+      --text:    #c8d8c8;
+      --muted:   #6a8a6a;
+      --err:     #e05c5c;
+      --input-bg:#0a120a;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'Epilogue', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 36px 36px;
+      width: 100%;
+      max-width: 380px;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .logo-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: .5px;
+    }
+
+    .logo-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+
+    input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-family: 'Epilogue', sans-serif;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--accent);
+      color: #0d160d;
+      border: none;
+      border-radius: 9px;
+      font-family: 'Epilogue', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: .3px;
+      cursor: pointer;
+      transition: opacity .15s;
+      margin-top: 8px;
+    }
+
+    .btn:hover   { opacity: .88; }
+    .btn:active  { opacity: .75; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    .erro {
+      background: rgba(224,92,92,.12);
+      border: 1px solid rgba(224,92,92,.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--err);
+      margin-top: 16px;
+      display: none;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(13,22,13,.4);
+      border-top-color: #0d160d;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">
+    <div class="logo-title">Promob → Omie</div>
+    <div class="logo-sub">Dalmóbile · Sistema de Gestão</div>
+  </div>
+
+  <div class="field">
+    <label for="login">Usuário</label>
+    <input type="text" id="login" placeholder="seu.login" autocomplete="username">
+  </div>
+
+  <div class="field">
+    <label for="senha">Senha</label>
+    <input type="password" id="senha" placeholder="••••••••" autocomplete="current-password">
+  </div>
+
+  <button class="btn" id="btnLogin" onclick="entrar()">Entrar</button>
+
+  <div class="erro" id="erro"></div>
+</div>
+
+<script>
+  // Foca no campo login ao carregar
+  document.getElementById('login').focus();
+
+  // Enter no campo senha dispara o login
+  document.getElementById('senha').addEventListener('keydown', e => {
+    if (e.key === 'Enter') entrar();
+  });
+  document.getElementById('login').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('senha').focus();
+  });
+
+  async function entrar() {
+    const login = document.getElementById('login').value.trim();
+    const senha = document.getElementById('senha').value;
+    const btn   = document.getElementById('btnLogin');
+    const erro  = document.getElementById('erro');
+
+    if (!login || !senha) {
+      mostrarErro('Preencha usuário e senha.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Entrando...';
+    erro.style.display = 'none';
+
+    try {
+      const resp = await fetch('/api/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ login, senha })
+      });
+
+      const data = await resp.json();
+
+      if (data.ok) {
+        // Salva dados do usuário na sessão do browser
+        sessionStorage.setItem('usuario', JSON.stringify(data.usuario));
+        window.location.href = '/';
+      } else {
+        mostrarErro(data.erro || 'Erro ao fazer login.');
+        btn.disabled = false;
+        btn.innerHTML = 'Entrar';
+      }
+    } catch (e) {
+      mostrarErro('Erro de conexão. Tente novamente.');
+      btn.disabled = false;
+      btn.innerHTML = 'Entrar';
+    }
+  }
+
+  function mostrarErro(msg) {
+    const el = document.getElementById('erro');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+</script>
+
+</body>
+</html>

@@ -75,9 +75,10 @@ def _resumo(valor_financiado: float, parcelas: list, dc: _date, prazo_max: int) 
 
 
 def inicializar(valor_financiado: float, n_parcelas: int,
-                prazo_meses: int, data_contrato: str) -> dict:
+                prazo_meses: int, data_contrato: str,
+                taxa_override: float = None) -> dict:
     c       = _cfg()
-    taxa    = c["taxa_juros_mensal"]
+    taxa    = float(taxa_override) if taxa_override is not None else c["taxa_juros_mensal"]
     p_min   = c.get("parcelas_min", 2)
     p_max   = c.get("parcelas_max", 12)
     prz_abs = c.get("prazo_maximo_meses", 12)
@@ -109,9 +110,10 @@ def inicializar(valor_financiado: float, n_parcelas: int,
 
 
 def recalcular(valor_financiado: float, data_contrato: str,
-               prazo_maximo_meses: int, parcelas_input: list) -> dict:
+               prazo_maximo_meses: int, parcelas_input: list,
+               taxa_override: float = None) -> dict:
     c       = _cfg()
-    taxa    = c["taxa_juros_mensal"]
+    taxa    = float(taxa_override) if taxa_override is not None else c["taxa_juros_mensal"]
     prz_max = int(prazo_maximo_meses or c.get("prazo_maximo_meses", 12))
 
     dc    = parse_data(data_contrato).date()

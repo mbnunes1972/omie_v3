@@ -14,7 +14,18 @@
       "PowerShell(Get-Process *)",
       "PowerShell(Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8765/\" -UseBasicParsing -TimeoutSec 3; \"OK — HTTP $\\($r.StatusCode\\)\" } catch { \"Falha: $_\" })",
       "PowerShell(cd \"E:\\\\2026\\\\ESTUDO_DE_IA\\\\Omie_V2\"; $proc = Start-Process python -ArgumentList \"main.py\" -PassThru -RedirectStandardOutput \".\\\\server_out.txt\" -RedirectStandardError \".\\\\server_err.txt\"; Start-Sleep -Seconds 3; Get-Content \".\\\\server_out.txt\" -ErrorAction SilentlyContinue; Get-Content \".\\\\server_err.txt\" -ErrorAction SilentlyContinue; try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8765/\" -UseBasicParsing -TimeoutSec 3; \"Servidor OK: $\\($r.StatusCode\\)\" } catch { \"Servidor não respondeu\" })",
-      "PowerShell(Copy-Item *)"
+      "PowerShell(Copy-Item *)",
+      "Bash(python main.py)",
+      "Bash(python -c ' *)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(xargs -I{} kill {})",
+      "Bash(curl -s http://127.0.0.1:8765/pagamentos)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git tag *)",
+      "Bash(git checkout *)",
+      "Bash(python *)"
     ]
   }
 }

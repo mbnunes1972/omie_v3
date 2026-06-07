@@ -8,6 +8,8 @@ import email
 from email import policy as _email_policy
 from datetime import datetime, date, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from auth_routes import handle_auth_get, handle_auth_post, get_usuario_sessao
+from database import init_db
 from urllib.parse import urlparse
 
 from storage import (
@@ -29,7 +31,8 @@ from mod_omie import (
     garantir_grupos_omie, exportar_ambientes, gerar_excel,
     _listar_projetos, _buscar_projetos, _carregar_projeto, _salvar_projeto,
     _criar_projeto, _adicionar_ambientes, _arquivar_xmls,
-    _buscar_projetos_omie, _projeto_path, carregar_xmls
+    _buscar_projetos_omie, _projeto_path, carregar_xmls,
+    bloquear_projeto, verificar_integridade_xmls
 )
 from mod_margens import calcular_margens, _normalizar_faixas
 from mod_fin import calcular_aymore, calcular_cartao, calcular_venda_programada, calcular_total_flex
@@ -83,8 +86,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-
+        if handle_auth_get(self, path): return
         if path == "/":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_response(302)
+                self.send_header("Location", "/login")
+                self.end_headers()
+                return
             body = _serve_html().encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -195,6 +204,7 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body   = self.rfile.read(length)
 
+        if handle_auth_post(self, path, body): return
         if path == "/config":
             config_salvar(json.loads(body))
             self.send_json({"ok": True})
@@ -254,9 +264,32 @@ class Handler(BaseHTTPRequestHandler):
             intervalo  = float(req.get("intervalo") or cfg_salvo.get("intervalo", 0.5))
             ambientes_sel = req.get("ambientes", "todos")
             dados = session_get("dados_carregados")
+            nome_safe_para_bloquear = None
             if not dados:
-                self.send_json({"ok": False, "erro": "Nenhum XML carregado."})
-                return
+                # Fluxo v3: usa o projeto ativo carregado na sessão
+                nome_safe = session_get("projeto_ativo")
+                if not nome_safe:
+                    self.send_json({"ok": False, "erro": "Nenhum projeto ativo. Abra um projeto primeiro."})
+                    return
+                proj = _carregar_projeto(nome_safe)
+                if not proj:
+                    self.send_json({"ok": False, "erro": "Projeto nao encontrado."})
+                    return
+                if proj.get("bloqueado"):
+                    self.send_json({"ok": False, "erro": "Projeto ja aprovado e bloqueado em %s." % proj.get("bloqueado_em", "—")})
+                    return
+                ambs_selecionados = [a for a in proj.get("ambientes", []) if a.get("selecionado", True)]
+                if not ambs_selecionados:
+                    self.send_json({"ok": False, "erro": "Nenhum ambiente selecionado no projeto."})
+                    return
+                dados = {
+                    "ok":            True,
+                    "cliente":       proj.get("cliente", {}),
+                    "ambientes":     ambs_selecionados,
+                    "grupos_ref":    {},
+                }
+                ambientes_sel = "todos"
+                nome_safe_para_bloquear = nome_safe
             session_set("running", True)
             session_set("logs", [])
             session_set("pedidos", [])
@@ -300,6 +333,13 @@ class Handler(BaseHTTPRequestHandler):
                         log_cb, confirm_cb, intervalo=intervalo,
                     )
                     session_set("pedidos", pedidos)
+                    if nome_safe_para_bloquear:
+                        try:
+                            bloquear_projeto(nome_safe_para_bloquear)
+                            log_cb("Projeto bloqueado — XMLs travados com hash SHA-256.", "ok")
+                            session_set("projeto_bloqueado", True)
+                        except Exception as e_lock:
+                            log_cb("Aviso: nao foi possivel bloquear o projeto: %s" % e_lock, "warn")
                 except Exception as e:
                     log_cb("ERRO: %s" % e, "err")
                 finally:
@@ -380,25 +420,46 @@ class Handler(BaseHTTPRequestHandler):
             )
             self.send_json(resultado)
 
+        elif path == "/api/gerente/verificar":
+            req   = json.loads(body)
+            senha = req.get("senha", "")
+            perfis = perfis_carregar()
+            senha_correta = perfis.get("perfis", {}).get("gerente", {}).get("senha_gerente", "1234")
+            if senha == senha_correta:
+                taxa_cfg = None
+                try:
+                    import mod_fin.total_flex as _tf_mod
+                    c = _tf_mod._cfg()
+                    taxa_cfg = round(c["taxa_juros_mensal"] * 100, 4)
+                except Exception:
+                    pass
+                self.send_json({"ok": True, "taxa_juros_pct": taxa_cfg})
+            else:
+                self.send_json({"ok": False, "erro": "Senha incorreta"})
+
         elif path == "/api/fin/total_flex/inicializar":
             req = json.loads(body)
             from mod_fin import tf_inicializar as _tf_ini
+            taxa_ov = req.get("taxa_override")
             resultado = _tf_ini(
                 valor_financiado = float(req.get("valor_financiado", 0)),
                 n_parcelas       = int(req.get("n_parcelas", 2)),
                 prazo_meses      = int(req.get("prazo_meses", 6)),
                 data_contrato    = req.get("data_contrato", ""),
+                taxa_override    = float(taxa_ov) / 100 if taxa_ov is not None else None,
             )
             self.send_json(resultado)
 
         elif path == "/api/fin/total_flex/recalcular":
             req = json.loads(body)
             from mod_fin import tf_recalcular as _tf_rec
+            taxa_ov = req.get("taxa_override")
             resultado = _tf_rec(
                 valor_financiado   = float(req.get("valor_financiado", 0)),
                 data_contrato      = req.get("data_contrato", ""),
                 prazo_maximo_meses = int(req.get("prazo_maximo_meses", 12)),
                 parcelas_input     = req.get("parcelas", []),
+                taxa_override      = float(taxa_ov) / 100 if taxa_ov is not None else None,
             )
             self.send_json(resultado)
 
@@ -502,6 +563,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not proj:
                     self.send_json({"ok": False, "erro": "Projeto não encontrado"})
                     return
+                if proj.get("bloqueado"):
+                    self.send_json({"ok": False, "erro": "Projeto bloqueado — alteracoes nao permitidas apos aprovacao."})
+                    return
                 # Merge: preserva campos existentes e atualiza os enviados
                 m_atual = proj.get("margens") or {}
                 m_atual.update({
@@ -525,6 +589,13 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 nome_safe = m.group(1)
                 acao = m.group(2)
+
+                # Rotas de escrita bloqueadas após aprovação
+                if acao in ("adicionar", "remover", "atualizar"):
+                    _proj_chk = _carregar_projeto(nome_safe)
+                    if _proj_chk and _proj_chk.get("bloqueado"):
+                        self.send_json({"ok": False, "erro": "Projeto bloqueado — alteracoes nao permitidas apos aprovacao."})
+                        return
 
                 if acao == "adicionar":
                     ct = self.headers.get("Content-Type", "")
@@ -610,6 +681,7 @@ def main():
     else:
         print("  Aviso: omie_config.json sem credenciais. Configure na sidebar.")
 
+    init_db()
     port   = 8765
     server = HTTPServer(("127.0.0.1", port), Handler)
     url    = "http://127.0.0.1:%d" % port

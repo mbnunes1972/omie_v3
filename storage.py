@@ -107,7 +107,8 @@ PERFIS_PADRAO = {
             "desconto_max_pct":  20.0,
             "pode_editar_total": True,
             "pode_ver_margens":  True,
-            "cor":               "#f0a500"
+            "cor":               "#f0a500",
+            "senha_gerente":     "1234"
         },
         "diretoria": {
             "nome":              "Diretoria",

@@ -63,8 +63,10 @@ def carregar_faixas(codigo: str) -> list:
 
     if tipo == "flex":
         # custo_pct=0: o painel Total Flex gerencia o total direto
+        p_min = int(tab.get("parcelas_min", 2))
+        p_max = int(tab.get("parcelas_max", 12))
         return [{"parcelas": i, "custo_pct": 0.0, "label": f"{i}x"}
-                for i in range(1, int(tab.get("parcelas_max", 12)) + 1)]
+                for i in range(p_min, p_max + 1)]
 
     return []
 

@@ -254,6 +254,19 @@ body{overflow:hidden}
 .modal-close{cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
 .modal-close:hover{color:var(--text)}
 @keyframes mIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+/* Banner de projeto bloqueado */
+.bloqueio-banner{display:none;background:rgba(93,202,165,.07);border:1px solid rgba(93,202,165,.3);border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.bloqueio-banner.ativo{display:flex}
+.bloqueio-icon{font-size:18px;flex-shrink:0}
+.bloqueio-txt{font-size:11px;color:var(--ok);line-height:1.5}
+.bloqueio-txt strong{font-family:'Epilogue',sans-serif;font-weight:700;display:block;margin-bottom:2px}
+/* Cadeado gerencial */
+.lock-btn{cursor:pointer;font-size:12px;opacity:.65;transition:.15s;user-select:none}
+.lock-btn:hover{opacity:1}
+.lock-btn.unlocked{opacity:1;color:var(--ok)}
+/* Impostos TF */
+.tf-tax-box{background:rgba(239,159,39,.05);border:1px solid rgba(239,159,39,.18);border-radius:8px;padding:11px 14px;margin:10px 0}
+.tf-tax-title{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--warn);margin-bottom:10px}
 </style>
 </head>
 <body>
@@ -298,10 +311,15 @@ body{overflow:hidden}
   <div class="sb-params" id="sb-params" style="display:none;padding:12px 14px 0">
     <div class="sb-param-title">Parâmetros</div>
 
-    <label class="sb-label">Desconto (%)</label>
+    <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+      <span>Desconto (%)</span>
+      <span id="sb-desc-lock" class="lock-btn" onclick="tfAbrirModalSenha('desconto')" title="Liberar desconto sem limite (gerente)">&#x1F512;</span>
+    </label>
     <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
       <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
-             oninput="negValidarLimiteDesconto(this.value); agendarCalculo(); agendarSalvarDesconto()"
+             onfocus="this._prev=this.value"
+             oninput="negValidarLimiteDesconto(this.value); negSyncModal(this.value); agendarCalculo(); agendarSalvarDesconto()"
+             onkeydown="negDescontoKeydown(event,this)"
              onblur="salvarDescontoAutomatico()"
              class="sb-input-sm" style="width:60px;text-align:right">
       <span style="color:var(--muted);font-size:12px">%</span>
@@ -317,6 +335,30 @@ body{overflow:hidden}
     <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select">
       <option value="1">1x</option>
     </select>
+
+    <label class="sb-label">Carga Tributaria (%)</label>
+    <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+      <input type="number" id="neg-carga-trib" value="8.00" min="0" max="100" step="0.5"
+             class="sb-input-sm" style="width:60px;text-align:right"
+             oninput="agendarCalculo()">
+      <span style="color:var(--muted);font-size:12px">%</span>
+    </div>
+
+    <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
+    <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:6px;padding-top:8px">
+      <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Taxa Juros (%/mes)</span>
+        <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
+      </label>
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+        <input type="text" id="tf-taxa-input" value="••••"
+               readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
+               onfocus="if(!this.readOnly) this._prev=this.value"
+               oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
+               onkeydown="tfTaxaKeydown(event,this)">
+        <span style="color:var(--muted);font-size:12px">%</span>
+      </div>
+    </div>
   </div>
 
   <!-- Espaçador + Config -->
@@ -360,6 +402,15 @@ body{overflow:hidden}
 
   <!-- PAGE 02: Negociacao (novo layout) -->
   <div class="page" id="page-02">
+    <!-- Banner: projeto bloqueado apos aprovacao -->
+    <div class="bloqueio-banner" id="neg-bloqueio-banner">
+      <div class="bloqueio-icon">&#x1F512;</div>
+      <div class="bloqueio-txt">
+        <strong>Projeto aprovado e bloqueado</strong>
+        <span id="neg-bloqueio-data"></span> — XMLs travados com hash SHA-256. Nenhuma alteracao permitida.
+      </div>
+    </div>
+
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
         <div class="page-title">Negociacao</div>
@@ -456,6 +507,13 @@ body{overflow:hidden}
           <div class="c-card"><div class="c-card-lbl">Taxa Retencao</div><div id="ay-r-retencao" class="c-card-val warn">—</div></div>
           <div class="c-card"><div class="c-card-lbl">Taxa Mensal</div><div id="ay-r-taxa" class="c-card-val">—</div></div>
         </div>
+        <div class="tf-tax-box">
+          <div class="tf-tax-title">&#x1F4CA; Provisao de Impostos — apenas referencia, nao altera o contrato</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="c-card"><div class="c-card-lbl">Base de Calculo</div><div id="ay-r-base-trib" class="c-card-val">—</div></div>
+            <div class="c-card"><div class="c-card-lbl">Provisao Impostos</div><div id="ay-r-impostos" class="c-card-val warn">—</div></div>
+          </div>
+        </div>
         <div class="plano-wrap">
           <div class="plano-hdr">Plano de Pagamento</div>
           <table class="plano-tbl">
@@ -508,6 +566,13 @@ body{overflow:hidden}
           <div class="c-card"><div class="c-card-lbl">Taxa Retencao</div><div id="cc-r-retencao" class="c-card-val warn">—</div></div>
           <div class="c-card"><div class="c-card-lbl">Liquidacao</div><div id="cc-r-liquidacao" class="c-card-val">1 dia util</div></div>
         </div>
+        <div class="tf-tax-box">
+          <div class="tf-tax-title">&#x1F4CA; Provisao de Impostos — apenas referencia, nao altera o contrato</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="c-card"><div class="c-card-lbl">Base de Calculo</div><div id="cc-r-base-trib" class="c-card-val">—</div></div>
+            <div class="c-card"><div class="c-card-lbl">Provisao Impostos</div><div id="cc-r-impostos" class="c-card-val warn">—</div></div>
+          </div>
+        </div>
         <div class="plano-wrap">
           <div class="plano-hdr">Plano de Pagamento</div>
           <table class="plano-tbl">
@@ -558,6 +623,13 @@ body{overflow:hidden}
           <div class="c-card"><div class="c-card-lbl">Ultima Parcela</div><div id="vp-r-ultima" class="c-card-val">—</div></div>
           <div class="c-card"><div class="c-card-lbl">Status Prazo</div><div id="vp-r-status" class="c-card-val ok">—</div></div>
         </div>
+        <div class="tf-tax-box">
+          <div class="tf-tax-title">&#x1F4CA; Provisao de Impostos — apenas referencia, nao altera o contrato</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="c-card"><div class="c-card-lbl">Base de Calculo</div><div id="vp-r-base-trib" class="c-card-val">—</div></div>
+            <div class="c-card"><div class="c-card-lbl">Provisao Impostos</div><div id="vp-r-impostos" class="c-card-val warn">—</div></div>
+          </div>
+        </div>
         <div class="plano-wrap">
           <div class="plano-hdr">Plano de Pagamento <span style="font-size:10px;font-weight:400;color:var(--muted)">— edite as datas das parcelas</span></div>
           <table class="plano-tbl">
@@ -587,7 +659,7 @@ body{overflow:hidden}
         </div>
         <div>
           <label>Prazo (meses) <span style="font-size:9px;color:var(--muted)">1 a 12</span></label>
-          <input type="number" id="tf-prazo" value="6" min="1" max="12" step="1" oninput="tfPrazoChange()">
+          <input type="number" id="tf-prazo" value="12" min="1" max="12" step="1" oninput="tfPrazoChange()">
         </div>
         <div>
           <label>Prazo limite <span style="font-size:9px;color:var(--muted)">(maximo 12 meses)</span></label>
@@ -615,6 +687,20 @@ body{overflow:hidden}
           <div class="c-card"><div class="c-card-lbl">Total Pago</div><div id="tf-r-total-pago" class="c-card-val">—</div></div>
           <div class="c-card"><div class="c-card-lbl">Ultima Parcela</div><div id="tf-r-ultima" class="c-card-val ok">—</div></div>
           <div class="c-card"><div class="c-card-lbl">Status Prazo</div><div id="tf-r-status" class="c-card-val ok">—</div></div>
+        </div>
+        <!-- Provisao de impostos (nao afeta a negociacao) -->
+        <div class="tf-tax-box">
+          <div class="tf-tax-title">&#x1F4CA; Provisao de Impostos — apenas referencia, nao altera o contrato</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="c-card">
+              <div class="c-card-lbl">Base de Calculo</div>
+              <div id="tf-r-base-trib" class="c-card-val">—</div>
+            </div>
+            <div class="c-card">
+              <div class="c-card-lbl">Provisao Impostos</div>
+              <div id="tf-r-impostos" class="c-card-val warn">—</div>
+            </div>
+          </div>
         </div>
         <div class="plano-wrap">
           <div class="plano-hdr">Plano de Pagamento
@@ -659,7 +745,7 @@ body{overflow:hidden}
     <!-- Acoes -->
     <div class="action-row">
       <button class="btn btn-ok" onclick="showToast('Orcamento salvo!')">&#x1F4BE; Salvar orcamento</button>
-      <button class="btn btn-amber" onclick="goPage(3)">&#x2713; Exportar para Omie &#x2192;</button>
+      <button class="btn btn-amber" onclick="aprovarOrcamento()">&#x2713; Aprovar Orcamento &#x2192;</button>
       <button class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
     </div>
 
@@ -763,7 +849,10 @@ body{overflow:hidden}
 
     <div class="toggle-row">
       <span class="toggle-label" style="flex:1">Desconto de venda</span>
-      <input type="number" class="toggle-input" id="mp-desconto" min="0" max="100" step="0.5" value="0" oninput="agendarDiscriminacao()">
+      <input type="number" class="toggle-input" id="mp-desconto" min="0" max="100" step="0.5" value="0"
+             onfocus="this._prev=this.value"
+             oninput="negSyncSidebar(this.value); agendarDiscriminacao()"
+             onkeydown="mpDescontoKeydown(event,this)">
       <span class="toggle-unit">%</span>
     </div>
     <div class="toggle-row">
@@ -1125,6 +1214,7 @@ async function abrirProjeto(nome_safe){
     if(elNome) elNome.textContent = projetoAtivo.nome_projeto || '—';
     if(elCli)  elCli.textContent  = (projetoAtivo.cliente||{}).nome || '—';
     unlockNav(1); unlockNav(2);
+    atualizarUIBloqueio();
     goPage(2);  // vai direto para negociação
   }catch(e){ showToast('Erro: '+e, true); }
 }
@@ -1452,7 +1542,15 @@ function onParcelasChange(){
   _descricaoPag = modalDesc + (n > 1 ? ' '+n+'x' : '');
   console.log('[PAG] parcelas='+n+' custo_pct='+_acrescimoFin);
   if (_codigoPagAtivo === 'venda_programada') _vpDatas = [];
-  if (_codigoPagAtivo === 'total_flex') { _tfValores = []; _tfDatas = []; }
+  if (_codigoPagAtivo === 'total_flex') {
+    _tfValores = []; _tfDatas = [];
+    // Garante que o prazo é suficiente para o número de parcelas selecionado
+    const prazoEl = document.getElementById('tf-prazo');
+    if (prazoEl) {
+      const prazoAtual = parseInt(prazoEl.value) || 12;
+      if (n > prazoAtual) { prazoEl.value = Math.min(n, 12); tfAtualizarLimite(); }
+    }
+  }
   agendarCalculo();
 }
 
@@ -1635,6 +1733,7 @@ async function atualizarAymore() {
     <td colspan="3" style="padding:10px 12px;color:var(--muted);font-size:11px">Total pago pelo cliente</td>
     <td style="padding:10px 12px;text-align:right;font-weight:900;color:var(--ok)">R$ ${fmt(d.total_cliente)}</td>
   </tr>`;
+  _atualizarImpostos('ay', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
 }
 
@@ -1731,6 +1830,7 @@ async function atualizarCartao() {
     <td colspan="3" style="padding:10px 12px;color:var(--muted);font-size:11px">Total pago pelo cliente</td>
     <td style="padding:10px 12px;text-align:right;font-weight:900;color:var(--ok)">R$ ${fmt(d.total_cliente)}</td>
   </tr>`;
+  _atualizarImpostos('cc', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
 }
 
@@ -1866,6 +1966,7 @@ async function atualizarVP() {
   if (elTot && !elTot._editando) elTot.value = fmt(d.total_cliente);
 
   vpRenderTabela(d);
+  _atualizarImpostos('vp', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
 }
 
@@ -1929,6 +2030,132 @@ function vpRenderTabela(d) {
   </tr>`;
 }
 
+// ---- Bloqueio de projeto apos aprovacao -------------------------------------
+function atualizarUIBloqueio() {
+  const bloqueado = !!(projetoAtivo && projetoAtivo.bloqueado);
+  const banner    = document.getElementById('neg-bloqueio-banner');
+  const dataEl    = document.getElementById('neg-bloqueio-data');
+
+  if (banner) {
+    banner.classList.toggle('ativo', bloqueado);
+    // oculta via classe; a classe .bloqueio-banner tem display:none por padrão
+    banner.style.display = bloqueado ? 'flex' : 'none';
+  }
+  if (dataEl && bloqueado && projetoAtivo.bloqueado_em) {
+    const dt = projetoAtivo.bloqueado_em.replace('T', ' ');
+    dataEl.textContent = 'Aprovado em ' + dt;
+  }
+
+  // Botao de aprovacao
+  const btnAprovar = document.querySelector('#page-02 .btn-amber');
+  if (btnAprovar) {
+    btnAprovar.disabled = bloqueado;
+    btnAprovar.style.opacity = bloqueado ? '0.45' : '';
+    btnAprovar.style.cursor  = bloqueado ? 'not-allowed' : '';
+    if (bloqueado) {
+      btnAprovar.innerHTML = '&#x1F512; Aprovado';
+    } else {
+      btnAprovar.innerHTML = '&#x2713; Aprovar Orcamento &#x2192;';
+    }
+  }
+
+  // Botao "Novo ambiente" na sidebar
+  const navAmb = document.getElementById('nav-new-amb');
+  if (navAmb) {
+    navAmb.style.opacity       = bloqueado ? '0.3' : '';
+    navAmb.style.pointerEvents = bloqueado ? 'none' : '';
+    navAmb.title = bloqueado ? 'Projeto bloqueado — adicao de ambientes nao permitida' : '';
+  }
+
+  // Botoes Remover dentro da tabela de ambientes (re-renderizados; controlado via renderAmbientes)
+  document.querySelectorAll('.btn-remover-amb').forEach(btn => {
+    btn.disabled = bloqueado;
+    btn.style.opacity = bloqueado ? '0.35' : '';
+  });
+}
+
+// ---- Provisao de Impostos (todas as modalidades) -----------------------------
+function _atualizarImpostos(prefixo, valorBase) {
+  const cargaPct = parseFloat(document.getElementById('neg-carga-trib')?.value) || 0;
+  const impostos = Math.round(valorBase * cargaPct / 100 * 100) / 100;
+  const elBase = document.getElementById(prefixo + '-r-base-trib');
+  const elImp  = document.getElementById(prefixo + '-r-impostos');
+  if (elBase) elBase.textContent = 'R$ ' + fmt(valorBase);
+  if (elImp)  elImp.textContent  = 'R$ ' + fmt(impostos);
+}
+
+// ---- Gerente — cadeados de liberacao pontual ---------------------------------
+let _tfModoDesbloqueio = null;   // 'taxa' | 'desconto'
+let _tfTaxaLiberada    = false;  // gerente desbloqueou taxa
+let _descBloqueioRemovido = false; // gerente desbloqueou desconto
+
+function tfAbrirModalSenha(modo) {
+  _tfModoDesbloqueio = modo;
+  const subtitulo = {
+    taxa:     'Liberar edicao da taxa de juros',
+    desconto: 'Liberar desconto sem limite de perfil',
+  }[modo] || '';
+  document.getElementById('modal-senha-subtitulo').textContent = subtitulo;
+  document.getElementById('modal-senha-erro').textContent = '';
+  document.getElementById('modal-senha-input').value = '';
+  document.getElementById('modal-gerente-senha').style.display = 'flex';
+  setTimeout(() => document.getElementById('modal-senha-input').focus(), 80);
+}
+
+function tfFecharModalSenha() {
+  document.getElementById('modal-gerente-senha').style.display = 'none';
+  _tfModoDesbloqueio = null;
+}
+
+async function tfConfirmarSenha() {
+  const senha = document.getElementById('modal-senha-input').value;
+  document.getElementById('modal-senha-erro').textContent = '';
+  try {
+    const r = await fetch('/api/gerente/verificar', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({senha}),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      document.getElementById('modal-senha-erro').textContent = d.erro || 'Senha incorreta';
+      return;
+    }
+    // Senha correta — aplicar liberacao conforme modo
+    if (_tfModoDesbloqueio === 'taxa') {
+      _tfTaxaLiberada = true;
+      const taxaEl = document.getElementById('tf-taxa-input');
+      // Mantém type="text" para evitar problemas de validação do browser com decimais
+      const taxaStr = d.taxa_juros_pct != null
+        ? String(d.taxa_juros_pct).replace('.', ',')
+        : '';
+      taxaEl.value            = taxaStr;
+      taxaEl._prev            = taxaStr;
+      taxaEl.readOnly         = false;
+      taxaEl.style.color      = 'var(--warn)';
+      taxaEl.style.letterSpacing = 'normal';
+      const lockEl = document.getElementById('sb-taxa-lock');
+      lockEl.textContent = '\u{1F513}';
+      lockEl.classList.add('unlocked');
+      showToast('Taxa de juros liberada para edicao');
+    } else if (_tfModoDesbloqueio === 'desconto') {
+      _descBloqueioRemovido = true;
+      document.getElementById('neg-desconto').removeAttribute('max');
+      const lockEl = document.getElementById('sb-desc-lock');
+      lockEl.textContent = '\u{1F513}';
+      lockEl.classList.add('unlocked');
+      const hint = document.getElementById('neg-limite-hint');
+      hint.style.color = 'var(--ok)';
+      hint.textContent  = 'Liberado pelo gerente — sem limite de perfil';
+      hint.style.display = 'block';
+      showToast('Desconto liberado sem limite para esta negociacao');
+    }
+    tfFecharModalSenha();
+    if (_codigoPagAtivo === 'total_flex') atualizarTF();
+  } catch(e) {
+    document.getElementById('modal-senha-erro').textContent = 'Erro de conexao';
+  }
+}
+
 // ---- Painel Total Flex -------------------------------------------------------
 let _tfTimer         = null;
 let _tfValores       = [];   // valores livres das parcelas 1..n-1 (última é auto)
@@ -1973,12 +2200,14 @@ function tfFecharAviso() {
 
 function tfMostrarPainel(mostrar) {
   document.getElementById('painel-tf').style.display = mostrar ? 'block' : 'none';
+  const extras = document.getElementById('sb-tf-extras');
+  if (extras) extras.style.display = mostrar ? 'block' : 'none';
   if (mostrar) {
     const hoje = new Date().toISOString().split('T')[0];
     const dc = document.getElementById('tf-data-contrato');
     if (!dc.value) dc.value = hoje;
     const prazo = document.getElementById('tf-prazo');
-    if (!prazo.value) prazo.value = '6';
+    if (!prazo.value) prazo.value = '12';
     _tfValores = []; _tfDatas = [];
     tfAtualizarLimite();
     tfEntradaChange();
@@ -2038,8 +2267,16 @@ async function atualizarTF() {
   const valorAvista = _ayGetValorVenda();
   const entrada  = parseFloat(document.getElementById('tf-entrada').value) || 0;
   const n        = parseInt(document.getElementById('neg-parcelas').value)  || 2;
-  const prazo    = parseInt(document.getElementById('tf-prazo').value)      || 6;
+  const prazo    = parseInt(document.getElementById('tf-prazo').value)      || 12;
   const dc       = document.getElementById('tf-data-contrato').value;
+
+  // Taxa override (só inclui se gerente liberou e o campo tem valor numérico)
+  let taxaOverride = null;
+  if (_tfTaxaLiberada) {
+    const taxaEl = document.getElementById('tf-taxa-input');
+    const v = _parseValorBR(taxaEl.value);  // aceita vírgula como separador decimal
+    if (!isNaN(v) && v >= 0) taxaOverride = v;
+  }
 
   if (!dc || !valorAvista) {
     document.getElementById('tf-resumo').style.display = 'none';
@@ -2055,15 +2292,17 @@ async function atualizarTF() {
   try {
     const semEdicoes = _tfDatas.length < n || _tfValores.length < n - 1;
     if (semEdicoes) {
+      const payload = {
+        valor_financiado: financiado,
+        n_parcelas:       n,
+        prazo_meses:      prazo,
+        data_contrato:    dc,
+      };
+      if (taxaOverride !== null) payload.taxa_override = taxaOverride;
       const r = await fetch('/api/fin/total_flex/inicializar', {
         method:  'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          valor_financiado: financiado,
-          n_parcelas:       n,
-          prazo_meses:      prazo,
-          data_contrato:    dc,
-        }),
+        body: JSON.stringify(payload),
       });
       d = await r.json();
       if (d.ok) {
@@ -2076,15 +2315,17 @@ async function atualizarTF() {
         data:           dt,
         valor_digitado: i < n - 1 ? (_tfValores[i] ?? 0) : null,
       }));
+      const payload = {
+        valor_financiado:   financiado,
+        data_contrato:      dc,
+        prazo_maximo_meses: prazo,
+        parcelas:           parcInput,
+      };
+      if (taxaOverride !== null) payload.taxa_override = taxaOverride;
       const r = await fetch('/api/fin/total_flex/recalcular', {
         method:  'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          valor_financiado:   financiado,
-          data_contrato:      dc,
-          prazo_maximo_meses: prazo,
-          parcelas:           parcInput,
-        }),
+        body: JSON.stringify(payload),
       });
       d = await r.json();
     }
@@ -2147,12 +2388,16 @@ async function atualizarTF() {
   const elTot = document.getElementById('neg-total-final');
   if (elTot && !elTot._editando) elTot.value = fmt(totalCliente);
 
+  // Provisao de impostos (apenas referencia)
+  _atualizarImpostos('tf', totalCliente);
+
   tfRenderTabela(d, valorAvista, entrada);
   atualizarResumoParcelas(entrada, n_parc, ultima.valor_efetivo, totalCliente);
 }
 
 function tfRenderTabela(d, valorAvista, entrada) {
   const limIso  = document.getElementById('tf-data-limite').dataset.iso || '';
+  const minIso  = document.getElementById('tf-data-contrato').value || '';
   const tbody   = document.getElementById('tf-parc-body');
   const R       = (v) => 'R$ ' + fmt(v);
 
@@ -2181,7 +2426,7 @@ function tfRenderTabela(d, valorAvista, entrada) {
     const rowBg   = isUltima ? 'rgba(93,202,165,.06)' : 'transparent';
 
     const dataCell = `<td style="padding:4px 8px;background:${dataBg}">
-      <input type="date" value="${esc(p.data_iso)}" max="${esc(limIso)}"
+      <input type="date" value="${esc(p.data_iso)}" min="${esc(minIso)}" max="${esc(limIso)}"
              style="${inputStyle(excedeDt, false)}"
              oninput="tfDataChange(this,${idx})">
     </td>`;
@@ -2467,7 +2712,10 @@ function renderTabelaNeg(){
       <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;width:80px">
         <input type="number" id="di-${arqId}" value="${disc_i}" min="0" max="100" step="0.5" ${sel?'':'disabled'}
                style="width:60px;text-align:right;padding:3px 6px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);outline:none;opacity:${sel?'1':'0.35'}"
-               oninput="_descIndividual['${arqEsc}']=parseFloat(this.value)||0; renderTabelaNeg(); mpAtualizarApoio(); negAtualizarDescontoEfetivo()">
+               onfocus="this._prev=this.value; this._esc=false"
+               oninput="_descIndividual['${arqEsc}']=parseFloat(this.value)||0"
+               onkeydown="diDescKeydown(event,this,'${arqEsc}')"
+               onblur="if(!this._esc){renderTabelaNeg();mpAtualizarApoio();negAtualizarDescontoEfetivo()}">
       </td>
       <td style="text-align:right;padding:10px 14px;border-bottom:1px solid var(--border);font-weight:700;color:${sel?'var(--ok)':'var(--muted)'};text-decoration:${sel?'none':'line-through'}">
         ${sel ? 'R$ '+fmt(valFinal) : 'R$ '+fmt(Math.round(estrutural*(1-disc_g/100)/divisorFin*100)/100)}
@@ -2574,6 +2822,67 @@ let _salvarDescTimer = null;
 function agendarSalvarDesconto(){
   clearTimeout(_salvarDescTimer);
   _salvarDescTimer = setTimeout(salvarDescontoAutomatico, 800);
+}
+
+// Sincronização e teclado dos campos de desconto
+function negSyncModal(val){
+  const mp = document.getElementById('mp-desconto');
+  if(mp && document.getElementById('modal-params').style.display !== 'none') mp.value = val;
+}
+function negSyncSidebar(val){
+  const el = document.getElementById('neg-desconto');
+  if(el){ el.value = val; negValidarLimiteDesconto(val); agendarCalculo(); agendarSalvarDesconto(); }
+}
+function negDescontoKeydown(e, el){
+  if(e.key === 'Enter'){ e.preventDefault(); el.blur(); }
+  else if(e.key === 'Escape'){
+    e.preventDefault();
+    const prev = el._prev != null ? el._prev : el.value;
+    el.value = prev;
+    negSyncModal(prev);
+    negValidarLimiteDesconto(prev);
+    agendarCalculo();
+    agendarSalvarDesconto();
+    el.blur();
+  }
+}
+function mpDescontoKeydown(e, el){
+  if(e.key === 'Enter'){ e.preventDefault(); el.blur(); }
+  else if(e.key === 'Escape'){
+    e.preventDefault();
+    const prev = el._prev != null ? el._prev : el.value;
+    el.value = prev;
+    negSyncSidebar(prev);
+    agendarDiscriminacao();
+    el.blur();
+  }
+}
+function diDescKeydown(e, el, arqEsc){
+  if(e.key === 'Enter'){ e.preventDefault(); el.blur(); }
+  else if(e.key === 'Escape'){
+    e.preventDefault();
+    el._esc = true;
+    const prev = el._prev != null ? el._prev : el.value;
+    el.value = prev;
+    _descIndividual[arqEsc] = parseFloat(prev) || 0;
+    el.blur();
+  }
+}
+function tfTaxaKeydown(e, el){
+  if(el.readOnly) return;
+  if(e.key === 'Enter'){
+    e.preventDefault();
+    clearTimeout(_tfTimer);
+    _tfTimer = setTimeout(atualizarTF, 50);
+    el.blur();
+  } else if(e.key === 'Escape'){
+    e.preventDefault();
+    const prev = el._prev != null ? el._prev : el.value;
+    el.value = prev;
+    clearTimeout(_tfTimer);
+    _tfTimer = setTimeout(atualizarTF, 50);
+    el.blur();
+  }
 }
 
 async function salvarDescontoAutomatico(){
@@ -2855,8 +3164,227 @@ document.addEventListener('DOMContentLoaded', function(){
   }
 });
 
+// ---- Aprovacao / Exportacao --------------------------------------------------
+let _expPollTimer = null;
+
+async function aprovarOrcamento() {
+  const modal      = document.getElementById('modal-exportar');
+  const logBox     = document.getElementById('exp-log-box');
+  const banner     = document.getElementById('exp-status-banner');
+  const confirmBox = document.getElementById('exp-confirm-box');
+  const btnFechar  = document.getElementById('exp-btn-fechar');
+  const btnFecTop  = document.getElementById('exp-btn-fechar-top');
+  const btnCancel  = document.getElementById('exp-btn-cancelar');
+
+  logBox.innerHTML    = '<div style="color:var(--muted)">Iniciando exportacao...</div>';
+  banner.textContent  = 'Enviando para o Omie...';
+  banner.style.background = 'rgba(93,202,165,.08)';
+  banner.style.borderColor = 'rgba(93,202,165,.2)';
+  banner.style.color  = 'var(--ok)';
+  confirmBox.style.display = 'none';
+  btnFechar.style.display  = 'none';
+  btnFecTop.style.display  = 'none';
+  btnCancel.style.display  = 'inline-flex';
+  modal.style.display = 'flex';
+
+  try {
+    const r = await fetch('/exportar', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ambientes: 'todos'}),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      expSetErro(d.erro || 'Falha ao iniciar exportacao');
+      return;
+    }
+  } catch(e) {
+    expSetErro('Erro de conexao com o servidor');
+    return;
+  }
+
+  if (_expPollTimer) clearInterval(_expPollTimer);
+  _expPollTimer = setInterval(_expPoll, 1500);
+}
+
+async function _expPoll() {
+  try {
+    const r = await fetch('/logs');
+    const d = await r.json();
+
+    const logBox = document.getElementById('exp-log-box');
+    if (d.logs && d.logs.length) {
+      logBox.innerHTML = d.logs.map(l => {
+        const color = l.tipo === 'err'  ? 'var(--err)'
+                    : l.tipo === 'warn' ? 'var(--warn)'
+                    : 'var(--text)';
+        return `<div style="color:${color};padding:2px 0;border-bottom:1px solid var(--border)">${esc(l.msg)}</div>`;
+      }).join('');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (d.confirm) {
+      const box = document.getElementById('exp-confirm-box');
+      document.getElementById('exp-confirm-titulo').textContent = d.confirm.titulo || '';
+      document.getElementById('exp-confirm-corpo').innerHTML    = d.confirm.corpo  || '';
+      box.style.display = 'block';
+    } else {
+      document.getElementById('exp-confirm-box').style.display = 'none';
+    }
+
+    if (d.done) {
+      clearInterval(_expPollTimer);
+      _expPollTimer = null;
+      const banner = document.getElementById('exp-status-banner');
+      banner.textContent  = 'Exportacao concluida — projeto bloqueado e XMLs travados.';
+      banner.style.background  = 'rgba(93,202,165,.12)';
+      banner.style.borderColor = 'rgba(93,202,165,.35)';
+      banner.style.color  = 'var(--ok)';
+      document.getElementById('exp-btn-fechar').style.display  = 'inline-flex';
+      document.getElementById('exp-btn-fechar-top').style.display = 'block';
+      document.getElementById('exp-btn-cancelar').style.display = 'none';
+      // Recarrega projeto para obter bloqueado:true e atualizar UI
+      if (projetoAtivo && projetoAtivo.nome_safe) {
+        try {
+          const r2 = await fetch('/projetos/' + encodeURIComponent(projetoAtivo.nome_safe));
+          const d2 = await r2.json();
+          if (d2.ok && d2.projeto) { projetoAtivo = d2.projeto; atualizarUIBloqueio(); }
+        } catch(e) {}
+      }
+    }
+  } catch(e) { /* ignora erros transientes de poll */ }
+}
+
+async function expResponderConfirm(resp) {
+  document.getElementById('exp-confirm-box').style.display = 'none';
+  try {
+    await fetch('/confirm', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({resp}),
+    });
+  } catch(e) {}
+}
+
+async function expCancelar() {
+  try { await fetch('/cancel', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch(e) {}
+  if (_expPollTimer) { clearInterval(_expPollTimer); _expPollTimer = null; }
+  fecharModalExportar();
+}
+
+function expSetErro(msg) {
+  const banner = document.getElementById('exp-status-banner');
+  banner.textContent  = 'Erro: ' + msg;
+  banner.style.background  = 'rgba(240,153,123,.08)';
+  banner.style.borderColor = 'rgba(240,153,123,.3)';
+  banner.style.color  = 'var(--err)';
+  document.getElementById('exp-btn-fechar').style.display  = 'inline-flex';
+  document.getElementById('exp-btn-fechar-top').style.display = 'block';
+  document.getElementById('exp-btn-cancelar').style.display = 'none';
+}
+
+function fecharModalExportar() {
+  if (_expPollTimer) { clearInterval(_expPollTimer); _expPollTimer = null; }
+  document.getElementById('modal-exportar').style.display = 'none';
+}
+
 loadConfig();
 </script>
+
+<!-- Modal: Aprovacao / Exportacao para Omie -->
+<div id="modal-exportar"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:700;
+            align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--card);border:1px solid var(--border2);border-radius:16px;
+              padding:28px 24px;max-width:520px;width:96%;animation:mIn .18s ease;
+              box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:14px">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;flex-shrink:0;border-radius:9px;
+                    background:rgba(240,165,0,.12);border:1px solid rgba(240,165,0,.3);
+                    display:flex;align-items:center;justify-content:center;font-size:17px">&#x2B06;</div>
+        <div>
+          <div style="font-family:'Epilogue',sans-serif;font-weight:900;font-size:14px">Aprovacao de Orcamento</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:1px">Exportando para o Omie</div>
+        </div>
+      </div>
+      <span id="exp-btn-fechar-top" onclick="fecharModalExportar()"
+            style="cursor:pointer;color:var(--muted);font-size:18px;line-height:1;display:none">&#x2715;</span>
+    </div>
+
+    <!-- Banner de status -->
+    <div id="exp-status-banner"
+         style="font-size:12px;padding:9px 14px;border-radius:8px;
+                background:rgba(93,202,165,.08);border:1px solid rgba(93,202,165,.2);color:var(--ok)">
+      Iniciando...
+    </div>
+
+    <!-- Log box -->
+    <div id="exp-log-box"
+         style="height:220px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);
+                border-radius:8px;padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:11px">
+      <div style="color:var(--muted)">Aguardando...</div>
+    </div>
+
+    <!-- Dialogo de confirmacao (oculto ate o backend pedir) -->
+    <div id="exp-confirm-box"
+         style="display:none;background:rgba(239,159,39,.07);border:1px solid rgba(239,159,39,.25);
+                border-radius:10px;padding:14px">
+      <div id="exp-confirm-titulo"
+           style="font-family:'Epilogue',sans-serif;font-weight:700;font-size:13px;margin-bottom:6px"></div>
+      <div id="exp-confirm-corpo"
+           style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ok btn-sm" onclick="expResponderConfirm('sim')">Sim</button>
+        <button class="btn btn-ghost btn-sm" onclick="expResponderConfirm('nao')">Nao</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="display:flex;justify-content:flex-end">
+      <button id="exp-btn-fechar" class="btn btn-ghost btn-sm"
+              onclick="fecharModalExportar()" style="display:none">Fechar</button>
+      <button id="exp-btn-cancelar" class="btn btn-ghost btn-sm"
+              onclick="expCancelar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Liberacao Gerencial (senha) -->
+<div id="modal-gerente-senha"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:700;
+            align-items:center;justify-content:center;backdrop-filter:blur(4px)"
+     onclick="if(event.target===this)tfFecharModalSenha()">
+  <div style="background:var(--card);border:1px solid rgba(93,202,165,.25);border-radius:16px;
+              padding:28px 24px;max-width:320px;width:92%;animation:mIn .18s ease;
+              box-shadow:0 24px 60px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <div style="width:38px;height:38px;flex-shrink:0;border-radius:9px;
+                  background:rgba(93,202,165,.12);border:1px solid rgba(93,202,165,.25);
+                  display:flex;align-items:center;justify-content:center;font-size:18px">&#x1F511;</div>
+      <div>
+        <div style="font-family:'Epilogue',sans-serif;font-weight:900;font-size:14px;color:var(--text)">Liberacao Gerencial</div>
+        <div id="modal-senha-subtitulo" style="font-size:10px;color:var(--muted);margin-top:2px"></div>
+      </div>
+      <span onclick="tfFecharModalSenha()" style="cursor:pointer;color:var(--muted);font-size:18px;margin-left:auto;line-height:1">&#x2715;</span>
+    </div>
+    <label style="font-size:9px;color:var(--muted);letter-spacing:.5px;display:block;margin-bottom:6px">SENHA DO GERENTE</label>
+    <input type="password" id="modal-senha-input" placeholder="Digite a senha"
+           style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+                  padding:9px 12px;color:var(--text);font-family:'IBM Plex Mono',monospace;
+                  font-size:13px;outline:none;margin-bottom:6px"
+           onfocus="this.style.borderColor='var(--accent)'"
+           onblur="this.style.borderColor='var(--border)'"
+           onkeydown="if(event.key==='Enter')tfConfirmarSenha()">
+    <div id="modal-senha-erro" style="font-size:10px;color:var(--err);min-height:14px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ok" style="flex:1;padding:8px" onclick="tfConfirmarSenha()">Confirmar</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1;padding:8px" onclick="tfFecharModalSenha()">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Total Flex — Aviso parcela negativa -->
 <div id="modal-tf-aviso"

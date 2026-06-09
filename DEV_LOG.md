@@ -4,7 +4,7 @@
 ---
 
 ## RESUMO ATUAL
-> Atualizado em: 2026-06-09 (sessão 2)
+> Atualizado em: 2026-06-09 (sessão 3)
 
 ### [ESTADO] O que está funcionando
 - App rodando em `http://167.88.33.121:8765` (servidor DEV) e `http://127.0.0.1:8765` (local)
@@ -34,39 +34,35 @@
 - **Módulo Parceiros completo**: tabela `parceiros` (nome, tipo, CPF/CNPJ, email, tel, wpp, comissão padrão, obs), busca por nome/CPF, CRUD via modal, verificação de homônimos, página própria no menu
 - **Parceiro no projeto**: campo opcional no formulário de novo projeto (busca + chip + "+ Cadastrar novo parceiro"); `projeto.json` salva `parceiro_id`; ao abrir projeto, parceiro é carregado; ao abrir modal de parâmetros, comissão padrão do parceiro preenche automaticamente "Comissão arquiteto" se ainda não configurada
 - **Lista de projetos ordenada**: projetos carregam automaticamente ao entrar na página (mais recente primeiro); botão ↑↓ inverte a ordem; campo de busca filtra/pesquisa; data de alteração exibida em cada card
-- **"+ Novo ambiente" bloqueado**: botão só fica habilitado quando o usuário está na página de Negociação com um projeto aberto; ao navegar para Clientes/Parceiros/Projetos, o botão volta a ficar locked
-- Documentos: DEV_RULES.md, DEV_LOG.md, REQUIREMENTS.md criados
+- **"+ Novo ambiente" bloqueado**: botão só fica habilitado quando o usuário está na página de Negociação com um projeto aberto
+- Documentação completa em `docs/`: BACKLOG.md (26 histórias), 7 SPEC.md de módulos, FLUXO_38_ETAPAS.md, DOCUMENTOS_D1_D45.md, VERSIONAMENTO.md
 
 ### [PENDENTE]
-- **ALTA** — Bug: toggle "Incluir custos adicionais?" não persiste corretamente entre aberturas do modal. Fluxo do bug: (1) marcar toggle → salvar → ok. (2) entrar/sair sem salvar → ok. (3) entrar novamente → toggle aparece desmarcado mesmo sem ação do usuário. Causa: `carregarMargensSalvas` recarrega do servidor após fechar o modal sem salvar, e o servidor retorna o JSON desatualizado. O `projetoAtivo.margens.incluir_custos` fica desatualizado. Arquivos relevantes: `static/index.html` funções `fecharModalParams`, `carregarMargensSalvas`, `abrirModalParams`; `main.py` rota `/projetos/<nome>/margens`.
-- ~~**MÉDIA** — Implementar cadastro de Parceiros~~ **CONCLUÍDO**
+- **ALTA** — Bug: toggle "Incluir custos adicionais?" não persiste corretamente entre aberturas do modal. Causa: `carregarMargensSalvas` recarrega do servidor após fechar o modal sem salvar, e o servidor retorna o JSON desatualizado. O `projetoAtivo.margens.incluir_custos` fica desatualizado. Arquivos relevantes: `static/index.html` funções `fecharModalParams`, `carregarMargensSalvas`, `abrirModalParams`; `main.py` rota `/projetos/<nome>/margens`.
+- **ALTA** — Implementar EP-07: Versionamento de Orçamentos (spec em `docs/modulos/negociacao/VERSIONAMENTO.md`)
 - **MÉDIA** — Servidor DEV ainda sem domínio — acessível só por IP
 - **BAIXA** — Criar script `deploy.sh` no servidor para automatizar git pull + sed + restart
-- **BAIXA** — Projetos antigos (sem `cliente_id`) mostram cliente vazio no chip quando abertos — sem impacto funcional pois o nome ainda está em `projeto.cliente.nome`
+- **BAIXA** — Projetos antigos (sem `cliente_id`) mostram cliente vazio no chip quando abertos
 
-### [PRÓXIMA TAREFA] Bug toggle incluir_custos + melhorias
-**Modelo de dados (adicionar em database.py):**
-```python
-class Parceiro(Base):
-    __tablename__ = "parceiros"
-    id                  = Column(Integer, primary_key=True)
-    nome                = Column(String(150), nullable=False)
-    cpf_cnpj            = Column(String(18))
-    tipo                = Column(String(30))  # arquiteto/designer/decorador/corretor/engenheiro/indicador
-    email               = Column(String(120))
-    telefone            = Column(String(20))
-    whatsapp            = Column(String(20))
-    comissao_padrao_pct = Column(Float, default=0.0)
-    criado_em           = Column(DateTime, default=datetime.utcnow)
-```
+### [PRÓXIMA TAREFA] EP-07 — Versionamento de Orçamentos
 
-**Funcionalidades a implementar:**
-- Página própria no menu ("Parceiros") — nova entrada na nav da sidebar
-- Lista de parceiros com busca por nome ou CPF/CNPJ
-- Formulário de cadastro/edição com todos os campos
-- Ao criar/abrir projeto, vincular parceiro por nome ou CPF — se não existir, criar na hora
-- `projeto.json` ganha campo `parceiro_id`
-- Comissão padrão do parceiro preenche automaticamente o campo de comissão no modal de parâmetros
+Spec completo em: `docs/modulos/negociacao/VERSIONAMENTO.md`
+
+**Implementar na sequência:**
+1. Criar tabelas `pool_ambientes`, `orcamentos`, `orcamento_ambientes` em `database.py`
+2. Criar projeto → Orçamento 1 automático
+3. Upload XML com detecção de duplicata
+4. Modal de duplicata (Sobrescrever / Nova versão)
+5. Painel "Ambientes" — listar pool com status
+6. Adicionar ambiente ao orçamento
+7. Remover ambiente com confirmação
+8. Recálculo automático de totais
+9. Botão "Novo orçamento" + nome
+10. Navegação entre orçamentos
+11. Renomear orçamento inline
+12. Sobrescrever → atualizar todos os orçamentos
+
+**Regra:** implementar um passo por vez, aguardar confirmação antes de avançar.
 
 ### [DECIDIDO]
 - Banco: SQLite + SQLAlchemy (migração futura para MySQL)
@@ -81,11 +77,15 @@ class Parceiro(Base):
 - Clientes e Parceiros são cadastros separados
 - Um parceiro por projeto (pode expandir no futuro)
 - Busca de cliente e parceiro por nome ou CPF
+- Pool de ambientes permanente por projeto (XMLs nunca deletados)
+- Múltiplos orçamentos paralelos e editáveis por projeto
+- Sobrescrever ambiente atualiza todos os orçamentos automaticamente
+- Nova versão de ambiente cria registro separado no pool (sufixo _v1, _v2...)
 
 ### [CONTEXTO] Arquivos e variáveis chave
 **Arquivos principais:**
-- `main.py` — servidor HTTP, rotas (incluindo `/projetos/<nome>/margens` que salva `incluir_custos`)
-- `database.py` — SQLAlchemy: `Usuario`, `Sessao`, `LogAutorizacao` (adicionar `Cliente`, `Parceiro`)
+- `main.py` — servidor HTTP, rotas
+- `database.py` — SQLAlchemy: `Usuario`, `Sessao`, `LogAutorizacao`, `Cliente`, `Parceiro`
 - `auth.py` — login, logout, validação, autorização delegada
 - `auth_routes.py` — rotas HTTP de autenticação
 - `seed.py` — cria usuários iniciais
@@ -114,29 +114,45 @@ class Parceiro(Base):
 
 ## HISTÓRICO
 
-### Sessão 2026-06-09
+### Sessão 2026-06-09 (sessão 3 — documentação e planejamento)
+**Objetivo:** Reorganizar documentação, criar histórias de usuário e especificar EP-07
+
+**Realizado:**
+- Criado `docs/historias/BACKLOG.md` com 26 histórias (EP-01 a EP-07, US-01 a US-26)
+- Criado SPEC.md para todos os 7 módulos: autenticacao, negociacao, financeiro, integracao_omie, clientes, parceiros, infraestrutura
+- Criado `docs/processos/FLUXO_38_ETAPAS.md` — 38 etapas em 6 fases do processo comercial
+- Criado `docs/processos/DOCUMENTOS_D1_D45.md` — mapa completo dos documentos de governança
+- Criado `docs/infraestrutura/SPEC.md` — stack, deploy, versionamento semântico
+- Criado `docs/modulos/negociacao/VERSIONAMENTO.md` — spec completo do EP-07
+- Tag `v0.1.0` já existente; próxima versão será `v0.2.0` ao concluir EP-07
+- Modelo de dados EP-07 definido: 3 novas tabelas (`pool_ambientes`, `orcamentos`, `orcamento_ambientes`)
+- Sequência de 12 passos de implementação definida e documentada
+
+**Arquivos modificados:**
+- `docs/historias/BACKLOG.md` — criado/atualizado
+- `docs/modulos/*/SPEC.md` — 7 arquivos criados
+- `docs/processos/FLUXO_38_ETAPAS.md` — criado
+- `docs/processos/DOCUMENTOS_D1_D45.md` — criado
+- `docs/infraestrutura/SPEC.md` — criado
+- `docs/modulos/negociacao/VERSIONAMENTO.md` — criado
+- `DEV_LOG.md` — este arquivo
+
+### Sessão 2026-06-09 (sessão 2)
 **Objetivo:** Corrigir e completar módulo de Clientes; vincular projeto a cliente obrigatório
 
 **Realizado:**
-- Diagnóstico: 34 processos Python acumulados na porta 8765 (SO_REUSEADDR) causavam 404 nas rotas de clientes — resolvido com kill de todos e reinício de instância única
-- Migração do banco: tabela `clientes` não tinha colunas `cep`, `logradouro`, `numero`, `complemento`, `bairro` — `_migrar_colunas()` executada com sucesso
-- Correção frontend: `numero` e `complemento` faltavam no payload de save (`cliSalvar`), na limpeza e preenchimento do modal de edição (`cliAbrirModal`)
-- Máscara de telefone aplicada ao abrir modal de edição (dados já salvos no banco)
-- `except Exception` adicionado à rota GET `/api/clientes/<id>` (era só `try/finally`)
-- `db.query(Cliente).get()` substituído por `db.get(Cliente, ...)` (API SQLAlchemy 2.0)
-- Formulário de novo projeto reformulado: chip de cliente selecionado, botão "+ Cadastrar novo cliente" que abre modal com nome pré-preenchido e auto-seleciona após salvar
-- `criarProjeto()` agora exige `cliente_id` — não é mais possível criar projeto sem cliente
-- Backend `/projetos/novo`: busca dados do cliente no banco pelo `cliente_id`, rejeita sem ele
-- `_criar_projeto()` recebe e salva `cliente_id` no `projeto.json`
-- `_listar_projetos()` expõe `cliente_id` nos resultados de busca
-- DEV_LOG atualizado: próxima tarefa alterada de Clientes para Parceiros
+- Diagnóstico: 34 processos Python acumulados na porta 8765 causavam 404 nas rotas de clientes — resolvido com kill de todos e reinício de instância única
+- Migração do banco: tabela `clientes` sem colunas CEP/logradouro/numero/complemento/bairro — `_migrar_colunas()` executada
+- Correção frontend: `numero` e `complemento` faltavam no payload de save
+- Máscara de telefone aplicada ao abrir modal de edição
+- `db.query(Cliente).get()` substituído por `db.get(Cliente, ...)` (SQLAlchemy 2.0)
+- Formulário de novo projeto reformulado: chip de cliente, botão "+ Cadastrar novo cliente"
+- `criarProjeto()` agora exige `cliente_id`
+- Backend `/projetos/novo` busca dados do cliente no banco, rejeita sem `cliente_id`
+- DEV_LOG atualizado
 
 **Arquivos modificados:**
-- `main.py` — `/projetos/novo` exige `cliente_id`, busca cliente no DB
-- `mod_omie.py` — `_criar_projeto` e `_listar_projetos` com `cliente_id`
-- `static/index.html` — form novo projeto reformulado; funções `npBuscarCliente`, `npSelecionarCliente`, `npDeselecionarCliente`, `npAbrirCadastroCliente`, `criarProjeto`, `mostrarFormNovoProjeto`; correção `cliSalvar`, `cliAbrirModal` com `numero`/`complemento`
-- `database.py` — já tinha o modelo completo (sessão anterior); `omie.db` migrado
-- `DEV_LOG.md` — atualizado
+- `main.py`, `mod_omie.py`, `static/index.html`, `database.py`, `DEV_LOG.md`
 
 ### Sessão 2026-06-07 (continuação — 2026-06-08)
 **Objetivo:** Implementar sistema de autenticação, perfis e controle de descontos
@@ -147,23 +163,16 @@ class Parceiro(Base):
 - Botão de perfil na sidebar (foto, dados editáveis)
 - Modal de autorização delegada com log
 - Limites de desconto por nível aplicados no modal e na sidebar
-- Botão OK na sidebar para solicitar autorização
 - Toggle "Incluir custos adicionais?" no modal de parâmetros
 - Correção do valor bruto (parâmetros internos não afetam cliente)
 - Gross-up quando "Incluir custos adicionais?" ativo
-- Desconto Total calculado sobre bruto original
 - "1x" em vez de "A Vista" no select de parcelas
 - DEV_RULES.md, DEV_LOG.md, REQUIREMENTS.md criados
 - Bug pendente: toggle incluir_custos não persiste entre aberturas do modal
-- Decisão: Clientes e Parceiros como cadastros separados
 
 **Arquivos modificados:**
-- `main.py` — autenticação integrada, bind 0.0.0.0, salva incluir_custos
-- `static/index.html` — todas as features acima
-- `static/login.html` — novo
-- `database.py`, `auth.py`, `auth_routes.py`, `seed.py` — novos
+- `main.py`, `static/index.html`, `static/login.html`, `database.py`, `auth.py`, `auth_routes.py`, `seed.py`
 - `DEV_RULES.md`, `DEV_LOG.md`, `REQUIREMENTS.md` — novos
-- `omie.db` — banco SQLite criado
 
 ### Sessão 2026-06-07 (primeira)
 - Descoberto servidor DEV com EasyPanel + ArchDecorPoints

@@ -1,6 +1,6 @@
 # Histórias de Usuário — Omie_V3
 
-> Versão de referência: **v0.1.0** | Junho 2026  
+> Versão de referência: **v0.2.0** | Junho 2026  
 > Repositório: [github.com/mbnunes1972/omie_v3](https://github.com/mbnunes1972/omie_v3)
 
 **Convenções de status:**
@@ -18,6 +18,7 @@
 - [EP-04 — Módulos Financeiros](#ep-04--módulos-financeiros)
 - [EP-05 — Cadastro de Clientes e Parceiros](#ep-05--cadastro-de-clientes-e-parceiros)
 - [EP-06 — Infraestrutura e Deploy](#ep-06--infraestrutura-e-deploy)
+- [EP-07 — Versionamento de Orçamentos](#ep-07--versionamento-de-orçamentos)
 
 ---
 
@@ -333,6 +334,112 @@
 - `REQUIREMENTS.md` — backlog de funcionalidades
 - `docs/modulos/<modulo>/SPEC.md` — especificação por módulo
 - Convenções aplicadas: `[IMPLEMENTADO]`, `[TODO]`, `[BUG]`, `[VALIDAR]`
+
+---
+
+## EP-07 — Versionamento de Orçamentos
+
+> Pool de ambientes permanente por projeto, múltiplos orçamentos paralelos e editáveis para apresentação comercial.
+
+---
+
+### US-20 — Criar projeto com orçamento inicial `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** que ao criar um projeto o sistema já crie um orçamento vazio automaticamente,  
+**para que** eu possa começar a adicionar ambientes imediatamente sem etapas extras.
+
+**Critérios de aceite:**
+- Ao criar projeto → Orçamento 1 criado automaticamente com nome padrão
+- Pool de ambientes começa vazio
+- Tela do projeto exibe o orçamento recém-criado pronto para uso
+
+> **📌 Referência:** `docs/modulos/negociacao/VERSIONAMENTO.md`
+
+---
+
+### US-21 — Carregar XML com detecção de duplicata `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** que ao carregar um XML com nome já existente o sistema me pergunte se quero sobrescrever ou criar nova versão,  
+**para que** eu controle qual versão do projeto do Promob está em cada orçamento.
+
+**Critérios de aceite:**
+- Se nome novo → ambiente entra direto no pool do projeto
+- Se nome duplicado → modal com três opções: Sobrescrever, Nova versão, Cancelar
+- Sobrescrever → atualiza pool e recalcula automaticamente todos os orçamentos que usam esse ambiente
+- Nova versão → cria `Ambiente_v1` no pool; orçamentos existentes não são alterados
+- Novo ambiente disponível no painel de Ambientes para adição manual
+
+---
+
+### US-22 — Painel de ambientes no orçamento `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** um botão "Ambientes" na tela de negociação que exiba todos os ambientes disponíveis no pool do projeto,  
+**para que** eu adicione ou remova ambientes do orçamento atual durante a negociação.
+
+**Critérios de aceite:**
+- Painel exibe todos os ambientes do pool com status: ✅ incluído / ⬜ disponível
+- Marcar ambiente → adicionado ao orçamento, totais recalculados imediatamente
+- Botão "Carregar XML" disponível dentro do painel
+- Ambiente carregado via painel entra no pool e pode ser adicionado ao orçamento na mesma ação
+
+---
+
+### US-23 — Remover ambiente com confirmação `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** que ao desmarcar um ambiente o sistema me peça confirmação,  
+**para que** eu não retire um ambiente por engano durante a apresentação ao cliente.
+
+**Critérios de aceite:**
+- Modal: *"Retirar 'X' deste orçamento?"* com botões Sim / Não
+- Sim → remove do orçamento, totais recalculados
+- Não → nenhuma ação, ambiente permanece incluído
+- Ambiente removido do orçamento permanece disponível no pool
+
+---
+
+### US-24 — Criar orçamento paralelo `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** criar múltiplos orçamentos dentro de um projeto,  
+**para que** apresente cenários diferentes ao cliente (completo, intermediário, entrada).
+
+**Critérios de aceite:**
+- Botão "Novo orçamento" na tela do projeto
+- Modal solicita nome do orçamento antes de criar
+- Novo orçamento criado vazio (sem ambientes), disponível imediatamente
+- Todos os orçamentos editáveis em paralelo — sem bloqueio entre eles
+- Orçamentos não podem ser deletados
+
+---
+
+### US-25 — Renomear orçamento `[PLANEJADO]`
+
+**Como** consultor de vendas,  
+**quero** dar nome a cada orçamento e editá-lo quando quiser,  
+**para que** eu e o cliente identifiquemos facilmente cada cenário durante a negociação.
+
+**Critérios de aceite:**
+- Clique no nome do orçamento → campo de texto editável inline
+- Salvo automaticamente ao perder o foco
+- Nome visível na tela do projeto e no cabeçalho da tela de negociação
+
+---
+
+### US-26 — Sobrescrever ambiente atualiza todos os orçamentos `[PLANEJADO]`
+
+**Como** sistema,  
+**quero** que ao confirmar sobrescrita de um ambiente todos os orçamentos que o contêm sejam recalculados automaticamente,  
+**para que** nenhum orçamento fique com dados desatualizados após revisão do projeto no Promob.
+
+**Critérios de aceite:**
+- Após sobrescrita: `budget_total` e `order_total` atualizados no pool
+- Todos os orçamentos que referenciam o ambiente recalculados no mesmo request
+- Resposta da API informa quantos orçamentos foram atualizados
+- Nenhuma intervenção manual necessária pelo consultor
 
 ---
 

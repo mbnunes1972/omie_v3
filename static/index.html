@@ -4226,18 +4226,31 @@ async function toggleDiscriminacao(){
 }
 async function atualizarDiscriminacao(){
   if(!projetoAtivo) return;
-  const ambSel = (projetoAtivo.ambientes||[]).filter(a=>a.selecionado);
+  const isEP07 = _orcamentoAtivoId !== null && _orcAmbientesAtivos !== null;
+  const ambSel = isEP07
+    ? _orcAmbientesAtivos
+    : (projetoAtivo.ambientes||[]).filter(a=>a.selecionado);
   if(!ambSel.length) return;
-  // Usa valores atuais do modal (nao os salvos) para recalculo em tempo real
   const mg = lerMargensModal();
-  const viagemRateada = mg.fora_da_sede ? ratearViagem(mg.custo_viagem, ambSel) : ambSel.map(()=>0);
+  // ratearViagem espera objetos com {total}; no EP-07 o campo é budget_total
+  const ambsViagem = isEP07 ? ambSel.map(pa=>({total: pa.budget_total||0})) : ambSel;
+  const viagemRateada = mg.fora_da_sede ? ratearViagem(mg.custo_viagem, ambsViagem) : ambSel.map(()=>0);
   const resultados = await Promise.all(ambSel.map(async (amb,i)=>{
+    const valorBruto = isEP07 ? (amb.budget_total||0) : (amb.total||0);
+    // Desconto efetivo = combinação do global e individual por ambiente
+    let descEfetivo = mg.desconto_pct;
+    if(isEP07){
+      const disc_i = parseFloat(_descIndividual['ep07_'+amb.id]) || 0;
+      descEfetivo = Math.round(1e4*(1-(1-mg.desconto_pct/100)*(1-disc_i/100)))/100;
+    }
     const r = await fetch('/calcular_margens',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({...mg, valor_bruto:amb.total, custo_viagem:viagemRateada[i]})});
+      body:JSON.stringify({...mg, desconto_pct: descEfetivo, valor_bruto: valorBruto, custo_viagem:viagemRateada[i]})});
     return (await r.json()).resultado;
   }));
   document.getElementById('discriminacao-tbody').innerHTML = resultados.map((res,i)=>{
-    const nome     = esc(ambSel[i].ambiente||ambSel[i].projeto||ambSel[i].arquivo);
+    const nome = isEP07
+      ? esc(ambSel[i].nome_exibicao||ambSel[i].nome||'')
+      : esc(ambSel[i].ambiente||ambSel[i].projeto||ambSel[i].arquivo);
     const op_desc   = fmt(res.valor_bruto - res.saldo_apos_desconto);
     const op_fin    = fmt(res.saldo_apos_financeiro - res.saldo_apos_desconto);
     const op_viagem = fmt(res.saldo_apos_financeiro - res.saldo_apos_viagem);
@@ -4521,17 +4534,27 @@ function mpAtualizarApoio(){
     const brdAtivo  = id('mp-brinde-ativo').checked;
     const brdVal    = brdAtivo  ? (parseFloat(id('mp-brinde').value)||0)   : 0;
     const descPct   = parseFloat(id('mp-desconto').value)||0;
-    // Gross-up: base bruta para o cliente (igual a renderTabelaNeg EP-07)
-    let bruto = orcAmbs.reduce((s,pa)=>s+(pa.budget_total||0), 0);
-    if(incluirCustos){
-      if(arqAtiva && arqPct > 0) bruto = bruto / (1 - arqPct/100);
-      if(fidAtiva && fidPct > 0) bruto = bruto / (1 - fidPct/100);
-      bruto += viagVal + brdVal;
-    }
-    bruto = rnd(bruto);
+    // Gross-up e desconto individual por ambiente (igual a renderTabelaNeg EP-07)
+    const n_ambs  = orcAmbs.length || 1;
+    const viag_por = viagAtiva && viagVal > 0 ? viagVal/n_ambs : 0;
+    const brd_por  = brdAtivo  && brdVal  > 0 ? brdVal/n_ambs  : 0;
+    let totalBruto = 0, totalAvista = 0;
+    orcAmbs.forEach(pa => {
+      let b = pa.budget_total || 0;
+      if(incluirCustos){
+        if(arqAtiva && arqPct > 0) b = b / (1 - arqPct/100);
+        if(fidAtiva && fidPct > 0) b = b / (1 - fidPct/100);
+        b += viag_por + brd_por;
+      }
+      b = rnd(b);
+      totalBruto += b;
+      const disc_i = parseFloat(_descIndividual['ep07_'+pa.id]) || 0;
+      totalAvista += rnd(b * (1-descPct/100) * (1-disc_i/100));
+    });
+    const bruto  = rnd(totalBruto);
+    const avista = rnd(totalAvista);
     if(!bruto){ document.getElementById('mp-apoio').style.display='none'; return; }
     document.getElementById('mp-apoio').style.display='block';
-    const avista   = rnd(bruto*(1-descPct/100));
     const descVal  = rnd(bruto-avista);
     let saldo = avista;
     const vViag = rnd(viagVal); saldo = rnd(saldo-vViag);

@@ -49,7 +49,9 @@
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8765/\" -TimeoutSec 3 -UseBasicParsing; $r.StatusCode } catch { \"not running: $_\" })",
       "PowerShell(Start-Process python -ArgumentList \"main.py\" -WorkingDirectory \"E:\\\\2026\\\\ESTUDO_DE_IA\\\\Omie_V3\" -WindowStyle Hidden)",
       "Bash(sed -n '4414,4422p' \"E:/2026/ESTUDO_DE_IA/Omie_V3/static/index.html\")",
-      "Bash(sed -n '4355,4378p' \"E:/2026/ESTUDO_DE_IA/Omie_V3/static/index.html\")"
+      "Bash(sed -n '4355,4378p' \"E:/2026/ESTUDO_DE_IA/Omie_V3/static/index.html\")",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

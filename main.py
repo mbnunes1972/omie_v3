@@ -37,6 +37,24 @@ from mod_omie import (
 from mod_margens import calcular_margens, _normalizar_faixas
 from mod_fin import calcular_aymore, calcular_cartao, calcular_venda_programada, calcular_total_flex
 
+def _enriquecer_projetos_com_pool(projetos):
+    """Para projetos EP-07, sobrescreve n_ambientes/n_selecionados com contagens do pool."""
+    nomes = [p['nome_safe'] for p in projetos if p.get('nome_safe')]
+    if not nomes:
+        return
+    db = get_session()
+    try:
+        contagens = {}
+        for pa in db.query(PoolAmbiente).filter(PoolAmbiente.projeto_id.in_(nomes)).all():
+            contagens[pa.projeto_id] = contagens.get(pa.projeto_id, 0) + 1
+        for p in projetos:
+            n = contagens.get(p.get('nome_safe'), 0)
+            if n > 0:
+                p['n_ambientes']    = n
+                p['n_selecionados'] = n
+    finally:
+        db.close()
+
 # HTML servido como arquivo estático
 _STATIC_DIR = os.path.join(_BASE_DIR, "static")
 
@@ -135,17 +153,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True, "modalidades": mods})
 
         elif path == "/projetos":
-            self.send_json({"ok": True, "projetos": _listar_projetos()})
+            projetos = _listar_projetos()
+            _enriquecer_projetos_com_pool(projetos)
+            self.send_json({"ok": True, "projetos": projetos})
 
         elif path == "/projetos/buscar":
             from urllib.parse import parse_qs
             q = (parse_qs(urlparse(self.path).query).get('q') or [''])[0].strip()
             locais = _buscar_projetos(q)
-            # Marca origem
             for p in locais: p['origem'] = 'local'
-            # Busca no Omie (assíncrono seria ideal; aqui faz sync com timeout curto)
+            _enriquecer_projetos_com_pool(locais)
             omie_res = _buscar_projetos_omie(q)
-            # Evita duplicatas: se projeto local tem mesmo nome, não adiciona do Omie
             nomes_locais = {p['nome_projeto'].lower() for p in locais}
             omie_unicos = [p for p in omie_res if p['nome_projeto'].lower() not in nomes_locais]
             self.send_json({'ok': True, 'projetos': locais + omie_unicos})
@@ -351,6 +369,7 @@ class Handler(BaseHTTPRequestHandler):
                         if p.get("cliente_id") == c.id
                         or p.get("cliente_nome", "").lower() == nome_lower
                     ]
+                    _enriquecer_projetos_com_pool(projetos)
                     self.send_json({"ok": True, "projetos": projetos, "cliente": _cliente_dict(c)})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)})

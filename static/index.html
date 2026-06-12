@@ -1481,6 +1481,8 @@ let _negBaseValues  = [];   // { arquivo, nome, val_bruto, estrutural } para tod
 let _negSelLocal    = {};   // { arquivo: bool } seletor de negociacao
 let _descIndividual = {};   // { arquivo: pct } desconto individual por ambiente
 let _descAdicional  = {};   // legado — mantido por compat
+let _margemAtual    = 0;    // % calculada por mpAtualizarApoio — usado para validar limite 35%
+const _LIMITE_DESC_TOTAL = 35;
 let _selLocal = {};           // { arquivo: bool } estado local dos checkboxes
 
 // EP-07: Versionamento de Orçamentos
@@ -1488,6 +1490,35 @@ let _orcamentos        = [];   // lista de orçamentos do projeto ativo
 let _orcamentoAtivoId  = null; // id do orçamento selecionado
 let _orcAmbientesAtivos = null; // pool_ambientes do orçamento ativo — null = modo legado (comportamento original)
 let _removerAmbPending  = null; // { pid } aguardando confirmação
+
+// ---- Limite de desconto total (35%) ----------------------------------------
+function _verificarLimiteDescTotal(){
+  if(_margemAtual > _LIMITE_DESC_TOTAL){
+    showToast('Desconto total excede o limite máximo de descontos.', true);
+    return false;
+  }
+  return true;
+}
+
+// Blur do desconto individual: reverte se ultrapassar o limite total
+function _onDescIndBlur(el, key, isEP07){
+  if(el._esc) return;
+  if(isEP07){
+    renderTabelaNeg(_orcAmbientesAtivos);
+  } else {
+    renderTabelaNeg();
+    negAtualizarDescontoEfetivo();
+  }
+  mpAtualizarApoio();
+  if(_margemAtual > _LIMITE_DESC_TOTAL){
+    const prev = parseFloat(el._prev) || 0;
+    _descIndividual[key] = prev;
+    el.value = prev;
+    if(isEP07) renderTabelaNeg(_orcAmbientesAtivos); else renderTabelaNeg();
+    mpAtualizarApoio();
+    showToast('Desconto total excede o limite máximo de descontos.', true);
+  }
+}
 
 // ---- Config ------------------------------------------------------------------
 async function loadConfig(){
@@ -3916,7 +3947,7 @@ function renderTabelaNeg(ambientes = null){
                  onfocus="this._prev=this.value;this._esc=false"
                  oninput="_descIndividual['ep07_${pa.id}']=parseFloat(this.value)||0"
                  onkeydown="diDescKeydown(event,this,'ep07_${pa.id}')"
-                 onblur="if(!this._esc){renderTabelaNeg(_orcAmbientesAtivos);mpAtualizarApoio();}">
+                 onblur="_onDescIndBlur(this,'ep07_${pa.id}',true)">
         </td>
         <td data-ep07-avista="${avista}" style="text-align:right;padding:10px 14px;border-bottom:1px solid var(--border);font-weight:700;color:var(--ok)">
           R$ ${fmt(final_)}
@@ -3972,7 +4003,7 @@ function renderTabelaNeg(ambientes = null){
                onfocus="this._prev=this.value; this._esc=false"
                oninput="_descIndividual['${arqEsc}']=parseFloat(this.value)||0"
                onkeydown="diDescKeydown(event,this,'${arqEsc}')"
-               onblur="if(!this._esc){renderTabelaNeg();mpAtualizarApoio();negAtualizarDescontoEfetivo()}">
+               onblur="_onDescIndBlur(this,'${arqEsc}',false)">
       </td>
       <td style="text-align:right;padding:10px 14px;border-bottom:1px solid var(--border);font-weight:700;color:${sel?'var(--ok)':'var(--muted)'};text-decoration:${sel?'none':'line-through'}">
         ${sel ? 'R$ '+fmt(valFinal) : 'R$ '+fmt(Math.round(estrutural*(1-disc_g/100)/divisorFin*100)/100)}
@@ -4431,6 +4462,9 @@ async function mpSalvarComValidacao(){
     const ok = await abrirModalAutorizacao(desc, max);
     if(!ok) return;
   }
+  // Bloqueia se o desconto total (bruto_original - liquido) / bruto_original > 35%
+  // _margemAtual é atualizado por mpAtualizarApoio() a cada mudança no modal
+  if(!_verificarLimiteDescTotal()) return;
   fecharModalParams(true);
 }
 
@@ -4564,6 +4598,7 @@ function mpAtualizarApoio(){
     const liquido = rnd(saldo-vFid);
     const bruto0  = orcAmbs.reduce((s,pa)=>s+(pa.budget_total||0), 0);
     const margem  = bruto0 > 0 ? rnd((bruto0-liquido)/bruto0*100) : 0;
+    _margemAtual  = margem;
     id('mp-a-bruto').textContent    = 'R$ '+fmt(bruto);
     id('mp-a-desc-pct').textContent = descPct.toLocaleString('pt-BR');
     id('mp-a-desc').textContent     = '− R$ '+fmt(descVal);
@@ -4634,6 +4669,7 @@ function mpAtualizarApoio(){
   // Desconto Total usa sempre o bruto original dos XMLs (sem gross-up)
   const bruto_original = rnd(ambsNeg.reduce((s,a)=>s+(a.total||0),0));
   const margem = bruto_original > 0 ? rnd((bruto_original - liquido) / bruto_original * 100) : 0;
+  _margemAtual = margem;
 
   id('mp-a-bruto').textContent     = 'R$ '+fmt(bruto);
   id('mp-a-desc-pct').textContent  = desc_pct.toLocaleString('pt-BR');

@@ -2411,6 +2411,34 @@ Cadastro)" (`cadIr('funcionarios')`); `_folhaAba`/`folhaAba` removidos. Sem muda
 (a rota `/api/funcionarios` exige só sessão+escopo — quem tem o módulo Cadastro acessa).
 Frontend-only (Ctrl+F5).
 
+## Sessão 116 — UX de permissões: contexto fixa a loja, senha só quando falta permissão, operador sem Fiscal
+Três decisões do usuário (2026-07-24), num commit:
+**(1) Modal de usuário sensível ao contexto.** Dentro de loja/PDV o cadastro NÃO pergunta a
+loja — mostra "Loja: <nome>" fixa (`loja_fixa` no ctx; salvar usa ela). No contexto amplo
+(gestão geral do super_admin/admin_rede) a lista de lojas do escopo continua.
+**(2) Autorização SESSÃO-PRIMEIRO.** Logado com a permissão não redigita senha; a senha
+gerencial só aparece quando o logado NÃO tem a permissão (aí valem credenciais de um
+terceiro que tem — fluxo antigo preservado). Backend: `_usuario_com_capacidade(...,
+sessao=)` é o ponto único (+ `_aprovador_financeiro` delega; 14 call sites, os 3 blocos
+inline de reabrir/desfazer/data-prevista, o override de data-entrega e o
+`/api/gerente/verificar`). Frontend: `pedirCredenciaisGerente` ganha `capacidade` (default
+`autorizar`; AF/razão=`aprovar_financeiro`, medição=`registrar_medicao`, decisão
+comercial=`aprovar_medicao_reprovada`; cancelar contrato=null — SEMPRE pergunta) e resolve
+sem modal quando `_usuarioAtual.pode_<capacidade>`; `tfAbrirModalSenha` e Rever Orçamento
+idem. `auth._usuario_dict` expõe as flags novas (pode_autorizar etc.). ARMADILHA: variável
+de sessão muda de nome entre handlers (`usuario`×`solicitante`) — 4 sites corrigidos após
+500 no teste.
+**(3) Operador sem Fiscal + painéis vedados.** Matriz (`perfis.py`) e seed
+(`perfil_store.PERFIS_PADRAO`) tiram `fiscal` do operador; `backfill_perfis_todas_lojas`
+remove o fiscal dos operadores de SISTEMA já semeados (custom não é tocado). Painéis:
+Financeiro/reconciliação já eram vedados (acesso_financeiro); AF/provisões já exigiam
+`aprovar_financeiro` no GET; Auditoria Contábil já caía no `_contabil_ctx`; agora a UI
+também esconde do operador os botões Auditoria Contábil, Comparar Valores (AF2, gate
+`ver_parametros`) e Concluir Conciliação Final (gate `aprovar_financeiro`).
+Testes: `test_autorizacao_sessao.py` (9) + 3 expectativas antigas atualizadas
+(operador×fiscal). Suíte **1446 verde**. PENDENTE: nome novo p/ o perfil `admin_rede`
+(rótulo atual "Administrador de Rede") — aguardando escolha do usuário.
+
 ## Sessão 115 — PDV: Diretor da mãe acessa o Ponto de Venda como acessa a própria loja
 Pedido do usuário (teste na VPS A). `database.lojas_acessiveis_ids(db, usuario_id, nivel,
 loja_id)`: memberships + PDVs ATIVOS da(s) loja(s) do usuário quando ele é Diretor (base

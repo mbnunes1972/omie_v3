@@ -16,8 +16,10 @@ PERFIS_PADRAO = [
      "modulos": _OPERACIONAIS + ["fiscal", "financeiro", "folha", "admin", "config"]},
     {"slug": "gerencial", "nome": "Gerente", "base": "gerencial",
      "modulos": _OPERACIONAIS + ["fiscal", "financeiro", "folha"]},
+    # 2026-07-24 (decisão do usuário): Operador SEM o módulo Fiscal (e sem Financeiro/Folha,
+    # como sempre) — o backfill remove o fiscal dos operadores de sistema já semeados.
     {"slug": "operador", "nome": "Operador", "base": "operador",
-     "modulos": _OPERACIONAIS + ["fiscal"]},
+     "modulos": _OPERACIONAIS},
 ]
 
 
@@ -52,6 +54,14 @@ def backfill_perfis_todas_lojas(db):
     for p in db.query(PerfilAcesso).filter_by(slug="gerencial", nome="Gerencial").all():
         p.nome = "Gerente"
         renomeados += 1
+    # 2026-07-24: operador de SISTEMA perde o módulo fiscal (perfil custom não é tocado)
+    ajustados = 0
+    for p in db.query(PerfilAcesso).filter_by(slug="operador", sistema=1).all():
+        mods = json.loads(p.modulos_json or "[]")
+        if "fiscal" in mods:
+            p.modulos_json = json.dumps([m for m in mods if m != "fiscal"])
+            ajustados += 1
+    renomeados += ajustados
     db.commit()
     if criados or renomeados:
         from auth import perfis as _perfis

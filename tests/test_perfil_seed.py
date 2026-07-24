@@ -36,7 +36,7 @@ def test_seed_cria_3_perfis_por_loja():
     assert {"admin", "config", "financeiro", "fiscal"} <= mods
     operador = next(p for p in p1 if p.slug == "operador")
     omods = set(json.loads(operador.modulos_json))
-    assert "fiscal" in omods and "financeiro" not in omods and "admin" not in omods
+    assert "fiscal" not in omods and "financeiro" not in omods and "admin" not in omods   # 2026-07-24
 
 
 def test_seed_idempotente():

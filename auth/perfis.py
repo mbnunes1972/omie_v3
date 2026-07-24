@@ -24,7 +24,8 @@ PERFIS = {
         "editar_dados_loja": False, "gerir_documentos": False,
         "executar_pe": True, "revisar_pe": True, "registrar_medicao": True},
     "operador": {"rotulo": "Operador", "desconto_max": 10.0,
-        "acesso_operacional": True, "acesso_financeiro": False, "acesso_fiscal": True,
+        # 2026-07-24 (decisão do usuário): operador também SEM Fiscal (era True)
+        "acesso_operacional": True, "acesso_financeiro": False, "acesso_fiscal": False,
         "acesso_admin": False, "acesso_config": False,
         "ver_parametros": False, "autorizar": False, "aprovar_financeiro": False,
         "aprovar_medicao_reprovada": False, "gerir_usuarios": False, "gerir_perfis": False,

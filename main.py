@@ -314,8 +314,18 @@ def _stepup_valido(token, recurso):
     return False
 
 
-def _usuario_com_capacidade(db, login, senha, capacidade):
-    """Usuario ativo com senha correta e a capacidade dada (perfis), ou None."""
+def _usuario_com_capacidade(db, login, senha, capacidade, sessao=None):
+    """Usuario ativo com senha correta e a capacidade dada (perfis), ou None.
+
+    SESSÃO-PRIMEIRO (pedido 2026-07-24): se o request veio SEM credenciais e o próprio
+    usuário logado (`sessao`) tem a capacidade, ele é o autorizador — logado com permissão
+    não redigita senha. Credenciais de terceiro (login+senha) seguem valendo para quem
+    não tem a permissão (o gerente digita a dele na tela do operador)."""
+    if sessao is not None and not (login or "").strip() and not (senha or ""):
+        u = db.get(Usuario, sessao.get("id"))
+        if u and u.ativo and perfis.pode(u.nivel, capacidade):
+            return u
+        return None
     u = db.query(Usuario).filter_by(login=(login or "").strip()).first()
     if not u or not u.ativo or not u.check_senha(senha or ""):
         return None
@@ -353,15 +363,9 @@ def _get_or_create_medicao(db, nome_safe):
     return md
 
 
-def _aprovador_financeiro(db, login, senha):
-    """Retorna o Usuario apto a aprovar financeiro (ativo, senha correta e perfil com
-    'aprovar_financeiro') ou None."""
-    u = db.query(Usuario).filter_by(login=(login or "").strip()).first()
-    if not u or not u.ativo or not u.check_senha(senha or ""):
-        return None
-    if not perfis.pode(u.nivel, "aprovar_financeiro"):
-        return None
-    return u
+def _aprovador_financeiro(db, login, senha, sessao=None):
+    """Usuario apto a aprovar financeiro, ou None. Sessão-primeiro: ver _usuario_com_capacidade."""
+    return _usuario_com_capacidade(db, login, senha, "aprovar_financeiro", sessao=sessao)
 
 
 def _lojas_do_escopo(db, ator):
@@ -3759,7 +3763,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Valores inválidos"}, code=400); return
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -5333,9 +5337,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/gerente/verificar":
             req   = json.loads(body)
             senha = req.get("senha", "")
+            # Sessão-primeiro (2026-07-24): logado com 'autorizar' não redigita senha.
+            _auto_ok = False
+            if not senha:
+                _u_sess = get_usuario_sessao(self)
+                _auto_ok = bool(_u_sess and perfis.pode(_u_sess.get("nivel"), "autorizar"))
             _perfis_cfg = perfis_carregar()
             senha_correta = _perfis_cfg.get("perfis", {}).get("gerente", {}).get("senha_gerente", "1234")
-            if senha == senha_correta:
+            if _auto_ok or (senha and senha == senha_correta):
                 taxa_cfg = None
                 try:
                     import mod_fin.total_flex as _tf_mod
@@ -6022,7 +6031,7 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(body) if body else {}
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6109,7 +6118,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "ramo inválido"}, code=400); return
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6151,7 +6160,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Informe o custo real (> 0)"}, code=400); return
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6192,7 +6201,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Informe o valor recebido (> 0)"}, code=400); return
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6232,7 +6241,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Fração deve estar entre 0 e 1 (ex.: 0.5 = 50%)"}, code=400); return
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador:
                     self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6270,7 +6279,7 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(body) if body else {}
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"))
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador or not perfis.pode(aprovador.nivel, "autorizar"):
                     self.send_json({"ok": False, "erro": "Cancelamento de contrato exige senha de Diretor"}, code=403); return
                 ator = _ator_dict(db, usuario)
@@ -6355,12 +6364,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not cabe:
                     login = (req.get("login") or "").strip()
                     senha = (req.get("senha") or "").strip()
-                    if login or senha:   # tentou autorizar → credenciais devem ser válidas
-                        autorizador = db.query(Usuario).filter_by(login=login, ativo=1).first()
-                        if not autorizador or not autorizador.check_senha(senha):
-                            self.send_json({"ok": False, "erro": "Credenciais inválidas"}, code=403); return
-                        if not perfis.pode(autorizador.nivel, "autorizar"):
-                            self.send_json({"ok": False, "erro": "Necessário nível Gerente ou Diretor"}, code=403); return
+                    quer_override = bool(login or senha or req.get("override"))
+                    if quer_override:   # sessão-primeiro; credenciais de terceiro seguem valendo
+                        autorizador = _usuario_com_capacidade(db, login, senha, "autorizar", sessao=usuario)
+                        if not autorizador:
+                            self.send_json({"ok": False, "erro": "Credenciais inválidas ou perfil sem permissão (Gerente/Diretor)"}, code=403); return
                         override_ok = True
                         db.add(LogAcaoGerencial(
                             solicitante_id=usuario["id"], autorizador_id=autorizador.id,
@@ -7387,12 +7395,10 @@ class Handler(BaseHTTPRequestHandler):
                     req   = json.loads(body or b'{}')
                     login = (req.get("login") or "").strip()
                     senha = (req.get("senha") or "").strip()
-                    autorizador = db.query(Usuario).filter_by(login=login, ativo=1).first()
-                    if not autorizador or not autorizador.check_senha(senha):
-                        self.send_json({"ok": False, "erro": "Credenciais inválidas"})
-                        return
-                    if not perfis.pode(autorizador.nivel, "autorizar"):
-                        self.send_json({"ok": False, "erro": "Necessário nível Gerente ou Diretor"})
+                    # Sessão-primeiro (2026-07-24): logado com 'autorizar' não redigita senha.
+                    autorizador = _usuario_com_capacidade(db, login, senha, "autorizar", sessao=usuario)
+                    if not autorizador:
+                        self.send_json({"ok": False, "erro": "Credenciais inválidas ou perfil sem permissão (Gerente/Diretor)"})
                         return
                     # Verifica se contrato está assinado — nesse caso não pode voltar
                     contrato = db.query(Contrato).filter_by(projeto_nome=nome_safe)\
@@ -7439,12 +7445,10 @@ class Handler(BaseHTTPRequestHandler):
                     req   = json.loads(body or b'{}')
                     login = (req.get("login") or "").strip()
                     senha = (req.get("senha") or "").strip()
-                    autorizador = db.query(Usuario).filter_by(login=login, ativo=1).first()
-                    if not autorizador or not autorizador.check_senha(senha):
-                        self.send_json({"ok": False, "erro": "Credenciais inválidas"}, code=403)
-                        return
-                    if not perfis.pode(autorizador.nivel, "autorizar"):
-                        self.send_json({"ok": False, "erro": "Necessário nível Gerente ou Diretor"}, code=403)
+                    # Sessão-primeiro (2026-07-24): logado com 'autorizar' não redigita senha.
+                    autorizador = _usuario_com_capacidade(db, login, senha, "autorizar", sessao=solicitante)
+                    if not autorizador:
+                        self.send_json({"ok": False, "erro": "Credenciais inválidas ou perfil sem permissão (Gerente/Diretor)"}, code=403)
                         return
                     todas    = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()
                     codigos  = [e.etapa_codigo for e in todas]
@@ -7519,12 +7523,10 @@ class Handler(BaseHTTPRequestHandler):
                     login = (req.get("login") or "").strip()
                     senha = (req.get("senha") or "").strip()
                     nova_str = (req.get("data_prevista") or "").strip()   # "AAAA-MM-DD"
-                    autorizador = db.query(Usuario).filter_by(login=login, ativo=1).first()
-                    if not autorizador or not autorizador.check_senha(senha):
-                        self.send_json({"ok": False, "erro": "Credenciais inválidas"}, code=403)
-                        return
-                    if not perfis.pode(autorizador.nivel, "autorizar"):
-                        self.send_json({"ok": False, "erro": "Necessário nível Gerente ou Diretor"}, code=403)
+                    # Sessão-primeiro (2026-07-24): logado com 'autorizar' não redigita senha.
+                    autorizador = _usuario_com_capacidade(db, login, senha, "autorizar", sessao=solicitante)
+                    if not autorizador:
+                        self.send_json({"ok": False, "erro": "Credenciais inválidas ou perfil sem permissão (Gerente/Diretor)"}, code=403)
                         return
                     try:
                         nova_dt = datetime.strptime(nova_str, "%Y-%m-%d") if nova_str else None
@@ -8142,7 +8144,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
                         return
-                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao")
+                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Confirmação exige login+senha do Medidor (ou Diretor)."}, code=403); return
                     if "arquivo" not in arquivos:
@@ -8185,7 +8187,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
                         return
-                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao")
+                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Registro exige login+senha do Medidor (ou Diretor)."}, code=403); return
                     if "planta" not in arquivos:
@@ -8231,7 +8233,7 @@ class Handler(BaseHTTPRequestHandler):
                     md = db.query(Medicao).filter_by(projeto_nome=nome_safe).first()
                     if not md or md.parecer != "reprovado":
                         self.send_json({"ok": False, "erro": "Só aplicável a uma medição com parecer Reprovado."}); return
-                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "aprovar_medicao_reprovada")
+                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "aprovar_medicao_reprovada", sessao=solicitante)
                     if not u:
                         self.send_json({"ok": False, "erro": "Liberação exige login+senha de Gerente de Vendas, Gerente Adm/Financeiro ou Diretor."}, code=403); return
                     if "doc_cliente" not in arquivos:
@@ -8270,7 +8272,7 @@ class Handler(BaseHTTPRequestHandler):
                     tipo_esperado = mod_ciclo.tipo_doc_de(codigo)
                     if not tipo_esperado:
                         self.send_json({"ok": False, "erro": "Subfase de PE inválida."}, code=400); return
-                    u = _usuario_com_capacidade(db, campos.get("login", ""), campos.get("senha", ""), "executar_pe")
+                    u = _usuario_com_capacidade(db, campos.get("login", ""), campos.get("senha", ""), "executar_pe", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Ação exige login+senha de Projetista Executivo, Conferente, Gerente ou Diretor."}, code=403); return
                     if "arquivo" not in arquivos:
@@ -8402,7 +8404,7 @@ class Handler(BaseHTTPRequestHandler):
                     sf = mod_ciclo.SUBFASES_PE.get(codigo)
                     if not sf or not sf["revisavel"]:
                         self.send_json({"ok": False, "erro": "Esta subfase não permite revisão."}, code=400); return
-                    u = _usuario_com_capacidade(db, campos.get("login", ""), campos.get("senha", ""), "revisar_pe")
+                    u = _usuario_com_capacidade(db, campos.get("login", ""), campos.get("senha", ""), "revisar_pe", sessao=solicitante)
                     if not u:
                         self.send_json({"ok": False, "erro": "Revisão exige login+senha de Gerente de Vendas, Gerente Adm/Financeiro ou Diretor."}, code=403); return
                     if "arquivo" not in arquivos:
@@ -8466,7 +8468,7 @@ class Handler(BaseHTTPRequestHandler):
                     if codigo not in mod_ciclo.SUBFASES_PE:
                         self.send_json({"ok": False, "erro": "Subfase de PE inválida."}, code=400); return
                     req = json.loads(body or b'{}')
-                    u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""), "executar_pe")
+                    u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""), "executar_pe", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Ação exige login+senha de Projetista Executivo, Conferente, Gerente ou Diretor."}, code=403); return
                     docs = db.query(CicloDocumento).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).all()
@@ -9573,7 +9575,7 @@ class Handler(BaseHTTPRequestHandler):
                     # Aprovação financeira (8/11d): exige login+senha de quem pode aprovar.
                     aprovador = None
                     if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and mod_ciclo.exige_aprovacao_financeira(etapa_cod):
-                        aprovador = _aprovador_financeiro(db, req.get("login", ""), req.get("senha", ""))
+                        aprovador = _aprovador_financeiro(db, req.get("login", ""), req.get("senha", ""), sessao=usuario)
                         if not aprovador:
                             self.send_json({
                                 "ok": False,

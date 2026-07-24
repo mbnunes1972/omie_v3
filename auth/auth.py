@@ -210,6 +210,11 @@ def _usuario_dict(u: Usuario) -> dict:
         "pode_gerir_redes":    perfis.pode(u.nivel, "gerir_redes"),
         "pode_gerir_lojas":    perfis.pode(u.nivel, "gerir_lojas"),
         "pode_editar_dados_loja": perfis.pode(u.nivel, "editar_dados_loja"),
+        # 2026-07-24: o frontend só pede senha gerencial quando o LOGADO não tem a permissão
+        "pode_autorizar":           perfis.pode(u.nivel, "autorizar"),
+        "pode_aprovar_financeiro":  perfis.pode(u.nivel, "aprovar_financeiro"),
+        "pode_registrar_medicao":   perfis.pode(u.nivel, "registrar_medicao"),
+        "pode_aprovar_medicao_reprovada": perfis.pode(u.nivel, "aprovar_medicao_reprovada"),
         "precisa_trocar_senha": bool(getattr(u, "senha_provisoria", 0)),
     }
 

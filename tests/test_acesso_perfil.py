@@ -22,7 +22,7 @@ def test_auth_me_hub_reflete_matriz(http_client_factory, seed):
     u, mods = _mods(c)
     assert u["acessa_admin"] is False and u["acessa_config"] is False   # Operador sem painéis
     assert "financeiro" not in mods and "folha" not in mods             # Operador sem Financeiro/Folha
-    assert "fiscal" in mods                    # Fiscal: as 3 bases de loja acessam (novo modelo)
+    assert "fiscal" not in mods                # Fiscal: operador FORA (decisão 2026-07-24)
     assert "comercial" in mods and "cadastro" in mods                   # operacional ok
     d = http_client_factory(); d.login("dir_l1", "senha123")
     ud, modsd = _mods(d)

@@ -28,7 +28,7 @@ def _bind_mem(monkeypatch):
 
 def test_acessa_modulo_do_registro(monkeypatch):
     _bind_mem(monkeypatch)
-    assert perfis.acessa_modulo("operador", "fiscal") is True
+    assert perfis.acessa_modulo("operador", "fiscal") is False   # decisão 2026-07-24
     assert perfis.acessa_modulo("operador", "financeiro") is False
     assert perfis.acessa_modulo("master", "financeiro") is True
     assert perfis.acessa_modulo("operador", "auth") is True  # núcleo nunca bloqueia

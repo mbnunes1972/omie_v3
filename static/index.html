@@ -6713,6 +6713,10 @@ let _descBloqueioRemovido = false; // gerente desbloqueou desconto
 
 function tfAbrirModalSenha(modo) {
   _tfModoDesbloqueio = modo;
+  if (_usuarioAtual && _usuarioAtual.pode_autorizar) {   // 2026-07-24: sem senha p/ quem já pode
+    tfConfirmarSenha(true);
+    return;
+  }
   const subtitulo = {
     taxa:     'Liberar edicao da taxa de juros',
     desconto: 'Liberar desconto sem limite de perfil',
@@ -6729,8 +6733,8 @@ function tfFecharModalSenha() {
   _tfModoDesbloqueio = null;
 }
 
-async function tfConfirmarSenha() {
-  const senha = document.getElementById('modal-senha-input').value;
+async function tfConfirmarSenha(auto) {
+  const senha = auto ? '' : document.getElementById('modal-senha-input').value;
   document.getElementById('modal-senha-erro').textContent = '';
   try {
     const r = await fetch('/api/gerente/verificar', {
@@ -9752,7 +9756,7 @@ async function adminRenderLoja(box){
     </div>
     <div id="loja-panel-dados"></div>
     <div id="loja-panel-usuarios" style="display:none">
-      <button class="btn btn-ghost btn-sm" onclick="abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:(_adminNav.loja&&_adminNav.loja.id)||(_usuarioAtual&&_usuarioAtual.loja_id), onSaved:adminUsuariosCarregar})" style="font-size:11px">+ Novo usuário</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:(_adminNav.loja&&_adminNav.loja.id)||(_usuarioAtual&&_usuarioAtual.loja_id), loja_nome:(_adminNav.loja&&_adminNav.loja.nome)||'', onSaved:adminUsuariosCarregar})" style="font-size:11px">+ Novo usuário</button>
       <div id="admin-usuarios-lista" style="margin-top:10px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
     <div id="loja-panel-perfis" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -11164,7 +11168,18 @@ async function _carregarLojasModalUsuario(ctx){
       .then(r=>r.json()).catch(()=>({lojas:[]}));
     lojas = d.lojas || [];
   } else if (ctx.loja_id) {
-    lojas = [{ id: ctx.loja_id, nome: '(loja atual)' }];
+    // Contexto FECHADO de loja/PDV (2026-07-24): o usuário nasce DESTA loja — não pergunta.
+    box.style.display = '';
+    document.getElementById('musr-lojas').innerHTML =
+      '<div style="font-size:12px;color:var(--muted)">Loja: <strong style="color:var(--text)">'
+      + esc(ctx.loja_nome || '(loja do contexto atual)') + '</strong></div>';
+    _modalUserCtx.loja_fixa = ctx.loja_id;
+    return;
+  } else if (_usuarioAtual && (_usuarioAtual.nivel === 'super_admin' || _usuarioAtual.nivel === 'admin_rede')) {
+    // Gestão geral (contexto amplo): lista as lojas do escopo — aqui a pergunta faz sentido.
+    const d = await fetch('/api/admin/lojas', {credentials:'same-origin'})
+      .then(r=>r.json()).catch(()=>({lojas:[]}));
+    lojas = d.lojas || [];
   }
   const sel = new Set(ctx.loja_ids || (ctx.loja_id ? [ctx.loja_id] : []));
   box.style.display = lojas.length ? '' : 'none';
@@ -11229,8 +11244,9 @@ async function salvarModalUsuario(){
   };
   const senha = document.getElementById('musr-senha').value;
   if (senha) payload.senha = senha;
-  const lojaIds = Array.from(document.querySelectorAll('.musr-loja-cb:checked'))
-    .map(cb => parseInt(cb.value, 10));
+  const lojaIds = ctx.loja_fixa
+    ? [ctx.loja_fixa]                                 // contexto fechado: loja já definida
+    : Array.from(document.querySelectorAll('.musr-loja-cb:checked')).map(cb => parseInt(cb.value, 10));
   if (lojaIds.length) payload.loja_ids = lojaIds;
   let url, method;
   if (ctx.modo === 'editar'){
@@ -11794,7 +11810,7 @@ function renderCiclo() {
       <button class="btn btn-ghost btn-sm" onclick="fecharCiclo()"><i class="ti ti-arrow-left"></i>Voltar</button>
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="equipeAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users"></i>Equipe</button>` : ''}
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirCronograma('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-calendar-stats"></i>Cronograma</button>` : ''}
-      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
+      ${projetoAtivo && _usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}
     </div>
   `;
@@ -11888,8 +11904,10 @@ function _renderCardConciliacaoFinal(dados, bloqueada) {
       Fecha os números do projeto: resolve todo saldo remanescente das provisões
       (sobra → receita, falta → despesa) e <strong>encerra o projeto</strong> (status "Concluído").
     </div>
-    <button class="btn btn-amber btn-sm" ${bloqueada ? 'disabled' : ''} onclick="conciliarFinal()">
-      &#x2713; Concluir Conciliação Final</button>`;
+    ${_usuarioAtual && _usuarioAtual.pode_aprovar_financeiro
+      ? `<button class="btn btn-amber btn-sm" ${bloqueada ? 'disabled' : ''} onclick="conciliarFinal()">
+      &#x2713; Concluir Conciliação Final</button>`
+      : '<div style="font-size:.8rem;color:var(--muted)">Conciliação restrita a quem aprova financeiro.</div>'}`;
 }
 
 async function conciliarFinal() {
@@ -12185,7 +12203,7 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
   // subiram na Revisão de PE). Container próprio p/ não colidir com o da 11c.
   const peEspelho = (codigo === '11d') ? `
     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-      <button class="btn-ciclo" onclick="peComparacaoCfoRender()"><i class="ti ti-arrows-diff"></i> Comparar Valores</button>
+      ${_usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn-ciclo" onclick="peComparacaoCfoRender()"><i class="ti ti-arrows-diff"></i> Comparar Valores</button>` : ''}
       <div id="pe-cmp-container-af" style="margin-top:12px"></div>
     </div>` : '';
   // Fatia B (box): ramo do custo financeiro (loja próprio × antecipação bancária × financeira). Só na AF.
@@ -12245,7 +12263,7 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
 
 async function concluirAprovacaoFinanceira(codigo) {
   if (!projetoAtivo) return;
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Aprovação Financeira',
     mensagem: 'Login e senha do Gerente Administrativo/Financeiro ou Diretor.' });
   if (!cred) return;
@@ -12477,7 +12495,7 @@ async function _provAprovar(oid, rev) {
     const el = document.getElementById('_prov-inp-' + rb.key);
     itens[rb.key] = el ? (parseFloat(el.value) || 0) : 0;
   }
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Aprovar Aprovação Financeira',
     mensagem: 'Salva a revisão e aprova a etapa. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if (!cred) return;
@@ -12512,7 +12530,7 @@ async function _provAcao(oid, rev, decisao) {
     }
   }
 
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Provisão — ' + (decisao === 'concorda' ? 'Concorda' : 'Revisa'),
     mensagem: 'Login e senha do aprovador financeiro (aprovar_financeiro).' });
   if (!cred) return;
@@ -12720,10 +12738,11 @@ function _renderCardSolicitacaoMedicao(dados, bloqueada) {
 async function enviarSolicitacaoMedicao() {
   const f = document.getElementById('med-solic-file')?.files[0];
   if (!f) { await avisoPopup('Selecione o arquivo de solicitação.', {titulo:'Medição'}); return; }
-  const cred = await pedirCredenciaisGerente({titulo:'Solicitação de Medição', mensagem:'Login e senha do Medidor (ou Diretor).'});
+  const cred = await pedirCredenciaisGerente({capacidade: 'registrar_medicao', titulo:'Solicitação de Medição', mensagem:'Login e senha do Medidor (ou Diretor).'});
   if (!cred) return;
   const fd = new FormData();
-  fd.append('arquivo', f); fd.append('login', cred.login); fd.append('senha', cred.senha);
+  fd.append('arquivo', f);
+  if (cred.login) { fd.append('login', cred.login); fd.append('senha', cred.senha); }
   const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`, {method:'POST', credentials:'same-origin', body: fd});
   const d = await r.json();
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
@@ -12764,11 +12783,11 @@ async function enviarParecerMedicao() {
   const ambientes = document.getElementById('med-ambientes')?.value || '';
   const f = document.getElementById('med-planta-file')?.files[0];
   if (!f) { await avisoPopup('Anexe a planta promob.', {titulo:'Medição'}); return; }
-  const cred = await pedirCredenciaisGerente({titulo:'Parecer da Medição', mensagem:'Login e senha do Medidor (ou Diretor).'});
+  const cred = await pedirCredenciaisGerente({capacidade: 'registrar_medicao', titulo:'Parecer da Medição', mensagem:'Login e senha do Medidor (ou Diretor).'});
   if (!cred) return;
   const fd = new FormData();
   fd.append('planta', f); fd.append('parecer', parecer); fd.append('ambientes_aprovados', ambientes);
-  fd.append('login', cred.login); fd.append('senha', cred.senha);
+  if (cred.login) { fd.append('login', cred.login); fd.append('senha', cred.senha); }
   const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/parecer`, {method:'POST', credentials:'same-origin', body: fd});
   const d = await r.json();
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
@@ -12779,7 +12798,7 @@ async function enviarParecerMedicao() {
 async function enviarDecisaoReprovado() {
   const f = document.getElementById('med-doc-file')?.files[0];
   if (!f) { await avisoPopup('Anexe o documento de aprovação do cliente.', {titulo:'Medição'}); return; }
-  const cred = await pedirCredenciaisGerente({titulo:'Decisão Comercial', mensagem:'Login e senha de Gerente de Vendas, Adm/Financeiro ou Diretor.'});
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_medicao_reprovada', titulo:'Decisão Comercial', mensagem:'Login e senha de Gerente de Vendas, Adm/Financeiro ou Diretor.'});
   if (!cred) return;
   const fd = new FormData();
   fd.append('doc_cliente', f); fd.append('login', cred.login); fd.append('senha', cred.senha);
@@ -13385,7 +13404,7 @@ async function ramoJurosLojaRegistrar(){
   const el = document.getElementById('jloja-valor');
   const valor = el ? (parseFloat((el.value||'').replace(/\./g,'').replace(',','.')) || 0) : 0;
   if(!(valor > 0)){ await avisoPopup('Informe o valor de juros recebido (> 0).', {titulo:'Receita financeira'}); return; }
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Apropriar receita financeira',
     mensagem: 'Realiza a receita de juros no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if(!cred) return;
@@ -13405,7 +13424,7 @@ async function devolucaoRegistrar(){
   const el = document.getElementById('dev-pct');
   const pct = el ? (parseFloat(el.value) || 0) : 0;
   if(!(pct > 0 && pct <= 100)){ await avisoPopup('Informe o % devolvido (0–100).', {titulo:'Devolução'}); return; }
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Registrar devolução',
     mensagem: 'Estorna a venda no razão (receita/impostos/provisões diferidas, na proporção). Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if(!cred) return;
@@ -13420,7 +13439,7 @@ async function devolucaoRegistrar(){
 
 async function cancelarContrato(){
   if(!_orcamentoAtivoId) return;
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: null, 
     titulo: 'Cancelar contrato',
     mensagem: 'Exige senha de DIRETOR. Estorna TODOS os lançamentos do contrato e trava o projeto como "cancelado" (revender = novo projeto). Indisponível após a NF-e.' });
   if(!cred) return;
@@ -13438,7 +13457,7 @@ async function ramoAntecipacaoRegistrar(){
   const el = document.getElementById('antecip-valor');
   const valor = el ? (parseFloat((el.value||'').replace(/\./g,'').replace(',','.')) || 0) : 0;
   if(!(valor > 0)){ await avisoPopup('Informe o custo real (> 0).', {titulo:'Antecipação'}); return; }
-  const cred = await pedirCredenciaisGerente({
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
     titulo: 'Reconhecer custo de antecipação',
     mensagem: 'Lança a despesa no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if(!cred) return;
@@ -14111,6 +14130,13 @@ function avisoPopup(mensagem, opts) {
 // Pede login+senha gerencial em popup estilizado. Retorna Promise<{login,senha}|null>.
 function pedirCredenciaisGerente(opts) {
   opts = opts || {};
+  // 2026-07-24: logado com a permissão não redigita senha — resolve direto sem modal
+  // (o backend aceita request SEM credenciais quando a sessão tem a capacidade).
+  // opts.capacidade: qual permissão libera o atalho (default 'autorizar'); null = sempre pergunta.
+  const cap = (opts.capacidade === undefined) ? 'autorizar' : opts.capacidade;
+  if (cap && _usuarioAtual && _usuarioAtual['pode_' + cap]) {
+    return Promise.resolve({ auto: true });
+  }
   const titulo = opts.titulo || 'Autorização gerencial';
   const mensagem = opts.mensagem || 'Esta ação exige login e senha de gerente/diretor.';
   return new Promise((resolve) => {
@@ -14352,7 +14378,22 @@ function parseMoeda(str) {
   return parseFloat(s) || 0;
 }
 
-function abrirModalReverOrcamento() {
+async function abrirModalReverOrcamento() {
+  if (_usuarioAtual && _usuarioAtual.pode_autorizar) {   // 2026-07-24: sem senha p/ quem já pode
+    if (!(await confirmarPopup('Voltar o contrato para rascunho e reabrir o orçamento para edição?',
+          {titulo: 'Rever Orçamento', okLabel: 'Confirmar retorno', cancelLabel: 'Cancelar'}))) return;
+    try {
+      const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/desfazer_aprovacao`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'}, body: '{}',
+      });
+      const d = await r.json();
+      if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo: 'Rever Orçamento'}); return; }
+      showToast('Orçamento reaberto para edição.', false);
+      location.reload();
+    } catch(e) { await avisoPopup('Erro de conexão', {titulo: 'Rever Orçamento'}); }
+    return;
+  }
   document.getElementById('modal-voltar-overlay')?.remove();
   const ov = document.createElement('div');
   ov.id = 'modal-voltar-overlay';

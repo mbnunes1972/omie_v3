@@ -40,7 +40,7 @@ aprovar financeiro, medição, ver parâmetros) são **0/False**.
 | Perfil | Slug | Escopo | Gere |
 |---|---|---|---|
 | Administrador da Plataforma | `super_admin` | `loja_id`/`rede_id` NULL — tudo | redes, lojas (qualquer), usuários (qualquer), dados de qualquer loja |
-| Administrador de Rede | `admin_rede` | `rede_id` setado, `loja_id` NULL — sua rede | lojas, diretores **da sua rede** e outros admin_rede da própria rede; dados das lojas da rede |
+| Gestor de Rede | `admin_rede` | `rede_id` setado, `loja_id` NULL — sua rede | lojas, diretores **da sua rede** e outros admin_rede da própria rede; dados das lojas da rede |
 
 Capacidades de tenancy (em `perfis.py`): `gerir_redes` (só super_admin), `gerir_lojas`
 (super_admin e admin_rede), `editar_dados_loja` (super_admin, admin_rede e **também o
@@ -94,7 +94,7 @@ Além das colunas acima, `perfis.py` define capacidades específicas de fluxo:
 - **Níveis do console:** usuários de loja no Nível 3 ("Usuários da loja"); administradores
   de rede no Nível 2 ("Administradores da rede"); gestores gerais (super_admin) no Nível 1
   ("Gestores gerais").
-- **admin_rede gere seus pares:** um Administrador de Rede pode criar/editar outros
+- **admin_rede gere seus pares:** um Gestor de Rede pode criar/editar outros
   admin_rede **da própria rede** (não cria super_admin).
 - **Anti-lockout:** ninguém rebaixa o próprio perfil nem se inativa pelo modal.
 

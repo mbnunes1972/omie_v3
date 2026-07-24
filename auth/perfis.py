@@ -37,7 +37,7 @@ PERFIS = {
         "acesso_admin": True, "acesso_config": True,
         "gerir_usuarios": True, "gerir_perfis": True, "editar_dados_loja": True,
         "gerir_redes": True, "gerir_lojas": True},
-    "admin_rede": {"rotulo": "Administrador de Rede", "desconto_max": 0.0,
+    "admin_rede": {"rotulo": "Gestor de Rede", "desconto_max": 0.0,   # rótulo 2026-07-24 (slug imutável)
         "acesso_operacional": False, "acesso_financeiro": False, "acesso_fiscal": False,
         "acesso_admin": True, "acesso_config": True,
         "gerir_usuarios": True, "gerir_perfis": False, "editar_dados_loja": True,

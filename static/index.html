@@ -9465,9 +9465,9 @@ async function adminRenderRede(box){
     box.insertAdjacentHTML('beforeend', `
       <div class="card" style="padding:14px 16px">
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-          <strong style="color:var(--accent)"><i class="ti ti-user"></i>Administradores da rede</strong>
+          <strong style="color:var(--accent)"><i class="ti ti-user"></i>Gestores da rede</strong>
           <button class="btn btn-ghost btn-sm" style="font-size:11px"
-            onclick="abrirModalUsuario({modo:'novo', escopo:'rede', rede_id:${rid}, onSaved:adminRender})">+ Novo administrador</button>
+            onclick="abrirModalUsuario({modo:'novo', escopo:'rede', rede_id:${rid}, onSaved:adminRender})">+ Novo gestor de rede</button>
         </div>
         <table class="cli-table"><thead><tr><th>Nome</th><th>Login</th><th></th></tr></thead><tbody>
         ${(a.usuarios||[]).map(u=>`<tr>

@@ -6,7 +6,7 @@ def test_perfis_novos_existem():
     assert perfis.existe("super_admin") is True
     assert perfis.existe("admin_rede") is True
     assert perfis.rotulo("super_admin") == "Administrador da Plataforma"
-    assert perfis.rotulo("admin_rede")  == "Administrador de Rede"
+    assert perfis.rotulo("admin_rede")  == "Gestor de Rede"
 
 
 def test_capacidades_administrativas():

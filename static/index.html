@@ -258,6 +258,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 /* Badge de origem */
 .badge-origem { font-size:9px; padding:2px 7px; border-radius:10px; font-weight:700; letter-spacing:.5px; }
 .badge-origem.local { background:var(--accent-soft); color:var(--ok); }
+.badge-origem.omie  { background:var(--info-soft); color:var(--section); }
 /* Ambientes page */
 .proj-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .proj-header-nome{font-family:var(--font-display);font-weight:900;font-size:20px}
@@ -1284,7 +1285,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
          a navegação em sidebar E tabs. Mantido oculto só para o cadTab() continuar alternando os painéis. -->
     <div class="home-tabs" id="cad-tabs" style="display:none;gap:6px;margin:12px 0 18px;flex-wrap:wrap">
       <button class="home-tab active" data-cadtab="clientes"     onclick="cadTab('clientes')">Clientes</button>
-      <button class="home-tab"        data-cadtab="funcionarios" onclick="cadTab('funcionarios')">Funcionários</button>
       <button class="home-tab"        data-cadtab="fornecedores" onclick="cadTab('fornecedores')">Fornecedores</button>
       <button class="home-tab"        data-cadtab="parceiros"    onclick="cadTab('parceiros')">Parceiros</button>
       <button class="home-tab"        data-cadtab="terceiros"    onclick="cadTab('terceiros')">Terceiros</button>
@@ -1349,7 +1349,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <!-- Painéis stub -->
-    <div id="cad-panel-funcionarios" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="cad-panel-fornecedores" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="cad-panel-terceiros"    style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
   </div>
@@ -1380,10 +1379,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <div class="page" id="page-12">
     <div class="page-title" id="fin-page-title">Financeiro</div>
     <div class="page-sub" id="fin-page-sub">Configuração financeira: provisões/custos-padrão e plano de contas.</div>
-    <!-- Visão unificada (PDV): seletor de unidade — só aparece quando a loja tem Pontos de Venda -->
-    <div id="fin-unidade-wrap" style="display:none;align-items:center;gap:8px;margin:6px 0 2px"></div>
     <div style="height:8px"></div>
-    <div id="fin-panel-ind" style="display:none"><div id="ind-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-prov"><div id="loja-panel-financeiro"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-plano" style="display:none"><div id="plano-contas-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-lanc" style="display:none"><div id="lancamentos-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
@@ -1499,6 +1495,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="admin-breadcrumb" style="font-size:12px;color:var(--muted);margin-bottom:14px"></div>
     <!-- container único; adminRender() injeta o nível N1/N2/N3 -->
     <div id="admin-console"><em style="color:var(--muted);font-size:12px">Carregando&hellip;</em></div>
+    <!-- Fila Omie removida (Omie em descontinuação; auto-sync de cliente desligado) -->
   </div>
 
   <!-- PAGE 15: Comercial — DASHBOARD (funil de conversão + carteira + volume). View derivada (fonte única). -->
@@ -1899,7 +1896,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <label class="ml-f"><span>Telefone</span><input id="ml-telefone"></label>
         <label class="ml-f"><span>E-mail</span><input id="ml-email"></label>
         <label class="ml-f"><span>Responsável</span><input id="ml-responsavel"></label>
-        <label class="ml-f"><span>CEP</span><input id="ml-cep" maxlength="9" placeholder="00000-000" oninput="cepAuto(this, 'ml-')"></label>
+        <label class="ml-f"><span>CEP</span><input id="ml-cep"></label>
         <label class="ml-f"><span>Logradouro</span><input id="ml-logradouro"></label>
         <label class="ml-f"><span>Número</span><input id="ml-numero"></label>
         <label class="ml-f"><span>Bairro</span><input id="ml-bairro"></label>
@@ -2163,96 +2160,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   </div>
 </div>
 
-<!-- Modal: Novo Ponto de Venda (spec PDV 2026-07-22) — só super_admin cria -->
-<div id="modal-pdv" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:560px;max-height:90vh;overflow-y:auto">
-    <div class="modal-hdr">
-      <div class="modal-title">Novo Ponto de Venda</div>
-      <span class="modal-close" onclick="fecharModalPdv()">&#x2715;</span>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
-      O PDV opera o ciclo comercial completo com painel e resultados próprios; a emissão fiscal,
-      o contrato e o financeiro são da loja-mãe. A configuração financeira nasce copiada da mãe.
-    </div>
-    <div class="grid2" style="gap:12px" id="pdv-form-grid"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-      <button class="btn btn-ghost btn-sm" onclick="fecharModalPdv()">Cancelar</button>
-      <button class="btn btn-primary btn-sm" id="pdv-salvar-btn">Criar Ponto de Venda</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Rateio ao PDV (spec PDV 2026-07-22 §3) — par intercompany mãe×PDV, reversível -->
-<div id="modal-rateio" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:620px;max-height:90vh;overflow-y:auto">
-    <div class="modal-hdr">
-      <div class="modal-title">Rateio ao PDV</div>
-      <span class="modal-close" onclick="fecharModalRateio()">&#x2715;</span>
-    </div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
-      A loja-mãe pagou um custo em nome do Ponto de Venda (aluguel, folha compartilhada,
-      marketing…). Lança o par intercompany com a mesma referência nos dois razões:
-      na mãe <strong>1.1.09 × 1.1.01</strong>; no PDV <strong>despesa escolhida × 2.1.09</strong>.
-      Reversível em par pelo Estornar.
-    </div>
-    <div class="grid2" style="gap:12px">
-      <div><label class="field-label">Ponto de Venda</label>
-        <select id="rateio-pdv-sel" onchange="rateioCarregarContas()"
-          style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></select></div>
-      <div><label class="field-label">Valor (R$)</label>
-        <input id="rateio-valor" type="number" step="0.01" min="0"
-          style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></div>
-      <div><label class="field-label">Rubrica de despesa (no razão do PDV)</label>
-        <select id="rateio-conta-sel"
-          style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></select></div>
-      <div><label class="field-label">Histórico</label>
-        <input id="rateio-hist" placeholder="ex.: Aluguel 07/2026 — quota Caraguá"
-          style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-      <button class="btn btn-ghost btn-sm" onclick="fecharModalRateio()">Fechar</button>
-      <button class="btn btn-primary btn-sm" onclick="rateioSalvar()">Lançar rateio</button>
-    </div>
-    <div id="rateio-lista"></div>
-  </div>
-</div>
-
 <!-- Modal: Modelo de documento da loja (Task 9) — histórico de versões + wizard de importação -->
-<!-- Upload de Modelo — seletor de tipo (spec 2026-07-22): desemboca no modal de importação -->
-<div id="modal-doc-upload" class="modal-overlay" style="display:none"
-     onclick="if(event.target===this)this.style.display='none'">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;
-              padding:24px;max-width:420px;width:92%;box-shadow:0 24px 60px rgba(0,0,0,.5)">
-    <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">Upload de Modelo</h3>
-    <label style="font-size:12px;color:var(--muted)">Documento</label>
-    <select id="doc-upload-tipo" style="width:100%;margin-top:4px;padding:7px 8px"></select>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-doc-upload').style.display='none'">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="docUploadContinuar()">Continuar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Novo Documento — nome + etapa do ciclo (spec 2026-07-22; inserção no ciclo é frente futura) -->
-<div id="modal-doc-novo" class="modal-overlay" style="display:none"
-     onclick="if(event.target===this)this.style.display='none'">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;
-              padding:24px;max-width:460px;width:92%;box-shadow:0 24px 60px rgba(0,0,0,.5)">
-    <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">Novo Documento</h3>
-    <label style="font-size:12px;color:var(--muted)">Nome do documento</label>
-    <input id="doc-novo-nome" type="text" placeholder="Ex.: Ficha de Montagem" style="width:100%;margin:4px 0 12px;padding:7px 8px">
-    <label style="font-size:12px;color:var(--muted)">Etapa do ciclo associada</label>
-    <select id="doc-novo-etapa" style="width:100%;margin-top:4px;padding:7px 8px"></select>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px">A geração deste documento dentro
-      da etapa do ciclo será configurada numa próxima frente — por ora o vínculo fica registrado.</div>
-    <div id="doc-novo-erro" style="font-size:11px;color:var(--err);margin-top:8px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-doc-novo').style.display='none'">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="docNovoCriar()">Criar documento</button>
-    </div>
-  </div>
-</div>
-
 <div id="modal-doc-modelo" class="modal-overlay" style="display:none" onclick="if(event.target===this)fecharModalDocModelo()">
   <div class="modal-box" style="max-width:720px;max-height:90vh;overflow-y:auto">
     <div class="modal-hdr">
@@ -2538,10 +2446,6 @@ const fmt = n => Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maxim
 
 // ── Multi-loja: loja ativa + interceptor de fetch ─────────────────
 let _lojaAtiva = null;   // loja ativa atual (multi-loja); null = usa default do backend
-let _finUnidade = null;  // visão unificada (PDV): unidade dos painéis financeiros; null = a própria loja
-// Trocar de loja ativa invalida a unidade escolhida E o cache do seletor (QA Vera 🟡):
-// sem isto, o header X-Unidade-Financeira de um contexto antigo viraria 403 no novo.
-function _finUnidadeReset(){ _finUnidade = null; _finUnidades = null; }
 (function _instalarFetchLojaAtiva(){
   const _origFetch = window.fetch.bind(window);
   window.fetch = async function(input, init){
@@ -2551,14 +2455,6 @@ function _finUnidadeReset(){ _finUnidade = null; _finUnidades = null; }
       if (_lojaAtiva && url.indexOf('/api/') !== -1 && url.indexOf('//') === -1) {
         const h = new Headers(init.headers || (typeof input!=='string' && input.headers) || {});
         h.set('X-Loja-Ativa', String(_lojaAtiva));
-        init.headers = h;
-      }
-      // Visão unificada (PDV): unidade escolhida no seletor do Financeiro acompanha
-      // toda chamada do módulo (exceto o próprio seletor de unidades).
-      if (_finUnidade && url.indexOf('/api/financeiro/') !== -1
-          && url.indexOf('/api/financeiro/unidades') === -1) {
-        const h = new Headers(init.headers || (typeof input!=='string' && input.headers) || {});
-        h.set('X-Unidade-Financeira', String(_finUnidade));
         init.headers = h;
       }
     } catch(e){ /* não bloquear a requisição por erro do interceptor */ }
@@ -2667,6 +2563,29 @@ async function _onDescIndBlur(el, key, isEP07){
 }
 
 // ---- Config ------------------------------------------------------------------
+async function loadConfig(){
+  // Os inputs vivem na seção "Credenciais e Tokens" do Admin (só super_admin) — pode não existir.
+  const elKey = document.getElementById('app_key');
+  if(!elKey) return;
+  try{
+    const r = await fetch('/config');
+    const d = await r.json();
+    elKey.value = d.app_key||'';
+    document.getElementById('app_secret').value = d.app_secret||'';
+    document.getElementById('intervalo').value  = d.intervalo||0.5;
+  }catch(e){}
+}
+async function saveConfig(){
+  const cfg = {
+    app_key: document.getElementById('app_key').value,
+    app_secret: document.getElementById('app_secret').value,
+    intervalo: parseFloat(document.getElementById('intervalo').value)||0.5
+  };
+  await fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  const h = document.getElementById('save-hint');
+  h.textContent='Salvo'; h.style.color='var(--ok)';
+  setTimeout(()=>h.textContent='',2000);
+}
 
 // ---- Navegacao ---------------------------------------------------------------
 // =====================================================================
@@ -2868,8 +2787,7 @@ function _aterrissarPorPapel(){
 }
 
 function _carregarDadosExtrasUsuario(){
-  const saved = localStorage.getItem('orizon_user_extras_' + (_usuarioAtual?.id || ''))
-    || localStorage.getItem('omie_user_extras_' + (_usuarioAtual?.id || ''));   // migração do nome antigo
+  const saved = localStorage.getItem('omie_user_extras_' + (_usuarioAtual?.id || ''));
   if(!saved) return;
   try {
     const extras = JSON.parse(saved);
@@ -2913,7 +2831,7 @@ function mpTrocarFoto(event){
   const reader = new FileReader();
   reader.onload = e => {
     _aplicarFotoUsuario(e.target.result);
-    const key = 'orizon_user_extras_' + (_usuarioAtual?.id || '');
+    const key = 'omie_user_extras_' + (_usuarioAtual?.id || '');
     const saved = JSON.parse(localStorage.getItem(key) || '{}');
     saved.foto = e.target.result;
     localStorage.setItem(key, JSON.stringify(saved));
@@ -2925,7 +2843,7 @@ function mpSalvarPerfil(){
   const tel = document.getElementById('mp-telefone')?.value || '';
   const wpp = document.getElementById('mp-whatsapp')?.value || '';
   const eml = document.getElementById('mp-email')?.value    || '';
-  const key = 'orizon_user_extras_' + (_usuarioAtual?.id || '');
+  const key = 'omie_user_extras_' + (_usuarioAtual?.id || '');
   const saved = JSON.parse(localStorage.getItem(key) || '{}');
   saved.telefone = tel;
   saved.whatsapp = wpp;
@@ -3360,111 +3278,29 @@ async function _docCarregarUsuariosNomeCache(){
 async function cfgDocumentosRender(){
   const box = document.getElementById('cfg-panel-documentos'); if(!box) return;
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const [d, cat, tps] = await Promise.all([
+  const [d, cat] = await Promise.all([
     fetch('/api/documentos/modelos',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
     fetch('/api/documentos/marcadores',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
-    fetch('/api/documentos/tipos',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
     _docCarregarUsuariosNomeCache()
   ]);
   if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar modelos.')+'</em>'; return; }
   _docModelos = d.modelos || [];
   _docPodeGerir = !!d.pode_gerir;
-  _docTiposCustom = (tps && tps.ok && tps.tipos) || [];
   if(cat && cat.ok) _docCatalogo = cat.catalogo || {};
-  const acoes = _docPodeGerir
-    ? '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
-      +'<button class="btn btn-primary btn-sm" onclick="abrirModalDocUpload()"><i class="ti ti-upload"></i> Upload de Modelo</button>'
-      +'<button class="btn btn-ghost btn-sm" onclick="abrirModalDocNovo()"><i class="ti ti-file-plus"></i> Novo Documento</button>'
-      +'</div>'
-    : '';
   box.innerHTML =
      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;max-width:640px">Modelos dos documentos de processo.'
     + (_docPodeGerir ? '' : ' <strong style="color:var(--text)">Somente leitura</strong> — sem a capacidade de gerir documentos, os cards abaixo não abrem.')
     + '</div>'
-    + acoes
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,240px);gap:12px">'
     + _docCardHtml('contrato', 'Contrato', 'ti-file-text', 'HTML + Markdown → PDF (WeasyPrint)')
-    + _docCardHtml('proposta', 'Proposta comercial', 'ti-file-invoice', 'capa + corpo do modelo da loja')
-    + _docCardHtml('termo_aditivo', 'Termo Aditivo', 'ti-file-diff', 'complemento de contrato (Revisão de PE)')
-    + _docCardHtml('aprovacao_pe', 'Aprovação do PE', 'ti-file-check', 'aprovação assinável do Projeto Executivo')
-    + _docTiposCustom.map(t => _docCardHtml(t.slug, t.nome, 'ti-file-description',
-        t.etapa_ciclo ? ('Etapa do ciclo: '+esc(_docNomeEtapa(t.etapa_ciclo))) : 'sem etapa associada')).join('')
+    + _docCardHtml('proposta', 'Proposta comercial', 'ti-file-invoice', 'modelo .docx')
+    + _docCardHtml('termo_aditivo', 'Termo Aditivo', 'ti-file-diff', 'complemento de contrato (Fatia 3 PE)')
+    + '<div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 16px;opacity:.7">'
+      +'<i class="ti ti-files" style="font-size:20px;color:var(--muted)"></i>'
+      +'<div style="font-weight:600;font-size:13px;color:var(--text);margin-top:6px">Demais documentos</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">do processo</div>'
+      +'<div style="font-size:10px;color:var(--warn);margin-top:8px">edição de modelos — em construção</div></div>'
     +'</div>';
-}
-
-let _docTiposCustom = [];
-
-function _docNomeEtapa(codigo){
-  const e = (typeof ETAPAS_CICLO !== 'undefined') && ETAPAS_CICLO.find(x => x.codigo === String(codigo));
-  return e ? (codigo + ' — ' + e.nome) : String(codigo);
-}
-
-function _docTituloTipo(tipo){
-  const fixos = {contrato:'Contrato', proposta:'Proposta comercial',
-                 termo_aditivo:'Termo Aditivo', aprovacao_pe:'Aprovação do PE'};
-  if(fixos[tipo]) return fixos[tipo];
-  const t = (_docTiposCustom||[]).find(x => x.slug === tipo);
-  return t ? t.nome : tipo;
-}
-
-// "Ver exemplo" do card: preview do modelo ATIVO (sem importar nada) com dados fictícios
-// de cliente + dados reais da loja; corpo-só (aditivo/aprovação/custom) sai com cabeçalho.
-async function docVerExemploTipo(ev, tipo){
-  if(ev) ev.stopPropagation();
-  showToast('Gerando PDF de exemplo…', false);
-  try{
-    const r = await fetch('/api/documentos/modelos/preview', {method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({tipo})});
-    if(!r.ok){
-      const d = await r.json().catch(()=>({}));
-      showToast(d.erro||'Erro ao gerar o exemplo.', true);
-      return;
-    }
-    window.open(URL.createObjectURL(await r.blob()), '_blank');
-  }catch(e){ showToast('Erro de rede ao gerar o exemplo.', true); }
-}
-
-function abrirModalDocUpload(){
-  if(!_docPodeGerir) return;
-  const sel = document.getElementById('doc-upload-tipo');
-  const nativos = [['contrato','Contrato'],['proposta','Proposta comercial'],
-                   ['termo_aditivo','Termo Aditivo'],['aprovacao_pe','Aprovação do PE']];
-  sel.innerHTML = nativos.map(([s,n]) => '<option value="'+s+'">'+esc(n)+'</option>').join('')
-    + (_docTiposCustom||[]).map(t => '<option value="'+esc(t.slug)+'">'+esc(t.nome)+'</option>').join('');
-  document.getElementById('modal-doc-upload').style.display='flex';
-}
-function docUploadContinuar(){
-  const tipo = document.getElementById('doc-upload-tipo').value;
-  document.getElementById('modal-doc-upload').style.display='none';
-  abrirModalDocModelo(tipo);
-}
-
-function abrirModalDocNovo(){
-  if(!_docPodeGerir) return;
-  document.getElementById('doc-novo-nome').value = '';
-  const sel = document.getElementById('doc-novo-etapa');
-  sel.innerHTML = '<option value="">— sem etapa —</option>'
-    + (typeof ETAPAS_CICLO !== 'undefined' ? ETAPAS_CICLO : []).map(e =>
-        '<option value="'+esc(e.codigo)+'">'+esc(e.codigo+' — '+e.nome)+'</option>').join('');
-  document.getElementById('doc-novo-erro').textContent = '';
-  document.getElementById('modal-doc-novo').style.display='flex';
-  setTimeout(()=>document.getElementById('doc-novo-nome').focus(), 60);
-}
-async function docNovoCriar(){
-  const nome = document.getElementById('doc-novo-nome').value.trim();
-  const etapa = document.getElementById('doc-novo-etapa').value;
-  const st = document.getElementById('doc-novo-erro');
-  if(!nome){ st.textContent = 'Dê um nome ao documento.'; return; }
-  st.textContent = 'Criando…'; st.style.color = 'var(--muted)';
-  try{
-    const j = await fetch('/api/documentos/tipos', {method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({nome, etapa_ciclo: etapa})}).then(r=>r.json());
-    if(!j.ok){ st.textContent = j.erro || 'Erro ao criar.'; st.style.color = 'var(--err)'; return; }
-    document.getElementById('modal-doc-novo').style.display='none';
-    showToast('Documento "'+nome+'" criado — importe o modelo dele.');
-    cfgDocumentosRender();
-  }catch(e){ st.textContent = 'Erro de rede.'; st.style.color = 'var(--err)'; }
 }
 
 function _docModeloAtivo(tipo){
@@ -3480,23 +3316,15 @@ function _docQuemQuando(m){
 function _docCardHtml(tipo, titulo, icone, desc){
   const ativo = _docModeloAtivo(tipo);
   const clicavel = _docPodeGerir;
-  const custom = tipo.indexOf('doc_') === 0;
-  const info = ativo ? ('Versão '+ativo.versao+' ativa'+(ativo.nome?' — '+esc(ativo.nome):''))
-                     : (custom ? 'Sem modelo — importe um' : 'Modelo padrão do sistema');
+  const info = ativo ? ('Versão '+ativo.versao+' ativa'+(ativo.nome?' — '+esc(ativo.nome):'')) : 'Modelo padrão do sistema';
   const rodape = ativo ? ('<div style="font-size:10px;color:var(--muted);margin-top:4px">'+_docQuemQuando(ativo)+'</div>') : '';
-  // "Ver exemplo" fica de fora quando um custom ainda não tem modelo (não há o que renderizar)
-  const verExemplo = (ativo || !custom)
-    ? '<button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px;padding:2px 10px" '
-      +'onclick="docVerExemploTipo(event, \''+tipo+'\')"><i class="ti ti-eye"></i> Ver exemplo</button>'
-    : '';
   return '<div '+(clicavel ? ('onclick="abrirModalDocModelo(\''+tipo+'\')" style="cursor:pointer;') : 'style="')
     +'background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 16px'+(clicavel?'':';opacity:.7')+'">'
     +'<i class="ti '+icone+'" style="font-size:20px;color:var(--muted)"></i>'
     +'<div style="font-weight:600;font-size:13px;color:var(--text);margin-top:6px">'+esc(titulo)+'</div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+desc+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+esc(desc)+'</div>'
     +'<div style="font-size:11px;color:'+(ativo?'var(--ok)':'var(--muted)')+';margin-top:8px;font-weight:600">'+info+'</div>'
     + rodape
-    + verExemplo
     +'</div>';
 }
 
@@ -3504,7 +3332,8 @@ function _docCardHtml(tipo, titulo, icone, desc){
 function abrirModalDocModelo(tipo){
   if(!_docPodeGerir) return;
   _docmCtx = {tipo, corpo_md:null, origem_nome:null, staging:null, origem_sha256:null, analise:null};
-  document.getElementById('docm-titulo').textContent = _docTituloTipo(tipo);
+  document.getElementById('docm-titulo').textContent =
+    tipo==='contrato' ? 'Contrato' : tipo==='termo_aditivo' ? 'Termo Aditivo' : 'Proposta comercial';
   document.getElementById('docm-arquivo').value = '';
   document.getElementById('docm-importar-btn').disabled = true;
   const status = document.getElementById('docm-importar-status');
@@ -3558,7 +3387,8 @@ async function docmImportar(){
   fd.append('arquivo', f, f.name);
   fd.append('tipo', _docmCtx.tipo);
   try{
-    const d = await uploadFormData('/api/documentos/modelos/importar', fd);
+    const r = await fetch('/api/documentos/modelos/importar', {method:'POST', credentials:'same-origin', body: fd});
+    const d = await r.json().catch(()=>({}));
     if(!d.ok){
       status.textContent = d.erro || 'Falha ao importar o arquivo.';
       status.style.color = 'var(--err)';
@@ -3988,6 +3818,7 @@ function cfgRenderizarPerfis(){
       <div style="font-size:11px;color:var(--muted);line-height:1.7">
         ${cfg.pode_ver_margens?'✓ Vê margens internas':'✗ Não vê margens'}
         <br>${cfg.pode_editar_total?'✓ Pode editar total':'✗ Não edita total'}
+        <br>${key==='diretoria'?'✓ Vê credenciais Omie':'✗ Credenciais ocultas'}
       </div>
     </div>`).join('');
 
@@ -4309,7 +4140,7 @@ async function assistCriar(){
 function cadTab(qual){
   document.querySelectorAll('#page-10 .home-tab').forEach(b =>
     b.classList.toggle('active', b.getAttribute('data-cadtab') === qual));
-  ['clientes','funcionarios','parceiros','fornecedores','terceiros'].forEach(k => {
+  ['clientes','parceiros','fornecedores','terceiros'].forEach(k => {
     const p = document.getElementById('cad-panel-'+k);
     if(p) p.style.display = (k === qual) ? 'block' : 'none';
   });
@@ -4417,28 +4248,21 @@ async function cadFuncoesGarantir(force){
   _funcoesCache = (d && d.ok && d.itens) ? d.itens : [];
   return _funcoesCache;
 }
-// ── ViaCEP compartilhado (melhoria 2026-07-23): digitou o CEP → endereço preenche sozinho ──
-// e o cursor pula para o Número (o único campo que sobra digitar). `prefixo` identifica o
-// formulário: preenche <prefixo>logradouro/bairro/cidade e <prefixo>uf OU <prefixo>estado.
-const _cepTimers = {};
-function cepAuto(el, prefixo){
+// ViaCEP nos cadastros: preenche logradouro/bairro/cidade/uf a partir do CEP
+let _cadCepTimer = null;
+function cadCepBuscar(el){
   const v = el.value.replace(/\D/g,'').slice(0,8);
   el.value = v.length>5 ? v.slice(0,5)+'-'+v.slice(5) : v;
-  clearTimeout(_cepTimers[prefixo]);
-  if(v.length===8) _cepTimers[prefixo] = setTimeout(async()=>{
+  clearTimeout(_cadCepTimer);
+  if(v.length===8) _cadCepTimer = setTimeout(async()=>{
     try{
       const d = await (await fetch('https://viacep.com.br/ws/'+v+'/json/')).json();
       if(d.erro) return;
-      const setF=(id,val)=>{ const e=document.getElementById(prefixo+id); if(e) e.value=val||''; };
-      setF('logradouro', d.logradouro); setF('bairro', d.bairro);
-      setF('cidade', d.localidade); setF('uf', d.uf); setF('estado', d.uf);
-      const num = document.getElementById(prefixo+'numero');
-      if(num && !num.value) num.focus();
+      const setF=(id,val)=>{ const e=document.getElementById('cadf-'+id); if(e) e.value=val||''; };
+      setF('logradouro', d.logradouro); setF('bairro', d.bairro); setF('cidade', d.localidade); setF('uf', d.uf);
     }catch(e){}
   }, 400);
 }
-// atalho legado dos cadastros genéricos (Funcionário/Fornecedor/Terceiro/Contraparte)
-function cadCepBuscar(el){ cepAuto(el, 'cadf-'); }
 function cadEntFechar(){ document.getElementById('modal-cad').style.display='none'; }
 function cadEntRender(item){
   const def = _CAD_DEFS[_cadEntAtual];
@@ -4595,27 +4419,6 @@ function showToast(msg, isErr){
   t._timer = setTimeout(()=>t.style.display='none', 3000);
 }
 
-// ---- Upload de arquivo (FormData) — helper ÚNICO ----------------------------
-// Todo upload passa por aqui: é o único lugar que traduz o 413 (teto do app/nginx)
-// e a falha de rede em mensagem amigável — nunca vazar "TypeError: Failed to
-// fetch" cru pro usuário. Devolve sempre objeto no contrato {ok, erro?} que as
-// rotas já usam: quem chama só checa d.ok e mostra d.erro.
-const MSG_UPLOAD_REDE = 'Falha de conexão ao enviar o arquivo. Verifique a internet e tente de novo; se persistir, o arquivo pode exceder o limite do servidor.';
-async function uploadFormData(url, fd){
-  let r;
-  try{
-    r = await fetch(url, {method:'POST', credentials:'same-origin', body: fd});
-  }catch(e){
-    return {ok:false, erro: MSG_UPLOAD_REDE};
-  }
-  if(r.status === 413){
-    // o app responde JSON com a mensagem certa; se o 413 vier do proxy (HTML), fallback
-    const d = await r.json().catch(()=>null);
-    return {ok:false, erro:(d && d.erro) || 'Arquivo grande demais (máx. 50 MB).'};
-  }
-  return await r.json().catch(()=>({ok:false, erro:'Resposta inválida do servidor.'}));
-}
-
 // ---- Page 00: Projetos -------------------------------------------------------
 const _PROJ_STATUS_LABEL = {
   quente:     { label: '<i class="ti ti-flame"></i> Quente',    cls: 'quente'     },
@@ -4636,9 +4439,9 @@ function _projStatusBadge(p){
     return `<span class="proj-status-badge sem" style="cursor:pointer"
                  onclick="projStatusClick(event,'${ns}')">— Definir</span>`;
   }
-  const info = _PROJ_STATUS_LABEL[s] || {label:s, cls:'sem'};
+  const info = _PROJ_STATUS_LABEL[s] || {label:esc(s), cls:'sem'};
   return `<span class="proj-status-badge ${info.cls}" style="cursor:pointer"
-               onclick="projStatusClick(event,'${ns}')">${esc(info.label)}</span>`;
+               onclick="projStatusClick(event,'${ns}')">${info.label}</span>`;
 }
 
 function renderProjResultados(lista){
@@ -4670,7 +4473,7 @@ function renderProjResultados(lista){
               ${['quente','morno','frio','perdido'].map(s=>`
                 <div class="proj-status-dd-item"
                      onclick="projStatusSet('${esc(p.nome_safe||'')}','${s}')">
-                  ${esc(_PROJ_STATUS_LABEL[s].label)}
+                  ${_PROJ_STATUS_LABEL[s].label}
                 </div>`).join('')}
             </div>
           </td>
@@ -4904,7 +4707,11 @@ function projSetView(v){
   if(bf) bf.style.cssText='border:none;font-size:11px;font-weight:500;padding:5px 12px;border-radius:6px;cursor:pointer;transition:all .15s;'+(v==='funil'?on:off);
   projAplicarFiltros();
 }
-function _kanbanLabel(s){ return ((_PROJ_STATUS_LABEL[s]||{label:s}).label).replace(/^\S+\s/,''); }
+const _PROJ_STATUS_TEXT = {
+  quente:'Quente', morno:'Morno', frio:'Frio', convertido:'Convertido',
+  perdido:'Perdido', fechado:'Fechado', concluido:'Concluído',
+};
+function _kanbanLabel(s){ return _PROJ_STATUS_TEXT[s] || s; }
 function renderProjKanban(lista){
   const box = document.getElementById('proj-resultados');
   if(!box) return;
@@ -4970,19 +4777,13 @@ async function abrirProjeto(nome_safe){
 
 // ── EP-07: Orçamentos ─────────────────────────────────────────────────────────
 
-async function carregarOrcamentos(selecionarId){
-  // selecionarId (Fatia 3 PE): ativa DIRETO o orçamento pedido (ex.: Negociar Complemento),
-  // pulando o default do contratado — sem isso a tela piscava com os totais do CONTRATO
-  // antes de trocar para o complemento (relato do usuário, 2026-07-21).
+async function carregarOrcamentos(){
   if(!projetoAtivo) return;
   try{
     const r = await fetch('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/orcamentos');
     const d = await r.json();
     if(!d.ok) return;
     _orcamentos = d.orcamentos || [];
-    if(selecionarId && _orcamentos.find(o => o.id === selecionarId)){
-      _orcamentoAtivoId = selecionarId;
-    }
     if(!_orcamentoAtivoId && _orcamentos.length > 0){
       // FASE D2 (Ajuste 1): se o projeto TEM contrato, trava SEMPRE no orçamento contratado (a decisão já
       // foi tomada nesse ponto), ignorando localStorage/updated_at. O seletor ▾ continua permitindo ver os
@@ -5654,7 +5455,9 @@ async function uploadXmls(fileList){
       for(const f of files){
         const fdPool = new FormData();
         fdPool.append('xmls', f, f.name);
-        const dPool = await uploadFormData('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/pool', fdPool);
+        const rPool = await fetch('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/pool',
+                                  {method:'POST', body:fdPool});
+        const dPool = await rPool.json();
         if(!dPool.ok){ showToast('Erro no pool: '+(dPool.erro||''), true); continue; }
 
         if(dPool.acao === 'criado'){
@@ -5713,7 +5516,8 @@ async function uploadXmls(fileList){
   const fd = new FormData();
   for(const f of files) fd.append('xmls', f);
   try{
-    const d = await uploadFormData('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ambientes/adicionar', fd);
+    const r = await fetch('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ambientes/adicionar',{method:'POST',body:fd});
+    const d = await r.json();
     if(!d.ok){ st.textContent='Erro: '+(d.erro||'falha'); showToast('Erro ao enviar XMLs', true); return; }
     projetoAtivo = d.projeto;
     (projetoAtivo.ambientes||[]).forEach(a=>{
@@ -5820,7 +5624,8 @@ async function atualizarXml(fileList, arquivoAntigo, idx){
   fd.append('xmls', fileList[0]);
   fd.append('arquivo_substituir', arquivoAntigo);
   try{
-    const d = await uploadFormData('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ambientes/atualizar', fd);
+    const r = await fetch('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ambientes/atualizar',{method:'POST',body:fd});
+    const d = await r.json();
     if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
     projetoAtivo = d.projeto;
     (projetoAtivo.ambientes||[]).forEach(a=>{
@@ -7595,7 +7400,7 @@ function renderTabelaNeg(ambientes = null){
                  style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer;display:block;margin:0 auto"
                  onchange="if(!this.checked)_orcConfirmarRemover(${pa.id},'${esc(pa.nome_exibicao)}',this)">
         </td>
-        <td style="padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600">${(typeof _orcamentoComplementoAtivo === 'function' && _orcamentoComplementoAtivo()) ? 'Complemento ' : ''}${esc(pa.nome_exibicao)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600">${esc(pa.nome_exibicao)}${(typeof _orcamentoComplementoAtivo === 'function' && _orcamentoComplementoAtivo()) ? ' <span style="color:var(--warn);font-size:10px;letter-spacing:.04em">— Complemento</span>' : ''}</td>
         <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;width:80px">
           <input type="number" value="${disc_i}" min="0" max="100" step="0.5"
                  style="width:60px;text-align:right;padding:3px 6px;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);outline:none"
@@ -8801,8 +8606,6 @@ async function cliBuscarCEP(cep){
       document.getElementById('cli-cidade').value     = d.localidade || '';
       document.getElementById('cli-estado').value     = d.uf         || '';
       document.getElementById('cli-municipio-ibge').value = d.ibge   || '';  // IBGE p/ NFS-e
-      const _num = document.getElementById('cli-numero');
-      if (_num && !_num.value) _num.focus();   // só falta o número (melhoria 2026-07-23)
     }
   } catch(e){
     erroEl.style.display = 'block';
@@ -9518,19 +9321,18 @@ function adminBreadcrumb(){
 }
 
 function adminIrNivel(n){
-  if (n === 1) { _adminNav.rede = null; _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; _finUnidadeReset(); }
-  if (n === 2) { _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; _finUnidadeReset(); }
+  if (n === 1) { _adminNav.rede = null; _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; }
+  if (n === 2) { _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; }
   if (n === 3) { _adminNav.projeto = null; }
   _adminNav.nivel = n;
   adminRender();
 }
 
-function adminEntrarRede(id, nome){ _adminNav.rede = { id, nome }; _adminNav.nivel = 2; _adminNav.loja = null; _lojaAtiva = null; _finUnidadeReset(); adminRender(); }
+function adminEntrarRede(id, nome){ _adminNav.rede = { id, nome }; _adminNav.nivel = 2; _adminNav.loja = null; _lojaAtiva = null; adminRender(); }
 async function adminEntrarLoja(id, nome){
   _adminNav.loja = { id, nome };
   _adminNav.nivel = 3;
   _lojaAtiva = id;               // super_admin passa a operar DENTRO desta loja (header X-Loja-Ativa)
-  _finUnidadeReset();
   try {
     const r = await fetch(`/api/admin/lojas/${id}/modulos`, { credentials:'same-origin' });
     const d = await r.json();
@@ -9579,9 +9381,7 @@ async function adminRenderPlataforma(box){
       </div>
       <table class="cli-table"><thead><tr><th>Nome</th><th>Código</th><th></th></tr></thead><tbody>
       ${(avulsas.lojas||[]).map(l=>`<tr>
-        <td>${esc(l.nome)}${l.tipo==='ponto_venda'
-          ? ` <span style="background:var(--accent-soft);color:var(--accent);font-size:9px;font-weight:700;padding:1px 6px;border-radius:5px;vertical-align:middle">PDV${(()=>{const m=(avulsas.lojas||[]).find(x=>x.id===l.loja_mae_id);return m?' de '+esc(m.nome.split(' ')[0]):'';})()}</span>`
-          : ''}</td><td style="color:var(--muted)">${esc(l.codigo||'—')}</td>
+        <td>${esc(l.nome)}</td><td style="color:var(--muted)">${esc(l.codigo||'—')}</td>
         <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
           onclick='adminEntrarLoja(${l.id}, ${_attrJson(l.nome)})'>Entrar ›</button></td></tr>`).join('')
         || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma loja avulsa.</td></tr>'}
@@ -9605,6 +9405,22 @@ async function adminRenderPlataforma(box){
           || '<tr><td colspan="3" style="color:var(--muted)">Nenhum gestor geral.</td></tr>'}
         </tbody></table>
       </div>`);
+    // Credenciais e Tokens — Núcleo/Plataforma; só Administrador do Sistema (super_admin) enxerga.
+    box.insertAdjacentHTML('beforeend', `
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">Credenciais e Tokens</div>
+        <div style="max-width:420px">
+          <label class="field-label">Omie — App Key</label>
+          <input type="text" id="app_key" placeholder="App Key">
+          <label class="field-label" style="margin-top:10px">Omie — App Secret</label>
+          <input type="password" id="app_secret" placeholder="App Secret">
+          <label class="field-label" style="margin-top:10px">Intervalo (s)</label>
+          <input type="number" id="intervalo" min="0.3" max="10" step="0.1" value="0.5">
+          <div class="actions"><button class="btn btn-primary btn-sm" onclick="saveConfig()">Salvar credenciais</button></div>
+          <div class="sb-save-hint" id="save-hint" style="text-align:left"></div>
+        </div>
+      </div>`);
+    loadConfig();  // preenche os inputs recém-inseridos com os valores salvos
   }
 }
 
@@ -9740,7 +9556,6 @@ function empEscolher(id, ctx){
 // Painel Orizon › Lojas: "Administrar" fixa a loja como ativa e abre o Painel Admin escopado nela.
 function orizonAdministrarLoja(id){
   _lojaAtiva = id ? parseInt(id,10) : null;
-  _finUnidadeReset();
   if (_lojaAtiva) localStorage.setItem('loja_ativa', String(_lojaAtiva));
   ['nav-07','nav-cfg'].forEach(nid => { const n = document.getElementById(nid); if(n) n.style.display=''; });  // revela Admin/Config da loja
   goPage(7);   // Admin (4 abas da empresa: Dados da empresa / Usuários / Perfis de Usuário / Módulos)
@@ -9751,7 +9566,6 @@ document.addEventListener('click', function(ev){
 });
 function empresaTrocar(id){
   _lojaAtiva = id ? parseInt(id,10) : null;
-  _finUnidadeReset();
   if (_lojaAtiva) localStorage.setItem('loja_ativa', String(_lojaAtiva));
   const p7 = document.getElementById('page-07'), p9 = document.getElementById('page-09');
   if (p7 && p7.classList.contains('active')) adminRender();
@@ -9935,7 +9749,6 @@ async function adminRenderLoja(box){
       <button class="home-tab" id="loja-tab-usuarios" onclick="adminLojaTab('usuarios')">Usuários</button>
       <button class="home-tab" id="loja-tab-perfis" onclick="adminLojaTab('perfis')">Perfis de Usuário</button>
       <button class="home-tab" id="loja-tab-modulos" onclick="adminLojaTab('modulos')">Módulos</button>
-      <button class="home-tab" id="loja-tab-acordos" onclick="adminLojaTab('acordos')">Acordos Financeiros</button>
     </div>
     <div id="loja-panel-dados"></div>
     <div id="loja-panel-usuarios" style="display:none">
@@ -9943,15 +9756,14 @@ async function adminRenderLoja(box){
       <div id="admin-usuarios-lista" style="margin-top:10px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
     <div id="loja-panel-perfis" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
-    <div id="loja-panel-modulos" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
-    <div id="loja-panel-acordos" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>`;
+    <div id="loja-panel-modulos" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>`;
   adminLojaCarregarDados(lid);
   adminUsuariosCarregar();   // popula #admin-usuarios-lista (função já existente)
   _empSeletorPreencher('admin-emp-seletor');
 }
 
 function adminLojaTab(qual){
-  ['dados','usuarios','perfis','modulos','acordos'].forEach(q => {
+  ['dados','usuarios','perfis','modulos'].forEach(q => {
     const tab   = document.getElementById('loja-tab-'+q);
     const panel = document.getElementById('loja-panel-'+q);
     if (tab)   tab.classList.toggle('ativo', q===qual);
@@ -9959,306 +9771,6 @@ function adminLojaTab(qual){
   });
   if (qual==='modulos') adminModulosCarregar();
   if (qual==='perfis')  adminPerfisCarregar();
-  if (qual==='acordos') acordosFabricaCarregar();
-}
-
-// ── Painel "Acordos Financeiros" (revisão 2026-07-21) ─────────────────────────────────────────
-// Créditos e dívidas com a FÁBRICA, com EMPRESAS (do grupo ou não — cada loja registra só o SEU
-// lado; sem acerto automático) e com BANCOS (empréstimos: captação entra no caixa; atualização de
-// juros; pagamentos). Descontos por período = ajuste de custo com vigência, sem acordo.
-let _afAcordos = [];
-async function acordosFabricaCarregar(){
-  const box = document.getElementById('loja-panel-acordos');
-  if(!box) return;
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  await empresasCarregar();
-  let j, jc;
-  try{
-    [j, jc] = await Promise.all([
-      fetch('/api/admin/acordos-fabrica',{credentials:'same-origin'}).then(r=>r.json()),
-      fetch('/api/admin/contrapartes-financeiras',{credentials:'same-origin'}).then(r=>r.json()),
-    ]);
-  }
-  catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro ao carregar.</em>'; return; }
-  const _cps = (jc && jc.ok && jc.contrapartes) || [];
-  _afContrapartes = _cps;
-  if(!j.ok){ box.innerHTML = `<em style="color:var(--muted);font-size:12px">${esc(j.erro||'Acesso negado.')}</em>`; return; }
-  _afAcordos = j.acordos || [];
-  const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const lojaNome = id => { const e = (_empresas||[]).find(x => x.loja_id === id); return e ? e.nome : ('Loja #'+id); };
-  const lojaSel = id => `<select id="${id}" style="padding:4px 6px;font-size:12px">`
-    + (_empresas||[]).map(e => `<option value="${e.loja_id}">${esc(e.nome)}</option>`).join('') + '</select>';
-  const _tipoRot = t => t === 'banco' ? 'banco' : t === 'empresa' ? 'empresa' : 'fábrica';
-  // SEMPRE nomeia a contraparte (com duas fábricas cadastradas, "fábrica" sozinho não diz nada)
-  const ctpRotulo = a => a.contraparte_nome
-    ? `<strong>${esc(a.contraparte_nome)}</strong> <span style="color:var(--muted)">(${_tipoRot(a.contraparte_tipo)})</span>`
-    : _tipoRot(a.contraparte_tipo);
-  const stBadge = s => s==='ativo' ? '<span style="color:var(--ok)">ativo</span>'
-    : s==='esgotado' ? '<span style="color:var(--warn)">esgotado</span>'
-    : '<span style="color:var(--muted)">encerrado</span>';
-
-  const cardAcordo = a => {
-    const outrosCreditos = _afAcordos.filter(o => o.id !== a.id && o.tipo === 'credito'
-      && o.loja_titular_id === a.loja_titular_id && o.status !== 'encerrado');
-    const acoes = a.status !== 'encerrado' ? `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
-        <input type="text" id="af-mov-valor-${a.id}" inputmode="numeric" placeholder="${a.tipo==='divida' ? 'Nominal R$' : 'R$'}" oninput="mascaraMoedaInput(this)" style="width:110px;padding:3px 6px;font-size:12px;font-family:var(--font-mono)">
-        ${a.tipo === 'divida'
-          ? `<input type="text" id="af-mov-juros-${a.id}" inputmode="numeric" placeholder="Juros R$" oninput="mascaraMoedaInput(this)" style="width:100px;padding:3px 6px;font-size:12px;font-family:var(--font-mono)" title="Despesa de juros paga junto (5.5.02 × Caixa)">
-             <button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'pagar')" title="Baixa o nominal do passivo; os juros vão direto a despesa">Pagar</button>
-             <button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'atualizar')" title="Encargos incorporados ao saldo devedor (despesa 5.5.02 × dívida)">Atualizar encargos</button>`
-          : `<button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'receber')">Receber</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'acrescer')" title="Aumenta o saldo SEM caixa (ex.: refletir acréscimo/desconto de conferência no balanço)">Acrescer</button>
-        <button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'abater')" title="Reduz o saldo SEM caixa (ex.: dívida amortizada via acréscimo em nota)">Abater</button>
-        <select id="af-mov-cp-${a.id}" style="padding:4px 6px;font-size:11px" title="Contrapartida do Acrescer/Abater: fato do PERÍODO → resultado (4.4.03/5.5.05); saldo ANTIGO → PL (3.5, CPC 23)">
-          <option value="resultado">contrapartida: resultado (fato atual)</option>
-          <option value="pl">contrapartida: PL (saldo antigo)</option></select>
-        ${a.tipo === 'credito' && outrosCreditos.length ? `
-          <select id="af-mov-dest-${a.id}" style="padding:4px 6px;font-size:12px">
-            ${outrosCreditos.map(o => `<option value="${o.id}">→ ${esc(o.descricao)}</option>`).join('')}
-          </select>
-          <button class="btn btn-ghost btn-sm" onclick="afMovimento(${a.id},'transferir')" title="Move saldo p/ outro acordo de crédito da mesma loja">Transferir</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="afEncerrar(${a.id})">Encerrar</button>
-      </div>` : '';
-    return `
-    <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:10px;padding:12px 14px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div><strong>${esc(a.descricao)}</strong>
-          <span style="font-size:12px"> — ${a.tipo === 'credito' ? 'crédito com' : 'dívida com'} ${ctpRotulo(a)}</span>
-          <div style="color:var(--muted);font-size:11px;margin-top:2px">titular: ${esc(lojaNome(a.loja_titular_id))} · conta ${a.conta_saldo}</div></div>
-        <div style="font-size:12px">${stBadge(a.status)}
-          <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="afExtrato(${a.id})">Extrato</button></div>
-      </div>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:12px">
-        <span style="color:var(--muted)">Implantado <span style="font-family:var(--font-mono);color:var(--text)">${fmt(a.valor_implantado)}</span></span>
-        <span style="color:var(--muted)">Saldo <span style="font-family:var(--font-mono);color:${a.tipo === 'credito' ? 'var(--ok)' : 'var(--warn)'};font-weight:700">${fmt(a.saldos.contabil)}</span></span>
-      </div>
-      <div id="af-extrato-${a.id}" style="display:none;margin-top:8px"></div>
-      <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:6px">${acoes}
-        ${a.tipo === 'divida' && a.status !== 'encerrado' ? `<div style="font-size:10px;color:var(--warn);margin-top:4px"><i class="ti ti-alert-triangle"></i> Juros: use OU "Atualizar encargos" (competência — incorpora ao saldo e depois paga tudo como nominal) OU o campo "Juros" do pagamento (caixa). Usar os dois para o MESMO juro lança a despesa em dobro.</div>` : ''}
-      </div>
-    </div>`;
-  };
-
-  const avulsos = (j.ajustes_avulsos||[]).map(x => `
-    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;line-height:2">
-      <span>${esc(lojaNome(x.loja_id))} — ${x.tipo === 'desconto' ? '−' : '+'}${x.pct}% <span style="color:var(--muted)">(custo${x.natureza==='pontual' ? ' · pontual' : ''}${x.vigencia_de || x.vigencia_ate ? ' · '+(x.vigencia_de||'…')+' a '+(x.vigencia_ate||'…') : ''})</span></span>
-      <label class="sw" style="transform:scale(.8)"><input type="checkbox" ${x.ativo?'checked':''}
-        onchange="afToggleAjuste(${x.id}, this.checked)"><span class="sw-slider"></span></label>
-    </div>`).join('') || '<div style="font-size:12px;color:var(--muted)">Nenhum.</div>';
-
-  const secao = (titulo, corpo, sub='') => `
-    <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 16px;margin-bottom:14px">
-      <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:${sub?'2px':'10px'}">${titulo}</div>
-      ${sub ? `<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${sub}</div>` : ''}
-      ${corpo}
-    </div>`;
-  const campo = (lbl, inner, largura='') => `
-    <label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted);${largura}">
-      ${lbl}${inner}</label>`;
-
-  const secContrapartes = secao('1 · Credores e Devedores',
-    `<div style="font-size:12px;margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap">${_cps.length ? _cps.map(c =>
-      `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 10px">
-        <strong>${esc(c.nome)}</strong>
-        <span style="color:var(--muted)">(${_tipoRot(c.tipo)})</span>
-        <a style="cursor:pointer;color:var(--muted)" title="Editar" onclick="afCpAbrirModal(${c.id})"><i class="ti ti-pencil"></i></a>
-        <a style="cursor:pointer;color:var(--muted)" title="Apagar" onclick="afApagarContraparte(${c.id},'${esc(c.nome).replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></a>
-      </span>`).join('') : '<span style="color:var(--muted)">Nenhum cadastrado.</span>'}</div>
-    <button class="btn btn-ghost btn-sm" onclick="afCpAbrirModal(null)">+ Cadastrar credor/devedor</button>`,
-    'Cadastro das entidades (fábrica, empresas, bancos) contra as quais os acordos são lançados.');
-
-  const secNovoAcordo = secao('2 · Novo acordo',
-    `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-      ${campo('Descrição', `<input type="text" id="af-novo-desc" placeholder="ex.: Empréstimo capital de giro" style="padding:6px 9px;font-size:12px;min-width:200px">`, 'flex:1;min-width:200px')}
-      ${campo('Com quem (contraparte)', `<select id="af-novo-cp" style="padding:6px 8px;font-size:12px" onchange="afNovoCpChange()">
-        ${_cps.map(c => `<option value="${c.id}" data-tipo="${c.tipo}">${esc(c.nome)} (${_tipoRot(c.tipo)})</option>`).join('') || '<option value="">— cadastre acima —</option>'}
-      </select>`)}
-      ${campo('Natureza', `<select id="af-novo-tipo" style="padding:6px 8px;font-size:12px">
-        <option value="credito">crédito (nos devem)</option><option value="divida">dívida (devemos)</option></select>`)}
-      ${campo('Loja titular', lojaSel('af-novo-loja'))}
-      ${campo('Valor', `<input type="text" id="af-novo-valor" inputmode="numeric" placeholder="R$" oninput="mascaraMoedaInput(this)" style="width:120px;padding:6px 9px;font-size:12px;font-family:var(--font-mono)">`)}
-      <label id="af-novo-capt-wrap" style="display:none;font-size:11px;color:var(--muted);align-items:center;gap:4px;padding-bottom:6px"><input type="checkbox" id="af-novo-capt"> dinheiro entra agora (empréstimo novo)</label>
-      <button class="btn btn-primary btn-sm" style="height:30px" onclick="afNovoAcordo()">Implantar acordo</button>
-    </div>`,
-    'Saldo pré-existente entra pelo PL (CPC 23); empréstimo novo com "dinheiro entra agora" lança no caixa.');
-
-  box.innerHTML = secContrapartes + secNovoAcordo + `
-    <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:10px">3 · Acordos vigentes</div>
-    ${_afAcordos.map(cardAcordo).join('') || '<em style="color:var(--muted);font-size:12px">Nenhum acordo cadastrado.</em>'}
-    <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 16px;margin-top:14px">
-      <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:2px">4 · Descontos/Acréscimos da fábrica</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">% sobre o Custo de Fábrica, aplicado na Conferência do Pedido; vigência avaliada pela data da VENDA. O lado financeiro (crédito/dívida) é lançado manualmente nos acordos acima.</div>
-      ${avulsos}
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
-        ${lojaSel('af-av-loja')}
-        <select id="af-av-tipo" style="padding:4px 6px;font-size:12px">
-          <option value="desconto">desconto</option><option value="acrescimo">acréscimo</option></select>
-        <input type="number" id="af-av-pct" min="0.01" max="100" step="0.1" placeholder="%" style="width:70px;padding:3px 6px;font-size:12px">
-        <span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
-          <span style="font-size:11px;color:var(--muted)">vigência:</span>
-          <input type="date" id="af-av-de" style="padding:3px 6px;font-size:12px" title="Início da vigência (opcional)">
-          <span style="font-size:11px;color:var(--muted)">a</span>
-          <input type="date" id="af-av-ate" style="padding:3px 6px;font-size:12px" title="Fim da vigência (opcional)">
-        </span>
-        <button class="btn btn-ghost btn-sm" onclick="afNovoAjuste()">Criar</button>
-      </div>
-    </div>`;
-}
-
-function afNovoCpChange(){
-  const sel = document.getElementById('af-novo-cp');
-  const tipo = sel?.selectedOptions?.[0]?.dataset?.tipo || 'fabrica';
-  const capt = document.getElementById('af-novo-capt-wrap');
-  if(capt) capt.style.display = tipo === 'banco' ? 'flex' : 'none';
-}
-
-let _afContrapartes = [];
-let _afCpEditId = null;
-const _AF_CP_CAMPOS = ['nome','tipo','cnpj','telefone','email','cep','logradouro','numero',
-                       'complemento','bairro','cidade','uf'];
-
-function afCpAbrirModal(id){
-  _afCpEditId = id;
-  const cp = id ? (_afContrapartes||[]).find(c => c.id === id) : null;
-  document.getElementById('af-cp-titulo').textContent = cp ? ('Editar — ' + cp.nome) : 'Novo Credor/Devedor';
-  _AF_CP_CAMPOS.forEach(c => {
-    const el = document.getElementById('af-cpm-'+c);
-    if(el) el.value = (cp && cp[c]) || (c === 'tipo' ? 'fabrica' : '');
-  });
-  document.getElementById('modal-af-cp').style.display = 'flex';
-  setTimeout(()=>{ document.getElementById('af-cpm-nome')?.focus(); }, 50);
-}
-
-function afCpCepBuscar(el){ cepAuto(el, 'af-cpm-'); }
-
-async function afCpSalvar(){
-  const payload = {};
-  _AF_CP_CAMPOS.forEach(c => {
-    payload[c] = (document.getElementById('af-cpm-'+c)?.value || '').trim();
-  });
-  if(!payload.nome){ await avisoPopup('Informe o nome.', {titulo:'Credor/Devedor'}); return; }
-  const url = _afCpEditId ? `/api/admin/contrapartes-financeiras/${_afCpEditId}`
-                          : '/api/admin/contrapartes-financeiras';
-  const j = await _afPost(url, payload, _afCpEditId ? 'Contraparte atualizada.' : 'Contraparte cadastrada.');
-  if(j){
-    document.getElementById('modal-af-cp').style.display = 'none';
-    acordosFabricaCarregar();
-  }
-}
-
-async function afApagarContraparte(id, nome){
-  if(!await confirmarPopup(`Apagar a contraparte "${nome}"? Só é possível sem acordos vinculados.`,
-                           {titulo:'Acordos Financeiros'})) return;
-  const j = await _afPost(`/api/admin/contrapartes-financeiras/${id}`, {apagar: true},
-                          'Contraparte apagada.');
-  if(j) acordosFabricaCarregar();
-}
-
-async function _afPost(url, payload, okMsg){
-  try{
-    const j = await fetch(url, {method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload||{})}).then(r=>r.json());
-    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Acordos Financeiros'}); return null; }
-    if(okMsg) showToast(okMsg);
-    return j;
-  }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Acordos Financeiros'}); return null; }
-}
-
-async function afNovoAcordo(){
-  const cpId = parseInt(document.getElementById('af-novo-cp')?.value)||0;
-  if(!cpId){ await avisoPopup('Cadastre e selecione uma contraparte (credor/devedor).', {titulo:'Acordos Financeiros'}); return; }
-  const j = await _afPost('/api/admin/acordos-fabrica', {
-    descricao: (document.getElementById('af-novo-desc')?.value||'').trim(),
-    contraparte_id: cpId,
-    tipo: document.getElementById('af-novo-tipo')?.value,
-    loja_titular_id: parseInt(document.getElementById('af-novo-loja')?.value)||0,
-    valor: _moedaNum('af-novo-valor'),
-    captacao: !!document.getElementById('af-novo-capt')?.checked,
-  }, 'Acordo implantado (lançamentos automáticos no razão).');
-  if(j) acordosFabricaCarregar();
-}
-
-async function afNovoAjuste(){
-  // revisão 2026-07-22: todo desconto/acréscimo é de CUSTO (mexe na provisão da conferência,
-  // vigência pela data da venda); o lado financeiro é manual nos acordos.
-  const j = await _afPost('/api/admin/ajustes-fabrica', {
-    loja_id: parseInt(document.getElementById('af-av-loja')?.value)||0,
-    tipo: document.getElementById('af-av-tipo')?.value,
-    pct: parseFloat(document.getElementById('af-av-pct')?.value)||0,
-    vigencia_de: document.getElementById('af-av-de')?.value || '',
-    vigencia_ate: document.getElementById('af-av-ate')?.value || '',
-  }, 'Ajuste criado.');
-  if(j) acordosFabricaCarregar();
-}
-
-async function afToggleAjuste(id, ativo){
-  const j = await _afPost(`/api/admin/ajustes-fabrica/${id}/ativo`, {ativo}, ativo ? 'Ajuste ativado.' : 'Ajuste desativado.');
-  if(!j) acordosFabricaCarregar();   // reverte o switch se falhou
-}
-
-let _afMovEmVoo = false;
-async function afMovimento(id, acao){
-  if(_afMovEmVoo) return;                       // QA Vera: sem duplo envio (juros não têm cap)
-  _afMovEmVoo = true;
-  const payload = {acao, valor: _moedaNum('af-mov-valor-'+id),
-                   nonce: Date.now() + '-' + Math.random().toString(36).slice(2, 8)};
-  if(acao === 'pagar') payload.juros = _moedaNum('af-mov-juros-'+id);
-  if(acao === 'acrescer' || acao === 'abater'){
-    payload.contrapartida = document.getElementById('af-mov-cp-'+id)?.value || 'resultado';
-  }
-  if(acao === 'transferir'){
-    payload.destino_acordo_id = parseInt(document.getElementById('af-mov-dest-'+id)?.value)||0;
-  }
-  const j = await _afPost(`/api/admin/acordos-fabrica/${id}/movimento`, payload, null);
-  _afMovEmVoo = false;
-  if(j){
-    const rot = {pagar:'Pago', receber:'Recebido', atualizar:'Dívida atualizada em', transferir:'Transferido'}[acao] || 'Movimento';
-    showToast(rot + ' R$ ' + Number(j.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2}) + '.');
-    acordosFabricaCarregar();
-  }
-}
-
-async function afEncerrar(id){
-  if(!await confirmarPopup('Encerrar este acordo?', {titulo:'Acordos Financeiros'})) return;
-  let j = await fetch(`/api/admin/acordos-fabrica/${id}/encerrar`, {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json()).catch(()=>null);
-  if(j && !j.ok && /resid/i.test(j.erro||'')){
-    if(!await confirmarPopup(j.erro + ' Baixar o resíduo contra o PL (3.5) e encerrar?', {titulo:'Acordos Financeiros'})) return;
-    j = await _afPost(`/api/admin/acordos-fabrica/${id}/encerrar`, {baixar_residuo: true}, null);
-  } else if(j && !j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Acordos Financeiros'}); return; }
-  else if(!j){ await avisoPopup('Erro de rede.', {titulo:'Acordos Financeiros'}); return; }
-  if(j && j.ok){ showToast('Acordo encerrado.'); acordosFabricaCarregar(); }
-}
-
-async function afExtrato(id){
-  const box = document.getElementById('af-extrato-'+id);
-  if(!box) return;
-  if(box.style.display !== 'none'){ box.style.display = 'none'; return; }
-  box.style.display = '';
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  let j;
-  try{ j = await fetch(`/api/admin/acordos-fabrica/${id}/extrato`,{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro.</em>'; return; }
-  if(!j.ok){ box.innerHTML = `<em style="color:var(--muted);font-size:12px">${esc(j.erro||'Erro')}</em>`; return; }
-  const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const rows = (j.aplicacoes||[]).map(a => `
-    <tr><td>${esc(a.em)}</td><td>${esc(a.loja)}</td><td>${esc(a.projeto)}</td>
-      <td>${a.tipo === 'desconto' ? '−' : '+'}${a.pct != null ? a.pct + '%' : ''}</td>
-      <td class="num" style="font-family:var(--font-mono)">${fmt(a.valor)}</td></tr>`).join('');
-  const rotMov = {pagamento:'Pagamento (nominal)', recebimento:'Recebimento', atualizacao:'Atualização de encargos',
-                  juros_pagos:'Juros pagos (despesa)', acrescimo_manual:'Acréscimo manual (sem caixa)',
-                  abatimento_manual:'Abatimento manual (sem caixa)',
-                  transferencia_in:'Transferência recebida', transferencia_out:'Transferência enviada',
-                  baixa_encerramento:'Baixa de encerramento'};
-  const movs = (j.movimentos||[]).map(m =>
-    `<div style="font-size:11px;color:var(--muted)">${esc(m.em)} — ${rotMov[m.tipo]||esc(m.tipo)}: <span style="font-family:var(--font-mono)">${fmt(m.valor)}</span></div>`).join('');
-  box.innerHTML = `
-    <div style="font-size:11px;color:var(--muted)">Implantação: <span style="font-family:var(--font-mono)">${fmt(j.implantacao.valor)}</span> em ${esc(j.implantacao.em)}</div>
-    <div class="table-wrap"><table class="tbl" style="font-size:12px"><thead><tr>
-      <th>Data</th><th>Loja</th><th>Projeto</th><th>%</th><th style="text-align:right">Valor</th>
-    </tr></thead><tbody>${rows || '<tr><td colspan="5" style="color:var(--muted)">Sem aplicações de conferência.</td></tr>'}</tbody></table></div>
-    ${movs}`;
 }
 
 async function adminLojaProjetosCarregar(){
@@ -10288,7 +9800,6 @@ async function adminLojaProjetosCarregar(){
 
 // ── Financeiro: seções no SUBMENU da sidebar (v4 §4) — não mais tabs no conteúdo ──
 const _FIN_SECOES = [
-  {id:'ind',     lbl:'Indicadores',     ic:'gauge',           load:()=>indicadoresCarregar()},
   {id:'prov',    lbl:'Provisões',       ic:'shield-dollar',   load:()=>finDashboardCarregar()},
   {id:'plano',   lbl:'Plano de Contas', ic:'list-tree',       load:()=>planoContasCarregar()},
   {id:'lanc',    lbl:'Lançamentos',     ic:'receipt',         load:()=>lancamentosCarregar()},
@@ -10316,7 +9827,6 @@ const _SB_MODULOS = {
   captacao:   {ic:'target-arrow'},                        // NOVO — em construção
   cadastro:   {ic:'address-book', secoes:[
                  {id:'clientes',     lbl:'Clientes',     ic:'user',           go:()=>cadIr('clientes')},
-                 {id:'funcionarios', lbl:'Funcionários', ic:'id-badge',       go:()=>cadIr('funcionarios')},   // de volta ao Cadastro (2026-07-23)
                  {id:'parceiros',    lbl:'Parceiros',    ic:'users-group',    go:()=>cadIr('parceiros')},
                  {id:'fornecedores', lbl:'Fornecedores', ic:'building-store', go:()=>cadIr('fornecedores')},
                  {id:'terceiros',    lbl:'Terceiros',    ic:'user-cog',       go:()=>cadIr('terceiros')},
@@ -10631,125 +10141,26 @@ function finTab(t){
   const tt = document.getElementById('fin-page-title');
   if(tt && sec) tt.textContent = 'Financeiro / ' + sec.lbl;
   _sbModuloAberto = 'financeiro'; _sbSecaoAtiva = t; sbNavRender();   // reflete no acordeão
-  finUnidadeInit();   // visão unificada (PDV): seletor de unidade, se a loja tiver PDVs
   if(sec && sec.load) sec.load();
-}
-
-// ── Visão unificada (PDV, spec 2026-07-22): seletor de unidade dos painéis financeiros ──
-let _finUnidades = null;   // cache das unidades do escopo (null = ainda não buscado)
-async function finUnidadeInit(){
-  if (_finUnidades === null) {
-    const d = await fetch('/api/financeiro/unidades', {credentials:'same-origin'})
-      .then(r=>r.json()).catch(()=>null);
-    _finUnidades = (d && d.ok) ? (d.unidades || []) : [];
-  }
-  const wrap = document.getElementById('fin-unidade-wrap');
-  if (!wrap) return;
-  if (_finUnidades.length < 2){ wrap.style.display = 'none'; return; }
-  const atual = _finUnidade != null ? String(_finUnidade) : String(_finUnidades[0].id);
-  wrap.style.display = 'flex';
-  wrap.innerHTML = '<label style="font-size:11px;color:var(--muted)">Unidade</label>'
-    + '<select id="fin-unidade-sel" onchange="finUnidadeMudar(this.value)" '
-    + 'style="background:var(--surface);border:1px solid var(--border);border-radius:8px;'
-    + 'padding:6px 10px;color:var(--text);font-size:12px">'
-    + _finUnidades.map(u => '<option value="'+u.id+'"'+(atual===String(u.id)?' selected':'')+'>'
-        + esc(u.nome) + (u.tipo==='ponto_venda' ? ' (PDV)' : '') + '</option>').join('')
-    + '<option value="consolidado"'+(atual==='consolidado'?' selected':'')+'>Consolidado (mãe + PDVs)</option>'
-    + '</select>'
-    + '<button class="btn btn-ghost btn-sm" onclick="abrirModalRateio()">Rateio ao PDV</button>';
-}
-function finUnidadeMudar(v){
-  _finUnidade = v || null;
-  finTab(_finSecaoAtual || 'prov');   // recarrega o painel atual na unidade escolhida
-}
-
-// ── Rateio ao PDV (spec PDV §3): mãe pagou custo em nome do PDV — par intercompany ──
-async function abrirModalRateio(){
-  const pdvs = (_finUnidades || []).filter(u => u.tipo === 'ponto_venda');
-  if (!pdvs.length){ showToast('Nenhum Ponto de Venda no escopo.', true); return; }
-  const sel = document.getElementById('rateio-pdv-sel');
-  sel.innerHTML = pdvs.map(u => '<option value="'+u.id+'">'+esc(u.nome)+'</option>').join('');
-  document.getElementById('rateio-valor').value = '';
-  document.getElementById('rateio-hist').value = '';
-  document.getElementById('modal-rateio').style.display = 'flex';
-  rateioCarregarContas();
-  rateioListar();
-}
-function fecharModalRateio(){ document.getElementById('modal-rateio').style.display = 'none'; }
-async function rateioCarregarContas(){
-  // contas de DESPESA (grupo 5, analíticas) do plano do PDV escolhido
-  const pdvId = document.getElementById('rateio-pdv-sel').value;
-  const d = await fetch('/api/financeiro/contas?unidade='+pdvId, {credentials:'same-origin'})
-    .then(r=>r.json()).catch(()=>({}));
-  const flat = [];
-  (function walk(ns){ (ns||[]).forEach(n => { flat.push(n); walk(n.filhos); }); })(d.contas || []);
-  const desps = flat.filter(c => c.codigo.charAt(0) === '5' && c.tipo === 'analitica');
-  document.getElementById('rateio-conta-sel').innerHTML =
-    desps.map(c => '<option value="'+esc(c.codigo)+'">'+esc(c.codigo)+' · '+esc(c.nome)+'</option>').join('');
-}
-async function rateioSalvar(){
-  const valor = parseFloat(document.getElementById('rateio-valor').value);
-  if (!(valor > 0)){ showToast('Informe um valor > 0.', true); return; }
-  const d = await fetch('/api/financeiro/rateio-pdv', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify({
-      pdv_id: parseInt(document.getElementById('rateio-pdv-sel').value, 10),
-      valor: valor,
-      conta_despesa: document.getElementById('rateio-conta-sel').value,
-      historico: document.getElementById('rateio-hist').value.trim(),
-    })}).then(r=>r.json()).catch(()=>({}));
-  if(!d.ok){ await avisoPopup(d.erro||'Erro no rateio.', {titulo:'Rateio ao PDV'}); return; }
-  showToast('Rateio lançado ('+d.ref+') nos dois razões.', false);
-  document.getElementById('rateio-valor').value = '';
-  rateioListar();
-  finTab(_finSecaoAtual || 'prov');
-}
-async function rateioEstornar(ref){
-  if (!confirm('Estornar o rateio '+ref+' nos DOIS razões (mãe e PDV)?')) return;
-  const d = await fetch('/api/financeiro/rateio-pdv/estorno', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify({ref})})
-    .then(r=>r.json()).catch(()=>({}));
-  if(!d.ok){ showToast(d.erro||'Erro no estorno.', true); return; }
-  showToast('Rateio estornado em par.', false);
-  rateioListar();
-  finTab(_finSecaoAtual || 'prov');
-}
-async function rateioListar(){
-  const box = document.getElementById('rateio-lista');
-  const d = await fetch('/api/financeiro/rateios', {credentials:'same-origin'})
-    .then(r=>r.json()).catch(()=>({}));
-  if(!d.ok){ box.innerHTML = ''; return; }
-  const rows = (d.rateios||[]).map(r =>
-    '<tr style="border-top:1px solid var(--border)'+(r.estornado?';opacity:.55':'')+'">'
-    +'<td style="padding:4px 6px;font-family:var(--font-mono);font-size:11px">'+esc(r.ref)+'</td>'
-    +'<td>'+esc(r.unidade||'')+'</td>'
-    +'<td style="font-family:var(--font-mono)">'+_fBRL(r.valor)+'</td>'
-    +'<td style="color:var(--muted);font-size:11px">'+esc(r.historico||'')+'</td>'
-    +'<td style="text-align:right">'+(r.estornado
-        ? '<span style="font-size:10px;color:var(--muted)">estornado</span>'
-        : '<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="rateioEstornar(\''+esc(r.ref)+'\')">Estornar</button>')
-    +'</td></tr>').join('');
-  box.innerHTML = rows
-    ? '<div style="font-size:11px;color:var(--muted);margin:12px 0 4px">Rateios lançados'
-      +(d.eliminacoes_pendentes ? ' — pendência intercompany: '+_fBRL(d.eliminacoes_pendentes) : '')+'</div>'
-      +'<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>'+rows+'</tbody></table>'
-    : '';
 }
 
 // ── Folha de Pagamento (Modulos_Orizon_v10 §2.1): motor — parte fixa (cadastro) + variável (vendas) ──
 let _folhaComp = null;   // competência ativa (AAAA-MM)
 function _folhaCompDefault(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-async function folhaCarregar(){
-  // Entry do módulo Folha. O cadastro de Funcionários VOLTOU ao módulo Cadastro
-  // (pedido do usuário, 2026-07-23) — aqui fica só a folha do mês + o atalho.
+let _folhaAba = 'folha';
+async function folhaCarregar(){   // entry do módulo Folha: sub-abas Folha do mês | Funcionários
   const box = document.getElementById('folha-box'); if(!box) return;
   box.innerHTML =
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'
-    +'<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="cadIr(\'funcionarios\')">'
-    +'<i class="ti ti-id-badge"></i> Cadastro de funcionários (módulo Cadastro)</button>'
+    '<div class="home-tabs" style="display:flex;gap:6px;margin-bottom:14px">'
+    +'<button class="home-tab'+(_folhaAba==='folha'?' active':'')+'" onclick="folhaAba(\'folha\')">Folha do mês</button>'
+    +'<button class="home-tab'+(_folhaAba==='func'?' active':'')+'" onclick="folhaAba(\'func\')">Funcionários</button>'
     +'</div>'
-    +'<div id="folha-mes-box"></div>';
-  folhaMesCarregar();
+    +'<div id="folha-mes-box" style="display:'+(_folhaAba==='folha'?'block':'none')+'"></div>'
+    +'<div id="cad-panel-funcionarios" style="display:'+(_folhaAba==='func'?'block':'none')+'"></div>';
+  if(_folhaAba==='func') cadEntCarregar('funcionarios');
+  else folhaMesCarregar();
 }
+function folhaAba(a){ _folhaAba=a; folhaCarregar(); }
 async function folhaMesCarregar(){
   const box = document.getElementById('folha-mes-box'); if(!box) return;
   if(!_folhaComp) _folhaComp = _folhaCompDefault();
@@ -10955,16 +10366,11 @@ async function repasseRegistrar(){
 }
 
 let _balModo = 'resumido';   // 'resumido' | 'analitico'
-let _balData = '';   // posição em (data de corte — 2026-07-22)
 function balSetModo(m){ _balModo = m; balancoCarregar(); }
-function balPeriodo(){
-  _balData = document.getElementById('bal-data')?.value || '';
-  balancoCarregar();
-}
 async function balancoCarregar(){
   const box = document.getElementById('bal-box');
   if(!box) return;
-  const r = await fetch('/api/financeiro/balanco'+(_balData?'?data='+_balData:''), {credentials:'same-origin'});
+  const r = await fetch('/api/financeiro/balanco', {credentials:'same-origin'});
   if(r.status===403){ box.innerHTML='<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const b = (await r.json().catch(()=>({}))).balanco;
   if(!b){ box.innerHTML='<em style="color:var(--muted)">Falha ao carregar o balanço.</em>'; return; }
@@ -10993,23 +10399,12 @@ async function balancoCarregar(){
   const confere = b.confere
     ? '<div style="font-size:10px;color:var(--accent);margin-top:10px">✓ Ativo = Passivo + PL (fecha por partida dobrada)</div>'
     : '<div style="font-size:10px;color:var(--warn);margin-top:10px"><i class="ti ti-alert-triangle"></i> Ativo ≠ Passivo + PL — verificar lançamentos</div>';
-  // Consolidado (PDV): pendência intercompany mãe×PDV eliminada dos dois lados
-  const elim = b.eliminacoes
-    ? '<div style="font-size:11px;color:var(--muted);margin-top:8px">(−) Eliminações intercompany: '
-      +_fBRL(b.eliminacoes)+' — conta corrente mãe×PDV pendente de acerto (1.1.09 × 2.1.09), '
-      +'já abatida do Ativo e do Passivo consolidados.</div>'
-    : '';
-  box.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:6px">'+btn('resumido','Resumido')+btn('analitico','Analítico')+'</div>'
-    + '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--muted)">'
-    + 'Posição em: <input type="date" id="bal-data" value="'+_balData+'" onchange="balPeriodo()" style="padding:4px 6px;font-size:12px">'
-    + (_balData ? ' <button class="btn btn-ghost btn-sm" onclick="_balData=\'\';balancoCarregar()">Hoje</button>' : '')
-    + '</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Posição patrimonial ACUMULADA desde o início'
-    +(b.data_corte?(' até '+esc(b.data_corte.slice(0,10))):' (data atual)')
-    +'. Balanço não tem "data início": o saldo patrimonial é acumulado — um recorte quebraria Ativo = Passivo + PL.</div>'
+  box.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:10px">'+btn('resumido','Resumido')+btn('analitico','Analítico')+'</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Posição patrimonial acumulada'
+    +(b.data_corte?(' até '+esc(b.data_corte.slice(0,10))):' (data atual)')+'.</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start">'
     + '<div>'+ativoCol+'</div><div>'+passivoCol+'</div></div>'
-    + elim + confere;
+    + confere;
 }
 
 function reconInit(){
@@ -11102,132 +10497,17 @@ async function projDreCarregar(){
 }
 
 function _fBRL(v){ return Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-// ── Snapshot de Indicadores (2026-07-22) — stat tiles + sparklines (série única, tokens do app) ──
-let _indMeses = 6;
-function indMeses(n){ _indMeses = n; indicadoresCarregar(); }
-function _indNum(v, sufixo, casas){
-  if(v === null || v === undefined) return '<span style="color:var(--text-3)">—</span>';
-  return Number(v).toLocaleString('pt-BR',{minimumFractionDigits:casas??2,maximumFractionDigits:casas??2}) + (sufixo||'');
-}
-function _indTendHtml(t){
-  // direção SEMPRE com seta+texto (nunca só cor)
-  if(!t) return '';
-  const m = {alta:['▲','var(--ok)','alta'], queda:['▼','var(--err)','queda'],
-             estavel:['—','var(--text-3)','estável']}[t.dir] || ['—','var(--text-3)','estável'];
-  const pct = t.pct === null || t.pct === undefined ? '' :
-    ' ' + (t.pct>0?'+':'') + Number(t.pct).toLocaleString('pt-BR',{maximumFractionDigits:1}) + '%';
-  return `<span style="font-size:11px;color:${m[1]}">${m[0]} ${m[2]}${pct}</span>`;
-}
-function _indSpark(vals, labels){
-  // sparkline: linha 2px na cor de accent, último ponto marcado com anel, <title> por ponto
-  const w = 150, h = 36, pad = 3;
-  const vs = (vals||[]).map(Number);
-  if(vs.length < 2) return '';
-  const mn = Math.min(...vs), mx = Math.max(...vs);
-  const rng = (mx - mn) || 1;
-  const x = i => pad + i * (w - 2*pad) / (vs.length - 1);
-  const y = v => h - pad - (v - mn) * (h - 2*pad) / rng;
-  const pts = vs.map((v,i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-  const dots = vs.map((v,i) =>
-    `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="6" fill="transparent">`+
-    `<title>${(labels||[])[i]||''}: R$ ${_fBRL(v)}</title></circle>`).join('');
-  const li = vs.length - 1;
-  return `<svg width="${w}" height="${h}" style="display:block" role="img" aria-label="evolução mensal">
-    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
-    <circle cx="${x(li).toFixed(1)}" cy="${y(vs[li]).toFixed(1)}" r="4" fill="var(--accent)" stroke="var(--surface-2)" stroke-width="2"/>
-    ${dots}</svg>`;
-}
-async function indicadoresCarregar(){
-  const box = document.getElementById('ind-box');
-  if(!box) return;
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Calculando…</em>';
-  const r = await fetch('/api/financeiro/indicadores?meses='+_indMeses, {credentials:'same-origin'});
-  if(r.status===403){ box.innerHTML='<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
-  const d = (await r.json().catch(()=>({}))).indicadores;
-  if(!d){ box.innerHTML='<em style="color:var(--muted)">Falha ao carregar os indicadores.</em>'; return; }
-  const tile = (lbl, valorHtml, sub) => `
-    <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:10px;padding:12px 14px;min-width:150px;flex:1">
-      <div style="font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">${lbl}</div>
-      <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:var(--text);margin-top:4px">${valorHtml}</div>
-      ${sub ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${sub}</div>` : ''}
-    </div>`;
-  const sec = (titulo, inner) => `
-    <div style="margin-bottom:16px">
-      <div style="font-size:10px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">${titulo}</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${inner}</div>
-    </div>`;
-  const btnM = n => `<button class="btn ${_indMeses===n?'btn-primary':'btn-ghost'} btn-sm" onclick="indMeses(${n})">${n}m</button>`;
-  const L = d.liquidez||{}, M = d.margens||{}, P = d.prazos||{}, C = d.comercial||{};
-  const S = d.series||{}, T = d.tendencias||{};
-  const pctf = v => v===null||v===undefined ? '<span style="color:var(--text-3)">—</span>'
-    : (v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%';
-  const sparkTile = (lbl, chave) => `
-    <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:10px;padding:12px 14px;min-width:180px;flex:1">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">${lbl}</span>
-        <span>${_indTendHtml(T[chave])}${chave !== 'caixa' && d.tend_fluxo_ate_mes_fechado
-          ? ' <span style="font-size:9px;color:var(--text-3)" title="A seta compara meses FECHADOS — o mês corrente parcial distorceria a leitura">(meses fechados)</span>' : ''}</span>
-      </div>
-      <div style="font-family:var(--font-mono);font-size:16px;font-weight:700;margin:4px 0">R$ ${_fBRL((S[chave]||[]).slice(-1)[0]||0)}</div>
-      ${_indSpark(S[chave], S.labels)}
-      <div style="font-size:9px;color:var(--text-3);margin-top:2px">${(S.labels||[])[0]||''} → ${(S.labels||[]).slice(-1)[0]||''} (mês atual)</div>
-    </div>`;
-  box.innerHTML = `
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:14px">
-      <span style="font-size:12px;color:var(--muted)">Janela:</span>
-      ${btnM(3)}${btnM(6)}${btnM(12)}
-      <span style="font-size:11px;color:var(--muted);margin-left:auto">${d.periodo.ini} a ${d.periodo.fim}
-        ${d.balanco_confere ? '' : ' · <span style="color:var(--warn)"><i class="ti ti-alert-triangle"></i> balanço não confere</span>'}</span>
-    </div>
-    ${sec('Tendências (mensal)',
-      sparkTile('Receita líquida','receita') + sparkTile('Lucro líquido','lucro')
-      + sparkTile('Caixa (fim do mês)','caixa') + sparkTile('Vendas (contratos)','vendas'))}
-    ${sec('Liquidez e capital',
-      tile('Liquidez corrente', _indNum(L.corrente), 'Ativo Circ. ÷ Passivo Circ.')
-      + tile('Liquidez ajustada', _indNum(L.ajustada), 'sem os ativos diferidos (1.1.05/06)')
-      + tile('Liquidez imediata', _indNum(L.imediata), 'Caixa ÷ Passivo Circ.')
-      + tile('Capital de giro', 'R$ '+_fBRL(L.capital_giro), 'AC − PC'))}
-    ${sec('Margens do período',
-      tile('Margem bruta', pctf(M.bruta), '')
-      + tile('Margem EBITDA', pctf(M.ebitda), '')
-      + tile('Margem líquida', pctf(M.liquida), ''))}
-    ${sec('Prazos e giro',
-      tile('Giro de carteira', _indNum(P.giro_carteira, '×'), 'receita ÷ contas a receber')
-      + tile('PMR', _indNum(P.pmr_dias, ' dias', 1), 'prazo médio de recebimento')
-      + tile('PMP', _indNum(P.pmp_dias, ' dias', 1), 'prazo médio de pagamento (fábrica/fornecedores)')
-      + tile('A receber', 'R$ '+_fBRL(d.receber), 'clientes + parcelamentos'))}
-    ${sec('Comercial',
-      tile('Pipeline ativo', C.pipeline_ativo??0, (C.quentes??0)+' quentes')
-      + tile('Taxa de conversão', pctf(C.taxa_conversao), C.convertidos+' ganhos · '+C.perdidos+' perdidos')
-      + tile('Vendas no período', 'R$ '+_fBRL(C.vendas_periodo), (C.n_vendas_periodo??0)+' contratos')
-      + tile('Ticket médio', C.ticket_medio===null?'<span style="color:var(--text-3)">—</span>':'R$ '+_fBRL(C.ticket_medio), ''))}
-    <div style="font-size:10px;color:var(--muted)">Escopo: todas as lojas do razão contábil (rede inteira, quando houver).
-    Venda = 1ª ASSINATURA do contrato (rascunho e projeto cancelado não contam; regerar PDF não move a venda de mês).
-    "—" = denominador zero no período. PMP usa Fornecedores (2.1.01) + Provisão de Custo de Fábrica (2.1.04.06).</div>`;
-}
 let _dreModo = 'resumido';   // 'resumido' | 'analitico' (v5 §3.1)
-let _dreIni = '', _dreFim = '';   // período do relatório (2026-07-22)
 function dreSetModo(m){ _dreModo = m; dreCarregar(); }
-function drePeriodo(){
-  _dreIni = document.getElementById('dre-ini')?.value || '';
-  _dreFim = document.getElementById('dre-fim')?.value || '';
-  dreCarregar();
-}
 async function dreCarregar(){
   const box = document.getElementById('dre-box');
   if(!box) return;
-  const q = [];
-  if(_dreIni) q.push('ini='+_dreIni);
-  if(_dreFim) q.push('fim='+_dreFim);
-  const r = await fetch('/api/financeiro/dre'+(q.length?'?'+q.join('&'):''), {credentials:'same-origin'});
+  const r = await fetch('/api/financeiro/dre', {credentials:'same-origin'});
   if(r.status===403){ box.innerHTML='<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const d = (await r.json().catch(()=>({}))).dre;
   if(!d){ box.innerHTML='<em style="color:var(--muted)">Falha ao carregar a DRE.</em>'; return; }
   const det = d.detalhe || {};
   const linha=(lbl,val,opts)=>{ opts=opts||{};
-    // linha subordinada sem movimento no período não aparece (pedido 2026-07-22)
-    if(opts.sub && !val && !((det[opts.chave]||[]).length)) return '';
     const cor = opts.total ? 'var(--accent)' : (val<0?'var(--st-quente)':'var(--text)');
     let html = '<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--border);'
       +(opts.total?'font-weight:700;border-top:1px solid var(--border-strong)':'')+(opts.sub?'padding-left:26px;color:var(--muted)':'')+'">'
@@ -11240,14 +10520,8 @@ async function dreCarregar(){
     }
     return html; };
   const btn=(m,lbl)=>'<button class="btn '+(_dreModo===m?'btn-primary':'btn-ghost')+' btn-sm" onclick="dreSetModo(\''+m+'\')">'+lbl+'</button>';
-  const perHtml = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;font-size:12px;color:var(--muted)">'
-    + 'Período: <input type="date" id="dre-ini" value="'+_dreIni+'" onchange="drePeriodo()" style="padding:4px 6px;font-size:12px">'
-    + ' a <input type="date" id="dre-fim" value="'+_dreFim+'" onchange="drePeriodo()" style="padding:4px 6px;font-size:12px">'
-    + (_dreIni||_dreFim ? ' <button class="btn btn-ghost btn-sm" onclick="_dreIni=\'\';_dreFim=\'\';dreCarregar()">Limpar</button>' : '')
-    + '</div>';
   box.innerHTML = '<div style="max-width:560px">'
-    + '<div style="display:flex;gap:6px;margin-bottom:6px">'+btn('resumido','Resumido')+btn('analitico','Analítico')+'</div>'
-    + perHtml
+    + '<div style="display:flex;gap:6px;margin-bottom:10px">'+btn('resumido','Resumido')+btn('analitico','Analítico')+'</div>'
     + linha('Receita Bruta (produto + serviço)', d.receita_bruta, {chave:'receita_bruta'})
     + linha('(−) Deduções', -d.deducoes, {sub:true, chave:'deducoes'})
     + linha('= Receita Líquida', d.receita_liquida, {total:true})
@@ -11255,7 +10529,7 @@ async function dreCarregar(){
     + linha('= Lucro Bruto', d.lucro_bruto, {total:true})
     + linha('(−) Despesas Comerciais', -d.despesas_comerciais, {sub:true, chave:'despesas_comerciais'})
     + linha('(−) Despesas Administrativas', -d.despesas_administrativas, {sub:true, chave:'despesas_administrativas'})
-    + linha('(−) Ajustes de Provisões', -d.constituicao_provisoes, {sub:true, chave:'constituicao_provisoes'})
+    + linha('(−) Constituição de Provisões', -d.constituicao_provisoes, {sub:true, chave:'constituicao_provisoes'})
     + linha('= EBITDA', d.ebitda, {total:true})
     + linha('(−) Depreciação', -d.depreciacao, {sub:true})
     + linha('= EBIT', d.ebit, {total:true})
@@ -11555,16 +10829,7 @@ async function adminFiscalCarregar(kind, id){
     : `<button class="btn btn-primary btn-sm" ${podeProd?'':'disabled'} title="${podeProd?'':'Confirme todos os campos de teste e defina o token de produção antes de ativar.'}" onclick="adminFiscalAtivarAmbiente('producao')">Ativar Produção</button>`;
   const tokH = d.token_homolog_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
   const tokP = d.token_prod_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
-  const pdvAviso = d.pdv_de
-    ? `<div class="card" style="padding:12px 14px;margin-bottom:12px;border-left:3px solid var(--accent)">
-         <strong style="font-size:13px">Ponto de Venda — emissão fiscal pela loja-mãe</strong>
-         <div style="font-size:12px;color:var(--muted);margin-top:4px">
-           As NF-e/NFS-e deste PDV saem pelo CNPJ de <strong style="color:var(--text)">${esc(d.pdv_de)}</strong>
-           (cadeia de emissão da mãe). A configuração abaixo só é necessária se este PDV
-           ganhar um emitente exclusivo — o padrão é deixar como está.
-         </div></div>`
-    : '';
-  panel.innerHTML = pdvAviso +
+  panel.innerHTML =
     sec('Identificação fiscal') +
     `<div class="grid2" style="gap:14px">${inp('razao_social','Razão social')}${inp('inscricao_estadual','Inscrição estadual')}${inp('inscricao_municipal','Inscrição municipal')}</div>` +
     sec('Regime tributário') +
@@ -11832,92 +11097,7 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-pct-merc','% Mercadoria (NF-e produto)',loja.pct_mercadoria!=null?loja.pct_mercadoria:65)}
       ${f('loja-pct-serv','% Serviço (NFS-e)',loja.pct_servico!=null?loja.pct_servico:35)}
     </div>
-    <button class="btn btn-primary btn-sm" onclick="adminLojaSalvar(${lid})">Salvar dados da loja</button>
-    ${loja.loja_mae_id
-      ? `<div style="margin-top:16px;font-size:12px;color:var(--muted)">
-           Esta unidade é um <strong style="color:var(--text)">Ponto de Venda</strong> — emissão fiscal,
-           contrato e financeiro pela loja-mãe; rede herdada (não editável).</div>`
-      : `<div id="loja-pdvs-box" style="margin-top:20px"></div>`}`;
-  if (!loja.loja_mae_id) adminPdvsCarregar(lid);
-}
-
-// ── Pontos de Venda (spec PDV 2026-07-22): lojista visualiza; super_admin cria/gerencia ──
-async function adminPdvsCarregar(lid){
-  const box = document.getElementById('loja-pdvs-box');
-  if (!box) return;
-  const d = await fetch('/api/admin/lojas/'+lid+'/pdvs', {credentials:'same-origin'})
-    .then(r=>r.json()).catch(()=>null);
-  if (!d || !d.ok) { box.innerHTML = ''; return; }
-  const isSuper = ((_usuarioAtual && _usuarioAtual.nivel) || '') === 'super_admin';
-  const linhas = (d.pdvs||[]).map(p=>`
-    <tr style="border-top:1px solid var(--border)">
-      <td style="padding:4px 6px">${esc(p.nome)}</td>
-      <td>${esc(p.codigo)}</td>
-      <td style="color:var(--muted)">${esc(p.cidade||'—')}</td>
-      <td>${p.ativo ? '✓' : '—'}</td>
-      <td style="text-align:right">${isSuper ? `
-        <button class="btn btn-ghost btn-sm" style="font-size:10px"
-          onclick="pdvToggleAtivo(${p.id}, ${p.ativo ? 0 : 1}, ${lid})">${p.ativo ? 'Desativar' : 'Ativar'}</button>` : ''}
-      </td></tr>`).join('');
-  box.innerHTML = `
-    <div style="border-top:1px solid var(--border);padding-top:14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <strong style="font-size:13px">Pontos de Venda</strong>
-        <span style="font-size:11px;color:var(--muted)">vendem com painel e resultados próprios; fiscal, contrato e financeiro pela loja-mãe</span>
-        ${isSuper ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="abrirModalPdv(${lid})">+ Novo Ponto de Venda</button>` : ''}
-      </div>
-      ${linhas ? `<table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="text-align:left;color:var(--muted)">
-          <th style="padding:4px 6px">Nome</th><th>Código</th><th>Cidade</th><th>Ativo</th><th></th></tr></thead>
-        <tbody>${linhas}</tbody></table>`
-        : `<em style="font-size:12px;color:var(--muted)">Nenhum Ponto de Venda cadastrado${isSuper ? '' : ' (o cadastro é feito pelo administrador da plataforma)'}.</em>`}
-    </div>`;
-}
-
-function abrirModalPdv(lid){
-  const f = (id,label)=>`<div><label class="field-label">${label}</label>
-    <input id="${id}" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></div>`;
-  document.getElementById('pdv-form-grid').innerHTML = [
-    f('pdv-nome','Nome'), f('pdv-codigo','Código (3 letras)'),
-    f('pdv-tel','Telefone'), f('pdv-email','E-mail'),
-    f('pdv-cep','CEP'), f('pdv-logradouro','Logradouro'),
-    f('pdv-numero','Número'), f('pdv-bairro','Bairro'),
-    f('pdv-cidade','Cidade'), f('pdv-estado','UF'),
-    f('pdv-t1n','Testemunha 1 — nome'), f('pdv-t1c','Testemunha 1 — CPF'),
-    f('pdv-t2n','Testemunha 2 — nome'), f('pdv-t2c','Testemunha 2 — CPF'),
-  ].join('');
-  const _cepPdv = document.getElementById('pdv-cep');
-  if (_cepPdv){ _cepPdv.maxLength = 9; _cepPdv.placeholder = '00000-000';
-    _cepPdv.oninput = function(){ cepAuto(this, 'pdv-'); }; }
-  document.getElementById('pdv-salvar-btn').onclick = () => salvarModalPdv(lid);
-  document.getElementById('modal-pdv').style.display = 'flex';
-}
-function fecharModalPdv(){ document.getElementById('modal-pdv').style.display = 'none'; }
-
-async function salvarModalPdv(lid){
-  const v = id => document.getElementById(id).value.trim();
-  const payload = {
-    nome: v('pdv-nome'), codigo: v('pdv-codigo'), telefone: v('pdv-tel'), email: v('pdv-email'),
-    cep: v('pdv-cep'), logradouro: v('pdv-logradouro'), numero: v('pdv-numero'),
-    bairro: v('pdv-bairro'), cidade: v('pdv-cidade'), estado: v('pdv-estado'),
-    testemunha1_nome: v('pdv-t1n'), testemunha1_cpf: v('pdv-t1c'),
-    testemunha2_nome: v('pdv-t2n'), testemunha2_cpf: v('pdv-t2c'),
-  };
-  const r = await fetch('/api/admin/lojas/'+lid+'/pdvs', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ await avisoPopup(d.erro||'Erro ao criar o Ponto de Venda.', {titulo:'Ponto de Venda'}); return; }
-  fecharModalPdv();
-  showToast('Ponto de Venda criado.', false);
-  adminPdvsCarregar(lid);
-}
-
-async function pdvToggleAtivo(pdvId, ativo, lid){
-  const r = await fetch('/api/admin/lojas/'+pdvId, {method:'PATCH', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify({ativo: !!ativo})});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ showToast(d.erro||'Erro', true); return; }
-  adminPdvsCarregar(lid);
+    <button class="btn btn-primary btn-sm" onclick="adminLojaSalvar(${lid})">Salvar dados da loja</button>`;
 }
 
 async function adminLojaSalvar(lid){
@@ -11985,35 +11165,12 @@ async function _carregarLojasModalUsuario(ctx){
     lojas = d.lojas || [];
   } else if (ctx.loja_id) {
     lojas = [{ id: ctx.loja_id, nome: '(loja atual)' }];
-  } else {
-    // Gestão geral (super_admin/admin_rede sem loja própria — bug 2026-07-22): sem loja no
-    // contexto o modal ficava sem opção nenhuma e o salvar exigia loja — beco sem saída.
-    // Carrega TODAS as lojas do escopo do ator (o backend já filtra por tenancy).
-    const d = await fetch('/api/admin/lojas', {credentials:'same-origin'})
-      .then(r=>r.json()).catch(()=>({lojas:[]}));
-    lojas = d.lojas || [];
   }
   const sel = new Set(ctx.loja_ids || (ctx.loja_id ? [ctx.loja_id] : []));
   box.style.display = lojas.length ? '' : 'none';
   document.getElementById('musr-lojas').innerHTML = lojas.map(l =>
     `<label style="display:block;font-size:12px"><input type="checkbox" class="musr-loja-cb" `
-    + `onchange="_musrLojaMudou()" value="${l.id}" ${sel.has(l.id)?'checked':''}> ${esc(l.nome)}</label>`).join('');
-}
-
-// Ao marcar uma loja, o dropdown de perfil recarrega com os perfis DAQUELA loja (inclusive
-// os customizados dela) — o perfil de acesso é por loja desde a rev3.
-async function _musrLojaMudou(){
-  if (!_modalUserCtx) return;
-  const marcada = document.querySelector('.musr-loja-cb:checked');
-  if (!marcada) return;
-  const q = new URLSearchParams({ escopo: _modalUserCtx.escopo || 'loja', loja_id: marcada.value });
-  const pd = await fetch('/api/admin/usuarios/perfis-permitidos?' + q.toString(),
-    { credentials: 'same-origin' }).then(r => r.json()).catch(() => null);
-  if (!pd || !pd.ok) return;
-  const sel = document.getElementById('musr-perfil');
-  const atual = sel.value;
-  sel.innerHTML = (pd.perfis || []).map(p => `<option value="${p.slug}">${esc(p.rotulo)}</option>`).join('');
-  if (Array.from(sel.options).some(o => o.value === atual)) sel.value = atual;
+    + `value="${l.id}" ${sel.has(l.id)?'checked':''}> ${esc(l.nome)}</label>`).join('');
 }
 
 async function abrirModalUsuario(ctx){
@@ -12161,6 +11318,136 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ---- Aprovacao / Exportacao --------------------------------------------------
+let _expPollTimer = null;
+
+async function aprovarOrcamento() {
+  const _sv = await salvarValorNegociado();
+  if (!_sv.ok) {
+    (typeof avisoPopup === 'function')
+      ? avisoPopup('Não foi possível salvar o orçamento — aprovação cancelada. ' + (_sv.erro || ''))
+      : showToast('Não foi possível salvar o orçamento — aprovação cancelada.', true);
+    return;
+  }
+  const modal      = document.getElementById('modal-exportar');
+  const logBox     = document.getElementById('exp-log-box');
+  const banner     = document.getElementById('exp-status-banner');
+  const confirmBox = document.getElementById('exp-confirm-box');
+  const btnFechar  = document.getElementById('exp-btn-fechar');
+  const btnFecTop  = document.getElementById('exp-btn-fechar-top');
+  const btnCancel  = document.getElementById('exp-btn-cancelar');
+
+  logBox.innerHTML    = '<div style="color:var(--muted)">Iniciando exportacao...</div>';
+  banner.textContent  = 'Enviando para o Omie...';
+  banner.style.background = 'var(--accent-soft)';
+  banner.style.borderColor = 'var(--accent)';
+  banner.style.color  = 'var(--ok)';
+  confirmBox.style.display = 'none';
+  btnFechar.style.display  = 'none';
+  btnFecTop.style.display  = 'none';
+  btnCancel.style.display  = 'inline-flex';
+  modal.style.display = 'flex';
+
+  try {
+    const r = await fetch('/exportar', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ambientes: 'todos'}),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      expSetErro(d.erro || 'Falha ao iniciar exportacao');
+      return;
+    }
+  } catch(e) {
+    expSetErro('Erro de conexao com o servidor');
+    return;
+  }
+
+  if (_expPollTimer) clearInterval(_expPollTimer);
+  _expPollTimer = setInterval(_expPoll, 1500);
+}
+
+async function _expPoll() {
+  try {
+    const r = await fetch('/logs');
+    const d = await r.json();
+
+    const logBox = document.getElementById('exp-log-box');
+    if (d.logs && d.logs.length) {
+      logBox.innerHTML = d.logs.map(l => {
+        const color = l.tipo === 'err'  ? 'var(--err)'
+                    : l.tipo === 'warn' ? 'var(--warn)'
+                    : 'var(--text)';
+        return `<div style="color:${color};padding:2px 0;border-bottom:1px solid var(--border)">${esc(l.msg)}</div>`;
+      }).join('');
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (d.confirm) {
+      const box = document.getElementById('exp-confirm-box');
+      document.getElementById('exp-confirm-titulo').textContent = d.confirm.titulo || '';
+      document.getElementById('exp-confirm-corpo').innerHTML    = d.confirm.corpo  || '';
+      box.style.display = 'block';
+    } else {
+      document.getElementById('exp-confirm-box').style.display = 'none';
+    }
+
+    if (d.done) {
+      clearInterval(_expPollTimer);
+      _expPollTimer = null;
+      const banner = document.getElementById('exp-status-banner');
+      banner.textContent  = 'Exportacao concluida — projeto bloqueado e XMLs travados.';
+      banner.style.background  = 'var(--accent-soft)';
+      banner.style.borderColor = 'var(--accent)';
+      banner.style.color  = 'var(--ok)';
+      document.getElementById('exp-btn-fechar').style.display  = 'inline-flex';
+      document.getElementById('exp-btn-fechar-top').style.display = 'block';
+      document.getElementById('exp-btn-cancelar').style.display = 'none';
+      // Recarrega projeto para obter bloqueado:true e atualizar UI
+      if (projetoAtivo && projetoAtivo.nome_safe) {
+        try {
+          const r2 = await fetch('/projetos/' + encodeURIComponent(projetoAtivo.nome_safe));
+          const d2 = await r2.json();
+          if (d2.ok && d2.projeto) { projetoAtivo = d2.projeto; atualizarUIBloqueio(); }
+        } catch(e) {}
+      }
+    }
+  } catch(e) { /* ignora erros transientes de poll */ }
+}
+
+async function expResponderConfirm(resp) {
+  document.getElementById('exp-confirm-box').style.display = 'none';
+  try {
+    await fetch('/confirm', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({resp}),
+    });
+  } catch(e) {}
+}
+
+async function expCancelar() {
+  try { await fetch('/cancel', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); } catch(e) {}
+  if (_expPollTimer) { clearInterval(_expPollTimer); _expPollTimer = null; }
+  fecharModalExportar();
+}
+
+function expSetErro(msg) {
+  const banner = document.getElementById('exp-status-banner');
+  banner.textContent  = 'Erro: ' + msg;
+  banner.style.background  = 'var(--err-soft)';
+  banner.style.borderColor = 'var(--err)';
+  banner.style.color  = 'var(--err)';
+  document.getElementById('exp-btn-fechar').style.display  = 'inline-flex';
+  document.getElementById('exp-btn-fechar-top').style.display = 'block';
+  document.getElementById('exp-btn-cancelar').style.display = 'none';
+}
+
+function fecharModalExportar() {
+  if (_expPollTimer) { clearInterval(_expPollTimer); _expPollTimer = null; }
+  document.getElementById('modal-exportar').style.display = 'none';
+}
 
 carregarUsuarioAutenticado();
 
@@ -12175,6 +11462,7 @@ document.addEventListener('keydown', function(e){
     ['modal-perfil-detalhe',   fecharModalPerfilDetalhe],
     ['modal-stepup',           () => fecharModalStepUp(false)],
     ['modal-perfil',           fecharModalPerfil],
+    ['modal-exportar',         fecharModalExportar],
     ['modal-gerente-senha',    tfFecharModalSenha],
     ['modal-tf-aviso',         tfFecharAviso],
     ['modal-cli-encontrado',   mceFechar],
@@ -12633,28 +11921,18 @@ function _fmtDataBR(s) {
   return isNaN(d) ? '' : d.toLocaleDateString('pt-BR');
 }
 function _cronoLabelEtapa(codigo, dados) {
-  // Duas COLUNAS explícitas e alinhadas (Planejado × Executado), rótulo em cima e data
-  // empilhada embaixo; largura fixa + borda à esquerda delimitam e alinham entre as
-  // etapas (pedido cosmético 2026-07-22). Sem data → "—" (a coluna nunca some, senão
-  // o alinhamento quebra de uma etapa para a outra).
   const prev = _fmtDataBR(dados.data_prevista_conclusao);
   const conc = _fmtDataBR(dados.data_conclusao);
   if (!prev && !conc) return '';
-  const editar = (prev && _podeAutorizarFront())
-    ? ` <i class="ti ti-pencil" title="Editar data planejada (requer reautenticação)" style="cursor:pointer;font-size:12px;color:var(--muted)" onclick="event.stopPropagation();cronoAbrirEdicao('${codigo}','${dados.data_prevista_conclusao || ''}')"></i>`
-    : '';
-  const col = (rotulo, titulo, corpo) => `
-    <span title="${titulo}" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;
-                 min-width:96px;padding:0 10px;border-left:1px solid var(--border)">
-      <span style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3)">${rotulo}</span>
-      <span style="white-space:nowrap">${corpo}</span>
-    </span>`;
-  return `<span class="ciclo-crono" style="margin-left:auto;display:inline-flex;font-size:11px;color:var(--muted);align-items:stretch">`
-    + col('Planejado', 'Planejado — extraído do cronograma',
-          prev ? `<i class="ti ti-calendar-event" style="font-size:11px"></i> ${prev}${editar}` : '—')
-    + col('Executado', 'Executado — data de conclusão da etapa',
-          conc ? `<span style="color:var(--accent)"><i class="ti ti-check" style="font-size:11px"></i> ${conc}</span>` : '—')
-    + `</span>`;
+  const parts = [];
+  if (prev) {
+    const editar = _podeAutorizarFront()
+      ? ` <i class="ti ti-pencil" title="Editar data planejada (requer reautenticação)" style="cursor:pointer;font-size:12px;color:var(--muted)" onclick="event.stopPropagation();cronoAbrirEdicao('${codigo}','${dados.data_prevista_conclusao || ''}')"></i>`
+      : '';
+    parts.push(`<span title="Planejada — extraída do cronograma"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3)">Planejada</span> <i class="ti ti-calendar-event" style="font-size:11px"></i> ${prev}${editar}</span>`);
+  }
+  if (conc) parts.push(`<span style="color:var(--accent)" title="Executada"><span style="font-size:9px;text-transform:uppercase;letter-spacing:.04em">Executada</span> <i class="ti ti-check" style="font-size:11px"></i> ${conc}</span>`);
+  return `<span class="ciclo-crono" style="margin-left:auto;display:inline-flex;gap:12px;font-size:11px;color:var(--muted);align-items:center">${parts.join('')}</span>`;
 }
 
 let _cronoEtapa = null;
@@ -13446,7 +12724,8 @@ async function enviarSolicitacaoMedicao() {
   if (!cred) return;
   const fd = new FormData();
   fd.append('arquivo', f); fd.append('login', cred.login); fd.append('senha', cred.senha);
-  const d = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`, fd);
+  const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`, {method:'POST', credentials:'same-origin', body: fd});
+  const d = await r.json();
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
   showToast('Solicitação de medição confirmada!', false);
   await carregarCiclo();
@@ -13490,7 +12769,8 @@ async function enviarParecerMedicao() {
   const fd = new FormData();
   fd.append('planta', f); fd.append('parecer', parecer); fd.append('ambientes_aprovados', ambientes);
   fd.append('login', cred.login); fd.append('senha', cred.senha);
-  const d = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/parecer`, fd);
+  const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/parecer`, {method:'POST', credentials:'same-origin', body: fd});
+  const d = await r.json();
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
   showToast(d.parecer === 'reprovado' ? 'Parecer registrado: Reprovado (aguardando decisão).' : 'Medição registrada!', false);
   await carregarCiclo();
@@ -13503,7 +12783,8 @@ async function enviarDecisaoReprovado() {
   if (!cred) return;
   const fd = new FormData();
   fd.append('doc_cliente', f); fd.append('login', cred.login); fd.append('senha', cred.senha);
-  const d = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/decisao-reprovado`, fd);
+  const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/decisao-reprovado`, {method:'POST', credentials:'same-origin', body: fd});
+  const d = await r.json();
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
   showToast('Medição liberada (decisão comercial registrada).', false);
   await carregarCiclo();
@@ -13736,9 +13017,6 @@ async function peComplementoRender(){
   const {fmt, sig} = _peCmpHelpers();
   const linhas = (cmp.ok && cmp.linhas) || [];
   // ── Carregar Complemento de Projeto (por ambiente marcado; pode ser idêntico ao PE) ──
-  // Ao lado do XML aparece SÓ a DIFERENÇA (o que será cobrado), não o valor integral do
-  // ambiente novo (relato do usuário, 2026-07-21).
-  const corD = v => v>0.005?'var(--warn)':(v<-0.005?'var(--ok)':'var(--text-3)');
   let complHtml;
   if(!linhas.length){
     complHtml = '<span style="color:var(--muted);font-size:.82rem">Nenhum ambiente marcado para complemento na Revisão de PE.</span>';
@@ -13747,7 +13025,7 @@ async function peComplementoRender(){
       <div style="display:flex;justify-content:space-between;align-items:center;font-size:.82rem;line-height:2.1">
         <span>${esc(l.ambiente)}</span>
         <span style="font-family:var(--font-mono)">
-          ${l.compl_carregado ? `<span style="color:${corD(l.diferenca)}" title="Diferença sobre o contratado (${fmt(l.vava_contratado)})">Δ ${sig(l.diferenca)}</span>`
+          ${l.compl_carregado ? fmt(l.vava_complemento)
             : '<span style="color:var(--text-3);font-size:var(--fs-xs)">complemento não carregado</span>'}
           <label class="btn-ciclo" style="font-size:var(--fs-xs);padding:2px 8px;cursor:pointer;margin-left:8px"><i class="ti ti-upload"></i> XML
             <input type="file" accept=".xml" style="display:none" onchange="peComplUpload(${l.pool_ambiente_id}, this)"></label>
@@ -13803,7 +13081,6 @@ async function peComplementoRender(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${a.tem_pdf ? `<a class="btn-ciclo" style="text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo/pdf?v=${Date.now()}"><i class="ti ti-download"></i> Baixar PDF</a>` : ''}
         ${!assinado ? `<button class="btn-ciclo" onclick="peAditivoGerar()"><i class="ti ti-refresh"></i> Regerar</button>` : ''}
-        ${assinado ? `<button class="btn-ciclo" onclick="peAditivoGerar(true)"><i class="ti ti-file-plus"></i> Novo Termo Aditivo</button>` : ''}
         ${!assinado ? sigBtn('loja') : '<span style="color:var(--ok);font-size:.82rem">✓ loja</span>'}
         ${!assinado ? sigBtn('cliente') : '<span style="color:var(--ok);font-size:.82rem">✓ cliente</span>'}
       </div>
@@ -13831,7 +13108,8 @@ async function peComplUpload(poolAmbienteId, inputFile){
   fd.append('pool_ambiente_id', poolAmbienteId);
   fd.append('finalidade', 'complemento');
   try {
-    const j = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/upload`, fd);
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/upload`,
+                          {method:'POST', credentials:'same-origin', body:fd}).then(r=>r.json());
     if(j.ok){ showToast('Complemento carregado.'); peComplementoRender(); }
     else { await avisoPopup(j.erro||'Erro',{titulo:'Carregar Complemento'}); }
   } catch(e){ await avisoPopup('Erro ao enviar o arquivo.',{titulo:'Carregar Complemento'}); }
@@ -13886,8 +13164,8 @@ async function peComplementoNegociar(){
     if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Negociar Complemento'}); return; }
     fecharCiclo();
     goPage(2);
-    _orcamentoAtivoId = null;                       // força re-seleção…
-    await carregarOrcamentos(j.orcamento.id);       // …DIRETO no complemento (sem flash do contratado)
+    await carregarOrcamentos();               // recarrega a lista (o default trava no contratado)
+    await ativarOrcamento(j.orcamento.id);    // ...e ativa o COMPLEMENTO explicitamente
     showToast('Complemento ativo — negocie as diferenças (desconto por ambiente).');
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Negociar Complemento'}); }
 }
@@ -13918,105 +13196,12 @@ async function peAprovacaoAssinar(parte){
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Assinar aprovação'}); }
 }
 
-// ── Termo Aditivo — wizard de 5 modais sequenciais (spec 2026-07-22) ─────────
-// Cada passo pré-preenche um marcador ADITIVO_* (texto editável + "Restaurar texto
-// padrão"); o backend traz os defaults já adaptados ao caso (sem inclusões/exclusões/
-// alteração de valor → declaração negativa automática). Regerar reabre com o texto
-// salvo da última geração; após assinado, "novo:true" abre o PRÓXIMO aditivo.
-const _ADW_PASSOS = [
-  {chave:'considerandos',  titulo:'Considerandos',
-   dica:'Um CONSIDERANDO por parágrafo — apague os que não se aplicam ao caso concreto.'},
-  {chave:'lista_integral', titulo:'Lista integral de produtos e materiais',
-   dica:'Rol COMPLETO pós-alteração (inclusive ambientes não alterados) — substitui integralmente o do CONTRATO.'},
-  {chave:'inclusoes',      titulo:'Inclusões',
-   dica:'Itens que não constavam do CONTRATO. Sem inclusões, mantenha a declaração negativa.'},
-  {chave:'exclusoes',      titulo:'Exclusões',
-   dica:'Itens que saíram do CONTRATO. Sem exclusões, mantenha a declaração negativa.'},
-  {chave:'valores',        titulo:'Valores e condições de pagamento',
-   dica:'Confira os valores (original → novo → diferença) e detalhe forma, parcelas e datas de pagamento.'},
-];
-let _adw = null;
-
-async function peAditivoGerar(novo){
+async function peAditivoGerar(){
   if(!projetoAtivo) return;
-  let j;
-  try {
-    j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo/defaults`,
-                    {credentials:'same-origin'}).then(r=>r.json());
-  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); return; }
-  if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Termo Aditivo'}); return; }
-  const salvos = j.blocos_salvos || {};
-  _adw = { novo: !!novo, ordinal: j.ordinal, idx: 0,
-           passos: _ADW_PASSOS.map(p => ({...p, padrao: j.defaults[p.chave] || '',
-                                          texto: salvos[p.chave] || j.defaults[p.chave] || ''})) };
-  document.getElementById('modal-aditivo-wizard').style.display='flex';
-  _adwRender();
-}
-
-function _adwSalvaAtual(){
-  if(_adw) _adw.passos[_adw.idx].texto = document.getElementById('adw-texto').value;
-}
-
-function _adwRender(){
-  const p = _adw.passos[_adw.idx];
-  document.getElementById('adw-titulo').textContent = `${_adw.ordinal} Termo Aditivo — ${p.titulo}`;
-  document.getElementById('adw-passo-rotulo').textContent = `Passo ${_adw.idx+1} de ${_adw.passos.length}`;
-  document.getElementById('adw-dica').textContent = p.dica;
-  document.getElementById('adw-texto').value = p.texto;
-  const ult = _adw.idx === _adw.passos.length - 1;
-  document.getElementById('adw-voltar').style.display  = _adw.idx === 0 ? 'none' : '';
-  document.getElementById('adw-avancar').style.display = ult ? 'none' : '';
-  document.getElementById('adw-preview').style.display = ult ? '' : 'none';
-  document.getElementById('adw-gerar').style.display   = ult ? '' : 'none';
-}
-
-function adwNav(d){
-  _adwSalvaAtual();
-  _adw.idx = Math.min(Math.max(_adw.idx + d, 0), _adw.passos.length - 1);
-  _adwRender();
-}
-
-function adwRestaurar(){
-  const p = _adw.passos[_adw.idx];
-  p.texto = p.padrao;
-  document.getElementById('adw-texto').value = p.padrao;
-}
-
-function adwFechar(){
-  _adw = null;
-  document.getElementById('modal-aditivo-wizard').style.display='none';
-}
-
-function _adwBlocos(){
-  _adwSalvaAtual();
-  const b = {};
-  _adw.passos.forEach(p => b[p.chave] = p.texto);
-  return b;
-}
-
-async function adwPreview(){
-  if(!projetoAtivo || !_adw) return;
-  try {
-    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo`,
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({preview:true, blocos:_adwBlocos(), novo:_adw.novo})});
-    const ct = r.headers.get('Content-Type') || '';
-    if(!r.ok || ct.indexOf('pdf') === -1){
-      const j = await r.json().catch(()=>({}));
-      await avisoPopup(j.erro||'Erro no preview.',{titulo:'Termo Aditivo'}); return;
-    }
-    window.open(URL.createObjectURL(await r.blob()), '_blank');
-  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); }
-}
-
-async function adwGerar(){
-  if(!projetoAtivo || !_adw) return;
   try {
     const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo`,
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({blocos:_adwBlocos(), novo:_adw.novo})}).then(r=>r.json());
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
     if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Termo Aditivo'}); return; }
-    adwFechar();
     showToast('Termo aditivo gerado.');
     peComplementoRender();
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); }
@@ -14094,7 +13279,8 @@ async function pePeUpload(poolAmbienteId, inputFile){
   fd.append('arquivo', f);
   fd.append('pool_ambiente_id', poolAmbienteId);
   try {
-    const j = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/upload`, fd);
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/upload`,
+                          {method:'POST', credentials:'same-origin', body:fd}).then(r=>r.json());
     if(j.ok){ showToast('XML de PE carregado.'); peComparacaoRender(); }
     else { await avisoPopup(j.erro||'Erro',{titulo:'Carregar PE'}); }
   } catch(e){ await avisoPopup('Erro ao enviar o arquivo.',{titulo:'Carregar PE'}); }
@@ -14297,8 +13483,10 @@ async function peUpload(codigo, inputFile) {
   fd.append('login', cred.login);
   fd.append('senha', cred.senha);
   try {
-    const j = await uploadFormData(
-      `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${codigo}/documento`, fd);
+    const r = await fetch(
+      `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${codigo}/documento`,
+      { method: 'POST', credentials: 'same-origin', body: fd });
+    const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha ao carregar.', {titulo:'PE — Upload'}); return false; }
     showToast('Documento carregado com sucesso!', false);
     await peCarregar(projetoAtivo.nome_safe);
@@ -14341,58 +13529,17 @@ function _renderCardImplantacao(dados, bloqueada) {
          <div style="margin-top:14px;border-top:1px dashed var(--border);padding-top:12px">
            <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Conferência contábil (#13): ajusta o Custo de Fábrica pelo valor do PE e migra parte p/ Outros Fornecedores. Dois lançamentos auditáveis (ativo × provisão, não tocam a DRE).</div>
            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-             <input type="text" id="conf-custo" inputmode="numeric" placeholder="Custo fábrica (PE) R$" oninput="mascaraMoedaInput(this);confAjustesPreviewAgendar()" style="width:150px;height:var(--control-h-sm);padding:0 var(--sp-3);background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)">
+             <input type="text" id="conf-custo" inputmode="numeric" placeholder="Custo fábrica (PE) R$" oninput="mascaraMoedaInput(this)" style="width:150px;height:var(--control-h-sm);padding:0 var(--sp-3);background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)">
              <input type="text" id="conf-outros" inputmode="numeric" placeholder="Migrar p/ Outros R$" oninput="mascaraMoedaInput(this)" style="width:150px;height:var(--control-h-sm);padding:0 var(--sp-3);background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)">
              <button class="btn-ciclo" onclick="conferenciaRegistrar()"><i class="ti ti-checkup-list"></i> Confirmar conferência</button>
            </div>
-           <div id="conf-ajustes-prev" style="margin-top:8px"></div>
          </div>`}`;
-}
-
-// ── Ajustes Excepcionais de Fábrica — preview na conferência (etapa 12) ───────────────────────
-let _confPrevTimer = null;
-function _moedaNum(id){
-  const el = document.getElementById(id);
-  return el ? (parseFloat((el.value||'').replace(/[^\d,]/g,'').replace(',','.'))||0) : 0;
-}
-function confAjustesPreviewAgendar(){
-  clearTimeout(_confPrevTimer);
-  _confPrevTimer = setTimeout(confAjustesPreview, 400);
-}
-async function confAjustesPreview(){
-  const box = document.getElementById('conf-ajustes-prev');
-  if(!box || !projetoAtivo) return;
-  const valor = _moedaNum('conf-custo');
-  if(!(valor > 0)){ box.innerHTML = ''; return; }
-  let j;
-  try { j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conferencia/ajustes-preview?valor=${valor}`,
-                        {credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ box.innerHTML = ''; return; }
-  if(!j.ok || !j.preview){ box.innerHTML = ''; return; }
-  box.innerHTML = _confAjustesHtml(j.preview, 'Ajustes excepcionais previstos');
-}
-function _confAjustesHtml(p, titulo){
-  const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const aps = p.aplicacoes || [];
-  if(!aps.length) return '';
-  const linhas = aps.map(a =>
-    `<div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);line-height:1.9">
-       <span style="color:var(--muted)">${a.tipo === 'desconto' ? '−' : '+'} ${a.pct}% ${a.tratamento === 'custo' ? '(custo)' : '(acordo)'}${a.capado ? ' <span style="color:var(--warn)">· capado ao saldo</span>' : ''}</span>
-       <span style="font-family:var(--font-mono)">${a.tipo === 'desconto' ? '−' : '+'} ${fmt(a.valor)}</span>
-     </div>`).join('');
-  return `<div style="border:1px dashed var(--border);border-radius:var(--radius-sm);padding:8px 10px">
-    <div style="font-size:9px;letter-spacing:1.2px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">${titulo}</div>
-    ${linhas}
-    <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);border-top:1px solid var(--border);margin-top:4px;padding-top:4px">
-      <span>CMV final ${fmt(p.custo_fabrica_final)}</span>
-      <span style="font-weight:700">A pagar à fábrica <span style="font-family:var(--font-mono)">${fmt(p.a_pagar_final)}</span></span>
-    </div></div>`;
 }
 
 async function conferenciaRegistrar(){
   if(!projetoAtivo) return;
-  // parse tolerante à máscara ("R$ 100.000,00") — o parse antigo dava NaN com o prefixo R$
-  const custo = _moedaNum('conf-custo'), outros = _moedaNum('conf-outros');
+  const _num = id => { const el=document.getElementById(id); return el ? (parseFloat((el.value||'').replace(/\./g,'').replace(',','.'))||0) : 0; };
+  const custo = _num('conf-custo'), outros = _num('conf-outros');
   if(!(custo > 0) && !(outros > 0)){ await avisoPopup('Informe o custo de fábrica do PE e/ou o valor a migrar.', {titulo:'Conferência'}); return; }
   const cred = await pedirCredenciaisGerente({
     titulo: 'Conferência e Implantação do Pedido',
@@ -14402,18 +13549,7 @@ async function conferenciaRegistrar(){
     const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conferencia`,
       { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ custo_fabrica_novo: custo, valor_outros_forn: outros, login: cred.login, senha: cred.senha }) }).then(r=>r.json());
-    if(j.ok){
-      showToast('Conferência registrada.');
-      const box = document.getElementById('conf-ajustes-prev');
-      if (box && j.ajustes){
-        // pós-POST mostra o que foi LANÇADO NESTA AÇÃO (delta_lancado) — numa reconferência o
-        // total recalculado ≠ movimento do razão (QA Vera 🟠: rótulo "APLICADOS" induzia a erro)
-        const lanc = (j.ajustes.aplicadas || []).map(a => ({...a, valor: a.delta_lancado}));
-        box.innerHTML = lanc.length
-          ? _confAjustesHtml({...j.ajustes, aplicacoes: lanc}, 'Ajustes lançados NESTA conferência')
-          : _confAjustesHtml(j.ajustes, 'Ajustes excepcionais — estado atual (nada novo lançado)');
-      }
-    }
+    if(j.ok){ showToast('Conferência registrada.'); }
     else { await avisoPopup(j.erro||'Erro', {titulo:'Conferência'}); }
   } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Conferência'}); }
 }
@@ -14426,8 +13562,10 @@ async function enviarPedidosXml(inputFile) {
     for (const f of files) {
       const fd = new FormData();
       fd.append('arquivo', f);
-      const j = await uploadFormData(
-        `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/12/pedido-xml`, fd);
+      const r = await fetch(
+        `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/12/pedido-xml`,
+        { method: 'POST', credentials: 'same-origin', body: fd });
+      const j = await r.json();
       if (!j.ok) {
         await avisoPopup(j.erro || 'Falha ao carregar.', {titulo:'Implantação — Upload'});
         inputFile.value = '';
@@ -14589,7 +13727,8 @@ async function enviarNfeFabrica(inputFile) {
   const f = inputFile.files[0]; if (!f) return;
   const fd = new FormData(); fd.append('arquivo', f);
   try {
-    const j = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/15/nfe-fabrica`, fd);
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/15/nfe-fabrica`, { method: 'POST', credentials: 'same-origin', body: fd });
+    const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha ao carregar.', {titulo:'NF-e — Fábrica'}); return; }
     showToast('NF-e da fábrica carregada!', false); await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'NF-e — Fábrica'}); }
@@ -14708,8 +13847,10 @@ async function peRevisao(codigo, inputRelatorio) {
   fd.append('senha', cred.senha);
   if (motivo) fd.append('motivo', motivo);
   try {
-    const j = await uploadFormData(
-      `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${codigo}/revisao`, fd);
+    const r = await fetch(
+      `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${codigo}/revisao`,
+      { method: 'POST', credentials: 'same-origin', body: fd });
+    const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha na revisão.', {titulo:'PE — Revisão'}); return; }
     await avisoPopup(
       'Revisão registrada. Fases reabertas: ' + ((j.resetadas || []).join(', ') || '—'),
@@ -15897,8 +15038,6 @@ async function cliViaCepInst(cep) {
       _s('cli-inst-bairro',     d.bairro);
       _s('cli-inst-cidade',     d.localidade);
       _s('cli-inst-uf',         d.uf);
-      const _n = document.getElementById('cli-inst-numero');
-      if (_n && !_n.value) _n.focus();   // só falta o número (melhoria 2026-07-23)
     }
   } catch(e) {}
 }
@@ -16043,6 +15182,67 @@ function bfFechar() {
 }
 </script>
 
+<!-- Modal: Aprovacao / Exportacao para Omie -->
+<div id="modal-exportar"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:700;
+            align-items:center;justify-content:center;backdrop-filter:blur(4px)">
+  <div style="background:var(--card);border:1px solid var(--border2);border-radius:16px;
+              padding:28px 24px;max-width:520px;width:96%;animation:mIn .18s ease;
+              box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:14px">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:36px;height:36px;flex-shrink:0;border-radius:9px;
+                    background:var(--warn-soft);border:1px solid var(--warn);
+                    display:flex;align-items:center;justify-content:center;font-size:17px">&#x2B06;</div>
+        <div>
+          <div style="font-family:var(--font-display);font-weight:900;font-size:14px">Aprovacao de Orcamento</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:1px">Exportando para o Omie</div>
+        </div>
+      </div>
+      <span id="exp-btn-fechar-top" onclick="fecharModalExportar()"
+            style="cursor:pointer;color:var(--muted);font-size:18px;line-height:1;display:none">&#x2715;</span>
+    </div>
+
+    <!-- Banner de status -->
+    <div id="exp-status-banner"
+         style="font-size:12px;padding:9px 14px;border-radius:8px;
+                background:var(--accent-soft);border:1px solid var(--accent);color:var(--ok)">
+      Iniciando...
+    </div>
+
+    <!-- Log box -->
+    <div id="exp-log-box"
+         style="height:220px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);
+                border-radius:8px;padding:10px 12px;font-family:var(--font-mono);font-size:11px">
+      <div style="color:var(--muted)">Aguardando...</div>
+    </div>
+
+    <!-- Dialogo de confirmacao (oculto ate o backend pedir) -->
+    <div id="exp-confirm-box"
+         style="display:none;background:var(--warn-soft);border:1px solid var(--warn);
+                border-radius:10px;padding:14px">
+      <div id="exp-confirm-titulo"
+           style="font-family:var(--font-sans);font-weight:700;font-size:13px;margin-bottom:6px"></div>
+      <div id="exp-confirm-corpo"
+           style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ok btn-sm" onclick="expResponderConfirm('sim')">Sim</button>
+        <button class="btn btn-ghost btn-sm" onclick="expResponderConfirm('nao')">Nao</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="display:flex;justify-content:flex-end">
+      <button id="exp-btn-fechar" class="btn btn-ghost btn-sm"
+              onclick="fecharModalExportar()" style="display:none">Fechar</button>
+      <button id="exp-btn-cancelar" class="btn btn-ghost btn-sm"
+              onclick="expCancelar()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Liberacao Gerencial (senha) -->
 <div id="modal-gerente-senha"
      style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:700;
@@ -16078,54 +15278,6 @@ function bfFechar() {
 </div>
 
 <!-- Modal: Total Flex — Aviso parcela negativa -->
-<!-- Acordos Financeiros: modal de cadastro completo de Credor/Devedor (2026-07-22) -->
-<div id="modal-af-cp"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600;
-            align-items:center;justify-content:center;backdrop-filter:blur(4px)">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;
-              padding:26px 24px;max-width:560px;width:94%;max-height:88vh;overflow-y:auto;
-              animation:mIn .2s ease;box-shadow:0 24px 60px rgba(0,0,0,.5)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-      <h3 id="af-cp-titulo" style="margin:0;font-size:15px;color:var(--text)">Credor/Devedor</h3>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-af-cp').style.display='none'">✕</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-      <label style="grid-column:1/-1">Nome / Razão social *
-        <input id="af-cpm-nome" style="width:100%;padding:7px 9px"></label>
-      <label>Tipo *
-        <select id="af-cpm-tipo" style="width:100%;padding:7px 9px">
-          <option value="fabrica">Fábrica</option><option value="empresa">Empresa</option>
-          <option value="banco">Banco</option></select></label>
-      <label>CNPJ
-        <input id="af-cpm-cnpj" placeholder="00.000.000/0000-00" style="width:100%;padding:7px 9px"></label>
-      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Contato financeiro</div>
-      <label>Telefone
-        <input id="af-cpm-telefone" style="width:100%;padding:7px 9px"></label>
-      <label>E-mail
-        <input id="af-cpm-email" type="email" style="width:100%;padding:7px 9px"></label>
-      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Endereço</div>
-      <label>CEP
-        <input id="af-cpm-cep" oninput="afCpCepBuscar(this)" style="width:100%;padding:7px 9px"></label>
-      <label>Logradouro
-        <input id="af-cpm-logradouro" style="width:100%;padding:7px 9px"></label>
-      <label>Número
-        <input id="af-cpm-numero" style="width:100%;padding:7px 9px"></label>
-      <label>Complemento
-        <input id="af-cpm-complemento" style="width:100%;padding:7px 9px"></label>
-      <label>Bairro
-        <input id="af-cpm-bairro" style="width:100%;padding:7px 9px"></label>
-      <div style="display:flex;gap:8px">
-        <label style="flex:1">Cidade<input id="af-cpm-cidade" style="width:100%;padding:7px 9px"></label>
-        <label style="width:64px">UF<input id="af-cpm-uf" maxlength="2" style="width:100%;padding:7px 9px;text-transform:uppercase"></label>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-af-cp').style.display='none'">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="afCpSalvar()">Salvar</button>
-    </div>
-  </div>
-</div>
-
 <!-- Correção Fatia 3 PE: modal comparativo do Complemento (contratado × complemento × diferença) -->
 <div id="modal-pe-compl"
      style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600;
@@ -16138,38 +15290,6 @@ function bfFechar() {
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-pe-compl').style.display='none'">✕</button>
     </div>
     <div id="pe-compl-modal-body"><span style="color:var(--muted);font-size:.82rem">Carregando…</span></div>
-  </div>
-</div>
-
-<!-- Termo Aditivo — wizard de 5 passos (spec 2026-07-22): um marcador ADITIVO_* por passo -->
-<div id="modal-aditivo-wizard"
-     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:600;
-            align-items:center;justify-content:center;backdrop-filter:blur(4px)">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;
-              padding:26px 24px;max-width:760px;width:94%;max-height:88vh;overflow-y:auto;
-              animation:mIn .2s ease;box-shadow:0 24px 60px rgba(0,0,0,.5)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-      <h3 id="adw-titulo" style="margin:0;font-size:15px;color:var(--text)">Termo Aditivo</h3>
-      <button class="btn btn-ghost btn-sm" onclick="adwFechar()">✕</button>
-    </div>
-    <div id="adw-passo-rotulo" style="font-size:.75rem;letter-spacing:1px;color:var(--muted);
-         text-transform:uppercase;margin-bottom:10px"></div>
-    <p id="adw-dica" style="font-size:.8rem;color:var(--muted);margin:0 0 8px"></p>
-    <textarea id="adw-texto" rows="12"
-              style="width:100%;box-sizing:border-box;background:var(--surface-2);color:var(--text);
-                     border:1px solid var(--border);border-radius:8px;padding:10px;font-size:.85rem;
-                     font-family:inherit;line-height:1.45;resize:vertical"></textarea>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:8px;flex-wrap:wrap">
-      <button class="btn-ciclo" onclick="adwRestaurar()"><i class="ti ti-restore"></i> Restaurar texto padrão</button>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button id="adw-voltar" class="btn-ciclo" onclick="adwNav(-1)">‹ Voltar</button>
-        <button id="adw-avancar" class="btn-ciclo" onclick="adwNav(1)">Avançar ›</button>
-        <button id="adw-preview" class="btn-ciclo" style="display:none" onclick="adwPreview()"><i class="ti ti-eye"></i> Visualizar PDF</button>
-        <button id="adw-gerar" style="display:none;background:var(--btn-primary-bg);color:var(--btn-primary-text);
-                border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer"
-                onclick="adwGerar()">Gerar Termo Aditivo</button>
-      </div>
-    </div>
   </div>
 </div>
 

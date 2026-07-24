@@ -2411,6 +2411,19 @@ Cadastro)" (`cadIr('funcionarios')`); `_folhaAba`/`folhaAba` removidos. Sem muda
 (a rota `/api/funcionarios` exige só sessão+escopo — quem tem o módulo Cadastro acessa).
 Frontend-only (Ctrl+F5).
 
+## Sessão 115 — PDV: Diretor da mãe acessa o Ponto de Venda como acessa a própria loja
+Pedido do usuário (teste na VPS A). `database.lojas_acessiveis_ids(db, usuario_id, nivel,
+loja_id)`: memberships + PDVs ATIVOS da(s) loja(s) do usuário quando ele é Diretor (base
+master) — acesso DERIVADO, nada gravado em `usuario_lojas` (PDV novo/diretor novo entram
+sozinhos; desativar o PDV o tira do escopo). Aplicado nos 2 consumidores: `_ator_dict`
+(X-Loja-Ativa passa a aceitar o PDV → escopo operacional completo dentro dele) e
+`/api/auth/me` (o seletor multi-loja da sidebar mostra o PDV). Direção ÚNICA (usuário do
+PDV não ganha a mãe); gerencial/operador da mãe inalterados; cadastro do PDV segue
+exclusivo do super_admin (PATCH bloqueado). Também na sessão: selo "PDV de <mãe>" na lista
+de lojas da Plataforma + banner no painel Fiscal do PDV ("emissão pelo CNPJ da mãe";
+`perfil-fiscal` devolve `pdv_de`) — feedback do teste ("aparece como loja avulsa").
+Testes: `test_pdv_acesso_diretor.py` (7). Suíte 1437 verde.
+
 ## Sessão 114 — UX: endereço automático pelo CEP em TODOS os formulários
 Pedido do usuário: digitou o CEP → endereço carrega sozinho, "pedindo só o número".
 Existiam 4 cópias do autofill ViaCEP (cliente, endereço de instalação, cadastros genéricos,

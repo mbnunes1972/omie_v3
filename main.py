@@ -15,7 +15,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        PoolAmbiente, OrcamentoAmbiente, Projeto, upsert_projeto_status,
                        CicloEtapa, Contrato, ContratoAssinatura, Usuario, Briefing,
                        LogAcaoGerencial, Medicao, Rede, Loja, ParceiroLoja,
-                       membership_loja_ids, UsuarioLoja, ProvisaoRegistro,
+                       membership_loja_ids, lojas_acessiveis_ids, UsuarioLoja, ProvisaoRegistro,
                        CicloDocumento, CicloRevisao, DocumentoFiscal, Emitente,
                        PerfilEmissao, CicloLogistico, CicloLogisticoTransicao, AssistenciaCaso,
                        Funcionario, Fornecedor, Terceiro, Funcao, FolhaPagamento, ComissaoFolha,
@@ -10942,7 +10942,7 @@ def _ator_dict(db, usuario_sessao, header_loja_id=None):
     if not u:
         return {"nivel": usuario_sessao.get("nivel"), "loja_id": None,
                 "rede_id": None, "active_loja_id": None, "lojas_ids": []}
-    membership = membership_loja_ids(db, u.id)
+    membership = lojas_acessiveis_ids(db, u.id, u.nivel, u.loja_id)
     is_super = (u.nivel == "super_admin")
     active = mod_tenancy.resolver_loja_ativa(membership, header_loja_id, u.loja_id, is_super=is_super)
     # super_admin confia no header pra "entrar" na loja; mas header apontando loja inexistente

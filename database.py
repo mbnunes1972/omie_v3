@@ -1526,6 +1526,30 @@ def membership_loja_ids(db, usuario_id):
     return [r[0] for r in rows]
 
 
+def lojas_acessiveis_ids(db, usuario_id, nivel=None, loja_id=None):
+    """Memberships do usuário + PDVs da(s) loja(s) dele quando é Diretor (base master).
+
+    Pedido 2026-07-24: o Diretor de uma loja-MÃE acessa o Ponto de Venda como acessa a
+    própria loja (seletor multi-loja + X-Loja-Ativa). O acesso é DERIVADO — nada é gravado
+    em usuario_lojas, então PDVs novos e diretores novos entram/saem sozinhos. Direção
+    ÚNICA: usuário do PDV não ganha a mãe. Demais perfis (gerencial/operador) inalterados."""
+    ids = membership_loja_ids(db, usuario_id)
+    try:
+        from auth import perfis as _perfis   # import local: evita ciclo auth<->database
+        eh_diretor = _perfis.base(nivel) == "master"
+    except Exception:
+        eh_diretor = False
+    if eh_diretor:
+        proprias = set(ids) | ({loja_id} if loja_id else set())
+        if proprias:
+            vistos = set(ids)
+            pdvs = (db.query(Loja.id)
+                      .filter(Loja.loja_mae_id.in_(proprias), Loja.ativo == 1)
+                      .order_by(Loja.id).all())
+            ids = ids + [p[0] for p in pdvs if p[0] not in vistos]
+    return ids
+
+
 def _backfill_usuario_lojas(cur):
     """Idempotente: cria 1 membership para cada usuário com loja_id e sem vínculo ainda."""
     cur.execute("""

@@ -28,7 +28,7 @@ from .auth import (
     verificar_desconto, autorizar_desconto,
     get_token_from_cookie, COOKIE_NAME
 )
-from database import get_session, Usuario, Loja, Rede, membership_loja_ids, LogAcessoDelegado
+from database import get_session, Usuario, Loja, Rede, membership_loja_ids, lojas_acessiveis_ids, LogAcessoDelegado
 from . import perfis
 
 # ── Caminho do login.html ─────────────────────────────────────────────────────
@@ -75,7 +75,8 @@ def handle_auth_get(handler, path: str) -> bool:
         else:
             db = get_session()
             try:
-                ids = membership_loja_ids(db, usuario["id"])
+                ids = lojas_acessiveis_ids(db, usuario["id"],
+                                            usuario.get("nivel"), usuario.get("loja_id"))
                 if usuario.get("loja_id") and usuario["loja_id"] not in ids:
                     ids = ids + [usuario["loja_id"]]
                 lojas_obj = db.query(Loja).filter(Loja.id.in_(ids)).all() if ids else []

@@ -11934,12 +11934,30 @@ function atualizarBotoesAprovacao() {
   }
 }
 
+function _tagComABola() {
+  // Fatia 2 (spec seção 6): "quem está com a bola" = responsavel_efetivo da etapa ATUAL
+  // (primeira não-conclusiva na ordem do ciclo) — dado que já vem do GET /ciclo, sem
+  // campo novo em Projeto.
+  const atual = ETAPAS_CICLO.find(et => !STATUS_CONCLUSIVOS.has((_cicloData[et.codigo] || {}).status));
+  if (!atual) {
+    return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--ok)"><i class="ti ti-flag-check"></i> Ciclo concluído</span>`;
+  }
+  const d = _cicloData[atual.codigo] || {};
+  const nome = d.responsavel_efetivo_nome || '';
+  return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão vale o default automático da faixa)"
+      style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
+      <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
+      Com a bola: <strong>${nome ? esc(nome) : 'não atribuído'}</strong>
+      <span style="color:var(--muted)">· etapa ${esc(atual.codigo)} — ${esc(atual.nome)}</span></span>`;
+}
+
 function renderCiclo() {
   const panel = document.getElementById('ciclo-panel');
   if (!panel) return;
   panel.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
       <h3 style="margin:0;color:var(--text);font-weight:800">Etapas do Projeto</h3>
+      ${_tagComABola()}
       <button class="btn btn-ghost btn-sm" onclick="fecharCiclo()"><i class="ti ti-arrow-left"></i>Voltar</button>
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="equipeAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users"></i>Equipe</button>` : ''}
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirCronograma('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-calendar-stats"></i>Cronograma</button>` : ''}

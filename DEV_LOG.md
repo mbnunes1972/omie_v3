@@ -2367,6 +2367,36 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 120 — Chat Fatia 2: Responsabilidade + transferência (extensão do v12, spec seção 6)
+**Implementado exatamente como a seção 6 manda — estender, nunca duplicar:**
+- **`ConversaMensagem` ganhou** `natureza` (interacao|transferencia), `etapa_codigo`,
+  `transferido_para_funcionario_id`, `documento_ref_id`, `bloqueador`, `resolvido_em`
+  (ADD COLUMN idempotente no `_migrar_colunas_pg` — a tabela da Fatia 1 já existe nas bases).
+- **Transferência oficial escreve NO v12**: mensagem `transferencia` com `etapa_codigo` grava
+  `CicloEtapa.responsavel_funcionario_id` da etapa (o MESMO campo do override manual — chat e
+  tela são a mesma operação por baixo). Validações no endpoint: destinatário obrigatório e DA
+  LOJA; etapa precisa existir no ciclo do projeto; interação RECUSA campos de transferência
+  (quem achou que transferiu precisa saber que não transferiu). **Decisão técnica:** a
+  restrição por Função do override do painel NÃO se aplica à transferência do chat, de
+  propósito — transferir ENTRE faixas é a razão de existir dela.
+- **Defaults por FAIXA** estendendo o `_ETAPA_PAPEL` no `GET /ciclo` (resolve-e-cacheia por
+  request): Vendas (1,2,3,4,7) = `Briefing.consultor_id` → ponte `Usuario.funcionario_id`
+  (fallback reverso `Funcionario.usuario_id`; consultor sem funcionário → sem default, sem
+  erro) · Financeiro (8, 11d, 21) = Função "Gerente Administrativo/Financeiro" · Logística
+  (12-16) = Função "Assistente Logístico". Precedência intacta: override/transferido > Mapa
+  de Atribuições > default de faixa > nada.
+- **SAC fora do v12**: `mod_chat.responsavel_sac(db, loja_id)` via Função "SAC" (helper
+  genérico `funcionario_por_funcao` — ativo, 1º da loja; >1 pega o primeiro, regra da spec).
+- **Bloqueador SÓ grava o flag** — `pode_avancar()` NÃO foi tocado; teste de regressão prova
+  o comportamento idêntico com mensagem bloqueadora gravada (o gate real é a Fatia 3).
+- **Tag "quem está com a bola"** no topo da tela do Ciclo: responsavel_efetivo da primeira
+  etapa não-conclusiva (dado do GET /ciclo de sempre; "não atribuído" em âmbar; "Ciclo
+  concluído" quando tudo fechou). Sem campo novo em Projeto.
+**Pendências anotadas:** UI de ENVIO de transferência no painel da Conversa (seletor de
+etapa/destinatário) ficou de fora do escopo desta sessão — o endpoint está pronto; entra
+junto da Fatia 3 (bloqueador precisa da UI de resolução de qualquer jeito). `resolvido_em`
+só existe como coluna (fecha na Fatia 3).
+
 ## Sessão 119 — Confirmação de contatos na fase de contrato (decisão 13 antecipada, mini-frente)
 **Aprovada pelo usuário com "seguir sem WhatsApp" aceito.** Implementado: tabela
 **`contato_confirmacoes`** (append-only, a mais recente vale; snapshot `contatos_json` do que

@@ -1060,6 +1060,16 @@ class ConversaMensagem(Base):
     autor_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     corpo            = Column(Text,     nullable=False)
     canal            = Column(String(20), nullable=False, default="interno")
+    # Fatia 2 (Responsabilidade + transferência — spec seção 6): 'transferencia' oficializa a
+    # troca de responsabilidade gravando em CicloEtapa.responsavel_funcionario_id (o campo do
+    # v12; NADA de estado paralelo). `bloqueador` nesta fatia é SÓ flag — o gate real em
+    # pode_avancar() é a Fatia 3. `resolvido_em` fecha o bloqueador (Fatia 3 também).
+    natureza         = Column(String(20), nullable=False, default="interacao")   # interacao | transferencia
+    etapa_codigo     = Column(String(10), nullable=True)
+    transferido_para_funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    documento_ref_id = Column(Integer,  nullable=True)   # Fatia 5 (documento compartilhável)
+    bloqueador       = Column(Integer,  nullable=False, default=0)
+    resolvido_em     = Column(DateTime, nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1493,6 +1503,14 @@ def _migrar_colunas_pg():
         "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS tipo VARCHAR(12) DEFAULT 'loja'",
         # Faxina Omie (2026-07-23): integração removida do produto — colunas de sync dropadas
         # (decisão do Diretor; o dado era só estado da integração morta).
+        # Chat Fatia 2 (2026-07-25): natureza/transferência na mensagem — bases que já têm a
+        # tabela da Fatia 1 ganham as colunas novas (create_all não altera tabela existente).
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS natureza VARCHAR(20) DEFAULT 'interacao'",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS etapa_codigo VARCHAR(10)",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS transferido_para_funcionario_id INTEGER",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS documento_ref_id INTEGER",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS bloqueador INTEGER DEFAULT 0",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS resolvido_em TIMESTAMP",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_codigo",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_status",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_erro",

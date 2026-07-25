@@ -11,10 +11,15 @@ e natureza/transferência/bloqueador/privada nas fatias 2-4.
 """
 import json
 
-from database import Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente, Parceiro
+from database import (Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente,
+                      Parceiro, Funcionario, Funcao)
 
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
 _CANAIS_FATIA_1 = ("interno",)
+
+# Fatia 2: interação não muda nada; transferência oficializa a troca de responsabilidade
+# (grava no v12 — quem escreve em CicloEtapa é o ENDPOINT, com as validações de vínculo).
+NATUREZAS = ("interacao", "transferencia")
 
 # ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ──────
 MODOS_CONFIRMACAO = ("confirmado", "sem_whatsapp")
@@ -83,10 +88,15 @@ def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
     return c
 
 
-def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno"):
+def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
+                    natureza="interacao", etapa_codigo=None,
+                    transferido_para_funcionario_id=None, documento_ref_id=None,
+                    bloqueador=False):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
-    Fatia 1: canal externo é recusado aqui (não só escondido na UI) — quando as fatias
-    6-7 chegarem, é ESTA validação que relaxa, com o EnvioExterno junto."""
+    Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
+    campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
+    quem mandou achando que transferiu precisa saber que não transferiu). `bloqueador` nesta
+    fatia SÓ grava o flag — o gate real em pode_avancar() é a Fatia 3."""
     corpo = (corpo or "").strip()
     if not corpo:
         raise ValueError("Escreva a mensagem antes de enviar.")
@@ -94,25 +104,70 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno"):
         raise ValueError("canal inválido: %r (aceitos: %s)" % (canal, ", ".join(CANAIS)))
     if canal not in _CANAIS_FATIA_1:
         raise ValueError("Canal externo ainda não disponível — por ora a conversa é interna.")
+    if natureza not in NATUREZAS:
+        raise ValueError("natureza inválida: %r (aceitas: %s)" % (natureza, ", ".join(NATUREZAS)))
+    if natureza == "transferencia":
+        if not transferido_para_funcionario_id:
+            raise ValueError("Escolha quem recebe a transferência.")
+    else:
+        if transferido_para_funcionario_id or etapa_codigo or documento_ref_id or bloqueador:
+            raise ValueError("Campos de transferência só valem em natureza=transferencia.")
     m = ConversaMensagem(conversa_id=conversa.id, autor_usuario_id=autor_usuario_id,
-                         corpo=corpo, canal=canal)
+                         corpo=corpo, canal=canal, natureza=natureza,
+                         etapa_codigo=etapa_codigo,
+                         transferido_para_funcionario_id=transferido_para_funcionario_id,
+                         documento_ref_id=documento_ref_id,
+                         bloqueador=1 if bloqueador else 0)
     db.add(m)
     db.flush()
     return m
 
 
-def serializar_mensagem(m, autor_nome=None):
+def serializar_mensagem(m, autor_nome=None, transferido_nome=None):
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
             "autor_nome": autor_nome or "—", "corpo": m.corpo, "canal": m.canal,
+            "natureza": m.natureza or "interacao",
+            "etapa_codigo": m.etapa_codigo,
+            "transferido_para_funcionario_id": m.transferido_para_funcionario_id,
+            "transferido_para_nome": transferido_nome or "",
+            "documento_ref_id": m.documento_ref_id,
+            "bloqueador": bool(m.bloqueador),
+            "resolvido_em": m.resolvido_em.isoformat() if m.resolvido_em else None,
             "criado_em": m.criado_em.isoformat() if m.criado_em else None}
 
 
 def listar_mensagens(db, conversa_id):
-    """Histórico cronológico ASC, com o nome do autor resolvido (outerjoin: autor NULL —
-    resposta externa das fatias futuras — não derruba a listagem)."""
+    """Histórico cronológico ASC, com nomes de autor e destinatário resolvidos (outerjoin/
+    batch: autor NULL — resposta externa futura — não derruba a listagem)."""
     rows = (db.query(ConversaMensagem, Usuario.nome)
               .outerjoin(Usuario, ConversaMensagem.autor_usuario_id == Usuario.id)
               .filter(ConversaMensagem.conversa_id == conversa_id)
               .order_by(ConversaMensagem.criado_em.asc(), ConversaMensagem.id.asc())
               .all())
-    return [serializar_mensagem(m, nome) for m, nome in rows]
+    ids_transf = {m.transferido_para_funcionario_id for m, _ in rows
+                  if m.transferido_para_funcionario_id}
+    nomes = ({f.id: f.nome for f in db.query(Funcionario)
+              .filter(Funcionario.id.in_(ids_transf)).all()} if ids_transf else {})
+    return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id))
+            for m, nome in rows]
+
+
+# ── Resolução por Função (decisões 6/9 — Financeiro/Logística/SAC) ───────────
+
+def funcionario_por_funcao(db, loja_id, nome_funcao):
+    """Primeiro Funcionário ATIVO com a Função (por nome) na loja. Regra da spec: 1 pessoa
+    por função no cenário atual; com mais de uma, vale a primeira (ambiguidade é assunto do
+    cadastro, o sistema não quebra). None quando ninguém tem a função."""
+    f = (db.query(Funcionario)
+           .join(Funcao, Funcionario.funcao_id == Funcao.id)
+           .filter(Funcionario.loja_id == loja_id, Funcao.nome == nome_funcao)
+           .filter((Funcionario.status == "ativo") | (Funcionario.status.is_(None)))
+           .order_by(Funcionario.id.asc())
+           .first())
+    return f.id if f else None
+
+
+def responsavel_sac(db, loja_id):
+    """SAC fica FORA do v12 (spec seção 6): conversa de SAC pode nem ter projeto, logo não há
+    CicloEtapa para ancorar — resolve direto pela Função 'SAC' da loja da conversa."""
+    return funcionario_por_funcao(db, loja_id, "SAC")

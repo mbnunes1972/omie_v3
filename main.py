@@ -2704,12 +2704,18 @@ class Handler(BaseHTTPRequestHandler):
                     # Mapa de Atribuições (Fase 1) é o DEFAULT do responsável da fase; o
                     # responsavel_funcionario_id (v12) é o override pontual. Efetivo = override OU Mapa.
                     _atrib = _atribuicoes_dicts(db, nome_safe)
+                    _faixa_cache = {}   # Fatia 2: 1 resolução por faixa por request
                     def _resp_efetivo(e):
                         if e.responsavel_funcionario_id:
                             return e.responsavel_funcionario_id
                         papel = _ETAPA_PAPEL.get(e.etapa_codigo)
                         a = mod_escopo.resolver_responsavel(_atrib, None, papel) if papel else None
-                        return a.get("funcionario_id") if a else None
+                        if a:
+                            return a.get("funcionario_id")
+                        # Fatia 2 (spec seção 6): default por FAIXA — Vendas (consultor via
+                        # ponte Usuário↔Funcionário), Financeiro e Logística (por Função).
+                        return _default_responsavel_faixa(db, nome_safe, loja_id,
+                                                          e.etapa_codigo, _faixa_cache)
                     _efet_by_cod = {e.etapa_codigo: _resp_efetivo(e) for e in etapas_sorted}
                     _efet_ids = {i for i in _efet_by_cod.values() if i}
                     _efet_map = {f.id: f.nome for f in db.query(Funcionario).filter(Funcionario.id.in_(_efet_ids)).all()} \
@@ -4538,19 +4544,60 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat
                 dd = json.loads(body or b'{}')
                 p_meta = db.query(Projeto).filter_by(nome_safe=nome).first()
+                # Fatia 2: campos de natureza/transferência + validações de VÍNCULO (as de
+                # forma moram no mod_chat.enviar_mensagem).
+                natureza = (dd.get("natureza") or "interacao").strip()
+                etapa_codigo = (str(dd.get("etapa_codigo") or "").strip() or None)
+                transf_raw = dd.get("transferido_para_funcionario_id")
+                try:
+                    transf_id = int(transf_raw) if transf_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    self.send_json({"ok": False, "erro": "Destinatário inválido."}, code=400)
+                    return
+                doc_raw = dd.get("documento_ref_id")
+                try:
+                    doc_ref = int(doc_raw) if doc_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    doc_ref = None
+                bloqueador = bool(dd.get("bloqueador"))
+                etapa_alvo = None
+                transferido = None
+                if natureza == "transferencia":
+                    transferido = db.get(Funcionario, transf_id) if transf_id else None
+                    if transferido is None or transferido.loja_id != loja_id:
+                        self.send_json({"ok": False, "erro": "Destinatário da transferência "
+                                        "inválido — escolha um funcionário desta loja."},
+                                       code=400); return
+                    if etapa_codigo:
+                        etapa_alvo = (db.query(CicloEtapa)
+                                        .filter_by(projeto_nome=nome, etapa_codigo=etapa_codigo)
+                                        .first())
+                        if etapa_alvo is None:
+                            self.send_json({"ok": False, "erro": "Etapa %s não existe no ciclo "
+                                            "deste projeto." % etapa_codigo}, code=400); return
                 try:
                     conv = mod_chat.get_or_create_conversa_projeto(
                         db, loja_id, nome,
                         cliente_id=(p_meta.cliente_id if p_meta else None))
-                    msg = mod_chat.enviar_mensagem(db, conv, usuario.get("id"),
-                                                   dd.get("corpo"))
+                    msg = mod_chat.enviar_mensagem(
+                        db, conv, usuario.get("id"), dd.get("corpo"),
+                        natureza=natureza, etapa_codigo=etapa_codigo,
+                        transferido_para_funcionario_id=transf_id,
+                        documento_ref_id=doc_ref, bloqueador=bloqueador)
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                if etapa_alvo is not None and transferido is not None:
+                    # Transferência oficial ESCREVE NO v12: mesmo campo do override manual da
+                    # tela do Ciclo — chat e tela são a mesma operação por baixo (seção 6).
+                    # A restrição por Função do painel NÃO se aplica aqui de propósito:
+                    # transferir ENTRE faixas é a razão de existir da transferência.
+                    etapa_alvo.responsavel_funcionario_id = transferido.id
                 db.commit()
                 self.send_json({"ok": True,
                                 "mensagem": mod_chat.serializar_mensagem(
-                                    msg, usuario.get("nome"))}, code=201)
+                                    msg, usuario.get("nome"),
+                                    transferido.nome if transferido else None)}, code=201)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -11210,6 +11257,52 @@ _ETAPA_PAPEL = {
     "11c": "projeto_executivo", "11e": "projeto_executivo",
     "17": "montagem", "18": "assistencia",
 }
+
+# Chat Fatia 2 (spec seção 6): defaults automáticos do responsável por FAIXA para as etapas
+# que o _ETAPA_PAPEL (Mapa de Atribuições) não cobre. Precedência continua a do v12:
+# responsavel_funcionario_id (manual OU transferido pelo chat) > default automático > nada.
+_ETAPAS_FAIXA_VENDAS     = frozenset({"1", "2", "3", "4", "7"})
+_ETAPAS_FAIXA_FINANCEIRO = frozenset({"8", "11d", "21"})
+_ETAPAS_FAIXA_LOGISTICA  = frozenset({"12", "13", "14", "15", "16"})
+_FUNCAO_FINANCEIRO = "Gerente Administrativo/Financeiro"
+_FUNCAO_LOGISTICA  = "Assistente Logístico"
+
+
+def _consultor_funcionario_id(db, nome_safe):
+    """Default de VENDAS: Briefing.consultor_id (Usuario) → Funcionario pela ponte
+    Usuario.funcionario_id (fallback: o reverso Funcionario.usuario_id). Consultor sem
+    Funcionário vinculado → None (etapa fica sem default; não é erro)."""
+    b = (db.query(Briefing).filter_by(projeto_nome=nome_safe)
+           .order_by(Briefing.id.desc()).first())
+    if b is None or not b.consultor_id:
+        return None
+    u = db.get(Usuario, b.consultor_id)
+    if u is not None and u.funcionario_id:
+        return u.funcionario_id
+    f = db.query(Funcionario).filter_by(usuario_id=b.consultor_id).first()
+    return f.id if f else None
+
+
+def _default_responsavel_faixa(db, nome_safe, loja_id, etapa_codigo, cache):
+    """Resolve (e cacheia por request) o default da faixa da etapa — mesma filosofia do
+    resolver-e-cachear que o GET /ciclo já usa para o Mapa de Atribuições."""
+    import mod_chat as _mchat
+    if etapa_codigo in _ETAPAS_FAIXA_VENDAS:
+        faixa = "vendas"
+    elif etapa_codigo in _ETAPAS_FAIXA_FINANCEIRO:
+        faixa = "financeiro"
+    elif etapa_codigo in _ETAPAS_FAIXA_LOGISTICA:
+        faixa = "logistica"
+    else:
+        return None
+    if faixa not in cache:
+        if faixa == "vendas":
+            cache[faixa] = _consultor_funcionario_id(db, nome_safe)
+        elif faixa == "financeiro":
+            cache[faixa] = _mchat.funcionario_por_funcao(db, loja_id, _FUNCAO_FINANCEIRO)
+        else:
+            cache[faixa] = _mchat.funcionario_por_funcao(db, loja_id, _FUNCAO_LOGISTICA)
+    return cache[faixa]
 
 
 def _ambientes_do_projeto(db, nome_safe):

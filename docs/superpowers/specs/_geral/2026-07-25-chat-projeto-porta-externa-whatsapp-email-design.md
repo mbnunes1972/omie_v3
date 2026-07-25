@@ -45,20 +45,25 @@ equipe).
     vai direto; com VÁRIAS conversas ativas cai numa **fila de triagem humana** (v1 — sem bot
     perguntando "qual projeto?"). E-mail é determinístico por `Message-ID`/`References` +
     plus-addressing opcional (adendo 2026-07-25).
+15. **Fatia 2 REAPROVEITA o sistema de responsável por etapa que já existe** (v12:
+    `CicloEtapa.funcao_responsavel_id`/`responsavel_funcionario_id` + `responsavel_efetivo`) em
+    vez de criar uma resolução paralela — ver seção 6 (adendo 2026-07-25, achado durante
+    preparação da Fatia 2).
 
 ## 1) Responsabilidade por pessoa — de onde vem cada uma
-Achado no código: já existem **três mecanismos de atribuição por pessoa**, cada um cobrindo parte
-das faixas do ciclo (`mod_ciclo.FAIXA_POR_ETAPA`). A tag de responsabilidade não cria um sistema
-novo — ela **consulta** o que já existe, e só precisa de dois complementos:
+Achado no código (validado 2 vezes — primeiro na preparação inicial, depois confirmado ao começar
+a Fatia 2, ver seção 6 para a reconciliação completa): já existem **mecanismos de atribuição por
+pessoa**, cada um cobrindo parte das faixas do ciclo (`mod_ciclo.FAIXA_POR_ETAPA`). A tag de
+responsabilidade não cria um sistema novo — ela **consulta e estende** o que já existe:
 
 | Faixa/canal          | Fonte da pessoa responsável                                   | Situação |
 |-----------------------|----------------------------------------------------------------|----------|
-| Comercial (`vendas`)  | `Briefing.consultor_id`                                        | ✅ já existe |
-| Execução (`execucao_projeto`) | `AtribuicaoAmbiente` (papéis `projeto_executivo`, `medicao`) | ✅ já existe |
-| Suporte Técnico (`montagem`) | `AtribuicaoAmbiente` (papéis `montagem`, `assistencia`)  | ✅ já existe |
-| Financeiro (`gate_financeiro_*`, `conciliacao_final`) | Usuário com Função **"Gerente Administrativo/Financeiro"** na loja | 🆕 resolvido por função (só 1 pessoa por loja, como você confirmou) |
-| Logística (`expedicao`) | Usuário com Função **"Assistente Logístico"** na loja        | 🆕 resolvido por função |
-| SAC                    | Usuário com Função **"SAC"** na loja                          | 🆕 resolvido por função — a Função "SAC" **já existe** como cargo padrão (`FUNCOES_PADRAO`) |
+| Comercial (`vendas`)  | `Briefing.consultor_id`                                        | ✅ já existe (precisa de ponte Usuário↔Funcionário — seção 6) |
+| Execução (`execucao_projeto`) | `AtribuicaoAmbiente` (papéis `projeto_executivo`, `medicao`), já plugado no v12 via `_ETAPA_PAPEL` | ✅ já existe e já é o default automático |
+| Suporte Técnico (`montagem`) | `AtribuicaoAmbiente` (papéis `montagem`, `assistencia`), já plugado no v12 via `_ETAPA_PAPEL` | ✅ já existe e já é o default automático |
+| Financeiro (`gate_financeiro_*`, `conciliacao_final`) | Usuário com Função **"Gerente Administrativo/Financeiro"** na loja | 🆕 resolvido por função (só 1 pessoa por loja, como você confirmou) — falta plugar como default no v12 |
+| Logística (`expedicao`) | Usuário com Função **"Assistente Logístico"** na loja        | 🆕 resolvido por função — falta plugar como default no v12 |
+| SAC                    | Usuário com Função **"SAC"** na loja                          | 🆕 resolvido por função — a Função "SAC" **já existe** como cargo padrão (`FUNCOES_PADRAO`); sem etapa/faixa fixa (não entra no v12 por etapa) |
 
 Pra Financeiro/Logística/SAC não crio uma tabela nova — é uma consulta simples "quem tem essa
 Função ativa nessa loja" (mesma tabela `Funcao`/`Funcionario` que já existe). Se um dia a loja
@@ -123,6 +128,46 @@ existe), e ele participa da conversa do projeto como destinatário externo do ca
   Fatia 1 já garante). O desafio é só o THREADING do retorno, resolvido pela decisão 14
   (reply citado → determinístico; solto com ambiguidade → fila de triagem humana).
 
+## 6) Reconciliação com o sistema de responsável por etapa (v12) (adendo 2026-07-25)
+Ao começar a implementar a Fatia 2, achei que o sistema já tem uma boa parte do que a Fatia 2 ia
+construir — chamo de "v12" porque é a versão atual do motor de ciclo em produção:
+- `CicloEtapa` já tem `funcao_responsavel_id` (herdado do Cronograma de Projeto Padrão em D0) e
+  `responsavel_funcionario_id` (override manual, restrito a funcionários daquela função).
+- O endpoint `GET /api/projetos/<nome>/ciclo` já calcula, por etapa, um **`responsavel_efetivo`**:
+  usa `responsavel_funcionario_id` se estiver preenchido; senão resolve automaticamente via
+  `AtribuicaoAmbiente` (Mapa de Atribuições) — mas só para as etapas de Medição/Projeto
+  Executivo/Montagem/Assistência (`_ETAPA_PAPEL`, etapas 9, 10, 11/11a/11b/11c/11e, 17, 18).
+  Vendas (1, 2, 3, 4, 7), Financeiro (8, 11d, 21) e Logística (12-16) **não têm default
+  automático hoje** — só funcionam se alguém preencher `responsavel_funcionario_id` na mão.
+
+Em vez de criar uma resolução paralela (como a spec original desenhava), a Fatia 2 passa a ser
+uma **extensão** desse mecanismo existente. Ordem de precedência pra "quem está com a bola" em
+cada etapa (do que manda mais pro que manda menos):
+
+1. **Transferência oficial pelo chat** (mensagem `natureza=transferencia` apontando uma etapa) —
+   não cria campo novo: grava diretamente em `CicloEtapa.responsavel_funcionario_id` da etapa em
+   questão, o mesmo campo que já existe hoje como override manual. Ou seja, "transferir pelo
+   chat" e "editar o responsável na tela do Ciclo" viram a mesma operação por baixo — só muda a
+   origem (chat vs. tela).
+2. **Default automático por etapa** — é o `_ETAPA_PAPEL` que já existe, estendido pra cobrir as
+   faixas que faltam:
+   - Vendas → `Briefing.consultor_id`. Esse campo aponta pra `Usuario`, e `responsavel_efetivo`
+     precisa de um `funcionario_id` — então esse elo exige a **ponte Usuário↔Funcionário**
+     (`Usuario.funcionario_id`, que já existe no modelo). Se o consultor não tiver Funcionário
+     vinculado, essa etapa fica sem default automático (não quebra, só não preenche sozinho).
+   - Financeiro → Função **"Gerente Administrativo/Financeiro"** ativa na loja.
+   - Logística → Função **"Assistente Logístico"** ativa na loja.
+3. **Sem default** — etapa aparece como "responsável não atribuído" na tag do topo; alguém
+   precisa transferir (item 1) ou preencher manualmente pra sair desse estado.
+
+**SAC fica de fora dessa cadeia** — como decidido na seção 2, conversa de SAC pode nem ter
+projeto por trás, então não existe `CicloEtapa` pra ancorar. O responsável do SAC continua
+resolvido direto pela Função "SAC" (seção 1), sem passar pelo `pode_avancar`/ciclo.
+
+**Efeito prático na tag "quem está com a bola" no topo da tela do Ciclo**: ela não precisa de
+nenhum campo novo no `Projeto` — só busca o `responsavel_efetivo` da etapa atual (a primeira
+etapa pendente/em andamento) no mesmo `GET /api/projetos/<nome>/ciclo` que já existe hoje.
+
 ## Modelo de dados (consolidado)
 ```
 Projeto (0..1) ──┐
@@ -132,11 +177,14 @@ Cliente  (0..1) ──┴──── Conversa ──── Mensagem ───�
 - **Mensagem**: `conversa_id`, `autor_usuario_id` (NULL se resposta externa), `corpo` (ou
   `corpo_cifrado` quando `privada=True`), `canal` (comercial|financeiro|logistica|
   suporte_tecnico|sac|interno), `natureza` (interacao|transferencia + campos da transferência:
-  `transferido_para_usuario_id`, `documento_ref_id`, `bloqueador`, `resolvido_em`), `privada`
-  (booleano), `criado_em`.
+  `etapa_codigo` (etapa do ciclo afetada, quando aplicável), `transferido_para_funcionario_id`,
+  `documento_ref_id`, `bloqueador`, `resolvido_em`), `privada` (booleano), `criado_em`.
 - **EnvioExterno**: como já desenhado (canal, destino, status, `id_externo` pra threading).
-- **Projeto** ganha campos derivados (recalculáveis, não fonte de verdade):
-  `responsavel_atual_usuario_id`, `responsavel_bloqueador` (bool), `responsavel_desde`.
+- **Responsabilidade NÃO ganha campo novo no `Projeto`** (correção 2026-07-25, ver seção 6): uma
+  mensagem de transferência grava direto em `CicloEtapa.responsavel_funcionario_id` da etapa
+  referenciada — a fonte de verdade continua sendo o `CicloEtapa`/`responsavel_efetivo` que já
+  existe (v12), o chat só é mais um jeito de escrever nele. SAC (sem etapa) é a exceção: resolve
+  por Função, sem gravar em `CicloEtapa`.
 
 *(Documento compartilhável, canal e-mail e canal WhatsApp seguem como já desenhado nas versões
 anteriores — sem mudança de conteúdo.)*
@@ -144,9 +192,14 @@ anteriores — sem mudança de conteúdo.)*
 ## Fatias e complexidade (estimativa, atualizada)
 1. **Fundação** (~1,5–2 sessões): Conversa (com vínculo flexível projeto/cliente) + Mensagem
    interna, sem canal externo, sem transferência/bloqueador/privada ainda.
-2. **Responsabilidade + transferência** (~1,5 sessão): campo `natureza`, resolução da pessoa
-   responsável pelos três mecanismos existentes (Consultor/Mapa de Atribuições/Função), tag no
-   topo do Ciclo.
+2. **Responsabilidade + transferência** (~1 sessão, **reduzido** — achado 2026-07-25: boa parte
+   já existe via v12, ver seção 6): campo `natureza` na Mensagem; mensagem de transferência
+   passa a gravar em `CicloEtapa.responsavel_funcionario_id` (reaproveita o campo/mecanismo já
+   em produção, não cria tabela nova); estender o default automático (hoje só
+   Medição/PE/Montagem/Assistência) pra Vendas (via `Briefing.consultor_id` + ponte
+   Usuário↔Funcionário) e Financeiro/Logística (via Função); SAC resolve à parte, por Função,
+   sem etapa; tag no topo do Ciclo passa a ler o `responsavel_efetivo` da etapa atual do
+   endpoint que já existe (`GET /api/projetos/<nome>/ciclo`), sem campo novo no Projeto.
 3. **Bloqueador como gate** (~1–1,5 sessão, **atenção redobrada**: mexe em `pode_avancar()`, motor
    de produção — merece testes de regressão no gating existente, não só nos casos novos).
 4. **Modo privado** (~0,5–1 sessão): criptografia do corpo, controle de acesso por nível.
@@ -164,5 +217,11 @@ anteriores — sem mudança de conteúdo.)*
   resolver na Fatia 4, fora do escopo desta spec de produto.
 
 ## Status
-Todas as decisões de produto estão fechadas (ver "Decisões já tomadas", itens 1-10). Não há
-pendências abertas — a spec está pronta para orçamento de implementação/entrada em backlog.
+Todas as decisões de produto estão fechadas (ver "Decisões já tomadas", itens 1-15). Fatia 1
+(Fundação) **implementada e commitada** (`mod_chat.py`, tabelas `Conversa`/`ConversaMensagem`/
+`ContatoConfirmacao`, endpoints `GET`/`POST /api/projetos/<nome>/conversa`) — incluiu, além do
+escopo original, os adendos 11-14 (participantes externos derivados do cadastro, confirmação de
+contato na fase de contrato, threading de resposta externa). Fatia 2 teve o desenho ajustado
+2026-07-25 (item 15 + seção 6) para reaproveitar o sistema de responsável por etapa (v12) já em
+produção, em vez de construir uma resolução paralela — reduz o escopo de implementação da Fatia 2.
+Não há pendências de produto abertas — a spec está pronta para a Fatia 2 entrar em implementação.

@@ -2577,6 +2577,40 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/projetos/<nome>/conversa — aba Conversa (chat Fatia 1): get-or-create
+            # da conversa do projeto + histórico cronológico de mensagens internas.
+            m = _re.match(r'^/api/projetos/([^/]+)/conversa$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401)
+                    return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403)
+                        return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
+                        return
+                    import mod_chat
+                    p_meta = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                    conv = mod_chat.get_or_create_conversa_projeto(
+                        db, loja_id, nome_safe,
+                        cliente_id=(p_meta.cliente_id if p_meta else None))
+                    db.commit()
+                    self.send_json({"ok": True,
+                                    "conversa": {"id": conv.id,
+                                                 "projeto_nome": conv.projeto_nome,
+                                                 "cliente_id": conv.cliente_id},
+                                    "mensagens": mod_chat.listar_mensagens(db, conv.id)})
+                finally:
+                    db.close()
+                return
+
             m = _re.match(r'^/api/projetos/([^/]+)/ciclo$', path)
             if m:
                 nome_safe = unquote(m.group(1))
@@ -4400,6 +4434,44 @@ class Handler(BaseHTTPRequestHandler):
                 orc.updated_at = datetime.utcnow()
                 db.commit()
                 self.send_json({"ok": True, "orcamento": _orcamento_dict(orc)})
+            finally:
+                db.close()
+            return
+
+        # POST /api/projetos/<nome>/conversa/mensagens — chat Fatia 1: nova mensagem interna.
+        m_conv = re.match(r'^/api/projetos/([^/]+)/conversa/mensagens$', path)
+        if m_conv:
+            nome = unquote(m_conv.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                p_meta = db.query(Projeto).filter_by(nome_safe=nome).first()
+                try:
+                    conv = mod_chat.get_or_create_conversa_projeto(
+                        db, loja_id, nome,
+                        cliente_id=(p_meta.cliente_id if p_meta else None))
+                    msg = mod_chat.enviar_mensagem(db, conv, usuario.get("id"),
+                                                   dd.get("corpo"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True,
+                                "mensagem": mod_chat.serializar_mensagem(
+                                    msg, usuario.get("nome"))}, code=201)
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
             finally:
                 db.close()
             return

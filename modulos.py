@@ -30,6 +30,12 @@ MODULOS = {
     "plataforma":  {"camada": "nucleo", "depende_de": [],
                     "arquivos": ["database.py", "storage.py"],
                     "tabelas": [], "rotas": []},
+    "chat":        {"camada": "nucleo", "depende_de": [],
+                    # Chat do Orizon, Fatia 1 (spec _geral/2026-07-25): comunicação transversal
+                    # entre etapas/equipes — núcleo por ora (sempre ligado); se um dia virar
+                    # desligável por loja, promove a domínio.
+                    "arquivos": ["mod_chat.py"],
+                    "tabelas": ["conversas", "conversa_mensagens"], "rotas": []},
     # ── DOMÍNIOS ───────────────────────────────────────────────────────────
     "captacao":    {"camada": "dominio", "depende_de": [], "rotulo": "Captação", "faixa": "vendas",
                     "arquivos": [], "tabelas": [], "rotas": []},

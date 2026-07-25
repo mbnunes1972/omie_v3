@@ -2367,6 +2367,39 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 118 — Chat do Orizon, Fatia 1 (Fundação): Conversa por projeto + mensagens internas
+**Spec `_geral/2026-07-25-chat-projeto-porta-externa-whatsapp-email-design.md` (decisões 1-10
+fechadas — nada foi reaberto).** Implementado SÓ o escopo da Fatia 1: **modelo** `Conversa`
+(âncora flexível: `projeto_nome` e `cliente_id` AMBOS opcionais — cobre projeto, cliente sem
+projeto e reclamação institucional sem vínculo) + `ConversaMensagem` (autor, corpo, canal,
+criado_em); **endpoints** GET `/api/projetos/<nome>/conversa` (get-or-create idempotente +
+histórico ASC) e POST `.../conversa/mensagens` (guardas iguais às do ciclo: sessão + escopo +
+`_projeto_da_loja`); **UI**: botão "Conversa" na barra do projeto (ao lado de Etapas do
+Projeto/Reconciliação) abrindo painel-modal com histórico cronológico (balões, minhas à
+direita) e campo de nova mensagem (Enter envia, Shift+Enter quebra). TDD:
+`tests/test_chat_fundacao.py` (8: âncora flexível, idempotência, validações, cronologia,
+tenancy 404, 401).
+**Decisões técnicas DESTA sessão (não estavam na spec):**
+- `Conversa.loja_id` obrigatório (tenancy — a reclamação institucional pertence à loja que a
+  registrou; a spec não citava o campo).
+- Tabela de mensagem = **`conversa_mensagens`** ("mensagens" seco era genérico demais).
+- Módulo **`chat` registrado como NÚCLEO** no manifesto (`modulos.py`) — comunicação
+  transversal, sempre ligada; promover a domínio se um dia for desligável por loja.
+- Coluna `canal` já nasce no modelo (é do consolidado da spec), mas o **backend recusa**
+  canal ≠ 'interno' (não é só a UI que esconde — a validação relaxa nas fatias 6-7).
+- `cliente_id` da conversa é herdado do projeto NA CRIAÇÃO (vínculo de nascença, não
+  sincronização posterior).
+- `autor_usuario_id` NULL fica RESERVADO para resposta externa (fatias 6-7); nenhum caminho
+  interno cria mensagem sem autor.
+- UI sem polling: o histórico atualiza ao abrir e após enviar — tempo-real/polling fica como
+  melhoria de UX para quando o chat tiver mais gente simultânea (anotar na Fatia 2+).
+**Pendente para a Fatia 2 (não implementado de propósito):** `natureza`
+(interacao|transferencia) + campos da transferência; resolução da pessoa responsável pelos 3
+mecanismos já mapeados na spec (Consultor/`AtribuicaoAmbiente`/Função p/ Financeiro-Logística-
+SAC); tag "quem está com a bola" no topo do Ciclo. Nada da fundação bloqueia a Fatia 2 — o
+modelo foi desenhado para ganhar as colunas novas por `_migrar_colunas_pg` (ADD COLUMN
+idempotente), sem recriar tabela.
+
 ## Sessão 117 — PRODUÇÃO atualizada + domínio www.orizonone.com.br no ar (troca EXECUTADA)
 **Acesso SSH à produção liberado** (chave desta máquina autorizada pelo usuário via painel;
 login por senha segue desabilitado). **Deploy:** backup fresco (`backup_orizon.sh`, 12:48) →

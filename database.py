@@ -1026,6 +1026,37 @@ class AprovacaoPEAssinatura(Base):
     aprovacao = relationship("AprovacaoPE", back_populates="assinaturas")
 
 
+class Conversa(Base):
+    """Chat do Orizon — Fatia 1/Fundação (spec _geral/2026-07-25-chat-projeto-…): âncora
+    FLEXÍVEL, decisão da seção 2 — `projeto_nome` e `cliente_id` são AMBOS opcionais (projeto
+    em andamento; cliente sem projeto; ou os dois em branco = reclamação institucional sem
+    vínculo). `loja_id` é sempre presente: mesmo a reclamação institucional pertence à loja
+    que a registrou (tenancy). Natureza/transferência, bloqueador, modo privado e EnvioExterno
+    são FATIAS FUTURAS (2-7) — não adicionar campos aqui fora da spec."""
+    __tablename__ = "conversas"
+
+    id           = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id      = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
+    projeto_nome = Column(Text,     nullable=True, index=True)
+    cliente_id   = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
+    criado_em    = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversaMensagem(Base):
+    """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
+    modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
+    `autor_usuario_id` NULL fica RESERVADO para resposta vinda de fora (fatias 6-7,
+    e-mail/WhatsApp) — nenhum caminho interno cria mensagem sem autor hoje."""
+    __tablename__ = "conversa_mensagens"
+
+    id               = Column(Integer,  primary_key=True, autoincrement=True)
+    conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=False, index=True)
+    autor_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    corpo            = Column(Text,     nullable=False)
+    canal            = Column(String(20), nullable=False, default="interno")
+    criado_em        = Column(DateTime, default=datetime.utcnow)
+
+
 class ContraparteFinanceira(Base):
     """Cadastro de Credores/Devedores (revisão 2026-07-22): entidade contra a qual acordos são
     lançados — fábrica, empresa (do grupo ou não) ou banco. O papel (credor|devedor) é dado pelo

@@ -916,7 +916,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         </div>
         <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
         <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
+        <button id="btn-conversa-proj" class="btn btn-ghost btn-sm" onclick="abrirConversaProjeto()" title="Conversa do projeto (chat interno)"><i class="ti ti-messages"></i> Conversa</button>
         <button id="btn-recon-proj" class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Reconciliação de provisões deste projeto">Reconciliação</button>
+      </div>
+    </div>
+
+    <!-- Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — histórico interno + nova mensagem -->
+    <div id="modal-conversa-proj" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:640px;width:94%;max-height:88vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Conversa — <span id="conv-proj-nome"></span></div>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-conversa-proj').style.display='none'">Fechar</button>
+        </div>
+        <div id="conv-msgs" style="flex:1;overflow-y:auto;min-height:200px;max-height:52vh;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+          <textarea id="conv-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
+                    style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();convEnviar();}"></textarea>
+          <button class="btn btn-primary btn-sm" id="conv-enviar-btn" onclick="convEnviar()">Enviar</button>
+        </div>
       </div>
     </div>
 
@@ -11622,6 +11640,62 @@ const PE_SUBFASES = {
   "11c": { carregar: "Carregar Projeto Executivo",   fechar: "Concluído",                   tipo: "pe_projeto_executivo",     revisavel: true  },
   "11e": { carregar: "Carregar PE Assinado",         fechar: "Concluir Projeto Executivo",  tipo: "pe_pe_assinado",           revisavel: false },
 };
+
+// ── Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — interna, cronológica ────────────
+// Fatias futuras (natureza/transferência, bloqueador, privada, canais externos) NÃO entram
+// aqui sem a spec — esta é só a fundação.
+async function abrirConversaProjeto(){
+  if(!projetoAtivo) return;
+  document.getElementById('conv-proj-nome').textContent = projetoAtivo.nome_safe;
+  document.getElementById('modal-conversa-proj').style.display='flex';
+  document.getElementById('conv-msgs').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  await convCarregar();
+  setTimeout(()=>document.getElementById('conv-texto').focus(), 60);
+}
+
+async function convCarregar(){
+  const box = document.getElementById('conv-msgs');
+  let d;
+  try{
+    d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa`,
+                    {credentials:'same-origin'}).then(r=>r.json());
+  }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar a conversa.')+'</em>'; return; }
+  if(!(d.mensagens||[]).length){
+    box.innerHTML='<em style="color:var(--muted);font-size:12px">Nenhuma mensagem ainda — comece a conversa.</em>';
+    return;
+  }
+  const minha = m => _usuarioAtual && m.autor_usuario_id === _usuarioAtual.id;
+  box.innerHTML = d.mensagens.map(m => {
+    const dt = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR',
+                 {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    return '<div style="margin-bottom:10px;'+(minha(m)?'text-align:right':'')+'">'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">'+esc(m.autor_nome)+' · '+dt+'</div>'
+      +'<div style="display:inline-block;max-width:85%;text-align:left;background:'
+        +(minha(m)?'var(--accent-tint)':'var(--surface-2)')
+        +';border:1px solid var(--border);border-radius:10px;padding:7px 10px;font-size:.85rem;'
+        +'white-space:pre-wrap;word-break:break-word">'+esc(m.corpo)+'</div></div>';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function convEnviar(){
+  if(!projetoAtivo) return;
+  const ta = document.getElementById('conv-texto');
+  const corpo = ta.value.trim();
+  if(!corpo) return;
+  const btn = document.getElementById('conv-enviar-btn');
+  btn.disabled = true;
+  try{
+    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({corpo})}).then(r=>r.json());
+    if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
+    ta.value='';
+    await convCarregar();
+  }catch(e){ showToast('Erro de rede ao enviar.', true); }
+  finally{ btn.disabled = false; ta.focus(); }
+}
 
 function abrirCiclo() {
   _cicloAberto = true;

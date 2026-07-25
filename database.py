@@ -24,7 +24,13 @@ BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 _URL_PLACEHOLDER = "postgresql+psycopg2://nao_configurado@localhost:1/nao_configurado"
-ENGINE       = create_engine(DATABASE_URL or _URL_PLACEHOLDER, echo=False)
+# pool_pre_ping (2026-07-25): o Postgres pode reciclar conexões ociosas (reinício por
+# unattended-upgrades, timeout de rede) — sem o ping, o app usa a conexão MORTA do pool e
+# a primeira requisição de cada conexão explode ("SSL connection has been closed
+# unexpectedly"; foi o login da equipe falhando na instância A). pre_ping testa e refaz.
+# pool_recycle recicla proativamente conexões com mais de 30min (higiene do mesmo risco).
+ENGINE       = create_engine(DATABASE_URL or _URL_PLACEHOLDER, echo=False,
+                             pool_pre_ping=True, pool_recycle=1800)
 Session      = sessionmaker(bind=ENGINE)
 
 # ── Base ─────────────────────────────────────────────────────────────────────

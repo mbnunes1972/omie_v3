@@ -70,3 +70,4 @@ wt-*/
 *.tmp
 # backups pg_dump (ex.: backup_orizon_pg_*.dump)
 *.dump
+keys/

@@ -22,14 +22,15 @@ MODOS_CONFIRMACAO = ("confirmado", "sem_whatsapp")
 
 def contatos_do_projeto(db, cliente_id=None, parceiro_id=None):
     """Contatos de comunicação dos participantes externos, SEMPRE lidos do cadastro no
-    momento da leitura (decisão 12). Cliente ainda não tem campo WhatsApp próprio — o
-    telefone é o candidato exibido (a UI rotula e avisa); Parceiro tem whatsapp de verdade."""
+    momento da leitura (decisão 12). Cliente e Parceiro têm campo `whatsapp` próprio no
+    cadastro (constatado em 2026-07-25 — a nota da S119 de que Cliente não tinha estava
+    ERRADA); o telefone entra só como fallback quando o WhatsApp está vazio."""
     contatos = []
     if cliente_id:
         c = db.get(Cliente, cliente_id)
         if c is not None:
             contatos.append({"papel": "cliente", "nome": c.nome,
-                             "whatsapp": (c.telefone or "").strip(),
+                             "whatsapp": (c.whatsapp or c.telefone or "").strip(),
                              "email": (c.email or "").strip()})
     if parceiro_id:
         p = db.get(Parceiro, parceiro_id)

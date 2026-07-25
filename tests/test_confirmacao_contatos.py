@@ -60,3 +60,23 @@ def test_tenancy_e_login(http_client_factory, seed):
     assert c.get("/api/projetos/Proj_L1/contatos-comunicacao")[0] == 404
     c2 = http_client_factory()
     assert c2.get("/api/projetos/Proj_L1/contatos-comunicacao")[0] == 401
+
+
+def test_whatsapp_do_cliente_vem_do_campo_proprio(http_client_factory, seed, app_db):
+    """O cadastro de Cliente TEM campo whatsapp (ponta a ponta) — o contato de comunicação
+    usa ele; telefone é só fallback quando o WhatsApp está vazio."""
+    db = app_db.get_session()
+    c = db.get(app_db.Cliente, seed["cliente_l1_id"])
+    c.telefone = "(12) 1111-1111"
+    c.whatsapp = "(12) 99999-8888"
+    db.commit(); db.close()
+    cli = _login(http_client_factory, "dir_l1")
+    st, body = cli.get("/api/projetos/Proj_L1/contatos-comunicacao")
+    papeis = {x["papel"]: x for x in body["contatos"]}
+    assert papeis["cliente"]["whatsapp"] == "(12) 99999-8888"   # campo próprio, não o telefone
+    db = app_db.get_session()
+    db.get(app_db.Cliente, seed["cliente_l1_id"]).whatsapp = None
+    db.commit(); db.close()
+    st, body = cli.get("/api/projetos/Proj_L1/contatos-comunicacao")
+    papeis = {x["papel"]: x for x in body["contatos"]}
+    assert papeis["cliente"]["whatsapp"] == "(12) 1111-1111"    # fallback: telefone

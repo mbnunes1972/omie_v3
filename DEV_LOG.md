@@ -2393,6 +2393,12 @@ construir_contexto; corrigido com alias `_cp_chat` e comentário-sentinela. (2)
 paralela de 2026-07-24, que mudou o perfil sem atualizar o teste — passava por sorte de cache
 do registro); teste atualizado à decisão vigente.
 
+**Correção do mesmo dia (pedido "adicione o whatsapp do cliente"):** constatado que o campo
+JÁ EXISTIA de ponta a ponta (coluna `clientes.whatsapp` pré-Postgres, modal `cli-wpp` com
+máscara, criar E editar persistindo) — a nota da S119 estava ERRADA. O gap real era o
+`contatos_do_projeto` ignorar o campo: agora usa `whatsapp` com fallback telefone (teste
+cobre a preferência). Spec (decisão 12) corrigida.
+
 ## Sessão 118 — Chat do Orizon, Fatia 1 (Fundação): Conversa por projeto + mensagens internas
 **Spec `_geral/2026-07-25-chat-projeto-porta-externa-whatsapp-email-design.md` (decisões 1-10
 fechadas — nada foi reaberto).** Implementado SÓ o escopo da Fatia 1: **modelo** `Conversa`

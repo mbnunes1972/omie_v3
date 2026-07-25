@@ -30,8 +30,8 @@ equipe).
     para quem recebeu a transferência (2026-07-25).
 11. **Arquiteto é participante externo da conversa do projeto**, derivado do vínculo que já
     existe (`parceiro_id` do projeto) — nada é configurado por conversa (adendo 2026-07-25).
-12. **Contatos externos vêm do CADASTRO** (Parceiro já tem `whatsapp`/`telefone`/`email`;
-    Cliente ganha campo WhatsApp quando o canal chegar) — nunca da fase de contrato: cadastro é
+12. **Contatos externos vêm do CADASTRO** (Parceiro E Cliente já têm campo `whatsapp` próprio
+    — constatado em 2026-07-25; telefone é só fallback) — nunca da fase de contrato: cadastro é
     dado vivo, contrato é snapshot jurídico (adendo 2026-07-25).
 13. **Confirmação de contatos na fase de contrato**: no ato do contrato o sistema verifica se
     os WhatsApps dos participantes (cliente e, se houver, arquiteto) estão preenchidos e, mesmo

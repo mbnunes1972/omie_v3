@@ -938,6 +938,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
+    <!-- Confirmação de contatos na fase de contrato (decisão 13 da spec de chat, 2026-07-25):
+         gate bloqueante-suave — o operador confirma o canal ou declara "seguir sem WhatsApp" -->
+    <div id="modal-contatos-conf" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:520px;width:94%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Contatos de comunicação</div>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-contatos-conf').style.display='none'">Fechar</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Antes de gerar o contrato,
+          confira os contatos que serão usados na comunicação do projeto (os dados vêm do cadastro —
+          corrija lá se algo estiver errado e reabra).</div>
+        <div id="contatos-conf-lista" style="margin-bottom:14px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="contatosConfEnviar('sem_whatsapp')">Seguir sem WhatsApp</button>
+          <button class="btn btn-primary btn-sm" onclick="contatosConfEnviar('confirmado')">Confirmar contatos</button>
+        </div>
+      </div>
+    </div>
+
     <!-- FASE D: Reconciliação de provisões do PROJETO (granular; mesma fonte que o Financeiro) -->
     <div id="modal-recon-proj" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
       <div class="modal-box" style="max-width:860px;width:94%;max-height:88vh;overflow:auto">
@@ -11697,6 +11716,46 @@ async function convEnviar(){
   finally{ btn.disabled = false; ta.focus(); }
 }
 
+// ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ─────
+let _contatosConfOnDone = null;
+async function abrirModalContatosConf(onDone){
+  if(!projetoAtivo) return;
+  _contatosConfOnDone = onDone || null;
+  const box = document.getElementById('contatos-conf-lista');
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  document.getElementById('modal-contatos-conf').style.display='flex';
+  let d;
+  try{
+    d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contatos-comunicacao`,
+                    {credentials:'same-origin'}).then(r=>r.json());
+  }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
+  const rot = {cliente:'Cliente', arquiteto:'Arquiteto'};
+  box.innerHTML = (d.contatos||[]).map(ct => {
+    const temWpp = !!(ct.whatsapp||'').trim();
+    return '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:6px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--text)">'+esc(rot[ct.papel]||ct.papel)+' — '+esc(ct.nome)+'</div>'
+      +'<div style="font-size:11px;color:'+(temWpp?'var(--text)':'var(--warn)')+'">'
+        +'WhatsApp/Telefone: '+(temWpp?esc(ct.whatsapp):'não preenchido no cadastro')+'</div>'
+      +'<div style="font-size:11px;color:var(--muted)">E-mail: '+esc(ct.email||'—')+'</div>'
+      +'</div>';
+  }).join('') || '<em style="color:var(--muted);font-size:12px">Nenhum participante externo com cadastro vinculado.</em>';
+}
+
+async function contatosConfEnviar(modo){
+  if(!projetoAtivo) return;
+  try{
+    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contatos-comunicacao/confirmar`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({modo})}).then(r=>r.json());
+    if(!d.ok){ showToast(d.erro||'Falha ao registrar.', true); return; }
+    document.getElementById('modal-contatos-conf').style.display='none';
+    showToast(modo==='confirmado' ? 'Contatos confirmados.' : 'Registrado: seguir sem WhatsApp.');
+    const cb = _contatosConfOnDone; _contatosConfOnDone = null;
+    if (cb) cb();
+  }catch(e){ showToast('Erro de rede.', true); }
+}
+
 function abrirCiclo() {
   _cicloAberto = true;
   document.getElementById('ciclo-panel').classList.add('ativo');
@@ -14856,6 +14915,12 @@ async function gerarContrato(confirmarLojaIncompleta = false, signatarioPre = un
     const d = await r.json();
     if (!d.ok) {
       if (btn) { btn.disabled = false; btn.textContent = 'Gerar Contrato'; }
+      if (d.codigo === 'contatos_nao_confirmados') {
+        // Gate de contatos (decisão 13): abre o modal, e o retry re-chama gerarContrato
+        // com os MESMOS argumentos depois que o operador confirmar/declarar.
+        abrirModalContatosConf(() => gerarContrato(confirmarLojaIncompleta, signatarioPre));
+        return;
+      }
       if (d.precisa_confirmar_loja) {
         const ok = await confirmarPopup(
           'Dados da loja incompletos:\n\n• ' + (d.campos_loja_faltando || []).join('\n• ') +

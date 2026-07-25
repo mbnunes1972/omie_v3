@@ -25,9 +25,11 @@ def test_acesso_matriz_modulos_e_paineis():
         for p in ("master", "gerencial"):
             assert perfis.acessa_modulo(p, m) is True
         assert perfis.acessa_modulo("operador", m) is False, m
-    # Fiscal: as 3 bases de loja acessam (mudou do modelo antigo, onde só Diretoria acessava)
-    for p in ("master", "gerencial", "operador"):
+    # Fiscal: master e gerencial acessam; operador NÃO (decisão do usuário 2026-07-24 —
+    # este assert estava defasado da mudança e passava por sorte de cache do registro)
+    for p in ("master", "gerencial"):
         assert perfis.acessa_modulo(p, "fiscal") is True
+    assert perfis.acessa_modulo("operador", "fiscal") is False
     # painéis Admin/Config: só Master
     assert perfis.acessa_painel("master", "admin") and perfis.acessa_painel("master", "config")
     for p in ("gerencial", "operador"):

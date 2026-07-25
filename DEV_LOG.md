@@ -2367,6 +2367,32 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 119 — Confirmação de contatos na fase de contrato (decisão 13 antecipada, mini-frente)
+**Aprovada pelo usuário com "seguir sem WhatsApp" aceito.** Implementado: tabela
+**`contato_confirmacoes`** (append-only, a mais recente vale; snapshot `contatos_json` do que
+o operador VIU — o dado vivo segue no cadastro, decisão 12) no módulo `chat`;
+`mod_chat.contatos_do_projeto` (cliente via `Projeto.cliente_id`, arquiteto via
+`parceiro_id` do projeto.json — Parceiro usa `whatsapp` com fallback telefone; **Cliente
+ainda não tem campo WhatsApp próprio: o telefone é o candidato exibido**, campo dedicado
+fica pra fatia dos canais); endpoints GET `/api/projetos/<n>/contatos-comunicacao` (contatos
+vivos + confirmação vigente) e POST `.../confirmar` (`modo` confirmado|sem_whatsapp).
+**Gate BLOQUEANTE-SUAVE no POST do contrato** (o handler REAL de geração — cuidado de rota:
+há um PATCH homônimo p/ adendo que NÃO ganhou gate): sem confirmação → 400 com
+`codigo: contatos_nao_confirmados`; o frontend intercepta, abre o modal (lista contatos com
+aviso de WhatsApp faltando, botões "Confirmar contatos" / "Seguir sem WhatsApp") e re-chama
+`gerarContrato` com os MESMOS argumentos após o registro. Nunca passa sem ver; sempre há
+saída explícita. Testes: `tests/test_confirmacao_contatos.py` (4) + 2 e2e de contrato
+existentes atualizados para confirmar antes de gerar (como o fluxo real). Spec: decisão 13
+marcada como FECHADA (bloqueante-suave).
+
+**Duas pegadinhas desta sessão:** (1) o import local `from integracoes.projetos_store import
+_carregar_projeto` SEM alias tornou o nome local ao do_POST/do_GET inteiros e derrubou 11
+testes de parceiro/escopo — a MESMA armadilha de escopo já documentada no preview do
+construir_contexto; corrigido com alias `_cp_chat` e comentário-sentinela. (2)
+`test_perfis::test_acesso_matriz` estava DEFASADO da decisão "Operador sem Fiscal" (sessão
+paralela de 2026-07-24, que mudou o perfil sem atualizar o teste — passava por sorte de cache
+do registro); teste atualizado à decisão vigente.
+
 ## Sessão 118 — Chat do Orizon, Fatia 1 (Fundação): Conversa por projeto + mensagens internas
 **Spec `_geral/2026-07-25-chat-projeto-porta-externa-whatsapp-email-design.md` (decisões 1-10
 fechadas — nada foi reaberto).** Implementado SÓ o escopo da Fatia 1: **modelo** `Conversa`

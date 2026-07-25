@@ -194,6 +194,8 @@ def test_contrato_real_geracao_e_assinatura(app_db, seed, projetos_dir, contrato
         "entrada_data": "2026-07-01", "total_cliente": 90000.0,
         "parcelas": [{"num": 1, "data": "2026-07-20", "valor": 80000.0}]})
 
+    # Gate de contatos (decisão 13): confirma antes de gerar, como o fluxo real
+    c.post("/api/projetos/%s/contatos-comunicacao/confirmar" % nome, {"modo": "sem_whatsapp"})
     # 1) GERAÇÃO REAL (loja incompleta no seed → confirmar_loja_incompleta)
     st, b = c.post("/api/projetos/%s/contrato" % nome, {
         "orcamento_id": oid,

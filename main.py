@@ -2577,6 +2577,47 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/projetos/<nome>/contatos-comunicacao — confirmação de contatos na fase
+            # de contrato (decisão 13): contatos vivos do cadastro + confirmação vigente.
+            m = _re.match(r'^/api/projetos/([^/]+)/contatos-comunicacao$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401)
+                    return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403)
+                        return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
+                        return
+                    import mod_chat
+                    # Alias OBRIGATÓRIO: import local sem alias tornaria '_carregar_projeto'
+                    # LOCAL ao método inteiro e quebraria os outros handlers que usam o nome
+                    # (mesma armadilha do construir_contexto documentada no preview — pega por
+                    # execução, não por leitura; derrubou 11 testes de parceiro/escopo).
+                    from integracoes.projetos_store import _carregar_projeto as _cp_chat
+                    p_meta = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                    pj = _cp_chat(nome_safe) or {}
+                    contatos = mod_chat.contatos_do_projeto(
+                        db, cliente_id=(p_meta.cliente_id if p_meta else None),
+                        parceiro_id=pj.get("parceiro_id"))
+                    reg = mod_chat.confirmacao_vigente(db, loja_id, nome_safe)
+                    quem = None
+                    if reg is not None and reg.confirmado_por_id:
+                        u = db.get(Usuario, reg.confirmado_por_id)
+                        quem = u.nome if u else None
+                    self.send_json({"ok": True, "contatos": contatos,
+                                    "confirmacao": mod_chat.serializar_confirmacao(reg, quem)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/projetos/<nome>/conversa — aba Conversa (chat Fatia 1): get-or-create
             # da conversa do projeto + histórico cronológico de mensagens internas.
             m = _re.match(r'^/api/projetos/([^/]+)/conversa$', path)
@@ -4434,6 +4475,47 @@ class Handler(BaseHTTPRequestHandler):
                 orc.updated_at = datetime.utcnow()
                 db.commit()
                 self.send_json({"ok": True, "orcamento": _orcamento_dict(orc)})
+            finally:
+                db.close()
+            return
+
+        # POST /api/projetos/<nome>/contatos-comunicacao/confirmar — decisão 13: registra a
+        # escolha explícita do operador ('confirmado' | 'sem_whatsapp') com snapshot.
+        m_ccf = re.match(r'^/api/projetos/([^/]+)/contatos-comunicacao/confirmar$', path)
+        if m_ccf:
+            nome = unquote(m_ccf.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_chat
+                # Alias OBRIGATÓRIO — ver comentário no GET /contatos-comunicacao (escopo local).
+                from integracoes.projetos_store import _carregar_projeto as _cp_chat
+                dd = json.loads(body or b'{}')
+                p_meta = db.query(Projeto).filter_by(nome_safe=nome).first()
+                pj = _cp_chat(nome) or {}
+                contatos = mod_chat.contatos_do_projeto(
+                    db, cliente_id=(p_meta.cliente_id if p_meta else None),
+                    parceiro_id=pj.get("parceiro_id"))
+                try:
+                    reg = mod_chat.registrar_confirmacao(db, loja_id, nome, usuario.get("id"),
+                                                         (dd.get("modo") or "").strip(), contatos)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "confirmacao": mod_chat.serializar_confirmacao(
+                    reg, usuario.get("nome"))})
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
             finally:
                 db.close()
             return
@@ -8065,6 +8147,19 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
+                        return
+                    # Gate BLOQUEANTE-SUAVE (decisão 13 da spec de chat, mini-frente
+                    # 2026-07-25): o ato do contrato exige que o operador tenha VISTO os
+                    # contatos de comunicação e escolhido — 'confirmado' ou 'sem_whatsapp'
+                    # ("seguir sem WhatsApp"). O codigo específico faz o frontend abrir o
+                    # modal de confirmação e tentar de novo; nunca passa sem ver.
+                    import mod_chat as _mchat
+                    if _mchat.confirmacao_vigente(db, loja_id, nome_safe) is None:
+                        self.send_json({"ok": False,
+                                        "codigo": "contatos_nao_confirmados",
+                                        "erro": "Confirme os contatos de comunicação do "
+                                                "projeto antes de gerar o contrato."},
+                                       code=400)
                         return
                     projeto_dict, cliente_dict, orcamento_dict = \
                         _montar_dados_projeto_para_contrato(nome_safe, orcamento_id, db)

@@ -36,8 +36,10 @@ equipe).
 13. **Confirmação de contatos na fase de contrato**: no ato do contrato o sistema verifica se
     os WhatsApps dos participantes (cliente e, se houver, arquiteto) estão preenchidos e, mesmo
     preenchidos, pede **confirmação explícita do canal** (registrando quem confirmou e quando).
-    Se o nível de exigência trava ou só avisa na geração do contrato é detalhe a fechar na
-    implementação (adendo 2026-07-25, pedido do usuário).
+    Nível de exigência FECHADO na implementação (mini-frente 2026-07-25, aprovada pelo
+    usuário): gate BLOQUEANTE-SUAVE no POST do contrato — sem confirmação registrada o
+    contrato não é gerado; o operador confirma OU declara "seguir sem WhatsApp" (as duas
+    saídas ficam registradas com quem/quando + snapshot dos contatos vistos).
 14. **Threading de resposta externa**: reply citando mensagem resolve determinístico
     (`context.id` × `EnvioExterno.id_externo`); resposta solta de número com UMA conversa ativa
     vai direto; com VÁRIAS conversas ativas cai numa **fila de triagem humana** (v1 — sem bot

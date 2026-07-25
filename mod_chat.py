@@ -9,10 +9,63 @@ CANAIS espelha o modelo consolidado da spec desde já, mas só 'interno' circula
 externos (comercial/financeiro/logistica/suporte_tecnico/sac) entram nas fatias 6-7,
 e natureza/transferência/bloqueador/privada nas fatias 2-4.
 """
-from database import Conversa, ConversaMensagem, Usuario
+import json
+
+from database import Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente, Parceiro
 
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
 _CANAIS_FATIA_1 = ("interno",)
+
+# ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ──────
+MODOS_CONFIRMACAO = ("confirmado", "sem_whatsapp")
+
+
+def contatos_do_projeto(db, cliente_id=None, parceiro_id=None):
+    """Contatos de comunicação dos participantes externos, SEMPRE lidos do cadastro no
+    momento da leitura (decisão 12). Cliente ainda não tem campo WhatsApp próprio — o
+    telefone é o candidato exibido (a UI rotula e avisa); Parceiro tem whatsapp de verdade."""
+    contatos = []
+    if cliente_id:
+        c = db.get(Cliente, cliente_id)
+        if c is not None:
+            contatos.append({"papel": "cliente", "nome": c.nome,
+                             "whatsapp": (c.telefone or "").strip(),
+                             "email": (c.email or "").strip()})
+    if parceiro_id:
+        p = db.get(Parceiro, parceiro_id)
+        if p is not None:
+            contatos.append({"papel": "arquiteto", "nome": p.nome,
+                             "whatsapp": (p.whatsapp or p.telefone or "").strip(),
+                             "email": (p.email or "").strip()})
+    return contatos
+
+
+def confirmacao_vigente(db, loja_id, projeto_nome):
+    """A confirmação mais recente do projeto (append-only), ou None."""
+    return (db.query(ContatoConfirmacao)
+              .filter_by(loja_id=loja_id, projeto_nome=projeto_nome)
+              .order_by(ContatoConfirmacao.id.desc())
+              .first())
+
+
+def registrar_confirmacao(db, loja_id, projeto_nome, usuario_id, modo, contatos):
+    if modo not in MODOS_CONFIRMACAO:
+        raise ValueError("modo inválido: %r (aceitos: %s)" % (modo, ", ".join(MODOS_CONFIRMACAO)))
+    reg = ContatoConfirmacao(loja_id=loja_id, projeto_nome=projeto_nome, modo=modo,
+                             contatos_json=json.dumps(contatos or [], ensure_ascii=False),
+                             confirmado_por_id=usuario_id)
+    db.add(reg)
+    db.flush()
+    return reg
+
+
+def serializar_confirmacao(reg, confirmado_por_nome=None):
+    if reg is None:
+        return None
+    return {"modo": reg.modo,
+            "confirmado_por_id": reg.confirmado_por_id,
+            "confirmado_por_nome": confirmado_por_nome or "—",
+            "confirmado_em": reg.confirmado_em.isoformat() if reg.confirmado_em else None}
 
 
 def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):

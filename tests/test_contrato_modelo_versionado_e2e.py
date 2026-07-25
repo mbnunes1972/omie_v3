@@ -97,6 +97,11 @@ def test_post_contrato_novo_fixa_o_modelo_ativo_da_loja(
     status, body = client.login("dir_l1", "senha123")
     assert status == 200, body
 
+    # Gate de contatos (decisão 13, mini-frente 2026-07-25): o ato do contrato exige a
+    # confirmação explícita — aqui o teste declara "seguir sem WhatsApp", como o fluxo real.
+    client.post(f"/api/projetos/{dados_l1['projeto_l1']}/contatos-comunicacao/confirmar",
+                {"modo": "sem_whatsapp"})
+
     status, body = client.post(
         f"/api/projetos/{dados_l1['projeto_l1']}/contrato",
         {

@@ -1057,6 +1057,25 @@ class ConversaMensagem(Base):
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
+class ContatoConfirmacao(Base):
+    """Confirmação dos contatos de comunicação na fase de contrato (decisão 13 da spec de chat,
+    mini-frente 2026-07-25): o operador VÊ os contatos (cliente e arquiteto, se houver) e
+    escolhe explicitamente — 'confirmado' (canal validado) ou 'sem_whatsapp' ("seguir sem
+    WhatsApp"). Gate bloqueante-suave: o POST do contrato exige uma confirmação registrada;
+    nunca passa sem ver, mas sempre há saída explícita. Append-only (a mais recente vale);
+    `contatos_json` guarda o snapshot do que foi mostrado na hora da escolha (auditoria —
+    decisão 12: o dado vivo é o cadastro, aqui é só o retrato do momento)."""
+    __tablename__ = "contato_confirmacoes"
+
+    id                = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
+    projeto_nome      = Column(Text,     nullable=False, index=True)
+    modo              = Column(String(20), nullable=False)   # confirmado | sem_whatsapp
+    contatos_json     = Column(Text,     nullable=True)
+    confirmado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    confirmado_em     = Column(DateTime, default=datetime.utcnow)
+
+
 class ContraparteFinanceira(Base):
     """Cadastro de Credores/Devedores (revisão 2026-07-22): entidade contra a qual acordos são
     lançados — fábrica, empresa (do grupo ou não) ou banco. O papel (credor|devedor) é dado pelo

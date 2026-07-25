@@ -935,6 +935,31 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();convEnviar();}"></textarea>
           <button class="btn btn-primary btn-sm" id="conv-enviar-btn" onclick="convEnviar()">Enviar</button>
         </div>
+        <!-- Fatia 3: composição de TRANSFERÊNCIA (o endpoint ficou pronto na Fatia 2) -->
+        <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
+          <label style="font-size:12px;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
+            Transferência de responsabilidade</label>
+          <div id="conv-transf-campos" style="display:none;margin-top:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div style="flex:1;min-width:180px">
+                <label class="field-label">Etapa do ciclo (opcional)</label>
+                <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
+              </div>
+              <div style="flex:1;min-width:180px">
+                <label class="field-label">Transferir para</label>
+                <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
+              </div>
+            </div>
+            <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
+              <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
+              Bloqueador</label>
+            <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
+              &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a
+              transferência (ou a gerência destravar em emergência). Sem etapa selecionada,
+              trava o ciclo INTEIRO.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -11688,14 +11713,55 @@ async function convCarregar(){
   box.innerHTML = d.mensagens.map(m => {
     const dt = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR',
                  {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    // Fatia 3: transferência ganha linha-meta; bloqueador não resolvido se DESTACA e traz
+    // as ações (Resolver = quem recebeu, backend valida; Destravar = master/gerencial).
+    let meta = '';
+    if (m.natureza === 'transferencia') {
+      meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px">'
+        + '<i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
+        + esc(m.transferido_para_nome || '—') + '</strong>'
+        + (m.etapa_codigo ? ' · etapa ' + esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
+      if (m.bloqueador && !m.resolvido_em) {
+        meta += '<div style="margin-top:4px">'
+          + '<span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);'
+          + 'border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px">BLOQUEADOR ATIVO</span> '
+          + '<button class="btn-ciclo" style="font-size:10px;padding:2px 8px" onclick="convResolver('+m.id+')">Resolver</button>'
+          + (_podeAutorizarFront() ? ' <button class="btn-ciclo" style="font-size:10px;padding:2px 8px;color:var(--warn)" onclick="convDestravar('+m.id+')">Destravar (emergência)</button>' : '')
+          + '</div>';
+      } else if (m.bloqueador && m.resolvido_em) {
+        meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px">'
+          + '<i class="ti ti-lock-open"></i> bloqueador resolvido em '
+          + new Date(m.resolvido_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</div>';
+      }
+    }
     return '<div style="margin-bottom:10px;'+(minha(m)?'text-align:right':'')+'">'
       +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">'+esc(m.autor_nome)+' · '+dt+'</div>'
       +'<div style="display:inline-block;max-width:85%;text-align:left;background:'
         +(minha(m)?'var(--accent-tint)':'var(--surface-2)')
-        +';border:1px solid var(--border);border-radius:10px;padding:7px 10px;font-size:.85rem;'
-        +'white-space:pre-wrap;word-break:break-word">'+esc(m.corpo)+'</div></div>';
+        +';border:1px solid '+(m.bloqueador && !m.resolvido_em ? 'var(--err-line)' : 'var(--border)')
+        +';border-radius:10px;padding:7px 10px;font-size:.85rem;'
+        +'white-space:pre-wrap;word-break:break-word">'+esc(m.corpo)+meta+'</div></div>';
   }).join('');
   box.scrollTop = box.scrollHeight;
+}
+
+function convTransfToggle(){
+  const on = document.getElementById('conv-transf-chk').checked;
+  document.getElementById('conv-transf-campos').style.display = on ? '' : 'none';
+  if (on) _convCarregarSeletoresTransf();
+}
+
+async function _convCarregarSeletoresTransf(){
+  const selE = document.getElementById('conv-transf-etapa');
+  const selF = document.getElementById('conv-transf-func');
+  selE.innerHTML = '<option value="">— sem etapa (geral) —</option>'
+    + ETAPAS_CICLO.map(e => '<option value="'+esc(e.codigo)+'">'+esc(e.codigo+' — '+e.nome)+'</option>').join('');
+  if (!selF.options.length) {
+    const d = await fetch('/api/funcionarios?status=ativo',{credentials:'same-origin'})
+      .then(r=>r.json()).catch(()=>({}));
+    selF.innerHTML = '<option value="">— escolha —</option>'
+      + (d.itens||[]).map(f => '<option value="'+f.id+'">'+esc(f.nome)+'</option>').join('');
+  }
 }
 
 async function convEnviar(){
@@ -11703,17 +11769,63 @@ async function convEnviar(){
   const ta = document.getElementById('conv-texto');
   const corpo = ta.value.trim();
   if(!corpo) return;
+  const payload = {corpo};
+  const ehTransf = document.getElementById('conv-transf-chk').checked;
+  if (ehTransf) {
+    const fid = document.getElementById('conv-transf-func').value;
+    if (!fid) { showToast('Escolha quem recebe a transferência.', true); return; }
+    payload.natureza = 'transferencia';
+    payload.transferido_para_funcionario_id = parseInt(fid, 10);
+    const et = document.getElementById('conv-transf-etapa').value;
+    if (et) payload.etapa_codigo = et;
+    payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
+  }
   const btn = document.getElementById('conv-enviar-btn');
   btn.disabled = true;
   try{
     const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens`,
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({corpo})}).then(r=>r.json());
+       body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
     ta.value='';
+    if (ehTransf) {
+      document.getElementById('conv-transf-chk').checked = false;
+      document.getElementById('conv-transf-bloq').checked = false;
+      document.getElementById('conv-bloq-aviso').style.display = 'none';
+      convTransfToggle();
+      carregarCiclo();   // tag "com a bola" / estado das etapas mudaram
+    }
     await convCarregar();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }
   finally{ btn.disabled = false; ta.focus(); }
+}
+
+async function convResolver(mid){
+  if(!projetoAtivo) return;
+  try{
+    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/${mid}/resolver`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
+    if(!d.ok){ await avisoPopup(d.erro||'Falha ao resolver.', {titulo:'Resolver bloqueador'}); return; }
+    showToast('Bloqueador resolvido.');
+    await convCarregar(); carregarCiclo();
+  }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Resolver bloqueador'}); }
+}
+
+async function convDestravar(mid){
+  if(!projetoAtivo) return;
+  const motivo = (prompt('Motivo do destravamento de emergência (obrigatório):') || '').trim();
+  if(!motivo) return;
+  const cred = await pedirCredenciaisGerente({titulo:'Destravar bloqueador (emergência)',
+    mensagem:'Login e senha de Gerente/Diretor. O destravamento fica registrado na auditoria.'});
+  if(!cred) return;
+  try{
+    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/${mid}/destravar-emergencia`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({motivo, login: cred.login || '', senha: cred.senha || ''})}).then(r=>r.json());
+    if(!d.ok){ await avisoPopup(d.erro||'Falha ao destravar.', {titulo:'Destravar (emergência)'}); return; }
+    showToast('Bloqueador destravado pela gerência (auditado).');
+    await convCarregar(); carregarCiclo();
+  }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
 }
 
 // ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ─────
@@ -13786,7 +13898,17 @@ async function _patchEtapa(codigo, payload, okMsg, titulo) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload) });
     const d = await r.json();
-    if (!d.ok) { await avisoPopup(d.erro || 'Falha.', {titulo}); return false; }
+    if (!d.ok) {
+      if (d.codigo === 'bloqueador_ativo') {
+        // Fatia 3: causa DIFERENTE da trava sequencial — oferece o atalho pra Conversa.
+        const abrir = await confirmarPopup(
+          (d.erro || 'Bloqueador ativo.') + '\n\nAbrir a Conversa do projeto para ver a transferência bloqueadora?',
+          {titulo: '🔒 Bloqueador ativo', okLabel: 'Abrir Conversa', cancelLabel: 'Agora não'});
+        if (abrir) abrirConversaProjeto();
+        return false;
+      }
+      await avisoPopup(d.erro || 'Falha.', {titulo}); return false;
+    }
     showToast(okMsg, false);
     await carregarCiclo();
     return true;

@@ -2367,6 +2367,42 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 121 — Chat Fatia 3: bloqueador como GATE REAL em pode_avancar (código sensível)
+**Protocolo de rigor cumprido:** baseline da suíte de ciclo ANTES de tocar (56 verdes:
+test_ciclo, test_ciclo_faixas, test_ciclo_operacional_e2e, test_ciclo_pe_e2e) e regressão
+DEPOIS — comportamento idêntico, incluindo teste explícito de que `pode_avancar` SEM o
+parâmetro novo é igual ao anterior (default None; set vazio ≡ None).
+**Implementado:**
+- **`mod_ciclo.pode_avancar(codigo, status_por_codigo, bloqueadores_ativos=None)`** —
+  retrocompatível; set de etapas com bloqueador ativo; **`"*"` = bloqueador SEM etapa, trava o
+  ciclo INTEIRO** (decisão de design mantida como a spec da sessão pediu: transferência
+  bloqueadora sem etapa não tem alvo específico → o conservador é travar tudo, que é o
+  comportamento de emergência esperado). Bloqueador vence tudo (False antes das outras
+  checagens); sub-etapa herda o da mãe pela recursão de sempre.
+- **`mod_chat.bloqueadores_ativos(db, projeto)`**: transferências bloqueadoras não resolvidas
+  → set de etapas ('*' quando sem etapa). O PATCH do ciclo monta o set e passa ao
+  pode_avancar; quando a causa é o bloqueador (sem ele teria passado), o erro é DISTINTO
+  ("Bloqueador ativo — resolva a transferência na Conversa…", `codigo: bloqueador_ativo`) —
+  não se confunde com "Conclua a etapa anterior".
+- **Resolução normal** `POST .../conversa/mensagens/<id>/resolver`: EXCLUSIVA de quem recebeu
+  (ponte Usuário↔Funcionário generalizada em `_funcionario_do_usuario` — o
+  `_consultor_funcionario_id` da Fatia 2 agora a reusa); outro usuário = 403; valida
+  bloqueador/não-resolvida; seta `resolvido_em`.
+- **Válvula de emergência** `POST .../destravar-emergencia`: `_usuario_com_capacidade(...,
+  "autorizar", sessao=)` (sessão-primeiro, master/gerencial — capacidade EXISTENTE, nenhuma
+  nova), `motivo` obrigatório (400 sem), `LogAcaoGerencial(acao="destravar_bloqueador",
+  etapa_alvo, contexto={mensagem_id, motivo})`. Funciona sem ser o destinatário (o objetivo).
+- **Frontend:** compositor de transferência no painel da Conversa (etapa opcional +
+  destinatário + checkbox bloqueador com aviso de que trava o ciclo — e de que sem etapa
+  trava TUDO); linha do tempo com badge vermelho "BLOQUEADOR ATIVO" + botões Resolver (todos
+  veem; backend faz o 403 falar) e "Destravar (emergência)" (só master/gerencial via
+  `_podeAutorizarFront`, reusando `pedirCredenciaisGerente` sessão-primeiro + motivo);
+  bloqueador resolvido vira selo verde com data. `_patchEtapa` intercepta
+  `codigo=bloqueador_ativo` e oferece "Abrir Conversa" (confirmarPopup) — causa distinta da
+  trava sequencial na tela, como pedido.
+**Testes novos:** `tests/test_chat_fatia3.py` (9 — cobre o checklist a-f do pedido, inclusive
+o log de auditoria e a liberação do avanço após resolver).
+
 ## Sessão 120 — Chat Fatia 2: Responsabilidade + transferência (extensão do v12, spec seção 6)
 **Implementado exatamente como a seção 6 manda — estender, nunca duplicar:**
 - **`ConversaMensagem` ganhou** `natureza` (interacao|transferencia), `etapa_codigo`,

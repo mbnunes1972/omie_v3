@@ -235,18 +235,27 @@ def chave_ordenacao(codigo):
     return _parse_codigo(codigo)
 
 
-def pode_avancar(codigo, status_por_codigo):
+def pode_avancar(codigo, status_por_codigo, bloqueadores_ativos=None):
     """
     True se a etapa pode sair de 'pendente' (iniciar/concluir).
     Sub-etapas herdam o gating da etapa-mãe (desbloqueiam junto com ela).
     Principais exigem a anterior concluída.
     status_por_codigo: dict {codigo: status}.
+
+    bloqueadores_ativos (chat Fatia 3, spec seção 3 — OPCIONAL, default None mantém o
+    comportamento de sempre): set de etapa_codigo com transferência BLOQUEADORA não
+    resolvida; o valor especial "*" é bloqueador SEM etapa e trava o ciclo INTEIRO.
+    Bloqueador vence tudo — False antes de qualquer outra checagem, mesmo com a etapa
+    anterior concluída. Sub-etapa herda o bloqueio da mãe pela recursão de sempre.
     """
+    if bloqueadores_ativos:
+        if "*" in bloqueadores_ativos or codigo in bloqueadores_ativos:
+            return False
     if codigo not in ETAPAS_PRINCIPAIS:
         pai = etapa_pai(codigo)
         if pai is None:
             return True
-        return pode_avancar(pai, status_por_codigo)
+        return pode_avancar(pai, status_por_codigo, bloqueadores_ativos)
     ant = etapa_anterior(codigo)
     if ant is None:
         return True

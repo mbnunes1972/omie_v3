@@ -4526,6 +4526,84 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST .../conversa/mensagens/<id>/resolver — Fatia 3: resolução NORMAL do bloqueador.
+        # EXCLUSIVA de quem recebeu a transferência (ponte Usuário↔Funcionário).
+        # POST .../conversa/mensagens/<id>/destravar-emergencia — válvula: capacidade
+        # 'autorizar' (master/gerencial), motivo obrigatório, LogAcaoGerencial.
+        m_res = re.match(r'^/api/projetos/([^/]+)/conversa/mensagens/(\d+)/'
+                         r'(resolver|destravar-emergencia)$', path)
+        if m_res:
+            nome = unquote(m_res.group(1))
+            msg_id = int(m_res.group(2))
+            acao_res = m_res.group(3)
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_chat
+                from database import ConversaMensagem as _CM, Conversa as _CV
+                row = (db.query(_CM, _CV)
+                         .join(_CV, _CM.conversa_id == _CV.id)
+                         .filter(_CM.id == msg_id).first())
+                if row is None or row[1].projeto_nome != nome or row[1].loja_id != loja_id:
+                    self.send_json({"ok": False, "erro": "Mensagem não encontrada."}, code=404)
+                    return
+                msg = row[0]
+                if not msg.bloqueador:
+                    self.send_json({"ok": False, "erro": "Esta mensagem não é um bloqueador."},
+                                   code=400); return
+                if msg.resolvido_em is not None:
+                    self.send_json({"ok": False, "erro": "Bloqueador já resolvido."},
+                                   code=400); return
+                req = json.loads(body or b'{}')
+                if acao_res == "resolver":
+                    fid = _funcionario_do_usuario(db, usuario.get("id"))
+                    if not fid or fid != msg.transferido_para_funcionario_id:
+                        self.send_json({"ok": False, "erro": "Só quem recebeu a transferência "
+                                        "pode resolvê-la (use a válvula de emergência da "
+                                        "gerência se necessário)."}, code=403); return
+                else:
+                    motivo = (req.get("motivo") or "").strip()
+                    if not motivo:
+                        self.send_json({"ok": False, "erro": "Informe o motivo do "
+                                        "destravamento de emergência."}, code=400); return
+                    login = (req.get("login") or "").strip()
+                    senha = (req.get("senha") or "").strip()
+                    autorizador = _usuario_com_capacidade(db, login, senha, "autorizar",
+                                                          sessao=usuario)
+                    if not autorizador:
+                        self.send_json({"ok": False, "erro": "Credenciais inválidas ou perfil "
+                                        "sem permissão (Gerente/Diretor)."}, code=403); return
+                    db.add(LogAcaoGerencial(
+                        solicitante_id=usuario["id"],
+                        autorizador_id=autorizador.id,
+                        acao="destravar_bloqueador",
+                        projeto_nome=nome,
+                        etapa_alvo=msg.etapa_codigo,
+                        contexto=json.dumps({"mensagem_id": msg.id, "motivo": motivo},
+                                            ensure_ascii=False)))
+                msg.resolvido_em = datetime.utcnow()
+                db.commit()
+                nome_transf = None
+                if msg.transferido_para_funcionario_id:
+                    _ft = db.get(Funcionario, msg.transferido_para_funcionario_id)
+                    nome_transf = _ft.nome if _ft else None
+                self.send_json({"ok": True, "mensagem": mod_chat.serializar_mensagem(
+                    msg, None, nome_transf)})
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
         # POST /api/projetos/<nome>/conversa/mensagens — chat Fatia 1: nova mensagem interna.
         m_conv = re.match(r'^/api/projetos/([^/]+)/conversa/mensagens$', path)
         if m_conv:
@@ -9759,11 +9837,25 @@ class Handler(BaseHTTPRequestHandler):
                     if not etapa:
                         etapa = CicloEtapa(projeto_nome=nome_safe, etapa_codigo=etapa_cod)
                         db.add(etapa)
-                    # Gating sequencial: etapa principal só avança se a anterior está concluída.
+                    # Gating sequencial + BLOQUEADOR do chat (Fatia 3, spec seção 3): uma
+                    # transferência bloqueadora não resolvida trava a etapa (ou o ciclo
+                    # inteiro, quando veio sem etapa) mesmo com a anterior concluída.
                     if novo_status and novo_status != "pendente":
+                        import mod_chat
                         todas = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()
                         status_por_codigo = {e.etapa_codigo: e.status for e in todas}
-                        if not mod_ciclo.pode_avancar(etapa_cod, status_por_codigo):
+                        _bloq = mod_chat.bloqueadores_ativos(db, nome_safe)
+                        if not mod_ciclo.pode_avancar(etapa_cod, status_por_codigo,
+                                                      bloqueadores_ativos=_bloq):
+                            # distingue a CAUSA: sem o bloqueador teria passado? → é ele.
+                            if mod_ciclo.pode_avancar(etapa_cod, status_por_codigo):
+                                self.send_json({
+                                    "ok": False,
+                                    "codigo": "bloqueador_ativo",
+                                    "erro": "Bloqueador ativo — resolva a transferência na "
+                                            "Conversa antes de avançar.",
+                                }, code=400)
+                                return
                             ant = mod_ciclo.etapa_anterior(etapa_cod)
                             nome_ant = mod_ciclo.ETAPA_NOME.get(ant, ant)
                             self.send_json({
@@ -11268,19 +11360,26 @@ _FUNCAO_FINANCEIRO = "Gerente Administrativo/Financeiro"
 _FUNCAO_LOGISTICA  = "Assistente Logístico"
 
 
+def _funcionario_do_usuario(db, usuario_id):
+    """Ponte Usuário↔Funcionário (uma só, usada pelo default de Vendas e pelo resolver do
+    bloqueador): Usuario.funcionario_id; fallback: o reverso Funcionario.usuario_id."""
+    if not usuario_id:
+        return None
+    u = db.get(Usuario, usuario_id)
+    if u is not None and u.funcionario_id:
+        return u.funcionario_id
+    f = db.query(Funcionario).filter_by(usuario_id=usuario_id).first()
+    return f.id if f else None
+
+
 def _consultor_funcionario_id(db, nome_safe):
-    """Default de VENDAS: Briefing.consultor_id (Usuario) → Funcionario pela ponte
-    Usuario.funcionario_id (fallback: o reverso Funcionario.usuario_id). Consultor sem
-    Funcionário vinculado → None (etapa fica sem default; não é erro)."""
+    """Default de VENDAS: Briefing.consultor_id (Usuario) → Funcionario pela ponte única.
+    Consultor sem Funcionário vinculado → None (etapa fica sem default; não é erro)."""
     b = (db.query(Briefing).filter_by(projeto_nome=nome_safe)
            .order_by(Briefing.id.desc()).first())
     if b is None or not b.consultor_id:
         return None
-    u = db.get(Usuario, b.consultor_id)
-    if u is not None and u.funcionario_id:
-        return u.funcionario_id
-    f = db.query(Funcionario).filter_by(usuario_id=b.consultor_id).first()
-    return f.id if f else None
+    return _funcionario_do_usuario(db, b.consultor_id)
 
 
 def _default_responsavel_faixa(db, nome_safe, loja_id, etapa_codigo, cache):

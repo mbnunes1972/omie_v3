@@ -171,3 +171,19 @@ def responsavel_sac(db, loja_id):
     """SAC fica FORA do v12 (spec seção 6): conversa de SAC pode nem ter projeto, logo não há
     CicloEtapa para ancorar — resolve direto pela Função 'SAC' da loja da conversa."""
     return funcionario_por_funcao(db, loja_id, "SAC")
+
+
+# ── Bloqueador como gate real (Fatia 3, spec seção 3) ────────────────────────
+
+def bloqueadores_ativos(db, projeto_nome):
+    """Set de etapa_codigo com transferência BLOQUEADORA não resolvida no projeto — '*'
+    representa bloqueador SEM etapa (trava o ciclo inteiro). É o que o PATCH do ciclo passa
+    para mod_ciclo.pode_avancar()."""
+    rows = (db.query(ConversaMensagem.etapa_codigo)
+              .join(Conversa, ConversaMensagem.conversa_id == Conversa.id)
+              .filter(Conversa.projeto_nome == projeto_nome,
+                      ConversaMensagem.natureza == "transferencia",
+                      ConversaMensagem.bloqueador != 0,
+                      ConversaMensagem.resolvido_em.is_(None))
+              .all())
+    return {(cod or "*") for (cod,) in rows}

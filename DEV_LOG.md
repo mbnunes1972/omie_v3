@@ -2393,6 +2393,14 @@ tenancy 404, 401).
   interno cria mensagem sem autor.
 - UI sem polling: o histórico atualiza ao abrir e após enviar — tempo-real/polling fica como
   melhoria de UX para quando o chat tiver mais gente simultânea (anotar na Fatia 2+).
+**Adendo à spec (mesmo dia, validado pelo usuário):** decisões 11-14 registradas —
+arquiteto é participante externo DERIVADO do `parceiro_id` do projeto (nada por conversa);
+contatos externos vêm do CADASTRO (nunca do contrato — Parceiro já tem `whatsapp`; Cliente
+ganha o campo quando o canal chegar); **confirmação de contatos na fase de contrato**
+(verifica preenchimento e pede confirmação explícita do canal, com registro de quem/quando —
+travar × avisar fica pra implementação); threading de resposta externa: reply citado é
+determinístico, resposta solta ambígua cai em fila de TRIAGEM humana (v1 sem bot); N projetos
+do mesmo arquiteto = N conversas (âncora no projeto já garante).
 **Pendente para a Fatia 2 (não implementado de propósito):** `natureza`
 (interacao|transferencia) + campos da transferência; resolução da pessoa responsável pelos 3
 mecanismos já mapeados na spec (Consultor/`AtribuicaoAmbiente`/Função p/ Financeiro-Logística-

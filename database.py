@@ -1070,6 +1070,11 @@ class ConversaMensagem(Base):
     documento_ref_id = Column(Integer,  nullable=True)   # Fatia 5 (documento compartilhável)
     bloqueador       = Column(Integer,  nullable=False, default=0)
     resolvido_em     = Column(DateTime, nullable=True)
+    # Fatia 4 (modo privado, decisão 8): privada=1 → o corpo em claro NUNCA persiste (fica
+    # ""), só `corpo_cifrado` (Fernet, chave ORIZON_CHAT_ENC_KEY do ambiente). Metadados
+    # continuam visíveis a todos; o texto só decripta p/ quem tem `ver_mensagem_privada`.
+    privada          = Column(Integer,  nullable=False, default=0)
+    corpo_cifrado    = Column(Text,     nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1511,6 +1516,9 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS documento_ref_id INTEGER",
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS bloqueador INTEGER DEFAULT 0",
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS resolvido_em TIMESTAMP",
+        # Chat Fatia 4 (modo privado, 2026-07-25)
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS privada INTEGER DEFAULT 0",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS corpo_cifrado TEXT",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_codigo",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_status",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_erro",

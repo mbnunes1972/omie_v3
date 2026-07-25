@@ -2643,11 +2643,14 @@ class Handler(BaseHTTPRequestHandler):
                         db, loja_id, nome_safe,
                         cliente_id=(p_meta.cliente_id if p_meta else None))
                     db.commit()
+                    # Fatia 4: quem TEM ver_mensagem_privada lê o claro; os demais, a máscara
+                    _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                     self.send_json({"ok": True,
                                     "conversa": {"id": conv.id,
                                                  "projeto_nome": conv.projeto_nome,
                                                  "cliente_id": conv.cliente_id},
-                                    "mensagens": mod_chat.listar_mensagens(db, conv.id)})
+                                    "mensagens": mod_chat.listar_mensagens(
+                                        db, conv.id, pode_ver_privada=_pode_priv)})
                 finally:
                     db.close()
                 return
@@ -4661,7 +4664,8 @@ class Handler(BaseHTTPRequestHandler):
                         db, conv, usuario.get("id"), dd.get("corpo"),
                         natureza=natureza, etapa_codigo=etapa_codigo,
                         transferido_para_funcionario_id=transf_id,
-                        documento_ref_id=doc_ref, bloqueador=bloqueador)
+                        documento_ref_id=doc_ref, bloqueador=bloqueador,
+                        privada=bool(dd.get("privada")))
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
@@ -4675,7 +4679,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True,
                                 "mensagem": mod_chat.serializar_mensagem(
                                     msg, usuario.get("nome"),
-                                    transferido.nome if transferido else None)}, code=201)
+                                    transferido.nome if transferido else None,
+                                    pode_ver_privada=perfis.pode(
+                                        usuario.get("nivel"), "ver_mensagem_privada"))},
+                               code=201)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)

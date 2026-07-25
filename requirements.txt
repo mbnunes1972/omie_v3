@@ -1,7 +1,7 @@
 # Dependências de runtime do Orizon Manager
 # Local (dev): pip install -r requirements.txt
 # Servidor (Ubuntu 24.04 / PEP 668): instalar via apt —
-#   apt install -y python3-docx python3-openpyxl python3-requests python3-sqlalchemy weasyprint python3-markdown python3-psycopg2 python3-alembic
+#   apt install -y python3-docx python3-openpyxl python3-requests python3-sqlalchemy weasyprint python3-markdown python3-psycopg2 python3-alembic python3-cryptography
 python-docx
 openpyxl
 requests
@@ -15,3 +15,4 @@ alembic
 
 # Apenas para rodar a suíte de testes (não é necessário em produção):
 # pytest
+cryptography

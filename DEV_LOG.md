@@ -2367,6 +2367,31 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 122 — Chat Fatia 4: modo privado (criptografia real no servidor)
+**Spec seção 4 / decisão 8.** `ConversaMensagem` ganhou `privada` + `corpo_cifrado` (ADD
+COLUMN idempotente). Privada=True cifra com **Fernet** (`cryptography`; entrou no
+requirements.txt e na linha apt como `python3-cryptography`) usando a chave da env
+**`ORIZON_CHAT_ENC_KEY`** — o corpo em claro NUNCA persiste (fica `""`; teste bate no banco
+pra provar). **Sem a chave no ambiente, o envio privado FALHA com erro claro** ("Modo privado
+indisponível — chave de criptografia não configurada") — deliberadamente SEM fallback de
+chave descartável, que tornaria as mensagens ilegíveis para sempre no próximo restart.
+**⚠ REQUISITO DE DEPLOY:** a `ORIZON_CHAT_ENC_KEY` precisa existir nos 3 ambientes
+(integração `/etc/systemd/system/orizon-a.service`, pré-homolog `orizon-b.service`, produção
+`orizon.service` — Environment= no unit, ou nos envs `/root/orizon-A.env`/`-B.env`) ANTES de
+alguém usar o modo privado nesses ambientes; chave gerada com
+`python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+(uma POR ambiente; ajuste manual do usuário, fora do código). **Quem decripta:** capacidade
+NOVA `ver_mensagem_privada` (True master+gerencial, False operador/default; em CAPACIDADES e
+CAPS_SELECIONAVEIS → aparece e é sobreponível na matriz Admin › Perfis; decidido via
+`perfis.pode`, nunca comparação de string de nível). Metadados (autor/natureza/etapa/
+destinatário/bloqueador) seguem visíveis a todos — transferência privada continua gravando
+`responsavel_funcionario_id` normal; só o TEXTO é secreto: quem não pode vê a MÁSCARA fixa
+("🔒 Mensagem privada — visível apenas à gerência"), nunca o cifrado bruto; chave trocada no
+ambiente → máscara própria ("não foi possível decifrar"), sem 500. Frontend: checkbox
+"Privada 🔒" (vale p/ interação e transferência), cadeado sempre visível na linha do tempo,
+tag "privada" discreta pra quem lê o claro, SEM botão de revelar. Testes:
+`tests/test_chat_fatia4.py` (5).
+
 ## Sessão 121 — Chat Fatia 3: bloqueador como GATE REAL em pode_avancar (código sensível)
 **Protocolo de rigor cumprido:** baseline da suíte de ciclo ANTES de tocar (56 verdes:
 test_ciclo, test_ciclo_faixas, test_ciclo_operacional_e2e, test_ciclo_pe_e2e) e regressão

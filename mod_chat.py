@@ -10,9 +10,28 @@ externos (comercial/financeiro/logistica/suporte_tecnico/sac) entram nas fatias 
 e natureza/transferência/bloqueador/privada nas fatias 2-4.
 """
 import json
+import os
 
 from database import (Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente,
                       Parceiro, Funcionario, Funcao)
+
+# ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
+MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
+_MASCARA_CHAVE_TROCADA = ("🔒 Mensagem privada — não foi possível decifrar "
+                          "(a chave do ambiente mudou?)")
+
+
+def _fernet():
+    """Fernet da chave ORIZON_CHAT_ENC_KEY do ambiente, ou None quando não configurada.
+    NUNCA gere chave descartável aqui: mensagem cifrada com chave de processo fica
+    ilegível PARA SEMPRE no próximo restart — sem chave, o modo privado é RECUSADO com
+    erro claro (requisito de deploy: a variável precisa existir nos 3 ambientes ANTES
+    de habilitar o modo privado neles)."""
+    chave = (os.environ.get("ORIZON_CHAT_ENC_KEY") or "").strip()
+    if not chave:
+        return None
+    from cryptography.fernet import Fernet
+    return Fernet(chave.encode("ascii"))
 
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
 _CANAIS_FATIA_1 = ("interno",)
@@ -91,7 +110,7 @@ def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
 def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
-                    bloqueador=False):
+                    bloqueador=False, privada=False):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
@@ -112,20 +131,48 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
     else:
         if transferido_para_funcionario_id or etapa_codigo or documento_ref_id or bloqueador:
             raise ValueError("Campos de transferência só valem em natureza=transferencia.")
+    corpo_cifrado = None
+    if privada:
+        f = _fernet()
+        if f is None:
+            raise ValueError("Modo privado indisponível — chave de criptografia não "
+                             "configurada neste ambiente.")
+        corpo_cifrado = f.encrypt(corpo.encode("utf-8")).decode("ascii")
+        corpo = ""    # o claro NUNCA persiste junto do cifrado (decisão 8)
     m = ConversaMensagem(conversa_id=conversa.id, autor_usuario_id=autor_usuario_id,
                          corpo=corpo, canal=canal, natureza=natureza,
                          etapa_codigo=etapa_codigo,
                          transferido_para_funcionario_id=transferido_para_funcionario_id,
                          documento_ref_id=documento_ref_id,
-                         bloqueador=1 if bloqueador else 0)
+                         bloqueador=1 if bloqueador else 0,
+                         privada=1 if privada else 0,
+                         corpo_cifrado=corpo_cifrado)
     db.add(m)
     db.flush()
     return m
 
 
-def serializar_mensagem(m, autor_nome=None, transferido_nome=None):
+def _corpo_visivel(m, pode_ver_privada):
+    """Texto que sai na API: claro para mensagem comum; para privada, decripta SÓ para quem
+    tem a capacidade — os demais recebem a MÁSCARA fixa (nunca o cifrado bruto)."""
+    if not m.privada:
+        return m.corpo
+    if not pode_ver_privada:
+        return MASCARA_PRIVADA
+    f = _fernet()
+    if f is None or not m.corpo_cifrado:
+        return _MASCARA_CHAVE_TROCADA
+    try:
+        return f.decrypt(m.corpo_cifrado.encode("ascii")).decode("utf-8")
+    except Exception:
+        return _MASCARA_CHAVE_TROCADA
+
+
+def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
+                        pode_ver_privada=False):
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
-            "autor_nome": autor_nome or "—", "corpo": m.corpo, "canal": m.canal,
+            "autor_nome": autor_nome or "—",
+            "corpo": _corpo_visivel(m, pode_ver_privada), "canal": m.canal,
             "natureza": m.natureza or "interacao",
             "etapa_codigo": m.etapa_codigo,
             "transferido_para_funcionario_id": m.transferido_para_funcionario_id,
@@ -133,12 +180,14 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None):
             "documento_ref_id": m.documento_ref_id,
             "bloqueador": bool(m.bloqueador),
             "resolvido_em": m.resolvido_em.isoformat() if m.resolvido_em else None,
+            "privada": bool(m.privada),
             "criado_em": m.criado_em.isoformat() if m.criado_em else None}
 
 
-def listar_mensagens(db, conversa_id):
+def listar_mensagens(db, conversa_id, pode_ver_privada=False):
     """Histórico cronológico ASC, com nomes de autor e destinatário resolvidos (outerjoin/
-    batch: autor NULL — resposta externa futura — não derruba a listagem)."""
+    batch: autor NULL — resposta externa futura — não derruba a listagem). O chamador diz
+    se o leitor pode decifrar privadas (perfis.pode fica no composition root, não aqui)."""
     rows = (db.query(ConversaMensagem, Usuario.nome)
               .outerjoin(Usuario, ConversaMensagem.autor_usuario_id == Usuario.id)
               .filter(ConversaMensagem.conversa_id == conversa_id)
@@ -148,7 +197,8 @@ def listar_mensagens(db, conversa_id):
                   if m.transferido_para_funcionario_id}
     nomes = ({f.id: f.nome for f in db.query(Funcionario)
               .filter(Funcionario.id.in_(ids_transf)).all()} if ids_transf else {})
-    return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id))
+    return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id),
+                                pode_ver_privada=pode_ver_privada)
             for m, nome in rows]
 
 

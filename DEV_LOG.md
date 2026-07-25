@@ -2367,6 +2367,20 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 123 — Chat Fatia 5: documento compartilhável na transferência
+**`documento_ref_id` virou FK REAL** de `ciclo_documentos` (modelo + constraint nas bases
+existentes via DO-block idempotente no `_migrar_colunas_pg` — ADD CONSTRAINT não tem IF NOT
+EXISTS). Segue válido SÓ em `natureza=transferencia` (regra da Fatia 2, inalterada e
+retestada). **Validação no envio:** o documento precisa ser do MESMO `projeto_nome` da
+conversa — de outro projeto (ou inexistente) = 400, sem vazar referência entre projetos.
+**Serialização resolve** `documento_nome`/`documento_tipo` (batch na listagem; não sai id
+cru). **Frontend:** seletor "Anexar documento" no compositor de transferência (populado pelo
+`GET /ciclo/pe`, que já devolve TODOS os CicloDocumento do projeto com tenancy — nenhum
+endpoint novo) e chip com clipe na linha do tempo linkando o download existente
+(`GET /ciclo/documento/<id>`, com as checagens que ele já faz — nada duplicado). Testes:
+`tests/test_chat_fatia5.py` (3). Com esta fatia, restam da spec só os CANAIS EXTERNOS
+(Fatias 6-7, e-mail e WhatsApp) — `enviar_mensagem` segue recusando canal ≠ interno.
+
 ## Sessão 122 — Chat Fatia 4: modo privado (criptografia real no servidor)
 **Spec seção 4 / decisão 8.** `ConversaMensagem` ganhou `privada` + `corpo_cifrado` (ADD
 COLUMN idempotente). Privada=True cifra com **Fernet** (`cryptography`; entrou no

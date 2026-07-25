@@ -13,7 +13,7 @@ import json
 import os
 
 from database import (Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente,
-                      Parceiro, Funcionario, Funcao)
+                      Parceiro, Funcionario, Funcao, CicloDocumento)
 
 # ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
 MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
@@ -169,7 +169,9 @@ def _corpo_visivel(m, pode_ver_privada):
 
 
 def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
-                        pode_ver_privada=False):
+                        pode_ver_privada=False, documento=None):
+    """`documento`: CicloDocumento já resolvido pelo chamador (ou None) — a mensagem devolve
+    nome/tipo prontos, não só o id cru (Fatia 5)."""
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
             "autor_nome": autor_nome or "—",
             "corpo": _corpo_visivel(m, pode_ver_privada), "canal": m.canal,
@@ -178,6 +180,8 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
             "transferido_para_funcionario_id": m.transferido_para_funcionario_id,
             "transferido_para_nome": transferido_nome or "",
             "documento_ref_id": m.documento_ref_id,
+            "documento_nome": documento.nome_original if documento is not None else "",
+            "documento_tipo": documento.tipo if documento is not None else "",
             "bloqueador": bool(m.bloqueador),
             "resolvido_em": m.resolvido_em.isoformat() if m.resolvido_em else None,
             "privada": bool(m.privada),
@@ -197,8 +201,12 @@ def listar_mensagens(db, conversa_id, pode_ver_privada=False):
                   if m.transferido_para_funcionario_id}
     nomes = ({f.id: f.nome for f in db.query(Funcionario)
               .filter(Funcionario.id.in_(ids_transf)).all()} if ids_transf else {})
+    ids_docs = {m.documento_ref_id for m, _ in rows if m.documento_ref_id}
+    docs = ({d.id: d for d in db.query(CicloDocumento)
+             .filter(CicloDocumento.id.in_(ids_docs)).all()} if ids_docs else {})
     return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id),
-                                pode_ver_privada=pode_ver_privada)
+                                pode_ver_privada=pode_ver_privada,
+                                documento=docs.get(m.documento_ref_id))
             for m, nome in rows]
 
 

@@ -1067,7 +1067,9 @@ class ConversaMensagem(Base):
     natureza         = Column(String(20), nullable=False, default="interacao")   # interacao | transferencia
     etapa_codigo     = Column(String(10), nullable=True)
     transferido_para_funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
-    documento_ref_id = Column(Integer,  nullable=True)   # Fatia 5 (documento compartilhável)
+    # Fatia 5: FK real — o documento tramitado é um CicloDocumento do MESMO projeto
+    # (validado no endpoint; a FK segura o vínculo órfão). Só vale em transferência.
+    documento_ref_id = Column(Integer,  ForeignKey("ciclo_documentos.id"), nullable=True)
     bloqueador       = Column(Integer,  nullable=False, default=0)
     resolvido_em     = Column(DateTime, nullable=True)
     # Fatia 4 (modo privado, decisão 8): privada=1 → o corpo em claro NUNCA persiste (fica
@@ -1519,6 +1521,13 @@ def _migrar_colunas_pg():
         # Chat Fatia 4 (modo privado, 2026-07-25)
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS privada INTEGER DEFAULT 0",
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS corpo_cifrado TEXT",
+        # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
+        # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
+        """DO $$ BEGIN
+             ALTER TABLE conversa_mensagens
+               ADD CONSTRAINT fk_convmsg_documento_ref
+               FOREIGN KEY (documento_ref_id) REFERENCES ciclo_documentos(id);
+           EXCEPTION WHEN duplicate_object THEN NULL; END $$""",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_codigo",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_status",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_erro",

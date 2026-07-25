@@ -954,6 +954,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <label class="field-label">Transferir para</label>
                 <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
               </div>
+              <div style="flex:1;min-width:180px">
+                <label class="field-label">Anexar documento (opcional)</label>
+                <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
+              </div>
             </div>
             <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
               <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
@@ -11725,6 +11729,15 @@ async function convCarregar(){
         + '<i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
         + esc(m.transferido_para_nome || '—') + '</strong>'
         + (m.etapa_codigo ? ' · etapa ' + esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
+      if (m.documento_ref_id) {
+        // Fatia 5: chip do documento tramitado — download pelo endpoint que já existe
+        meta += '<div style="margin-top:4px"><a target="_blank" rel="noopener" '
+          + 'href="/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ciclo/documento/'+m.documento_ref_id+'" '
+          + 'style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);'
+          + 'border-radius:6px;padding:3px 9px;font-size:10px;color:var(--text);text-decoration:none">'
+          + '<i class="ti ti-paperclip"></i> ' + esc(m.documento_nome || ('documento #'+m.documento_ref_id))
+          + '</a></div>';
+      }
       if (m.bloqueador && !m.resolvido_em) {
         meta += '<div style="margin-top:4px">'
           + '<span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);'
@@ -11764,6 +11777,7 @@ function convTransfToggle(){
 async function _convCarregarSeletoresTransf(){
   const selE = document.getElementById('conv-transf-etapa');
   const selF = document.getElementById('conv-transf-func');
+  const selD = document.getElementById('conv-transf-doc');
   selE.innerHTML = '<option value="">— sem etapa (geral) —</option>'
     + ETAPAS_CICLO.map(e => '<option value="'+esc(e.codigo)+'">'+esc(e.codigo+' — '+e.nome)+'</option>').join('');
   if (!selF.options.length) {
@@ -11772,6 +11786,15 @@ async function _convCarregarSeletoresTransf(){
     selF.innerHTML = '<option value="">— escolha —</option>'
       + (d.itens||[]).map(f => '<option value="'+f.id+'">'+esc(f.nome)+'</option>').join('');
   }
+  // Fatia 5: documentos do projeto — o GET /ciclo/pe já devolve TODOS os CicloDocumento
+  // (com tenancy/auth), apesar do nome da rota.
+  const dp = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/pe`,
+                         {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  selD.innerHTML = '<option value="">— sem documento —</option>'
+    + (dp.documentos||[]).map(d => {
+        const dt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
+        return '<option value="'+d.id+'">'+esc(d.nome_original+' ('+d.tipo+' · et. '+d.etapa_codigo+(dt?' · '+dt:'')+')')+'</option>';
+      }).join('');
 }
 
 async function convEnviar(){
@@ -11789,6 +11812,8 @@ async function convEnviar(){
     payload.transferido_para_funcionario_id = parseInt(fid, 10);
     const et = document.getElementById('conv-transf-etapa').value;
     if (et) payload.etapa_codigo = et;
+    const docId = document.getElementById('conv-transf-doc').value;
+    if (docId) payload.documento_ref_id = parseInt(docId, 10);
     payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
   }
   const btn = document.getElementById('conv-enviar-btn');

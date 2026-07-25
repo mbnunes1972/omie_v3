@@ -4643,6 +4643,7 @@ class Handler(BaseHTTPRequestHandler):
                 bloqueador = bool(dd.get("bloqueador"))
                 etapa_alvo = None
                 transferido = None
+                documento = None
                 if natureza == "transferencia":
                     transferido = db.get(Funcionario, transf_id) if transf_id else None
                     if transferido is None or transferido.loja_id != loja_id:
@@ -4656,6 +4657,13 @@ class Handler(BaseHTTPRequestHandler):
                         if etapa_alvo is None:
                             self.send_json({"ok": False, "erro": "Etapa %s não existe no ciclo "
                                             "deste projeto." % etapa_codigo}, code=400); return
+                    if doc_ref:
+                        # Fatia 5: documento tramitado tem que ser do MESMO projeto — não
+                        # vaza referência de documento de outro projeto/loja.
+                        documento = db.get(CicloDocumento, doc_ref)
+                        if documento is None or documento.projeto_nome != nome:
+                            self.send_json({"ok": False, "erro": "Documento inválido — anexe "
+                                            "um documento deste projeto."}, code=400); return
                 try:
                     conv = mod_chat.get_or_create_conversa_projeto(
                         db, loja_id, nome,
@@ -4681,7 +4689,8 @@ class Handler(BaseHTTPRequestHandler):
                                     msg, usuario.get("nome"),
                                     transferido.nome if transferido else None,
                                     pode_ver_privada=perfis.pode(
-                                        usuario.get("nivel"), "ver_mensagem_privada"))},
+                                        usuario.get("nivel"), "ver_mensagem_privada"),
+                                    documento=documento)},
                                code=201)
             except Exception as e:
                 db.rollback()

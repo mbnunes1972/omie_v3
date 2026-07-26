@@ -1099,6 +1099,28 @@ class ContatoConfirmacao(Base):
     confirmado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class EnvioExterno(Base):
+    """Porta de saída/entrada externa de uma Mensagem do chat (Fatias 6-7, spec seção 6d):
+    e-mail/WhatsApp. Uma Mensagem pode ter 0..N (saída para o destinatário + entradas de
+    resposta). O transporte ao vivo é gated por configuração (mod_chat_externo): sem
+    credencial, o envio nasce 'pendente_config' — nunca um 'enviado' fantasma."""
+    __tablename__ = "envios_externos"
+
+    id                = Column(Integer,  primary_key=True, autoincrement=True)
+    mensagem_id       = Column(Integer,  ForeignKey("conversa_mensagens.id"), nullable=False, index=True)
+    meio              = Column(String(16), nullable=False)   # email | whatsapp
+    direcao           = Column(String(10), nullable=False, default="saida")   # saida | entrada
+    canal             = Column(String(20), nullable=True)    # segmento comercial|financeiro|...
+    destinatario_tipo = Column(String(16), nullable=True)    # interno|parceiro|cliente|avulso
+    destinatario_id   = Column(Integer,  nullable=True)
+    destino           = Column(Text,     nullable=True)      # e-mail ou telefone resolvido
+    status            = Column(String(20), nullable=False, default="pendente_config")
+    id_externo        = Column(Text,     nullable=True, index=True)   # id do provedor (threading)
+    id_externo_ref    = Column(Text,     nullable=True)      # id citado numa resposta (decisão 14)
+    erro              = Column(Text,     nullable=True)
+    criado_em         = Column(DateTime, default=datetime.utcnow)
+
+
 class ContraparteFinanceira(Base):
     """Cadastro de Credores/Devedores (revisão 2026-07-22): entidade contra a qual acordos são
     lançados — fábrica, empresa (do grupo ou não) ou banco. O papel (credor|devedor) é dado pelo

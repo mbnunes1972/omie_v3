@@ -110,7 +110,7 @@ def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
 def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
-                    bloqueador=False, privada=False):
+                    bloqueador=False, privada=False, _permitir_externo=False):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
@@ -121,8 +121,11 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
         raise ValueError("Escreva a mensagem antes de enviar.")
     if canal not in CANAIS:
         raise ValueError("canal inválido: %r (aceitos: %s)" % (canal, ", ".join(CANAIS)))
-    if canal not in _CANAIS_FATIA_1:
-        raise ValueError("Canal externo ainda não disponível — por ora a conversa é interna.")
+    # Canal externo só entra pelo caminho de envio externo (mod_chat_externo, Fatias 6-7),
+    # que passa _permitir_externo=True e cria o EnvioExterno junto. O chat interno segue
+    # restrito a 'interno' — evita mensagem em canal externo sem porta de saída registrada.
+    if canal not in _CANAIS_FATIA_1 and not _permitir_externo:
+        raise ValueError("Canal externo só pelo envio externo (WhatsApp/e-mail).")
     if natureza not in NATUREZAS:
         raise ValueError("natureza inválida: %r (aceitas: %s)" % (natureza, ", ".join(NATUREZAS)))
     if natureza == "transferencia":

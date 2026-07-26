@@ -34,9 +34,10 @@ MODULOS = {
                     # Chat do Orizon, Fatia 1 (spec _geral/2026-07-25): comunicação transversal
                     # entre etapas/equipes — núcleo por ora (sempre ligado); se um dia virar
                     # desligável por loja, promove a domínio.
-                    "arquivos": ["mod_chat.py"],
+                    "arquivos": ["mod_chat.py", "mod_chat_externo.py"],
                     "tabelas": ["conversas", "conversa_mensagens",
-                                "contato_confirmacoes"],   # decisão 13 (mini-frente 2026-07-25)
+                                "contato_confirmacoes",   # decisão 13 (mini-frente 2026-07-25)
+                                "envios_externos"],       # canais externos (Fatias 6-7, 2026-07-26)
                     "rotas": []},
     # ── DOMÍNIOS ───────────────────────────────────────────────────────────
     "captacao":    {"camada": "dominio", "depende_de": [], "rotulo": "Captação", "faixa": "vendas",

@@ -940,10 +940,36 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label style="font-size:12px;color:var(--text);cursor:pointer;margin-right:16px">
             <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
             Transferência de responsabilidade</label>
-          <label style="font-size:12px;color:var(--text);cursor:pointer"
+          <label style="font-size:12px;color:var(--text);cursor:pointer;margin-right:16px"
                  title="O texto é criptografado no servidor; todos veem QUE houve a mensagem, só a gerência lê o conteúdo.">
             <input type="checkbox" id="conv-privada-chk">
             Privada &#128274;</label>
+          <label style="font-size:12px;color:var(--text);cursor:pointer"
+                 title="Enviar por WhatsApp/e-mail ao cliente, arquiteto ou contato avulso (canal externo).">
+            <input type="checkbox" id="conv-externo-chk" onchange="convExternoToggle()">
+            Canal externo &#128231;</label>
+          <!-- Fatias 6-7: compositor do CANAL EXTERNO (seletor filtrado + avulso, decisão 19) -->
+          <div id="conv-externo-campos" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div style="flex:1;min-width:120px"><label class="field-label">Meio</label>
+                <select id="conv-ext-meio" style="width:100%;padding:6px 8px"><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select></div>
+              <div style="flex:1;min-width:120px"><label class="field-label">Canal</label>
+                <select id="conv-ext-canal" style="width:100%;padding:6px 8px">
+                  <option value="comercial">Comercial</option><option value="financeiro">Financeiro</option>
+                  <option value="logistica">Logística</option><option value="suporte_tecnico">Suporte Técnico</option>
+                  <option value="sac">SAC</option></select></div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+              <div style="flex:1;min-width:120px"><label class="field-label">Destinatário</label>
+                <select id="conv-ext-dtipo" onchange="convExtDtipo()" style="width:100%;padding:6px 8px">
+                  <option value="cliente">Cliente</option><option value="parceiro">Arquiteto</option>
+                  <option value="interno">Interno (usuário)</option><option value="avulso">Avulso (digitar)</option></select></div>
+              <div style="flex:2;min-width:160px" id="conv-ext-quem-wrap"><label class="field-label" id="conv-ext-quem-lbl">Quem</label>
+                <select id="conv-ext-quem" style="width:100%;padding:6px 8px"></select>
+                <input id="conv-ext-avulso" style="display:none;width:100%;box-sizing:border-box;padding:6px 8px" placeholder="número ou e-mail"></div>
+            </div>
+            <div id="conv-ext-aviso" style="font-size:11px;color:var(--warn);margin-top:6px"></div>
+          </div>
           <div id="conv-transf-campos" style="display:none;margin-top:8px">
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <div style="flex:1;min-width:180px">
@@ -11725,6 +11751,11 @@ async function convCarregar(){
     // Fatia 3: transferência ganha linha-meta; bloqueador não resolvido se DESTACA e traz
     // as ações (Resolver = quem recebeu, backend valida; Destravar = master/gerencial).
     let meta = '';
+    // Fatias 6-7: mensagem de canal externo — mostra o segmento (comercial/financeiro/…)
+    if (m.canal && m.canal !== 'interno') {
+      const CANAL_LBL = {comercial:'Comercial', financeiro:'Financeiro', logistica:'Logística', suporte_tecnico:'Suporte Técnico', sac:'SAC'};
+      meta += '<div style="font-size:10px;color:var(--muted);margin-top:3px"><i class="ti ti-external-link"></i> canal externo · '+esc(CANAL_LBL[m.canal]||m.canal)+'</div>';
+    }
     if (m.natureza === 'transferencia') {
       meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px">'
         + '<i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
@@ -11775,6 +11806,46 @@ function convTransfToggle(){
   if (on) _convCarregarSeletoresTransf();
 }
 
+// ── Fatias 6-7: canal externo (WhatsApp/e-mail) ──────────────────────────────
+let _convExtCand = null;   // {cliente, arquiteto, internos:[...]}
+async function convExternoToggle(){
+  const on = document.getElementById('conv-externo-chk').checked;
+  document.getElementById('conv-externo-campos').style.display = on ? '' : 'none';
+  if (on){
+    // transferência e externo são mutuamente exclusivos (um é interno, outro externo)
+    document.getElementById('conv-transf-chk').checked = false; convTransfToggle();
+    if (!_convExtCand){
+      const [eq] = await Promise.all([
+        fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/equipe`,{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
+      ]);
+      const internos = (eq && eq.ok && eq.equipe && eq.equipe.papeis || [])
+        .flatMap(p => (p.pessoas||[]).filter(x=>x.tipo==='funcionario').map(x=>({id:x.id, nome:x.nome})));
+      _convExtCand = { internos };
+    }
+    convExtDtipo();
+  }
+}
+function convExtDtipo(){
+  const t = document.getElementById('conv-ext-dtipo').value;
+  const sel = document.getElementById('conv-ext-quem');
+  const av  = document.getElementById('conv-ext-avulso');
+  const avulso = (t === 'avulso');
+  sel.style.display = avulso ? 'none' : '';
+  av.style.display  = avulso ? '' : 'none';
+  document.getElementById('conv-ext-quem-lbl').textContent = avulso ? 'Contato avulso' : 'Quem';
+  if (avulso) return;
+  if (t === 'cliente'){
+    sel.innerHTML = '<option value="'+(projetoAtivo.cliente_id||'')+'">'+esc(projetoAtivo.cliente_nome||'Cliente do projeto')+'</option>';
+  } else if (t === 'parceiro'){
+    // usa o parceiro (arquiteto) do projeto; backend resolve o contato do cadastro
+    sel.innerHTML = '<option value="'+(projetoAtivo.parceiro_id||'')+'">'+esc(projetoAtivo.parceiro_nome||'Arquiteto do projeto')+'</option>';
+    if (!projetoAtivo.parceiro_id) sel.innerHTML = '<option value="">— sem arquiteto associado —</option>';
+  } else { // interno
+    sel.innerHTML = ((_convExtCand&&_convExtCand.internos)||[]).map(x=>'<option value="'+x.id+'">'+esc(x.nome)+'</option>').join('')
+      || '<option value="">— nenhum interno —</option>';
+  }
+}
+
 async function _convCarregarSeletoresTransf(){
   const selE = document.getElementById('conv-transf-etapa');
   const selF = document.getElementById('conv-transf-func');
@@ -11803,6 +11874,28 @@ async function convEnviar(){
   const ta = document.getElementById('conv-texto');
   const corpo = ta.value.trim();
   if(!corpo) return;
+  // Canal externo (Fatias 6-7): caminho de envio próprio (cria Mensagem + EnvioExterno).
+  if (document.getElementById('conv-externo-chk').checked){
+    const dtipo = document.getElementById('conv-ext-dtipo').value;
+    const p = {corpo, meio: document.getElementById('conv-ext-meio').value,
+               canal: document.getElementById('conv-ext-canal').value, destinatario_tipo: dtipo};
+    if (dtipo === 'avulso') p.destino_avulso = document.getElementById('conv-ext-avulso').value.trim();
+    else { const q = document.getElementById('conv-ext-quem').value; if(!q){ showToast('Escolha o destinatário.', true); return; } p.destinatario_id = parseInt(q,10); }
+    const btnE = document.getElementById('conv-enviar-btn'); btnE.disabled = true;
+    try{
+      const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/externo`,
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)}).then(r=>r.json());
+      if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
+      ta.value='';
+      showToast(d.envio.status === 'enviado' ? 'Enviado.' :
+                d.envio.status === 'pendente_config' ? 'Registrado — canal externo ainda não ativado neste ambiente.' :
+                'Registrado ('+d.envio.status+').');
+      document.getElementById('conv-externo-chk').checked = false; convExternoToggle();
+      await convCarregar();
+    }catch(e){ showToast('Erro de rede ao enviar.', true); }
+    finally{ btnE.disabled = false; ta.focus(); }
+    return;
+  }
   const payload = {corpo};
   if (document.getElementById('conv-privada-chk').checked) payload.privada = true;
   const ehTransf = document.getElementById('conv-transf-chk').checked;

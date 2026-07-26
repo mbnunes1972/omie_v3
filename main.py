@@ -4546,6 +4546,71 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST .../conversa/mensagens/externo — Fatias 6-7: mensagem por canal EXTERNO
+        # (e-mail/WhatsApp). Cria a Mensagem no canal-segmento + o EnvioExterno; o disparo ao
+        # vivo é gated por credencial (sem ela, status pendente_config, sem tocar a rede).
+        m_ext = re.match(r'^/api/projetos/([^/]+)/conversa/mensagens/externo$', path)
+        if m_ext:
+            nome = unquote(m_ext.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_chat, mod_chat_externo as _ext
+                dd = json.loads(body or b'{}')
+                meio = (dd.get("meio") or "").strip()
+                canal = (dd.get("canal") or "").strip()
+                dtipo = (dd.get("destinatario_tipo") or "").strip()
+                did_raw = dd.get("destinatario_id")
+                try:
+                    did = int(did_raw) if did_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    did = None
+                avulso = dd.get("destino_avulso")
+                if meio not in _ext.MEIOS:
+                    self.send_json({"ok": False, "erro": "Meio inválido (email|whatsapp)."},
+                                   code=400); return
+                if canal not in _ext.CANAIS_EXTERNOS:
+                    self.send_json({"ok": False, "erro": "Canal externo inválido."},
+                                   code=400); return
+                destino, derr = _ext.resolver_destino(db, meio, dtipo, did, avulso)
+                if derr:
+                    self.send_json({"ok": False, "erro": derr}, code=400); return
+                p_meta = db.query(Projeto).filter_by(nome_safe=nome).first()
+                conv = mod_chat.get_or_create_conversa_projeto(
+                    db, loja_id, nome, cliente_id=(p_meta.cliente_id if p_meta else None))
+                try:
+                    msg = mod_chat.enviar_mensagem(db, conv, usuario.get("id"), dd.get("corpo"),
+                                                   canal=canal, _permitir_externo=True)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                env = _ext.registrar_envio(db, msg, meio, canal, dtipo, did, destino)
+                if env.status == "enfileirado":
+                    ok, id_ext, erro = _ext.despachar(env, msg.corpo)
+                    if ok:
+                        env.status = "enviado"; env.id_externo = id_ext
+                    else:
+                        env.status = "falhou"; env.erro = erro
+                db.commit()
+                self.send_json({"ok": True,
+                                "envio": {"id": env.id, "meio": env.meio, "canal": env.canal,
+                                          "status": env.status, "destino": env.destino,
+                                          "erro": env.erro}}, code=201)
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
         # POST .../conversa/mensagens/<id>/resolver — Fatia 3: resolução NORMAL do bloqueador.
         # EXCLUSIVA de quem recebeu a transferência (ponte Usuário↔Funcionário).
         # POST .../conversa/mensagens/<id>/destravar-emergencia — válvula: capacidade

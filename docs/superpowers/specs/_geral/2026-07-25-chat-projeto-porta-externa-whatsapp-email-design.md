@@ -227,7 +227,26 @@ Cliente  (0..1) ──┴──── Conversa ──── Mensagem ───�
   suporte_tecnico|sac|interno), `natureza` (interacao|transferencia + campos da transferência:
   `etapa_codigo` (etapa do ciclo afetada, quando aplicável), `transferido_para_funcionario_id`,
   `documento_ref_id`, `bloqueador`, `resolvido_em`), `privada` (booleano), `criado_em`.
-- **EnvioExterno**: como já desenhado (canal, destino, status, `id_externo` pra threading).
+- **EnvioExterno** (schema concreto, Fatias 6-7, 2026-07-26): `mensagem_id` (FK conversa_mensagens),
+  `meio` (email|whatsapp), `direcao` (saida|entrada), `canal` (segmento comercial|financeiro|
+  logistica|suporte_tecnico|sac), `destinatario_tipo` (interno|parceiro|cliente|avulso — decisão 19),
+  `destinatario_id` (nullable), `destino` (e-mail ou telefone resolvido do cadastro OU avulso),
+  `status` (pendente_config|enfileirado|enviado|falhou|recebido), `id_externo` (id do provedor, p/
+  threading), `id_externo_ref` (o id citado numa resposta — decisão 14), `erro`, `criado_em`.
+
+## 6d) Fundação das Fatias 6-7: config-gating dos transportes (adendo 2026-07-26)
+Implementação em `mod_chat_externo.py`, transporte por MEIO com **gating por configuração** (mesmo
+padrão da chave do modo privado): sem credencial no ambiente, o envio externo é RECUSADO/registrado
+como `pendente_config` com erro claro — nunca um "enviado" fantasma. Configs (ação do usuário,
+FORA do código, uma por ambiente):
+- **E-mail (Fatia 6):** `ORIZON_SMTP_HOST`, `ORIZON_SMTP_PORT`, `ORIZON_SMTP_USER`,
+  `ORIZON_SMTP_PASS`, `ORIZON_SMTP_FROM` (os 5 endereços por canal são config, não 5× código).
+- **WhatsApp (Fatia 7):** `ORIZON_WA_TOKEN` (Meta Cloud API), `ORIZON_WA_PHONE_ID` (por número),
+  `ORIZON_WA_VERIFY_TOKEN` (verificação do webhook). **Depende da APROVAÇÃO da Meta** (prazo
+  externo). Webhook de entrada roteia por `rotear_entrada` (decisão 14, testável puro).
+A FUNDAÇÃO (modelo, resolução de destino, roteamento de entrada, gating, UI do compositor externo)
+é construída e testada agora; os transportes ao vivo ficam prontos-para-ativar quando as credenciais
+existirem.
 - **Responsabilidade NÃO ganha campo novo no `Projeto`** (correção 2026-07-25, ver seção 6): uma
   mensagem de transferência grava direto em `CicloEtapa.responsavel_funcionario_id` da etapa
   referenciada — a fonte de verdade continua sendo o `CicloEtapa`/`responsavel_efetivo` que já

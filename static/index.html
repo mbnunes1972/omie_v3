@@ -971,22 +971,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Confirmação de contatos na fase de contrato (decisão 13 da spec de chat, 2026-07-25):
-         gate bloqueante-suave — o operador confirma o canal ou declara "seguir sem WhatsApp" -->
-    <div id="modal-contatos-conf" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-      <div class="modal-box" style="max-width:520px;width:94%">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Contatos de comunicação</div>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-contatos-conf').style.display='none'">Fechar</button>
+    <!-- Grupo de Acompanhamento — contatos de comunicação (decisão 13 da spec de chat).
+         z-index acima do _popupOverlay (99999): como este painel é o gate que dispara DENTRO
+         do fluxo de aprovação do contrato (que já está aberto em 99999), ele precisa vir na
+         frente — senão fica oculto atrás e trava o fluxo (bug do teste 2026-07-26). -->
+    <div id="modal-contatos-conf" class="modal-overlay" style="display:none;z-index:100001" onclick="if(event.target===this)contatosConfFechar()">
+      <div class="modal-box" style="max-width:560px;width:94%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-users-group"></i> Grupo de Acompanhamento</div>
+          <button class="btn btn-ghost btn-sm" onclick="contatosConfFechar()">Fechar</button>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Antes de gerar o contrato,
-          confira os contatos que serão usados na comunicação do projeto (os dados vêm do cadastro —
-          corrija lá se algo estiver errado e reabra).</div>
-        <div id="contatos-conf-lista" style="margin-bottom:14px"></div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="contatosConfEnviar('sem_whatsapp')">Seguir sem WhatsApp</button>
-          <button class="btn btn-primary btn-sm" onclick="contatosConfEnviar('confirmado')">Confirmar contatos</button>
-        </div>
+        <div id="contatos-conf-sub" style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.4"></div>
+        <div id="contatos-conf-lista" style="margin-bottom:6px"></div>
+        <div style="font-size:11px;color:var(--muted);border-top:1px dashed var(--border);padding-top:8px;margin-top:6px">
+          <i class="ti ti-info-circle"></i> Os contatos vêm do cadastro — corrija lá e reabra.
+          Incluir outras pessoas no grupo (e o canal de WhatsApp/e-mail) chega nas próximas etapas do chat.</div>
+        <div id="contatos-conf-acoes" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px"></div>
       </div>
     </div>
 
@@ -11868,11 +11868,23 @@ async function convDestravar(mid){
 
 // ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ─────
 let _contatosConfOnDone = null;
+function contatosConfFechar(){
+  document.getElementById('modal-contatos-conf').style.display='none';
+  _contatosConfOnDone = null;
+}
+
+// onDone != null → modo GATE (durante a geração do contrato: pede confirmação e re-tenta).
+// onDone == null → modo VISUALIZAÇÃO (reaberto pelo botão "Grupo de Acompanhamento" no ciclo).
 async function abrirModalContatosConf(onDone){
   if(!projetoAtivo) return;
   _contatosConfOnDone = onDone || null;
+  const ehGate = !!onDone;
   const box = document.getElementById('contatos-conf-lista');
+  document.getElementById('contatos-conf-sub').innerHTML = ehGate
+    ? 'Antes de gerar o contrato, confira quem receberá a comunicação do projeto e confirme o canal.'
+    : 'Participantes externos que acompanham este projeto e recebem sua comunicação.';
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  document.getElementById('contatos-conf-acoes').innerHTML = '';
   document.getElementById('modal-contatos-conf').style.display='flex';
   let d;
   try{
@@ -11880,16 +11892,36 @@ async function abrirModalContatosConf(onDone){
                     {credentials:'same-origin'}).then(r=>r.json());
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
-  const rot = {cliente:'Cliente', arquiteto:'Arquiteto'};
-  box.innerHTML = (d.contatos||[]).map(ct => {
+  const rot = {cliente:'Cliente', arquiteto:'Arquiteto (parceiro)'};
+  const ic  = {cliente:'ti-user', arquiteto:'ti-ruler-2'};
+  const contatos = d.contatos || [];
+  const temArquiteto = contatos.some(c => c.papel === 'arquiteto');
+  let html = contatos.map(ct => {
     const temWpp = !!(ct.whatsapp||'').trim();
-    return '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:6px">'
-      +'<div style="font-size:12px;font-weight:700;color:var(--text)">'+esc(rot[ct.papel]||ct.papel)+' — '+esc(ct.nome)+'</div>'
-      +'<div style="font-size:11px;color:'+(temWpp?'var(--text)':'var(--warn)')+'">'
-        +'WhatsApp/Telefone: '+(temWpp?esc(ct.whatsapp):'não preenchido no cadastro')+'</div>'
-      +'<div style="font-size:11px;color:var(--muted)">E-mail: '+esc(ct.email||'—')+'</div>'
-      +'</div>';
-  }).join('') || '<em style="color:var(--muted);font-size:12px">Nenhum participante externo com cadastro vinculado.</em>';
+    return '<div style="display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'
+      +'<i class="ti '+(ic[ct.papel]||'ti-user')+'" style="font-size:18px;color:var(--muted);margin-top:1px"></i>'
+      +'<div style="flex:1;min-width:0">'
+        +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">'+esc(rot[ct.papel]||ct.papel)+'</div>'
+        +'<div style="font-size:13px;font-weight:700;color:var(--text)">'+esc(ct.nome)+'</div>'
+        +'<div style="font-size:11px;margin-top:3px;color:'+(temWpp?'var(--text)':'var(--warn)')+'">'
+          +'<i class="ti ti-brand-whatsapp"></i> '+(temWpp?esc(ct.whatsapp):'sem WhatsApp/telefone no cadastro')+'</div>'
+        +'<div style="font-size:11px;color:var(--muted)"><i class="ti ti-mail"></i> '+esc(ct.email||'—')+'</div>'
+      +'</div></div>';
+  }).join('');
+  // Estado claro do arquiteto quando NÃO há um associado (não é erro — só não foi vinculado)
+  if(!temArquiteto){
+    html += '<div style="display:flex;gap:10px;align-items:center;border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;color:var(--muted)">'
+      +'<i class="ti ti-ruler-2" style="font-size:18px"></i>'
+      +'<div style="flex:1;font-size:12px">Nenhum <strong>arquiteto</strong> associado a este projeto.'
+        + (typeof abrirAssociarParceiro==='function' ? ' <a href="#" onclick="event.preventDefault();contatosConfFechar();abrirAssociarParceiro()" style="color:var(--accent)">Associar arquiteto</a>' : '')
+      +'</div></div>';
+  }
+  box.innerHTML = html || '<em style="color:var(--muted);font-size:12px">Nenhum participante externo com cadastro vinculado.</em>';
+  document.getElementById('contatos-conf-acoes').innerHTML = ehGate
+    ? '<button class="btn btn-ghost btn-sm" onclick="contatosConfEnviar(\'sem_whatsapp\')">Seguir sem WhatsApp</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="contatosConfEnviar(\'confirmado\')">Confirmar contatos</button>'
+    : '<button class="btn btn-ghost btn-sm" onclick="contatosConfFechar()">Fechar</button>'
+      + '<button class="btn btn-primary btn-sm" onclick="contatosConfEnviar(\'confirmado\')">Reconfirmar contatos</button>';
 }
 
 async function contatosConfEnviar(modo){
@@ -11902,7 +11934,7 @@ async function contatosConfEnviar(modo){
     document.getElementById('modal-contatos-conf').style.display='none';
     showToast(modo==='confirmado' ? 'Contatos confirmados.' : 'Registrado: seguir sem WhatsApp.');
     const cb = _contatosConfOnDone; _contatosConfOnDone = null;
-    if (cb) cb();
+    if (cb) cb();   // modo gate: re-tenta gerar o contrato
   }catch(e){ showToast('Erro de rede.', true); }
 }
 
@@ -12114,7 +12146,8 @@ function renderCiclo() {
       <h3 style="margin:0;color:var(--text);font-weight:800">Etapas do Projeto</h3>
       ${_tagComABola()}
       <button class="btn btn-ghost btn-sm" onclick="fecharCiclo()"><i class="ti ti-arrow-left"></i>Voltar</button>
-      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="equipeAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users"></i>Equipe</button>` : ''}
+      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="abrirModalContatosConf()" title="Contatos de comunicação do projeto (cliente, arquiteto)"><i class="ti ti-users-group"></i>Grupo de Acompanhamento</button>` : ''}
+      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="equipeAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users"></i>Equipe</button>` : ''}
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirCronograma('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-calendar-stats"></i>Cronograma</button>` : ''}
       ${projetoAtivo && _usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}

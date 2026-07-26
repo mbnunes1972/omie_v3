@@ -2708,17 +2708,28 @@ class Handler(BaseHTTPRequestHandler):
                     # responsavel_funcionario_id (v12) é o override pontual. Efetivo = override OU Mapa.
                     _atrib = _atribuicoes_dicts(db, nome_safe)
                     _faixa_cache = {}   # Fatia 2: 1 resolução por faixa por request
+                    # Revisão 2026-07-25 (decisão 16): CRIADOR do projeto é o dono-base — resolve
+                    # o "não atribuído". Usuário → Funcionário pela ponte; None se não vinculado.
+                    _proj_meta = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                    _criador_fid = (_funcionario_do_usuario(db, _proj_meta.criado_por_id)
+                                    if _proj_meta and _proj_meta.criado_por_id else None)
+                    _criador_nome = ""
+                    if _proj_meta and _proj_meta.criado_por_id:
+                        _cu = db.get(Usuario, _proj_meta.criado_por_id)
+                        _criador_nome = _cu.nome if _cu else ""
                     def _resp_efetivo(e):
                         if e.responsavel_funcionario_id:
                             return e.responsavel_funcionario_id
                         papel = _ETAPA_PAPEL.get(e.etapa_codigo)
                         a = mod_escopo.resolver_responsavel(_atrib, None, papel) if papel else None
-                        if a:
+                        if a and a.get("funcionario_id"):
                             return a.get("funcionario_id")
                         # Fatia 2 (spec seção 6): default por FAIXA — Vendas (consultor via
                         # ponte Usuário↔Funcionário), Financeiro e Logística (por Função).
-                        return _default_responsavel_faixa(db, nome_safe, loja_id,
-                                                          e.etapa_codigo, _faixa_cache)
+                        fid = _default_responsavel_faixa(db, nome_safe, loja_id,
+                                                         e.etapa_codigo, _faixa_cache)
+                        # Revisão: sem faixa, o CRIADOR fica com a bola (nunca "não atribuído").
+                        return fid or _criador_fid
                     _efet_by_cod = {e.etapa_codigo: _resp_efetivo(e) for e in etapas_sorted}
                     _efet_ids = {i for i in _efet_by_cod.values() if i}
                     _efet_map = {f.id: f.nome for f in db.query(Funcionario).filter(Funcionario.id.in_(_efet_ids)).all()} \
@@ -2747,7 +2758,11 @@ class Handler(BaseHTTPRequestHandler):
                     total_assinado = _contrato_totalmente_assinado(nome_safe, db)
                     self.send_json({"ok": True, "ciclo": resultado,
                                     "contrato_assinado": assinado,
-                                    "contrato_totalmente_assinado": total_assinado})
+                                    "contrato_totalmente_assinado": total_assinado,
+                                    # Revisão 2026-07-25: nome do criador p/ a tag "com a bola"
+                                    # quando nenhum Funcionário responsável resolve (fallback visual).
+                                    "criado_por_id": (_proj_meta.criado_por_id if _proj_meta else None),
+                                    "criado_por_nome": _criador_nome})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
                 finally:
@@ -9937,6 +9952,30 @@ class Handler(BaseHTTPRequestHandler):
                             projeto_nome=nome_safe,
                             etapa_alvo=etapa_cod,
                         ))
+                    # Passagem oficial AUTOMÁTICA (decisão 17): concluiu a fase → posta na
+                    # Conversa uma transferência para o responsável da PRÓXIMA etapa principal.
+                    # Só documenta (não grava CicloEtapa); pula quando não há próxima ou a
+                    # próxima não tem responsável resolvível. Best-effort: falha aqui não pode
+                    # derrubar a conclusão da etapa (que é o efeito principal do endpoint).
+                    if novo_status in mod_ciclo.STATUS_CONCLUSIVOS:
+                        try:
+                            prox = mod_ciclo.etapa_seguinte(etapa_cod)
+                            prox_fid = (_responsavel_funcionario_etapa(db, nome_safe, loja_id, prox)
+                                        if prox else None)
+                            if prox and prox_fid:
+                                import mod_chat as _mchat
+                                _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                                conv = _mchat.get_or_create_conversa_projeto(
+                                    db, loja_id, nome_safe,
+                                    cliente_id=(_pm.cliente_id if _pm else None))
+                                _mchat.mensagem_passagem_fase(
+                                    db, conv, usuario.get("id"),
+                                    mod_ciclo.ETAPA_NOME.get(etapa_cod, etapa_cod),
+                                    prox, mod_ciclo.ETAPA_NOME.get(prox, prox), prox_fid)
+                        except Exception as _e:
+                            logging.getLogger(__name__).warning(
+                                "passagem automática de fase falhou (%s/%s): %s",
+                                nome_safe, etapa_cod, _e)
                     db.commit()
                     self.send_json({"ok": True, "etapa_codigo": etapa_cod, "status": etapa.status})
                 except Exception as e:
@@ -11396,6 +11435,26 @@ def _consultor_funcionario_id(db, nome_safe):
     if b is None or not b.consultor_id:
         return None
     return _funcionario_do_usuario(db, b.consultor_id)
+
+
+def _responsavel_funcionario_etapa(db, nome_safe, loja_id, etapa_codigo):
+    """Responsável efetivo (funcionario_id) de UMA etapa — mesma cadeia do GET /ciclo:
+    override > Mapa de Atribuições > default de faixa > CRIADOR do projeto. Standalone para o
+    PATCH (passagem oficial automática, decisão 17). None se nada resolve."""
+    et = (db.query(CicloEtapa)
+            .filter_by(projeto_nome=nome_safe, etapa_codigo=etapa_codigo).first())
+    if et is not None and et.responsavel_funcionario_id:
+        return et.responsavel_funcionario_id
+    papel = _ETAPA_PAPEL.get(etapa_codigo)
+    a = mod_escopo.resolver_responsavel(_atribuicoes_dicts(db, nome_safe), None, papel) \
+        if papel else None
+    if a and a.get("funcionario_id"):
+        return a.get("funcionario_id")
+    fid = _default_responsavel_faixa(db, nome_safe, loja_id, etapa_codigo, {})
+    if fid:
+        return fid
+    pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+    return _funcionario_do_usuario(db, pm.criado_por_id) if pm and pm.criado_por_id else None
 
 
 def _default_responsavel_faixa(db, nome_safe, loja_id, etapa_codigo, cache):

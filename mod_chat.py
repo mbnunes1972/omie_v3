@@ -231,6 +231,21 @@ def responsavel_sac(db, loja_id):
     return funcionario_por_funcao(db, loja_id, "SAC")
 
 
+def mensagem_passagem_fase(db, conversa, autor_usuario_id, etapa_concluida_nome,
+                           etapa_seguinte_cod, etapa_seguinte_nome,
+                           transferido_para_funcionario_id):
+    """Passagem oficial AUTOMÁTICA na transição de fase (decisão 17): mensagem de transferência
+    documentando que a próxima etapa passa ao seu responsável. NÃO grava CicloEtapa (só
+    registra — o default segue resolvendo sozinho). Exige um destinatário: se a próxima etapa
+    não tem responsável resolvível, o chamador não chama isto (não há a quem passar)."""
+    corpo = ("Passagem automática de fase: \"%s\" concluída. A etapa %s (%s) segue com o "
+             "responsável indicado." % (etapa_concluida_nome, etapa_seguinte_cod,
+                                        etapa_seguinte_nome))
+    return enviar_mensagem(db, conversa, autor_usuario_id, corpo,
+                           natureza="transferencia", etapa_codigo=etapa_seguinte_cod,
+                           transferido_para_funcionario_id=transferido_para_funcionario_id)
+
+
 # ── Bloqueador como gate real (Fatia 3, spec seção 3) ────────────────────────
 
 def bloqueadores_ativos(db, projeto_nome):

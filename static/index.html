@@ -11628,6 +11628,7 @@ function _etapaBloqueada(codigo) {
 
 let _cicloAberto = false;
 let _cicloData   = {};
+let _cicloCriadoPorNome = '';   // nome do criador do projeto p/ a tag "com a bola" (revisão 2026-07-25)
 let _contratoAssinado = false;
 let _contratoTotalmenteAssinado = false;
 
@@ -11924,6 +11925,7 @@ async function _fetchCiclo() {
   if (!d.ok) return;
   _contratoAssinado = !!d.contrato_assinado;
   _contratoTotalmenteAssinado = !!d.contrato_totalmente_assinado;
+  _cicloCriadoPorNome = d.criado_por_nome || '';   // fallback da tag "com a bola" (revisão 2026-07-25)
   _cicloData = {};
   for (const e of (d.ciclo || [])) _cicloData[e.etapa_codigo] = e;
 }
@@ -12092,11 +12094,15 @@ function _tagComABola() {
     return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--ok)"><i class="ti ti-flag-check"></i> Ciclo concluído</span>`;
   }
   const d = _cicloData[atual.codigo] || {};
-  const nome = d.responsavel_efetivo_nome || '';
-  return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão vale o default automático da faixa)"
+  // Revisão 2026-07-25: sem responsável formal (funcionário), a bola é do CRIADOR do projeto —
+  // nunca "não atribuído" quando há criador.
+  let nome = d.responsavel_efetivo_nome || '';
+  let sufixoCriador = '';
+  if (!nome && _cicloCriadoPorNome) { nome = _cicloCriadoPorNome; sufixoCriador = ' (criador)'; }
+  return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão o default da faixa; por fim, o criador do projeto)"
       style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
       <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
-      Com a bola: <strong>${nome ? esc(nome) : 'não atribuído'}</strong>
+      Com a bola: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
       <span style="color:var(--muted)">· etapa ${esc(atual.codigo)} — ${esc(atual.nome)}</span></span>`;
 }
 

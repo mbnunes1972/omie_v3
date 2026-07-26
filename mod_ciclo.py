@@ -225,6 +225,15 @@ def etapa_anterior(codigo):
     return ETAPAS_PRINCIPAIS[i - 1] if i > 0 else None
 
 
+def etapa_seguinte(codigo):
+    """Código da etapa principal imediatamente seguinte, ou None (última). Usada na passagem
+    oficial automática do chat (decisão 17): concluir uma fase aponta para a próxima."""
+    if codigo not in ETAPAS_PRINCIPAIS:
+        return None
+    i = ETAPAS_PRINCIPAIS.index(codigo)
+    return ETAPAS_PRINCIPAIS[i + 1] if i + 1 < len(ETAPAS_PRINCIPAIS) else None
+
+
 def ordenar_codigos(codigos):
     """Ordena códigos numericamente, com sub-etapas logo após o pai."""
     return sorted(codigos, key=_parse_codigo)

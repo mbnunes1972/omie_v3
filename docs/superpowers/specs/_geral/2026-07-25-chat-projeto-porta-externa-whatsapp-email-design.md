@@ -49,14 +49,15 @@ equipe).
     `CicloEtapa.funcao_responsavel_id`/`responsavel_funcionario_id` + `responsavel_efetivo`) em
     vez de criar uma resolução paralela — ver seção 6 (adendo 2026-07-25, achado durante
     preparação da Fatia 2).
-16. **"Quem está com a bola" é um USUÁRIO do sistema, não um Funcionário** (correção
-    2026-07-25, teste do usuário). O ator responsável é o *login*, porque um usuário pode ser
-    um **terceirizado** e, numa evolução futura, **o próprio arquiteto pode virar usuário**. O
-    Funcionário é entidade de cadastro/RH; a responsabilidade no fluxo é do Usuário. Supera o
-    "por Funcionário" das decisões 6/15 no que toca à TAG e à transferência — ver seção 6
-    (reconciliação com o v12, que hoje é Funcionário-based). **Default inicial: o CRIADOR do
-    projeto (`Projeto.criado_por_id`, um Usuário) está com a bola até a 1ª transferência** —
-    nunca "não atribuído" quando há criador.
+16. **Responsabilidade permanece por FUNCIONÁRIO** (decisão final 2026-07-25, após o teste). A
+    ideia de mover para Usuário foi levantada e DESCARTADA pelo usuário: "se está por
+    funcionário, mantemos funcionário; a responsabilidade recai sobre o funcionário". O v12
+    Funcionário-based (decisões 6/15) segue como está — não há pivô. **Ajuste que fica:** o
+    **default inicial da tag "com a bola" é o CRIADOR do projeto** (`Projeto.criado_por_id`, um
+    Usuário → resolvido a Funcionário pela ponte `Usuario.funcionario_id`) — nunca "não
+    atribuído" quando há criador; quando o criador não tem Funcionário vinculado, a tag mostra
+    o NOME do usuário criador como fallback só-de-exibição (a responsabilidade formal segue
+    sendo por Funcionário).
 17. **Transição de fase gera uma mensagem AUTOMÁTICA de passagem oficial** na Conversa do
     projeto (2026-07-25): ao concluir uma fase, o sistema registra uma mensagem de
     transferência para o responsável da fase seguinte (que pode ser a mesma pessoa) —
@@ -191,25 +192,19 @@ resolvido direto pela Função "SAC" (seção 1), sem passar pelo `pode_avancar`
 nenhum campo novo no `Projeto` — só busca o `responsavel_efetivo` da etapa atual (a primeira
 etapa pendente/em andamento) no mesmo `GET /api/projetos/<nome>/ciclo` que já existe hoje.
 
-## 6b) Reconciliação USUÁRIO × v12 Funcionário-based (correção decisão 16, 2026-07-25)
-O teste do usuário fixou que **quem está com a bola é um Usuário**, não um Funcionário. O v12 em
-produção é Funcionário-based (`CicloEtapa.responsavel_funcionario_id`, Mapa de Atribuições, Função
-responsável do Cronograma) e **NÃO deve ser arrancado** — ele governa a coluna "Função
-responsável", o escopo por projetista e o cronograma. Reconciliação proposta (a validar na
-implementação, é o ponto mais sensível desta virada):
-- `responsavel_efetivo` passa a resolver para um **`usuario_id`** (novo campo exposto ao lado do
-  `_id`/`_nome` atuais, sem remover os de funcionário — retrocompat da coluna do Ciclo).
-- **Cadeia de precedência revista (tudo em Usuário):** transferência oficial pelo chat (grava
-  `responsavel_usuario_id`, campo NOVO na etapa OU mapeado) > Mapa de Atribuições / Função
-  (mapeado Funcionário→Usuário pela ponte `Funcionario.usuario_id`) > default da faixa (idem) >
-  **criador do projeto** (`Projeto.criado_por_id`, já é Usuário — resolve o "não atribuído") >
-  nada.
-- A **transferência do chat passa a ter destinatário Usuário** (não mais Funcionário). Migração
-  do que a Fatia 2/3 gravou como `transferido_para_funcionario_id`/`responsavel_funcionario_id`:
-  decidir na implementação entre (a) coluna nova `responsavel_usuario_id` convivendo, ou (b)
-  reinterpretar o campo — **(a) é o caminho de menor risco** para não mexer no que o v12 já lê.
-- **Risco explícito:** mexe no motor de responsabilidade em produção — mesma disciplina da Fatia 3
-  (rodar a suíte de ciclo inteira antes/depois; não quebrar "Função responsável"/cronograma).
+## 6b) Criador como default da tag + mensagem automática na transição (decisões 16-17, 2026-07-25)
+Mantido tudo Funcionário-based (decisão 16 — sem pivô para Usuário). Dois ajustes desta revisão:
+- **Criador é o dono-base:** a cadeia de resolução do responsável efetivo por etapa ganha um
+  último degrau — `responsavel_funcionario_id` (transferência/manual) > Mapa de Atribuições >
+  default da faixa (Vendas/Financeiro/Logística) > **criador do projeto** (`Projeto.criado_por_id`
+  → Funcionário pela ponte `Usuario.funcionario_id`) > nada. A tag "com a bola" nunca fica "não
+  atribuído" quando há criador; se o criador não é Funcionário, a tag exibe o nome do usuário
+  criador (fallback só-visual, exposto como `criado_por_nome` no `GET /ciclo`).
+- **Passagem oficial automática (decisão 17):** ao CONCLUIR uma fase, o `PATCH /ciclo/<cod>` posta
+  na Conversa do projeto uma mensagem `natureza=transferencia` apontando a **próxima etapa
+  principal** e o responsável dela (mesma resolução acima) — documenta a passagem sem congelar o
+  default (não grava `responsavel_funcionario_id` da próxima; só registra). Última fase (sem
+  próxima) não gera nada. Autor da mensagem = quem concluiu a fase.
 
 ## 6c) Dois canais: interno × externo (decisões 18-19, 2026-07-25)
 - **Canal interno** — equipe do projeto (usuários). Onde vivem responsabilidade, transferência,

@@ -762,6 +762,18 @@ class Handler(BaseHTTPRequestHandler):
         global _REQ_LOJA_ATIVA
         _REQ_LOJA_ATIVA = _ler_loja_ativa_header(self)
         path = urlparse(self.path).path
+        # Webhook WhatsApp (Fatia 7) — verificação (handshake da Meta). NÃO autenticado (a Meta
+        # chama), mas gated pelo ORIZON_WA_VERIFY_TOKEN do ambiente. Dormiente sem o token.
+        if path == "/webhooks/whatsapp":
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            verify = (os.environ.get("ORIZON_WA_VERIFY_TOKEN") or "").strip()
+            token = (qs.get("hub.verify_token") or [""])[0]
+            challenge = (qs.get("hub.challenge") or [""])[0]
+            if verify and token == verify:
+                self.send_response(200); self.send_header("Content-Type", "text/plain")
+                self.end_headers(); self.wfile.write(challenge.encode()); return
+            self.send_response(403); self.end_headers(); return
         if handle_auth_get(self, path): return
         if path == "/api/financeiro/unidades":
             # Visão unificada (PDV, spec 2026-07-22): unidades que o ator pode escolher no
@@ -3522,6 +3534,39 @@ class Handler(BaseHTTPRequestHandler):
         path   = urlparse(self.path).path
         body   = self._ler_body()
         if body is None: return   # 413 já respondido pelo _ler_body
+
+        # Webhook WhatsApp de ENTRADA (Fatia 7) — NÃO autenticado (a Meta chama). DORMIENTE
+        # sem ORIZON_WA_TOKEN (só dá ack). Configurado: exige assinatura HMAC (X-Hub-Signature-256)
+        # com ORIZON_WA_APP_SECRET, parseia o payload da Cloud API e roteia por processar_entrada.
+        if path == "/webhooks/whatsapp":
+            if not (os.environ.get("ORIZON_WA_TOKEN") or "").strip():
+                self.send_json({"ok": True}, code=200); return   # dormiente: ack, no-op
+            secret = (os.environ.get("ORIZON_WA_APP_SECRET") or "").strip()
+            if secret:
+                # Alias OBRIGATÓRIO: `import hashlib` sem alias tornaria 'hashlib' LOCAL a todo o
+                # do_POST e quebraria o upload do pool (que usa hashlib por outro caminho) —
+                # mesma armadilha de escopo já documentada no _carregar_projeto/construir_contexto.
+                import hmac as _hmac, hashlib as _hashlib
+                sig = self.headers.get("X-Hub-Signature-256", "")
+                calc = "sha256=" + _hmac.new(secret.encode(), body or b"", _hashlib.sha256).hexdigest()
+                if not _hmac.compare_digest(sig, calc):
+                    self.send_json({"ok": False}, code=403); return
+            import mod_chat_externo as _ext
+            db = get_session()
+            try:
+                payload = json.loads(body or b'{}')
+                for msg in _ext.iter_mensagens_whatsapp(payload):
+                    if msg.get("from"):
+                        _ext.processar_entrada(db, "whatsapp", remetente=msg["from"],
+                                               texto=msg["texto"], id_externo_ref=msg.get("ref"),
+                                               id_externo=msg.get("id"))
+                db.commit()
+            except Exception as _e:
+                db.rollback()
+                logging.getLogger(__name__).warning("webhook whatsapp: %s", _e)
+            finally:
+                db.close()
+            self.send_json({"ok": True}, code=200); return
 
         if handle_auth_post(self, path, body): return
 

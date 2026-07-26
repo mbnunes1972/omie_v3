@@ -2388,6 +2388,16 @@ PASS/FROM`; WhatsApp `ORIZON_WA_TOKEN/PHONE_ID/VERIFY_TOKEN` + **aprovação da 
 externo). `despachar()` e o webhook de entrada ficam prontos-para-ativar (a lógica de roteamento
 já é testada). Registrado no relatório ao usuário.
 
+**Entrada (resposta externa) — também construída/testada:** `processar_entrada` (roteia por
+rotear_entrada e persiste a resposta como Mensagem autor-NULL + EnvioExterno direcao=entrada;
+ambíguo → triagem, sem criar mensagem) e o **webhook** `GET/POST /webhooks/whatsapp` (Meta Cloud
+API): GET = handshake de verificação (ORIZON_WA_VERIFY_TOKEN); POST = **dormiente sem
+ORIZON_WA_TOKEN** (só ack), e quando configurado exige **assinatura HMAC** X-Hub-Signature-256
+(ORIZON_WA_APP_SECRET) antes de parsear e rotear. `iter_mensagens_whatsapp` parseia o payload
+aninhado. 11 testes no total (incl. handshake, inerte-sem-config, roteamento com assinatura
+válida, e 403 com assinatura inválida). O único bloqueio real para ativar o WhatsApp é a
+credencial+aprovação Meta (ação do usuário); o e-mail, as credenciais SMTP.
+
 ## Sessão 126 — Equipe de Montagem filtrada por função + Grupo de Acompanhamento com equipe interna
 **Feedback do teste (2 pontos).** (1) **Seletor de Equipe de Montagem** ofertava TODOS os
 funcionários da loja; agora só **Montador** e **Ajudante de Montagem** (o Supervisor já é papel

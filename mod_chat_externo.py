@@ -101,6 +101,55 @@ def despachar(env, corpo):
 
 # ── roteamento da resposta de entrada (decisão 14) ───────────────────────────
 
+def _canal_do_thread(db, conversa_id, meio, remetente):
+    """Canal (segmento) do fio externo desta conversa: o do envio de SAÍDA mais recente para
+    o mesmo destino/meio; fallback 'comercial'."""
+    alvo = _digitos(remetente) if meio == "whatsapp" else (remetente or "").strip().lower()
+    q = (db.query(EnvioExterno, ConversaMensagem.conversa_id)
+           .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+           .filter(ConversaMensagem.conversa_id == conversa_id,
+                   EnvioExterno.meio == meio, EnvioExterno.direcao == "saida")
+           .order_by(EnvioExterno.id.desc()))
+    for env, _cid in q.all():
+        dnorm = _digitos(env.destino) if meio == "whatsapp" else (env.destino or "").strip().lower()
+        if dnorm == alvo and env.canal:
+            return env.canal
+    return "comercial"
+
+
+def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_externo=None):
+    """Recebe uma resposta EXTERNA já normalizada (o webhook faz o parse específico do provedor)
+    e a persiste na conversa certa. Roteia por rotear_entrada (decisão 14). Retorna
+    {status: 'roteado'|'triagem', conversa_id}. Autor NULL = veio de fora. Ambíguo → triagem
+    (não cria mensagem; um humano roteia depois). NÃO commita (o chamador decide)."""
+    import mod_chat as _mc
+    conv = rotear_entrada(db, meio, id_externo_ref=id_externo_ref, remetente=remetente)
+    if conv is None:
+        return {"status": "triagem", "conversa_id": None}
+    canal = _canal_do_thread(db, conv.id, meio, remetente)
+    msg = _mc.enviar_mensagem(db, conv, None, texto or "(sem texto)", canal=canal,
+                              _permitir_externo=True)
+    ev = EnvioExterno(mensagem_id=msg.id, meio=meio, direcao="entrada", canal=canal,
+                      destino=remetente, status="recebido",
+                      id_externo=id_externo, id_externo_ref=id_externo_ref)
+    db.add(ev); db.flush()
+    return {"status": "roteado", "conversa_id": conv.id}
+
+
+def iter_mensagens_whatsapp(payload):
+    """Extrai as mensagens de um payload de entrada da Meta WhatsApp Cloud API, normalizadas em
+    {from, texto, id, ref}. Tolerante à forma aninhada (entry[].changes[].value.messages[])."""
+    for entry in (payload or {}).get("entry", []) or []:
+        for change in entry.get("changes", []) or []:
+            val = change.get("value", {}) or {}
+            for msg in val.get("messages", []) or []:
+                yield {"from": msg.get("from", ""),
+                       "texto": ((msg.get("text") or {}).get("body")
+                                 or "(mensagem sem texto)"),
+                       "id": msg.get("id"),
+                       "ref": (msg.get("context") or {}).get("id")}
+
+
 def rotear_entrada(db, meio, id_externo_ref=None, remetente=None):
     """Conversa-alvo de uma resposta EXTERNA, ou None quando é ambíguo (→ fila de triagem
     humana). Ordem: (1) reply CITANDO um envio nosso (id_externo) → determinístico; (2) sem

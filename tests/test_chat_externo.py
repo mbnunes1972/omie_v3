@@ -124,3 +124,111 @@ def test_envio_externo_canal_invalido_e_meio_invalido(http_client_factory, seed)
                    {"corpo": "x", "meio": "email", "canal": "interno",
                     "destinatario_tipo": "avulso", "destino_avulso": "x@y.z"})
     assert st == 400   # 'interno' não é canal externo
+
+
+# ── entrada: processar resposta externa e persistir (decisão 14 aplicada) ─────
+
+def test_processar_entrada_roteia_e_persiste(app_db, seed):
+    import mod_chat_externo as ext, mod_chat
+    db = app_db.get_session()
+    conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], "Proj_L1"); db.flush()
+    m = mod_chat.enviar_mensagem(db, conv, None, "pergunta ao cliente", canal="comercial",
+                                 _permitir_externo=True)
+    env = ext.registrar_envio(db, m, "whatsapp", "comercial", "cliente",
+                              seed["cliente_l1_id"], "(12) 90000-1111")
+    env.id_externo = "wamid.OUT"; db.commit()
+    # resposta citando o envio → roteia e cria mensagem de ENTRADA (autor NULL = externo)
+    out = ext.processar_entrada(db, "whatsapp", remetente="(12) 90000-1111",
+                                texto="resposta do cliente", id_externo_ref="wamid.OUT",
+                                id_externo="wamid.IN")
+    db.commit()
+    assert out["status"] == "roteado" and out["conversa_id"] == conv.id
+    msgs = mod_chat.listar_mensagens(db, conv.id)
+    entrada = [x for x in msgs if x["corpo"] == "resposta do cliente"]
+    assert entrada and entrada[0]["autor_usuario_id"] is None and entrada[0]["canal"] == "comercial"
+    ev = (db.query(ext.EnvioExterno).filter_by(direcao="entrada", id_externo="wamid.IN").first())
+    assert ev is not None and ev.status == "recebido"
+    db.close()
+
+
+def test_processar_entrada_ambiguo_vai_para_triagem(app_db, seed):
+    import mod_chat_externo as ext, mod_chat
+    db = app_db.get_session()
+    for proj in ("Proj_L1", "Proj_L2"):
+        conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], proj); db.flush()
+        m = mod_chat.enviar_mensagem(db, conv, None, "msg", canal="comercial", _permitir_externo=True)
+        ext.registrar_envio(db, m, "whatsapp", "comercial", "cliente", seed["cliente_l1_id"],
+                            "(12) 90000-9999")
+    db.commit()
+    out = ext.processar_entrada(db, "whatsapp", remetente="(12) 90000-9999",
+                                texto="oi", id_externo_ref=None, id_externo="wamid.X")
+    db.commit()
+    assert out["status"] == "triagem" and out["conversa_id"] is None
+    db.close()
+
+
+# ── webhook de entrada (Meta WhatsApp Cloud API) — testável no que não depende da rede ──
+
+def _post_raw(client, path, body_bytes, headers=None):
+    import urllib.request as u, urllib.error as ue
+    req = u.Request(client.base + path, data=body_bytes, method="POST")
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    try:
+        r = u.urlopen(req, timeout=10); return r.status, r.read()
+    except ue.HTTPError as e:
+        return e.code, e.read()
+
+
+def test_webhook_verify_handshake(http_client_factory, seed, monkeypatch):
+    monkeypatch.setenv("ORIZON_WA_VERIFY_TOKEN", "segredo123")
+    c = http_client_factory()
+    import urllib.request as u
+    r = u.urlopen(c.base + "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=segredo123&hub.challenge=42", timeout=10)
+    assert r.status == 200 and r.read().decode().strip() == "42"
+    # token errado → 403
+    import urllib.error as ue
+    try:
+        u.urlopen(c.base + "/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=errado&hub.challenge=42", timeout=10)
+        assert False
+    except ue.HTTPError as e:
+        assert e.code == 403
+
+
+def test_webhook_inerte_sem_config(http_client_factory, seed, monkeypatch):
+    monkeypatch.delenv("ORIZON_WA_TOKEN", raising=False)
+    c = http_client_factory()
+    st, _ = _post_raw(c, "/webhooks/whatsapp", b'{"entry":[]}', {"Content-Type": "application/json"})
+    assert st == 200   # ack, mas não processa nada (dormiente)
+
+
+def test_webhook_configurado_roteia_resposta(http_client_factory, seed, app_db, monkeypatch):
+    import json as _j, hmac, hashlib
+    monkeypatch.setenv("ORIZON_WA_TOKEN", "tok"); monkeypatch.setenv("ORIZON_WA_PHONE_ID", "1")
+    monkeypatch.setenv("ORIZON_WA_APP_SECRET", "sekret")
+    # prepara um envio de saída p/ o número, para a resposta ter onde cair
+    import mod_chat_externo as ext, mod_chat
+    db = app_db.get_session()
+    conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], "Proj_L1"); db.flush()
+    m = mod_chat.enviar_mensagem(db, conv, None, "pergunta", canal="financeiro", _permitir_externo=True)
+    e = ext.registrar_envio(db, m, "whatsapp", "financeiro", "cliente", seed["cliente_l1_id"], "5512988887777")
+    e.id_externo = "wamid.OUT2"; db.commit(); conv_id = conv.id; db.close()
+
+    payload = {"entry":[{"changes":[{"value":{"messages":[
+        {"from":"5512988887777","id":"wamid.IN2","text":{"body":"resposta via webhook"},
+         "context":{"id":"wamid.OUT2"}}]}}]}]}
+    raw = _j.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(b"sekret", raw, hashlib.sha256).hexdigest()
+    c = http_client_factory()
+    st, _ = _post_raw(c, "/webhooks/whatsapp", raw,
+                      {"Content-Type":"application/json","X-Hub-Signature-256":sig})
+    assert st == 200
+    db = app_db.get_session()
+    msgs = mod_chat.listar_mensagens(db, conv_id)
+    assert any(x["corpo"] == "resposta via webhook" and x["autor_usuario_id"] is None for x in msgs)
+    db.close()
+
+    # assinatura inválida → 403, nada persistido
+    st, _ = _post_raw(c, "/webhooks/whatsapp", raw,
+                      {"Content-Type":"application/json","X-Hub-Signature-256":"sha256=deadbeef"})
+    assert st == 403

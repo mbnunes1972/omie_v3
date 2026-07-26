@@ -867,7 +867,9 @@ class Handler(BaseHTTPRequestHandler):
                 if _projeto_da_loja(db, nome_safe, loja_id) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 self.send_json({"ok": True, "equipe": _meq.equipe(db, nome_safe, loja_id),
-                                "candidatos": _meq.candidatos(db, loja_id)})
+                                "candidatos": _meq.candidatos(db, loja_id),
+                                # Equipe de Montagem só oferta montador/ajudante (feedback 2026-07-26)
+                                "candidatos_montagem": _meq.candidatos_montagem(db, loja_id)})
             finally:
                 db.close()
             return

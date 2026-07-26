@@ -1400,6 +1400,11 @@ def init_db():
     _migrar_colunas_pg()      # ADD COLUMN das colunas novas (create_all não altera existentes)
     _seed_loja_padrao()       # loja seed + backfill de loja_id (idempotente)
     _backfill_funcao_flags()  # liga usa_comissao_vendas na função Consultor de Vendas (idempotente)
+    _sess = get_session()
+    try:
+        backfill_funcoes_todas_lojas(_sess)   # funções novas do catálogo em todas as lojas (idempotente)
+    finally:
+        _sess.close()
     try:
         from auth import perfis
         perfis.recarregar()   # invalida o cache do registro de perfis (perfil_acesso pode ter mudado)
@@ -1447,8 +1452,25 @@ _SEED_SA_SENHA = "trocar123"
 FUNCOES_PADRAO = [
     "Consultor de Vendas", "Gerente de Vendas", "Gerente Administrativo/Financeiro", "Diretor",
     "Assistente Logístico", "Conferente", "Supervisor de Montagem", "Assistente Administrativo",
-    "Projetista Executivo", "Medidor", "Montador", "SAC",
+    "Projetista Executivo", "Medidor", "Montador", "Ajudante de Montagem", "SAC",
 ]
+
+
+def backfill_funcoes_todas_lojas(db):
+    """Semeia funções NOVAS do catálogo em TODAS as lojas existentes (idempotente por
+    loja+nome). Roda no start — sem isso, uma função acrescentada a FUNCOES_PADRAO (ex.:
+    'Ajudante de Montagem', 2026-07-26) só apareceria em loja criada depois. Retorna nº criadas."""
+    criadas = 0
+    for (lid,) in db.query(Loja.id).all():
+        existentes = {f.nome for f in db.query(Funcao).filter_by(loja_id=lid).all()}
+        for nome in FUNCOES_PADRAO:
+            if nome not in existentes:
+                usa = 1 if nome == "Consultor de Vendas" else 0
+                db.add(Funcao(loja_id=lid, nome=nome, status="ativo", usa_comissao_vendas=usa))
+                criadas += 1
+    if criadas:
+        db.commit()
+    return criadas
 
 
 

@@ -11886,12 +11886,26 @@ async function abrirModalContatosConf(onDone){
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('contatos-conf-acoes').innerHTML = '';
   document.getElementById('modal-contatos-conf').style.display='flex';
-  let d;
+  let d, eq;
   try{
-    d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contatos-comunicacao`,
-                    {credentials:'same-origin'}).then(r=>r.json());
+    [d, eq] = await Promise.all([
+      fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contatos-comunicacao`,{credentials:'same-origin'}).then(r=>r.json()),
+      fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/equipe`,{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
+    ]);
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
+  // Equipe interna (integrantes da loja que participam do projeto) — reusa o roster da Equipe
+  let internaHtml = '';
+  if(eq && eq.ok && eq.equipe && eq.equipe.papeis){
+    const linhas = eq.equipe.papeis.flatMap(p => (p.pessoas||[]).map(x =>
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0">'
+      +'<span style="color:var(--text)">'+esc(x.nome)+'</span>'
+      +'<span style="color:var(--muted);font-size:11px">'+esc(p.rotulo)+'</span></div>'));
+    internaHtml = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 6px">Equipe interna</div>'
+      + (linhas.length ? linhas.join('') : '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">— nenhum integrante definido ainda (defina em Equipe)</div>')
+      + '<div style="height:10px"></div>'
+      + '<div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:2px 0 6px">Externos</div>';
+  }
   const rot = {cliente:'Cliente', arquiteto:'Arquiteto (parceiro)'};
   const ic  = {cliente:'ti-user', arquiteto:'ti-ruler-2'};
   const contatos = d.contatos || [];
@@ -11916,7 +11930,7 @@ async function abrirModalContatosConf(onDone){
         + (typeof abrirAssociarParceiro==='function' ? ' <a href="#" onclick="event.preventDefault();contatosConfFechar();abrirAssociarParceiro()" style="color:var(--accent)">Associar arquiteto</a>' : '')
       +'</div></div>';
   }
-  box.innerHTML = html || '<em style="color:var(--muted);font-size:12px">Nenhum participante externo com cadastro vinculado.</em>';
+  box.innerHTML = internaHtml + (html || '<em style="color:var(--muted);font-size:12px">Nenhum participante externo com cadastro vinculado.</em>');
   document.getElementById('contatos-conf-acoes').innerHTML = ehGate
     ? '<button class="btn btn-ghost btn-sm" onclick="contatosConfEnviar(\'sem_whatsapp\')">Seguir sem WhatsApp</button>'
       + '<button class="btn btn-primary btn-sm" onclick="contatosConfEnviar(\'confirmado\')">Confirmar contatos</button>'
@@ -12967,7 +12981,7 @@ async function abrirCronograma(nomeSafe){
 }
 
 // ── Equipe do Projeto (roster papel→responsáveis; base para a secretária IA informar o cliente) ──
-let _equipeOv = null, _equipeCand = null, _equipeNome = null;
+let _equipeOv = null, _equipeCand = null, _equipeCandMontagem = null, _equipeNome = null;
 async function equipeAbrir(nomeSafe){
   _equipeNome = nomeSafe;
   let j;
@@ -12975,6 +12989,7 @@ async function equipeAbrir(nomeSafe){
   catch(e){ await avisoPopup('Erro ao carregar: '+e.message, {titulo:'Equipe'}); return; }
   if(!j.ok){ await avisoPopup(j.erro||'Falha ao carregar.', {titulo:'Equipe'}); return; }
   _equipeCand = j.candidatos || {funcionarios:[], terceiros:[]};
+  _equipeCandMontagem = j.candidatos_montagem || {funcionarios:[], terceiros:[]};   // só montador/ajudante
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:99999';
   ov.innerHTML = '<div id="equipe-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 24px;max-width:720px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.6)"></div>';
@@ -13010,11 +13025,12 @@ function _equipeRender(equipe){
         : '<div style="font-size:var(--fs-xs);color:var(--text-3)">— defina um funcionário com essa função no Cadastro</div>';
     } else if(p.multi){
       const sel = new Set(p.pessoas.map(x=>x.tipo+':'+x.id));
-      const cand = (_equipeCand.funcionarios||[]).map(x=>['funcionario',x]).concat((_equipeCand.terceiros||[]).map(x=>['terceiro',x]));
+      // Equipe de Montagem: só montador/ajudante (funcionários) + terceiros (feedback 2026-07-26)
+      const cand = (_equipeCandMontagem.funcionarios||[]).map(x=>['funcionario',x]).concat((_equipeCandMontagem.terceiros||[]).map(x=>['terceiro',x]));
       corpo = '<div style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow:auto">'
         + (cand.length ? cand.map(([t,x])=>{ const v=t+':'+x.id;
             return '<label style="display:flex;gap:6px;align-items:center;font-size:.85rem"><input type="checkbox" data-montagem="'+v+'"'+(sel.has(v)?' checked':'')+'> '+esc(x.nome)+' <span style="color:var(--text-3);font-size:var(--fs-xs)">('+(t==='funcionario'?'func.':'terc.')+')</span></label>';
-          }).join('') : '<div style="font-size:var(--fs-xs);color:var(--text-3)">— cadastre funcionários/terceiros</div>')
+          }).join('') : '<div style="font-size:var(--fs-xs);color:var(--text-3)">— nenhum montador/ajudante cadastrado (defina a função no Cadastro) ou terceiro</div>')
         + '</div>'
         + '<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="_equipeSalvarMontagem()"><i class="ti ti-device-floppy"></i> Salvar equipe de montagem</button>';
     } else {

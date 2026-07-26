@@ -47,6 +47,29 @@ def candidatos(db, loja_id):
             "terceiros": [_pessoa_pub("terceiro", x) for x in tq.all()]}
 
 
+# Funções elegíveis à Equipe de MONTAGEM (feedback do teste 2026-07-26): só quem executa a
+# montagem — Montador e Ajudante de Montagem. O Supervisor de Montagem é papel PRÓPRIO
+# (automático) na Equipe, então não entra nesta lista de execução.
+FUNCOES_MONTAGEM = ("Montador", "Ajudante de Montagem")
+
+
+def candidatos_montagem(db, loja_id):
+    """Candidatos à Equipe de Montagem: FUNCIONÁRIOS só das funções de montagem
+    (FUNCOES_MONTAGEM) + TODOS os terceiros da loja (mão de obra terceirizada de montagem).
+    Antes ofertava todos os funcionários — o que o usuário apontou como errado."""
+    fids = [f.id for f in db.query(Funcao)
+              .filter(Funcao.nome.in_(FUNCOES_MONTAGEM))
+            if (not loja_id) or f.loja_id == loja_id or f.loja_id is None]
+    fq = db.query(Funcionario).filter(Funcionario.funcao_id.in_(fids)) if fids \
+        else db.query(Funcionario).filter(Funcionario.id == None)   # noqa: E711 (set vazio)
+    tq = db.query(Terceiro)
+    if loja_id:
+        fq = fq.filter(Funcionario.loja_id == loja_id)
+        tq = tq.filter(Terceiro.loja_id == loja_id)
+    return {"funcionarios": [_pessoa_pub("funcionario", x) for x in fq.all()],
+            "terceiros": [_pessoa_pub("terceiro", x) for x in tq.all()]}
+
+
 def _resolver_pessoa(db, sel):
     """sel = {'tipo':'funcionario'|'terceiro','id':N} → pessoa pública (ou None se sumiu)."""
     if not sel or "tipo" not in sel or "id" not in sel:

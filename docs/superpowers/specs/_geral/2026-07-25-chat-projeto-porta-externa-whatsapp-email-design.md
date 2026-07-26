@@ -49,6 +49,29 @@ equipe).
     `CicloEtapa.funcao_responsavel_id`/`responsavel_funcionario_id` + `responsavel_efetivo`) em
     vez de criar uma resolução paralela — ver seção 6 (adendo 2026-07-25, achado durante
     preparação da Fatia 2).
+16. **"Quem está com a bola" é um USUÁRIO do sistema, não um Funcionário** (correção
+    2026-07-25, teste do usuário). O ator responsável é o *login*, porque um usuário pode ser
+    um **terceirizado** e, numa evolução futura, **o próprio arquiteto pode virar usuário**. O
+    Funcionário é entidade de cadastro/RH; a responsabilidade no fluxo é do Usuário. Supera o
+    "por Funcionário" das decisões 6/15 no que toca à TAG e à transferência — ver seção 6
+    (reconciliação com o v12, que hoje é Funcionário-based). **Default inicial: o CRIADOR do
+    projeto (`Projeto.criado_por_id`, um Usuário) está com a bola até a 1ª transferência** —
+    nunca "não atribuído" quando há criador.
+17. **Transição de fase gera uma mensagem AUTOMÁTICA de passagem oficial** na Conversa do
+    projeto (2026-07-25): ao concluir uma fase, o sistema registra uma mensagem de
+    transferência para o responsável da fase seguinte (que pode ser a mesma pessoa) —
+    formaliza a passagem, não é só o avanço visual da tag.
+18. **Dois canais para isolar interno × externo** (reframe 2026-07-25): canal **interno**
+    (equipe do projeto — responsabilidade, transferência, bloqueador) e canal **externo**
+    (cliente e arquiteto). **Qualquer pessoa envolvida no projeto** pode conversar pelo canal
+    externo com cliente/arquiteto; a separação é de canal, não de permissão de quem fala.
+19. **Destinatário do canal externo tem seletor com filtro** interno(usuário) / parceiro
+    (arquiteto) / cliente, mais um **campo de WhatsApp avulso** (número diferente do cadastrado,
+    para um envio pontual) — 2026-07-25. Isso é do canal externo (Fatias 6-7), NÃO da
+    transferência de responsabilidade (que é interna, entre usuários — decisão 16). Esclarece a
+    dúvida do teste: "não colocar cliente/arquiteto" valia SÓ para o seletor de *transferência
+    de responsabilidade* (externo não é responsável por etapa do ciclo); no *canal externo* eles
+    são exatamente os destinatários.
 
 ## 1) Responsabilidade por pessoa — de onde vem cada uma
 Achado no código (validado 2 vezes — primeiro na preparação inicial, depois confirmado ao começar
@@ -167,6 +190,36 @@ resolvido direto pela Função "SAC" (seção 1), sem passar pelo `pode_avancar`
 **Efeito prático na tag "quem está com a bola" no topo da tela do Ciclo**: ela não precisa de
 nenhum campo novo no `Projeto` — só busca o `responsavel_efetivo` da etapa atual (a primeira
 etapa pendente/em andamento) no mesmo `GET /api/projetos/<nome>/ciclo` que já existe hoje.
+
+## 6b) Reconciliação USUÁRIO × v12 Funcionário-based (correção decisão 16, 2026-07-25)
+O teste do usuário fixou que **quem está com a bola é um Usuário**, não um Funcionário. O v12 em
+produção é Funcionário-based (`CicloEtapa.responsavel_funcionario_id`, Mapa de Atribuições, Função
+responsável do Cronograma) e **NÃO deve ser arrancado** — ele governa a coluna "Função
+responsável", o escopo por projetista e o cronograma. Reconciliação proposta (a validar na
+implementação, é o ponto mais sensível desta virada):
+- `responsavel_efetivo` passa a resolver para um **`usuario_id`** (novo campo exposto ao lado do
+  `_id`/`_nome` atuais, sem remover os de funcionário — retrocompat da coluna do Ciclo).
+- **Cadeia de precedência revista (tudo em Usuário):** transferência oficial pelo chat (grava
+  `responsavel_usuario_id`, campo NOVO na etapa OU mapeado) > Mapa de Atribuições / Função
+  (mapeado Funcionário→Usuário pela ponte `Funcionario.usuario_id`) > default da faixa (idem) >
+  **criador do projeto** (`Projeto.criado_por_id`, já é Usuário — resolve o "não atribuído") >
+  nada.
+- A **transferência do chat passa a ter destinatário Usuário** (não mais Funcionário). Migração
+  do que a Fatia 2/3 gravou como `transferido_para_funcionario_id`/`responsavel_funcionario_id`:
+  decidir na implementação entre (a) coluna nova `responsavel_usuario_id` convivendo, ou (b)
+  reinterpretar o campo — **(a) é o caminho de menor risco** para não mexer no que o v12 já lê.
+- **Risco explícito:** mexe no motor de responsabilidade em produção — mesma disciplina da Fatia 3
+  (rodar a suíte de ciclo inteira antes/depois; não quebrar "Função responsável"/cronograma).
+
+## 6c) Dois canais: interno × externo (decisões 18-19, 2026-07-25)
+- **Canal interno** — equipe do projeto (usuários). Onde vivem responsabilidade, transferência,
+  bloqueador, modo privado. É o que as Fatias 1-5 construíram.
+- **Canal externo** — cliente e arquiteto. Qualquer pessoa do projeto pode falar por ele
+  (separação é de canal, não de permissão). Destinatário por **seletor com filtro** (usuário
+  interno / parceiro-arquiteto / cliente) + **WhatsApp avulso** para número fora do cadastro.
+  Materializa-se nas **Fatias 6-7** (e-mail/WhatsApp) — o `enviar_mensagem` segue recusando canal
+  ≠ interno até lá. A transferência de RESPONSABILIDADE nunca aponta para externo (externo não é
+  responsável por etapa do ciclo) — o seletor rico é só do canal externo.
 
 ## Modelo de dados (consolidado)
 ```

@@ -12186,7 +12186,7 @@ function ccPreencherSelectAssunto(sel, comTodos){
   if(manter) sel.value = manter;
 }
 async function ccCriarAssunto(){
-  const nome = (prompt('Nome do novo assunto:') || '').trim();
+  const nome = await promptPopup('', {titulo:'Novo assunto', placeholder:'Ex.: Marketing, Pós-venda…', okLabel:'Criar'});
   if(!nome) return;
   try{
     const d = await fetch('/api/comunicacao/assuntos',
@@ -14996,6 +14996,39 @@ function avisoPopup(mensagem, opts) {
     ov.addEventListener('click', (e) => { if (e.target === ov) fin(); });
     document.addEventListener('keydown', onKey);
     setTimeout(() => ov.querySelector('[data-act="ok"]').focus(), 60);
+  });
+}
+
+// Prompt de texto estilizado (substitui prompt() nativo). Retorna Promise<string|null>.
+function promptPopup(mensagem, opts) {
+  opts = opts || {};
+  const titulo = opts.titulo || 'Informe um valor';
+  const okLabel = opts.okLabel || 'Salvar';
+  const cancelLabel = opts.cancelLabel || 'Cancelar';
+  const placeholder = opts.placeholder || '';
+  const valor = opts.valor || '';
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">' + esc(titulo) + '</h4>' +
+      (mensagem ? '<p style="margin:0 0 10px;color:var(--fg);font-size:.9rem;white-space:pre-line">' + esc(mensagem) + '</p>' : '') +
+      '<input id="_pp-inp" type="text" autocomplete="off" placeholder="' + esc(placeholder) + '" value="' + esc(valor) + '" ' +
+      'style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);' +
+      'padding:8px 10px;border-radius:6px;font-size:.9rem;margin-bottom:14px">' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+      '<button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
+      'border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">' + esc(cancelLabel) + '</button>' +
+      '<button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);' +
+      'border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">' + esc(okLabel) + '</button>' +
+      '</div>');
+    const inp = ov.querySelector('#_pp-inp');
+    const fin = (v) => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const ok = () => { const t = (inp.value || '').trim(); fin(t ? t : null); };
+    const onKey = (e) => { if (e.key === 'Escape') fin(null); else if (e.key === 'Enter') ok(); };
+    ov.querySelector('[data-act="ok"]').onclick = ok;
+    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => inp.focus(), 60);
   });
 }
 

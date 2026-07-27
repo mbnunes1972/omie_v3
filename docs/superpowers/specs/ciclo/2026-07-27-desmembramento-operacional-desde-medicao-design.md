@@ -70,15 +70,28 @@ reconhecimento contábil precisa ACOMPANHAR a execução operacional do grupo (�
 - **Recebimento do cliente por fora:** `recebimento_venda` (abate `1.1.02`) segue o cronograma de
   pagamento, independentemente de a parcela estar retida (§2).
 
-## 5. Fluxo alvo
+## 5. Fluxo alvo (com as decisões fechadas 2026-07-27)
 
-1. Na **solicitação de medição (9)**, o operador pode **desmembrar** os ambientes em: prontos (seguem) e
-   **retidos pela obra** (ficam em `retido`). Pode-se desmembrar depois também (a obra libera aos poucos).
-2. Cada grupo pronto percorre medição→PE→produção→entrega→montagem com **status por grupo**.
-3. Ambiente **liberado** pela obra reentra na etapa correspondente (nova medição/continuação).
+1. Na **solicitação de medição (9)**, o **MEDIDOR SINALIZA** os ambientes retidos pela obra (o sinal é
+   **por ambiente** — granularidade fina, decisão #2/#3). Pode sinalizar mais adiante também (a obra
+   libera/segura aos poucos).
+2. A **GERÊNCIA CONFIRMA** o desmembramento (decisão #3): os ambientes prontos vão para a parcela que
+   **segue** e os retidos ficam numa parcela **retida** (`particionar_por_selecao` já faz a partição
+   selecionados×restantes). A retido pode conter 1..N ambientes.
+3. Cada parcela pronta percorre medição→PE→produção→entrega→montagem com **status por parcela**.
 4. **Reconhecimento contábil acompanha:** a parcela retida tem suas provisões **diferidas** (não
    reconhece / não emite NF-e) até executar; ao executar a etapa que reconhece, o matching roda para
    aquela parcela. **Só o recebimento do cliente** corre por fora (cronograma de pagamento).
+5. Obra **libera** um ambiente → **CONTINUAÇÃO de onde parou** (decisão #4): o ambiente retoma a etapa
+   em que foi retido (não refaz medição do zero). A parcela dele volta a **seguir** a partir daquele
+   ponto (seu `parcela_id`/status de etapa é preservado).
+
+### 5.1 Reconciliação "retido por ambiente" × parcela (unidade)
+O **sinal de retido é por AMBIENTE** (o medidor marca cada ambiente). A **parcela é o veículo** que
+percorre o ciclo e carrega o reconhecimento financeiro. A gerência, ao confirmar, **materializa** os
+ambientes retidos numa parcela retida e os prontos noutra — o retido "efetivo" acaba sendo a parcela,
+mas a **origem do estado é o ambiente**. Ambientes retidos em momentos/etapas diferentes podem formar
+parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o projeto inteiro (legado).
 
 ## 6. Impactos a mapear (antes de implementar)
 
@@ -91,16 +104,26 @@ reconhecimento contábil precisa ACOMPANHAR a execução operacional do grupo (�
 - **Migração:** opt-in; projeto sem grupo roda o fluxo atual (legado intacto, como o desmembramento
   financeiro já faz).
 
-## 7. Decisões abertas (para fechar antes de codar)
+## 7. Decisões FECHADAS (2026-07-27)
 
-1. ~~Reusar `ParcelaProjeto` ou criar grupo próprio?~~ **RESOLVIDA (2026-07-27): parcela UNIFICADA** —
-   reusa `ParcelaProjeto` (operacional + reconhecimento financeiro são a mesma unidade, §2/§4). Só os
-   recebimentos do cliente ficam por fora.
-2. O "retido pela obra" é por **ambiente** ou por **grupo** (parcela)?
-3. Desmembrar exige gerência, ou o operador da medição pode? (Provável: gerência define; medidor sinaliza.)
-4. Quando a obra libera, é **nova medição** do ambiente ou **continuação** do ponto onde parou?
+1. **Parcela UNIFICADA** — reusa `ParcelaProjeto` (operacional + reconhecimento financeiro na mesma
+   unidade, §2/§4). Só os recebimentos do cliente ficam por fora.
+2. **Retido por AMBIENTE** — o sinal é por ambiente (granularidade fina); a parcela materializa o grupo.
+3. **Medidor SINALIZA, gerência CONFIRMA** o desmembramento.
+4. **CONTINUAÇÃO de onde parou** — ambiente liberado retoma a etapa em que foi retido (não refaz).
 
-## 8. Próximo passo
+## 8. Fatiamento (backend/TDD)
 
-Fechar as decisões da §7 com o lojista → então fatiar (backend/TDD): (1) grupo operacional + estado
-retido desde a etapa 9; (2) etapas 9–17 por grupo + gate por grupo; (3) liberação/reentrada; (4) UI.
+1. **Retido por ambiente + desmembrar na medição:** sinal do medidor (por ambiente) + confirmação da
+   gerência → cria as parcelas (pronta × retida) desde a etapa 9, reusando `ParcelaProjeto` +
+   `particionar_por_selecao` + `congelar_parcelas`. Estado `retido` na parcela. (SEM tocar no razão.)
+2. **Ciclo operacional por parcela:** etapas 9–17 com status por `parcela_id`; gate de execução
+   (`etapa_executavel`) por parcela; parcela retida não avança.
+3. **Liberação/continuação:** obra libera o ambiente → a parcela volta a seguir a partir da etapa
+   retida.
+4. **Reconhecimento contábil por parcela (área sensível — razão):** NF-e/`reconhecer_despesas_nfe`
+   dispara por parcela ao executar; parcela retida fica diferida. Alinhar com o desmembramento
+   financeiro de 2026-07-13 para não duplicar.
+5. **UI:** sinalização do medidor + painel de confirmação da gerência + visão do ciclo por parcela.
+
+Cada fatia: suíte verde, DEV_LOG + spec, Vera antes de fechar (áreas sensíveis: ciclo + contábil).

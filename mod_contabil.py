@@ -996,14 +996,15 @@ def reconhecer_despesas_nfe(db, owner_tipo, owner_id, projeto_id, ref_base, frac
     {rubrica: valor_reconhecido}.
 
     `fracao` (desmembramento operacional, Fatia 4): quando informado (0..1 = parte do projeto ELEGÍVEL
-    — as parcelas NÃO retidas), limita o reconhecido de cada rubrica a `fracao × constituído`, deixando
-    o resto DIFERIDO no ativo 1.1.06 (a parcela retida). A fração entra no `ref` (`ref_base:fNNNN:rubrica`)
-    para que, ao liberar a parcela (fração maior), a re-emissão reconheça só o DELTA. `None` = projeto
+    — as parcelas NÃO retidas), limita o reconhecido de cada rubrica ao ALVO `fracao × constituído`,
+    deixando o resto DIFERIDO no ativo 1.1.06 (a parcela retida). O ALVO acumulado (em centavos) entra
+    no `ref` (`ref_base:aNNNN:rubrica`), por rubrica: assim, ao liberar a parcela (fração maior → alvo
+    maior), a re-emissão reconhece só o DELTA, e dois alvos idênticos ao centavo (nada novo a
+    reconhecer) são corretamente idempotentes — sem colisão por truncamento de fração. `None` = projeto
     inteiro (legado intacto, ref e valores idênticos ao anterior)."""
     out = {}
     if fracao is not None:
         fracao = max(0.0, min(1.0, float(fracao)))
-        suf = ":f%04d:" % int(round(fracao * 10000))
     for chave, evento in _MATCHING_NFE.items():
         ativo = EVENTOS[evento][1]   # crédito do evento = ativo diferido 1.1.06.0X
         deb = total_lancado(db, owner_tipo, owner_id, ativo, "debito", projeto_id)
@@ -1014,9 +1015,11 @@ def reconhecer_despesas_nfe(db, owner_tipo, owner_id, projeto_id, ref_base, frac
         if fracao is None:
             val, ref = saldo, ref_base + ":" + chave
         else:
-            # reconhecido-alvo dado o elegível − o já reconhecido (crédito), limitado ao saldo
-            val = round(min(saldo, round(fracao * deb, 2) - cred), 2)
-            ref = ref_base + suf + chave
+            # reconhecido-alvo dado o elegível − o já reconhecido (crédito), limitado ao saldo.
+            # ref pelo ALVO acumulado em centavos → único por nível de reconhecimento (sem colisão).
+            alvo = round(fracao * deb, 2)
+            val = round(min(saldo, alvo - cred), 2)
+            ref = ref_base + (":a%d:" % int(round(alvo * 100))) + chave
         if val <= 0:
             continue
         registrar_evento(db, owner_tipo, owner_id, evento, val, projeto_id=projeto_id, ref=ref)

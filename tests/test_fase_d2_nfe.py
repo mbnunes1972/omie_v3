@@ -80,6 +80,20 @@ def test_matching_por_fracao_difere_a_retida(app_db):
     db.close()
 
 
+def test_matching_fracoes_proximas_nao_colidem(app_db):
+    """Achado da Vera (🟠): frações próximas que antes caíam no mesmo bucket de ref (`f%04d`) agora
+    reconhecem cada delta — o ref é pelo ALVO acumulado em centavos, não por fração truncada."""
+    db = app_db.get_session(); ot, oid = "loja", 731; mc.seed_plano(db, ot, oid)
+    _contrato(db, ot, oid, "P")
+    a = mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P", fracao=0.59996)
+    b = mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P", fracao=0.60004)
+    # custo_fabrica = 60000 → 0.59996×60000=35997.60 ; 0.60004×60000=36002.40 → delta 4.80
+    assert round(a["custo_fabrica"], 2) == 35997.60
+    assert round(b["custo_fabrica"], 2) == 4.80                            # delta posta, não engolido
+    assert round(_s(db, ot, oid, "5.1.01"), 2) == 36002.40                 # razão reflete o total
+    db.close()
+
+
 def test_matching_idempotente(app_db):
     db = app_db.get_session(); ot, oid = "loja", 721; mc.seed_plano(db, ot, oid)
     _contrato(db, ot, oid, "P")

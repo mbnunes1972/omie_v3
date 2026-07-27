@@ -6164,6 +6164,16 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if _projeto_da_loja(db, nome_safe, usuario.get("loja_id")) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                # Desmembramento operacional (Fatia 4): a Conciliação Final "resolve à força" TODO saldo
+                # das provisões — incluindo o de ambientes RETIDOS pela obra, cujo custo ainda não foi
+                # efetivado. Fechar aqui reconheceria a provisão retida como sobra (receita 4.4.02) antes
+                # da execução, e deixaria o ativo diferido 1.1.06 órfão. Bloqueia até liberar (mesma
+                # regra do gate de execução por parcela).
+                import mod_retido
+                retidos = mod_retido.ambientes_retidos(db, nome_safe)
+                if retidos:
+                    self.send_json({"ok": False, "erro": "Há ambientes retidos pela obra (%d): libere-os "
+                                    "antes da Conciliação Final." % len(retidos)}, code=409); return
                 resolvido = mod_contabil.conciliar_final(db, ot, oid, nome_safe, ref_base="cf:" + nome_safe)
                 _set_etapa_status(db, nome_safe, "21", "concluido", usuario.get("id"))
                 db.commit()

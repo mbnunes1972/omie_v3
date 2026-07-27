@@ -217,7 +217,8 @@ def fracao_reconhecivel(db, projeto_nome):
     retidas (`Σ val_cont_congelado das não-retidas / Σ de todas`, exato por #5). A parcela retida
     fica DIFERIDA (segue como ativo diferido 1.1.06 até liberar). Retorna None se o projeto não
     foi desmembrado → o chamador reconhece o projeto inteiro (comportamento legado intacto)."""
-    parts = db.query(ParcelaProjeto).filter_by(projeto_nome=projeto_nome).all()
+    parts = (db.query(ParcelaProjeto).filter_by(projeto_nome=projeto_nome)
+               .order_by(ParcelaProjeto.id.asc()).all())   # ordem fixa → soma float determinística
     if not parts:
         return None
     total = round(sum(p.val_cont_congelado or 0.0 for p in parts), 2)

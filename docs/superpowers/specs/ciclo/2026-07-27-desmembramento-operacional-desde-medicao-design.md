@@ -150,6 +150,15 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
    + `test_retido.py` (`fracao_reconhecivel`). _Simplificação consciente:_ a granularidade é a fração
    ELEGÍVEL (não-retida) do projeto — NF-e verdadeiramente por-parcela (uma emissão por parcela) vem
    com a etapa-15-por-parcela da Fatia 5. **Impostos e recebimento do cliente seguem por fora (§2).**
+   **Auditoria da Vera (2026-07-27) → 2 correções aplicadas:** (🔴) a **Conciliação Final (etapa 21)**
+   `resolve à força` todo saldo de provisão — reconheceria a provisão de ambiente **retido** como sobra
+   (receita `4.4.02`) antes da execução e deixaria o ativo `1.1.06` órfão; o endpoint `POST
+   .../ciclo/21/conciliar` agora **bloqueia (409)** enquanto `mod_retido.ambientes_retidos` não estiver
+   vazio (mesmo padrão do gate de PE). (🟠) o `ref` do matching fracionado passou de bucket de fração
+   truncada (`f%04d`, colidível) para o **ALVO acumulado em centavos** (`:a<cents>:<rubrica>`) —
+   colisão-livre por construção (frações próximas reconhecem cada delta). +`order_by(id)` em
+   `fracao_reconhecivel` (soma float determinística). Testes: `test_retido.py`
+   (conciliar 409), `test_fase_d2_nfe.py` (frações próximas não colidem).
 5. **UI:** sinalização do medidor + painel de confirmação da gerência + visão do ciclo por parcela.
 
 Cada fatia: suíte verde, DEV_LOG + spec, Vera antes de fechar (áreas sensíveis: ciclo + contábil).

@@ -201,6 +201,16 @@ def test_fracao_reconhecivel(app_db, seed):
         db.close()
 
 
+def test_endpoint_conciliar_barrado_por_retido(http_client_factory, app_db, seed):
+    """Fatia 4 (achado da Vera 🔴): a Conciliação Final (etapa 21) NÃO pode fechar enquanto houver
+    ambiente retido — senão reconheceria a provisão retida como sobra (receita) antes da execução."""
+    ids = _proj_amb(app_db, seed, "RET_cf", 2)
+    _desmembrar_direto(app_db, "RET_cf", retido_ids=[ids[1]], pronto_ids=[ids[0]])
+    ger = _login(http_client_factory, "dir_l1")                            # master = passa no contábil
+    st, b = ger.post("/api/projetos/RET_cf/ciclo/21/conciliar", {})
+    assert st == 409 and "retido" in (b.get("erro") or "").lower()
+
+
 def test_endpoint_sinalizar_e_permissao(http_client_factory, app_db, seed):
     ids = _proj_amb(app_db, seed, "RET_ep", 2)
     op = _login(http_client_factory, "cons_l1")                            # operador tem registrar_medicao

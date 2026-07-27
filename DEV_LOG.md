@@ -1493,9 +1493,15 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > duplica** o fluxo de 2026-07-13. Impostos e recebimento do cliente seguem por fora (§2). Testes
 > `test_fase_d2_nfe.py` (defer+delta+idemp.) + `test_retido.py` (`fracao_reconhecivel`). _Simplificação:_
 > granularidade = fração ELEGÍVEL do projeto; NF-e verdadeiramente por-parcela vem com a Fatia 5.
-> **Falta:** só a Fatia 5 (UI). **Deploy:** tudo local na `main` (`90eca97`/`5f1fe0e`/`b04de05` +
-> Fatia 4 por commitar); A/B/produção pendentes. **Vera** chamada antes de fechar (razão). Ao fechar
-> o operacional, retomar o **gate de PE/montagem do chat** (item 10).
+> **Auditoria da Vera (razão) → 2 correções aplicadas:** (🔴) **Conciliação Final (21)** bloqueia
+> (409) enquanto houver ambiente retido — senão reconheceria a provisão retida como sobra (receita
+> `4.4.02`) antes da execução, deixando o ativo `1.1.06` órfão (`POST .../ciclo/21/conciliar` checa
+> `mod_retido.ambientes_retidos`, padrão do gate de PE); (🟠) `ref` do matching fracionado passou de
+> bucket de fração truncada (`f%04d`, colidível) p/ o **ALVO em centavos** (`:a<cents>:<rubrica>`,
+> colisão-livre) + `order_by(id)` em `fracao_reconhecivel`. Legado (`fracao=None`) byte-idêntico
+> confirmado. Testes +2 (conciliar 409, frações próximas). **Falta:** só a Fatia 5 (UI). **Deploy:**
+> tudo local na `main` (`90eca97`/`5f1fe0e`/`b04de05`/`d2414bc` + correções da Vera por commitar);
+> A/B/produção pendentes. Ao fechar o operacional, retomar o **gate de PE/montagem do chat** (item 10).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

@@ -94,3 +94,40 @@ def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, cr
         s.confirmado = 1
     db.flush()
     return (True, None, parcelas)
+
+
+# ── Fatia 2: gate operacional por parcela (parcela retida NÃO avança) ────────────────────────────
+# O status operacional segue por PARCELA (ParcelaProjeto.status). Uma parcela `retido` fica FORA do
+# fluxo de execução — nenhuma operação por ambiente (PE, etc.) roda nos seus ambientes até a obra
+# liberar (Fatia 3). Ambiente sem parcela (legado / não desmembrado) ou em parcela que segue ⇒ livre.
+
+def parcela_do_ambiente(db, projeto_nome, pool_ambiente_id):
+    """A ParcelaProjeto que contém o ambiente (via ParcelaAmbiente), ou None (legado/não desmembrado)."""
+    return (db.query(ParcelaProjeto)
+              .join(ParcelaAmbiente, ParcelaAmbiente.parcela_id == ParcelaProjeto.id)
+              .filter(ParcelaProjeto.projeto_nome == projeto_nome,
+                      ParcelaAmbiente.pool_ambiente_id == int(pool_ambiente_id))
+              .first())
+
+
+def ambiente_retido(db, projeto_nome, pool_ambiente_id):
+    """True se o ambiente está numa parcela RETIDA (a obra ainda não liberou)."""
+    p = parcela_do_ambiente(db, projeto_nome, pool_ambiente_id)
+    return bool(p is not None and p.status == STATUS_RETIDO)
+
+
+def ambientes_retidos(db, projeto_nome):
+    """Conjunto de pool_ambiente_id em parcelas retidas do projeto."""
+    q = (db.query(ParcelaAmbiente.pool_ambiente_id)
+           .join(ParcelaProjeto, ParcelaProjeto.id == ParcelaAmbiente.parcela_id)
+           .filter(ParcelaProjeto.projeto_nome == projeto_nome,
+                   ParcelaProjeto.status == STATUS_RETIDO))
+    return {r[0] for r in q.all()}
+
+
+def gate_operacao_ambiente(db, projeto_nome, pool_ambiente_id):
+    """Gate de execução por parcela: bloqueia operação sobre ambiente de parcela RETIDA (obra não
+    liberou). Retorna (ok, erro). Legado/não desmembrado/parcela que segue ⇒ (True, None)."""
+    if ambiente_retido(db, projeto_nome, pool_ambiente_id):
+        return (False, "Ambiente retido pela obra: a parcela aguarda liberação para executar.")
+    return (True, None)

@@ -121,8 +121,15 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
    confirmar}` (sinalizar/limpar = `registrar_medicao`; confirmar = `autorizar`) + sinais na GET
    `/parcelas`. **NÃO toca no razão.** Testes: `test_retido.py` (6). Primeiro split apenas (progressivo
    fica p/ a Fatia 3).
-2. **Ciclo operacional por parcela:** etapas 9–17 com status por `parcela_id`; gate de execução
-   (`etapa_executavel`) por parcela; parcela retida não avança.
+2. **Ciclo operacional por parcela** — ✅ FEITA 2026-07-27 (núcleo: o GATE). O status operacional
+   segue por PARCELA (`ParcelaProjeto.status`); uma parcela `retido` fica FORA do fluxo de execução.
+   `mod_retido.parcela_do_ambiente`/`ambiente_retido`/`ambientes_retidos`/`gate_operacao_ambiente`
+   (legado/não desmembrado/parcela que segue ⇒ passa). Gate plugado no **upload de PE por ambiente**
+   (`POST .../pe/upload`) → **409** se o ambiente está em parcela retida. Testes: `test_retido.py`
+   (+2: gate unitário + endpoint 409). **Adiado p/ fatias seguintes:** linha de `CicloEtapa` por
+   parcela (mudar o `UniqueConstraint` de `(projeto,etapa)` p/ incluir `parcela_id` é mudança grande
+   que rippla todo o ciclo — só quando a visibilidade status-por-parcela na tela exigir) e estender o
+   gate a montagem/produção (mesmo helper, outros pontos). **NÃO toca no razão.**
 3. **Liberação/continuação:** obra libera o ambiente → a parcela volta a seguir a partir da etapa
    retida.
 4. **Reconhecimento contábil por parcela (área sensível — razão):** NF-e/`reconhecer_despesas_nfe`

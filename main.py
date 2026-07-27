@@ -4724,6 +4724,10 @@ class Handler(BaseHTTPRequestHandler):
                 pa = db.get(PoolAmbiente, pool_ambiente_id)
                 if pa is None or pa.projeto_id != nome:
                     self.send_json({"ok": False, "erro": "Ambiente não pertence ao projeto"}, code=400); return
+                import mod_retido as _mret   # gate operacional: parcela retida não avança (Fatia 2)
+                _ok, _err = _mret.gate_operacao_ambiente(db, nome, pool_ambiente_id)
+                if not _ok:
+                    self.send_json({"ok": False, "erro": _err}, code=409); return
                 filename, conteudo = next(iter(arquivos.values()))
                 data = conteudo if isinstance(conteudo, (bytes, bytearray)) else str(conteudo).encode("utf-8")
                 is_xml  = str(filename).lower().endswith(".xml")

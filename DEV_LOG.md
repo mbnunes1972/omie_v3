@@ -1456,6 +1456,30 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > colunas `privada`/`corpo_cifrado` ficam legado; `test_chat_fatia4.py` removido). **Falta:** só o gate
 > de PE/montagem. **Deploy:** VPS A atualizada; **VPS B intocada** na `V_pre_teste`; produção pendente.
 >
+> **11) Frente "Desmembramento OPERACIONAL por ambiente desde a medição" (spec
+> `2026-07-27-desmembramento-operacional-desde-medicao-design.md`).** Dor: a obra do cliente segura
+> ALGUNS ambientes enquanto outros seguem — hoje o ciclo é do projeto inteiro e um ambiente retido
+> trava todos. Decisões FECHADAS do lojista: **parcela UNIFICADA** (reusa `ParcelaProjeto`,
+> operacional + reconhecimento contábil na MESMA unidade — a provisão da etapa só reconhece quando o
+> operacional executa; só os RECEBIMENTOS do cliente correm por fora); **retido por AMBIENTE**;
+> **medidor SINALIZA, gerência CONFIRMA**; **continuação de onde parou**.
+> — **Fatia 1 (commit `90eca97`).** `SinalRetido` (por ambiente, medidor sinaliza). `mod_retido`:
+> `sinalizar`/`limpar_sinal`/`listar_sinais`/`confirmar` — `confirmar` reusa `mod_parcelas`
+> (`particionar_por_selecao` + `congelar_parcelas`) → parcela `aguardando` (pronta, segue) × `retido`
+> (aguarda obra), `Σ val_cont_congelado` exato. Endpoints `POST .../retido/{sinalizar,limpar,confirmar}`
+> (sinalizar/limpar=`registrar_medicao`; confirmar=`autorizar`) + `sinais_retido` na GET `/parcelas`.
+> **NÃO toca no razão.** Testes `test_retido.py` (5).
+> — **Fatia 2 (núcleo: o GATE).** Status operacional segue por PARCELA; parcela `retido` fica FORA da
+> execução. `mod_retido.parcela_do_ambiente`/`ambiente_retido`/`ambientes_retidos`/
+> `gate_operacao_ambiente` (legado/não desmembrado/parcela que segue ⇒ passa). Gate plugado no
+> **upload de PE por ambiente** (`POST .../pe/upload`) → **409** se o ambiente está em parcela retida.
+> Testes `test_retido.py` (+2 = 7). **Suíte 1568 verde.** _Adiado às fatias seguintes:_ linha de
+> `CicloEtapa` por parcela (mudar o `UniqueConstraint` rippla todo o ciclo — só quando a visibilidade
+> na tela exigir) e estender o gate a montagem/produção (mesmo helper). **Falta:** Fatias 3
+> (liberação/continuação), 4 (reconhecimento contábil por parcela — área sensível: razão), 5 (UI).
+> **Deploy:** tudo local na `main` (`90eca97` + Fatia 2 por commitar); A/B/produção pendentes. Ao
+> fechar o operacional, retomar o **gate de PE/montagem do chat** (item 10).
+>
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 
 ## ⏸️ ESTADO ATUAL (2026-07-23) — retomar aqui

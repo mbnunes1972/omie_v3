@@ -2548,7 +2548,11 @@ let _lojaAtiva = null;   // loja ativa atual (multi-loja); null = usa default do
     init = init || {};
     try {
       const url = (typeof input === 'string') ? input : (input && input.url) || '';
-      if (_lojaAtiva && url.indexOf('/api/') !== -1 && url.indexOf('//') === -1) {
+      // Anexa a loja ativa a TODA requisição same-origin (relativa começando com "/"),
+      // não só às rotas /api/ — senão /projetos/<nome> e /orcamentos/... abrem no default
+      // do backend enquanto a conversa (/api/...) usa _lojaAtiva → contexto de loja partido
+      // (403/404 na conversa e no valor do orçamento). Absolutas ("//", "http") ficam de fora.
+      if (_lojaAtiva && url.charAt(0) === '/' && url.indexOf('//') === -1) {
         const h = new Headers(init.headers || (typeof input!=='string' && input.headers) || {});
         h.set('X-Loja-Ativa', String(_lojaAtiva));
         init.headers = h;
@@ -2862,6 +2866,23 @@ function _renderSeletorLoja(){
     localStorage.setItem('loja_ativa', String(_lojaAtiva));
     location.reload();                      // recarrega as views no contexto da nova loja
   };
+}
+
+// Auto-alinha a loja ativa à loja do projeto que está sendo aberto (o usuário "visita" a loja
+// do projeto). GUARDA ANTI-VAZAMENTO: só troca para uma loja à qual o usuário tem acesso
+// (_usuarioAtual.lojas). Devolve true se ficou consistente (alinhou ou já estava), false se a
+// loja do projeto NÃO é acessível — nesse caso o chamador não deve abrir o projeto.
+function _alinharLojaAoProjeto(loja_id){
+  if (!loja_id) return true;                       // projeto sem loja anotada → nada a alinhar
+  if (_lojaAtiva && parseInt(_lojaAtiva,10) === parseInt(loja_id,10)) return true;  // já alinhado
+  const lojas = (_usuarioAtual && _usuarioAtual.lojas) || [];
+  const acessivel = lojas.some(l => parseInt(l.id,10) === parseInt(loja_id,10));
+  if (!acessivel) return false;                    // não tem acesso → não vaza entre lojas
+  _lojaAtiva = parseInt(loja_id, 10);
+  localStorage.setItem('loja_ativa', String(_lojaAtiva));
+  const sel = document.getElementById('seletor-loja');
+  if (sel) sel.value = String(_lojaAtiva);         // mantém o seletor do painel lateral em sincronia
+  return true;
 }
 
 function _aterrissarPorPapel(){
@@ -4836,6 +4857,15 @@ function _kanbanCard(p, s){
 
 async function abrirProjeto(nome_safe){
   try{
+    // Auto-alinhar a loja ativa à loja do projeto ANTES do fetch: assim /projetos/<nome>
+    // (e todas as chamadas seguintes) já vão com o X-Loja-Ativa correto. Sem isso, abrir um
+    // projeto de outra loja acessível daria 404 (handler é escopado por loja). Guarda de
+    // vazamento dentro de _alinharLojaAoProjeto: só troca para loja acessível.
+    const _pBase = (_projListaBase || []).find(x=>x.nome_safe===nome_safe);
+    if (_pBase && _pBase.loja_id && !_alinharLojaAoProjeto(_pBase.loja_id)){
+      showToast('Este projeto pertence a uma loja à qual você não tem acesso.', true);
+      return;
+    }
     const r = await fetch('/projetos/'+encodeURIComponent(nome_safe));
     const d = await r.json();
     if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
@@ -4843,6 +4873,7 @@ async function abrirProjeto(nome_safe){
     if (_cicloAberto) fecharCiclo();
     _cicloData = {};
     projetoAtivo = d.projeto;
+    if (projetoAtivo && projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);
     // Reset orçamento ao trocar de projeto
     _orcamentos = []; _orcamentoAtivoId = null; _orcAmbientesAtivos = null;
     // Atualizar sidebar com nome do projeto e cliente

@@ -96,6 +96,7 @@ def _enriquecer_projetos_com_status(projetos):
             if not ns:
                 continue
             meta = meta_map.get(ns)
+            p['loja_id']                = meta.loja_id    if meta else None
             p['status']                 = meta.status     if meta else None
             p['status_at']              = meta.status_at.isoformat() if meta and meta.status_at else None
             p['perdido_em']             = meta.perdido_em.isoformat() if meta and meta.perdido_em else None
@@ -2477,6 +2478,10 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": "Projeto nao encontrado"}, code=404)
                         return
                     _enriquecer_cliente_do_projeto(proj, db)   # contato sempre do cadastro vivo
+                    try:
+                        proj['loja_id'] = _meta.loja_id
+                    except Exception:
+                        pass
                     session_set("projeto_ativo", nome_safe)
                     self.send_json({"ok": True, "projeto": proj})
                 except Exception as e:

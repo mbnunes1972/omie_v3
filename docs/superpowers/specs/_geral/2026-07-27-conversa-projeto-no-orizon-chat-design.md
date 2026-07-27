@@ -54,6 +54,18 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
 - **Montagem da equipe no FECHAMENTO** (2ª assinatura → `fechado`, decisão 2026-07-27): resolve os
   automáticos, deixa as lacunas, e **notifica** — os auto-designados ("novo contrato, veja o
   cronograma") e os gerentes/diretores (e-mail + chat) com a equipe definida + as lacunas a preencher.
+- **TERCEIROS na equipe (decisão 2026-07-27).** Montador/Medidor/PE costumam ser **terceiros**, não
+  funcionários — e `Terceiro` já tem `funcao_id`. Então `candidatos_da_funcao` = **funcionários ∪
+  terceiros** da função. Terceiro **não é usuário** (não loga): participa como **EXTERNO dirigido**
+  (WhatsApp/telefone), mesma regra de cliente/arquiteto (thread interna privada). `equipe_do_projeto`
+  separa `membros` (funcionários → usuários internos) de `externos` (terceiros). UI: seção "Equipe
+  terceirizada".
+- **BLOQUEADOR INVERTIDO — gate de EXECUÇÃO por etapa (decisão 2026-07-27).** Além do bloqueador que
+  impede avançar, há o inverso: **uma etapa não pode ser EXECUTADA sem responsável definido**
+  (`mod_equipe.etapa_executavel` — definido OU 1 candidato; lacuna/sem-candidato = travado). Trava
+  **só a etapa**, não o fluxo → a **venda programada** fecha com equipe incompleta e cada etapa
+  (medição, PE, montagem) só executa quando seu responsável for indicado, o que pode vir **até a época
+  do pedido**.
 - **Externos (cliente/arquiteto) NÃO entram em `conversa_participantes`** — não são usuários. São
   alcançados por **envio externo dirigido** (o `EnvioExterno`/canal externo que já existe), e as
   respostas roteiam de volta pra conversa (roteamento de entrada já implementado).

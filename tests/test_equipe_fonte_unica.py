@@ -113,3 +113,61 @@ def test_funcionario_mapeia_para_usuario(app_db, seed):
     _etapa(app_db, p, "12", fid)
     r = _resolver(app_db, p, lid)
     assert uid in r["membros_usuarios"]
+
+
+# ── terceiros na equipe (participante externo) ─────────────────────────────────
+
+def _terceiro(app_db, loja_id, funcao_id, nome):
+    db = app_db.get_session()
+    try:
+        t = app_db.Terceiro(nome=nome, loja_id=loja_id, funcao_id=funcao_id)
+        db.add(t); db.commit(); return t.id
+    finally:
+        db.close()
+
+
+def test_terceiro_resolvido_como_externo(app_db, seed):
+    lid = seed["loja1_id"]; p = _proj(app_db, seed, "EqTer")
+    fid = _funcao(app_db, lid, "Montador QA3")
+    tid = _terceiro(app_db, lid, fid, "Terça Montador")       # 1 candidato terceiro
+    _etapa(app_db, p, "17", fid)
+    r = _resolver(app_db, p, lid)
+    assert r["membros"] == [] and r["lacunas"] == []          # auto, sem lacuna, sem funcionário
+    assert any(e["terceiro_id"] == tid and e["tipo"] == "terceiro" for e in r["externos"])
+
+
+def test_lacuna_conta_funcionario_e_terceiro(app_db, seed):
+    lid = seed["loja1_id"]; p = _proj(app_db, seed, "EqMix")
+    fid = _funcao(app_db, lid, "Medidor QA2")
+    _func(app_db, lid, fid, "Med Func"); _terceiro(app_db, lid, fid, "Med Terça")
+    _etapa(app_db, p, "10", fid)
+    r = _resolver(app_db, p, lid)
+    assert len(r["lacunas"]) == 1
+    assert {c["tipo"] for c in r["lacunas"][0]["candidatos"]} == {"funcionario", "terceiro"}
+
+
+# ── gate de execução (bloqueador invertido) ────────────────────────────────────
+
+def _gate(app_db, nome_safe, codigo, loja_id):
+    db = app_db.get_session()
+    try:
+        et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
+        return mod_equipe.etapa_executavel(db, loja_id, et)
+    finally:
+        db.close()
+
+
+def test_gate_execucao_por_etapa(app_db, seed):
+    lid = seed["loja1_id"]; p = _proj(app_db, seed, "EqGate")
+    f1 = _funcao(app_db, lid, "Medidor Gate1"); _func(app_db, lid, f1, "Único")
+    _etapa(app_db, p, "10", f1)                               # 1 candidato → executável
+    assert _gate(app_db, p, "10", lid) is True
+    f2 = _funcao(app_db, lid, "Montador Gate2")
+    a = _func(app_db, lid, f2, "A"); _terceiro(app_db, lid, f2, "B")
+    _etapa(app_db, p, "17", f2)                               # 2 candidatos (lacuna) → travado
+    assert _gate(app_db, p, "17", lid) is False
+    f3 = _funcao(app_db, lid, "Vazia Gate3")
+    _etapa(app_db, p, "18", f3)                               # 0 candidatos → travado
+    assert _gate(app_db, p, "18", lid) is False
+    _etapa(app_db, p, "19", f2, resp_func=a)                  # definido (apesar de vários) → executável
+    assert _gate(app_db, p, "19", lid) is True

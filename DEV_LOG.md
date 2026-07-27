@@ -1339,6 +1339,50 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
   ainda testa 409, agora com CPF válido). CPFs de teste válidos: `111.444.777-35`, `390.533.447-05`; CNPJ `11.222.333/0001-81`.
 - **Pendente:** merge desta branch na `main` + re-ingerir MCP.
 
+## ⏸️ ESTADO ATUAL (2026-07-27) — retomar aqui
+
+> **Frente CHAT → Central de Comunicação / "Orizon Chat" (omnichannel).** Tudo local na `main`,
+> nada em A/B/produção ainda.
+>
+> **1) Correções de contexto de loja (commits `d08e6c1`, `abf38f0`, `8771877`).** O painel de
+> conversa recusava mensagens por **contexto de loja partido**: o interceptor de `fetch` só
+> anexava `X-Loja-Ativa` às rotas `/api/`, então `/projetos/<nome>` e `/orcamentos/...` abriam no
+> default do backend enquanto a conversa (`/api/...`) usava `_lojaAtiva`. Correção: header em TODA
+> requisição same-origin; **auto-alinhar a loja ativa à loja do projeto** ao abrir/usar a conversa
+> (`_alinharLojaAoProjeto`, guarda anti-vazamento — só troca p/ loja acessível); backend expõe
+> `loja_id` na lista e no detalhe de projeto. **Fonte:** `lojas_acessiveis_ids` passou a **sempre
+> incluir a própria loja do usuário** (master da mãe vinha só com o PDV → loja ativa caía no PDV e
+> quebrava tudo).
+>
+> **2) Bug do compositor travado (commit `dbd53fb`).** Causa real do "não consigo escrever
+> mensagem": `aplicarBloqueioNegociacao` (lock de projeto assinado) pegava `input/textarea` dentro
+> de `#page-02` — e o modal da conversa estava aninhado lá → `#conv-texto` virava `readOnly` +
+> `.neg-locked`. Correção: excluir `#modal-conversa-proj` e `#modal-contatos-conf` do lock.
+>
+> **3) Spec da Central de Comunicação (commit `b87186a`):**
+> `docs/superpowers/specs/_geral/2026-07-27-central-comunicacao-omnichannel-design.md`. Inbox única,
+> "interno vs externo" vira transporte (web/WhatsApp/e-mail) da MESMA conversa; público = a loja;
+> canal por função (automático); destinatário definido ao abrir a conversa; anexos foto+arquivo;
+> ponte WhatsApp do funcionário por presença+espelho/template (regras Meta: janela 24h, sem
+> WhatsApp pessoal, identidade por celular cadastrado). Engloba a spec 2026-07-25 do chat do projeto.
+>
+> **4) Fatia 1 entregue (commit `ba63ad1`, suíte 1520 verde).** `Conversa.tipo`
+> (projeto|direct|grupo|publico) + `titulo` + `criado_por_id`; tabela `conversa_participantes`;
+> `ConversaMensagem.canal_segmento` (derivado da função). `mod_chat`: `get_or_create_direct`,
+> `criar_grupo`, `eh_participante`, `listar_inbox`, `serializar_conversa`,
+> `canal_segmento_do_usuario`. Endpoints `/api/comunicacao/{inbox,usuarios,conversas,
+> conversas/<id>/mensagens}` (auth por participante, tudo escopado por loja). Frontend: entrada na
+> sidebar + modal global top-level (fora do `#page-02`) com inbox/thread/nova mensagem. Testes:
+> `tests/test_comunicacao.py` (12). Rename inicial Conversa→Mensageria (`8792d93`).
+>
+> **5) EM ANDAMENTO — Fatia 2 (2026-07-27):** rename "Comunicação"→**"Orizon Chat"**; campo
+> **Assunto** (seletor: Conversa Livre + lista de projetos + assuntos custom com botão "criar
+> assunto"); **Gerente/Diretor veem TODAS as conversas** + painel de administração interno com
+> filtro por assunto/participante (capacidade `ver_todas_conversas`). Público-da-loja e não-lidos
+> ficaram para uma fatia seguinte.
+>
+> **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
+
 ## ⏸️ ESTADO ATUAL (2026-07-23) — retomar aqui
 
 > **FAXINA Omie+SQLite COMPLETA na branch `chore/faxina-omie-sqlite`** (empilhada sobre

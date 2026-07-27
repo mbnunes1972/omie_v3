@@ -277,6 +277,21 @@ def etapa_executavel(db, loja_id, etapa):
     return responsavel_da_etapa(db, loja_id, etapa)["resolvido"]
 
 
+def montagem_lacunas(db, loja_id, papel, atribuicoes, ambientes):
+    """GATE DE EXECUÇÃO por AMBIENTE de montagem/assistência (etapas 17/18, responsável no Mapa de
+    Atribuições, não por função única). Mesma regra do bloqueador invertido, mas por ambiente: só
+    trava na LACUNA — há **>1 candidato** de montagem na loja E algum ambiente sem responsável no
+    Mapa (nem específico nem projeto-inteiro). 0/1 candidato ⇒ sem_candidato/auto, NÃO trava
+    (retrocompatível: projetos sem Mapa de montagem seguem como hoje). Puro sobre `atribuicoes`
+    (dicts) e `ambientes` (ids). Retorna a lista de pool_ambiente_id em lacuna (vazia = liberado)."""
+    import mod_escopo
+    cm = candidatos_montagem(db, loja_id)
+    if len(cm.get("funcionarios", [])) + len(cm.get("terceiros", [])) <= 1:
+        return []
+    return [amb for amb in (ambientes or [])
+            if mod_escopo.resolver_responsavel(atribuicoes, amb, papel) is None]
+
+
 def equipe_do_projeto(db, nome_safe, loja_id):
     """Equipe do projeto derivada das FUNÇÕES responsáveis das etapas (fonte única).
 

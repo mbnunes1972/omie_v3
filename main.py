@@ -9387,6 +9387,9 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    _blk = _bloqueio_execucao_etapa(db, nome_safe, loja_id, "11")   # gate: PE precisa do responsável
+                    if _blk:
+                        self.send_json({"ok": False, "erro": _blk}, code=409); return
                     tipo_esperado = mod_ciclo.tipo_doc_de(codigo)
                     if not tipo_esperado:
                         self.send_json({"ok": False, "erro": "Subfase de PE inválida."}, code=400); return
@@ -9586,6 +9589,9 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    _blk = _bloqueio_execucao_etapa(db, nome_safe, loja_id, "11")   # gate: PE precisa do responsável
+                    if _blk:
+                        self.send_json({"ok": False, "erro": _blk}, code=409); return
                     if codigo not in mod_ciclo.SUBFASES_PE:
                         self.send_json({"ok": False, "erro": "Subfase de PE inválida."}, code=400); return
                     req = json.loads(body or b'{}')
@@ -10706,6 +10712,20 @@ class Handler(BaseHTTPRequestHandler):
                             etapa_cod, tem_xml, numeros_txt, relatorio_txt)
                         if not ok_op:
                             self.send_json({"ok": False, "erro": erro_op}, code=400)
+                            return
+                    # Gate de execução de MONTAGEM/ASSISTÊNCIA (17/18): responsável por AMBIENTE no Mapa.
+                    # Só trava na LACUNA (>1 candidato e ambiente sem responsável) — mesma regra do
+                    # bloqueador invertido, mas por ambiente (fecha o gate de PE/montagem do chat).
+                    if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and etapa_cod in ("17", "18"):
+                        import mod_equipe as _meq
+                        faltam = _meq.montagem_lacunas(
+                            db, loja_id, _ETAPA_PAPEL.get(etapa_cod),
+                            _atribuicoes_dicts(db, nome_safe),
+                            [a["id"] for a in _ambientes_do_projeto(db, nome_safe)])
+                        if faltam:
+                            self.send_json({"ok": False, "erro": "Defina o responsável de montagem no "
+                                "Mapa de Atribuições para %d ambiente(s) antes de concluir: a função tem "
+                                "mais de um candidato." % len(faltam)}, code=409)
                             return
                     # Aprovação financeira (8/11d): exige login+senha de quem pode aprovar.
                     aprovador = None

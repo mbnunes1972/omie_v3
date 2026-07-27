@@ -1453,8 +1453,16 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > etapa; Equipe de Montagem = Mapa de Atribuições; Gerente Comercial/SAC/Supervisor informativos;
 > `equipe_json` aposentado. **MODO PRIVADO REMOVIDO** (criação tirada da UI+backend; `enviar_mensagem`/
 > `serializar_mensagem`/`listar_mensagens` sem privada; capacidade `ver_mensagem_privada` retirada;
-> colunas `privada`/`corpo_cifrado` ficam legado; `test_chat_fatia4.py` removido). **Falta:** só o gate
-> de PE/montagem. **Deploy:** VPS A atualizada; **VPS B intocada** na `V_pre_teste`; produção pendente.
+> colunas `privada`/`corpo_cifrado` ficam legado; `test_chat_fatia4.py` removido).
+> **GATE DE PE/MONTAGEM — FEITO (2026-07-27, fecha o item 10 e a frente do Orizon Chat).** O
+> bloqueador invertido passa a cobrir: (a) **PE (etapa 11)** — o upload de documento de subfase e a
+> conclusão travam (409) enquanto a função do PE estiver em LACUNA (`_bloqueio_execucao_etapa(...,"11")`
+> nos endpoints `/ciclo/<subfase>/documento` e `/ciclo/<subfase>/concluir`); (b) **Montagem/Assistência
+> (17/18)** — responsável por AMBIENTE no Mapa: `mod_equipe.montagem_lacunas` trava a conclusão (PATCH
+> `/ciclo/17|18`) só quando há **>1 candidato** de montagem e algum ambiente sem responsável (0/1
+> candidato = auto/sem_candidato, retrocompatível — projetos sem Mapa seguem como hoje). Testes:
+> `test_gate_pe_montagem.py` (4). **Deploy:** VPS A na versão anterior; **VPS B intocada** na
+> `V_pre_teste`; produção pendente.
 >
 > **11) Frente "Desmembramento OPERACIONAL por ambiente desde a medição" (spec
 > `2026-07-27-desmembramento-operacional-desde-medicao-design.md`).** Dor: a obra do cliente segura

@@ -19,16 +19,24 @@ com fração congelada do Val_Cont, aprovação/liquidação sucessivas) e é an
 (11c)**. Mas: (a) começa tarde demais (PE), (b) não há estado "retido pela obra", (c) o `parcela_id` do
 `CicloEtapa` quase não é usado no fluxo operacional — a **status operacional segue no nível do projeto**.
 
-## 2. Princípio central (decisão do lojista 2026-07-27)
+## 2. Princípio central (decisão do lojista 2026-07-27, CORRIGIDO)
 
-**O ciclo OPERACIONAL depende da obra; o FINANCEIRO é DESACOPLADO.**
-- Operacional: ambientes retidos pela obra seguram só a si; os prontos avançam
-  medição→PE→produção→entrega→montagem de forma independente.
-- Financeiro: os **pagamentos correm no cronograma acordado** — o atraso da obra do cliente **não
-  interrompe os pagamentos devidos** (é comum o cliente quitar antes do fim da obra). Ajustes
-  financeiros podem ocorrer, mas são **exceção e explícitos**, nunca disparados automaticamente pelo
-  retido operacional. Logo, o desmembramento OPERACIONAL **não** reparticiona nem congela parcelas
-  financeiras.
+Há DUAS coisas financeiras e elas se comportam diferente:
+
+- **Reconhecimento contábil / confirmação das provisões por etapa ACOMPANHA o operacional.** A
+  provisão de uma etapa só é **reconhecida quando o operacional reflete a execução** — não se
+  aprova/confirma o financeiro do PE antes do PE existir. No modelo vigente (`CLAUDE.md`): no
+  contrato as rubricas nascem **ativo diferido** (`1.1.06.0X × 2.1.04.0X`, sem tocar a DRE); o
+  **reconhecimento pleno é na NF-e** (`reconhecer_despesas_nfe`). Logo, **etapa RETIDA ⇒ operacional
+  retido + reconhecimento financeiro daquela etapa retido (diferido)**, juntos.
+- **Só os RECEBIMENTOS do cliente são desacoplados.** Os pagamentos correm no cronograma acordado; o
+  atraso da obra **não interrompe os pagamentos devidos** (`recebimento_venda` abate `1.1.02`,
+  independente da execução).
+
+**Consequência de modelo:** o grupo OPERACIONAL e a PARCELA financeira são a **MESMA unidade** (não
+dois agrupamentos). O `status` da parcela (`aguardando → em_aprovacao → liquidada`) e a NF-e parcial
+(`val_cont_congelado`) são **dirigidos pela execução operacional** daquele grupo. Só o recebimento
+corre por fora.
 
 ## 3. Onde nasce: a partir da SOLICITAÇÃO DE MEDIÇÃO (etapa 9)
 
@@ -39,18 +47,28 @@ obra revela quais ambientes estão prontos. Ganchos que já existem e casam com 
 - Medição **parcial** (`mod_medicao`, `ambientes_aprovados`) — já registra ambientes aprovados; passa a
   ser a porta de entrada do "grupo pronto vs grupo retido".
 
-## 4. Modelo (reuso + o que falta)
+## 4. Modelo — parcela UNIFICADA (operacional + reconhecimento financeiro)
 
-- **Grupo operacional = reusar `ParcelaProjeto`/`ParcelaAmbiente`** como a unidade que percorre o ciclo,
-  MAS sem os campos financeiros dirigindo (fração/val_cont congelados continuam sendo do desmembramento
-  FINANCEIRO, opcional e separado). Alternativa: um agrupamento operacional próprio se misturar com o
-  financeiro poluir — decisão de implementação (ver §7).
+Decisão de modelo (2026-07-27): a parcela é **uma unidade só** — reusa `ParcelaProjeto`/
+`ParcelaAmbiente`, que já carrega o `val_cont_congelado` (base da NF-e parcial) e o `status`
+(`aguardando|em_aprovacao|liquidada`). NÃO se cria um agrupamento operacional separado, porque o
+reconhecimento contábil precisa ACOMPANHAR a execução operacional do grupo (§2).
+
+- **Nasce na MEDIÇÃO (9), não só no PE:** hoje `POST /parcelas` é ancorado no PE (11c); a extensão é
+  permitir criar a parcela desde a etapa 9 (o congelamento do `val_cont_congelado` já é puro,
+  `mod_parcelas.congelar_parcelas`, e independe de estar no PE).
 - **`CicloEtapa.parcela_id` passa a ser USADO no operacional:** as etapas 9–17 ganham linha por
-  grupo/parcela, com status próprio. `parcela_id` NULL = projeto inteiro (legado intacto).
-- **Estado novo `retido` (aguardando obra)** para o ambiente/grupo: sai do fluxo (não bloqueia os
-  demais) até ser **liberado**, quando reentra na fila da sua etapa.
-- **Gate de execução por grupo:** o "bloqueador invertido" (`etapa_executavel`) e o gate de execução
-  passam a valer **por parcela/grupo**, não pelo projeto.
+  parcela, com status próprio. `parcela_id` NULL = projeto inteiro (legado intacto).
+- **Estado novo `retido` (aguardando obra)** na parcela: sai do fluxo operacional (não bloqueia as
+  demais) até ser **liberada**; enquanto retida, o **reconhecimento contábil daquela parcela fica
+  diferido** (não emite NF-e / não reconhece despesa — segue como ativo diferido `1.1.06`).
+- **Gate de execução por parcela:** o "bloqueador invertido" (`etapa_executavel`) passa a valer por
+  parcela.
+- **Reconhecimento dirigido pela execução:** quando a parcela executa uma etapa que reconhece
+  (NF-e/etapa 15), aí sim `reconhecer_despesas_nfe` roda **para aquela parcela** (o `val_cont_congelado`
+  é a base). `aguardando → em_aprovacao → liquidada` segue o operacional do grupo.
+- **Recebimento do cliente por fora:** `recebimento_venda` (abate `1.1.02`) segue o cronograma de
+  pagamento, independentemente de a parcela estar retida (§2).
 
 ## 5. Fluxo alvo
 
@@ -58,8 +76,9 @@ obra revela quais ambientes estão prontos. Ganchos que já existem e casam com 
    **retidos pela obra** (ficam em `retido`). Pode-se desmembrar depois também (a obra libera aos poucos).
 2. Cada grupo pronto percorre medição→PE→produção→entrega→montagem com **status por grupo**.
 3. Ambiente **liberado** pela obra reentra na etapa correspondente (nova medição/continuação).
-4. **Financeiro segue seu cronograma** — pagamentos devidos não são interrompidos; sem repartição
-   automática. Ajuste financeiro (se necessário) é ação explícita à parte.
+4. **Reconhecimento contábil acompanha:** a parcela retida tem suas provisões **diferidas** (não
+   reconhece / não emite NF-e) até executar; ao executar a etapa que reconhece, o matching roda para
+   aquela parcela. **Só o recebimento do cliente** corre por fora (cronograma de pagamento).
 
 ## 6. Impactos a mapear (antes de implementar)
 
@@ -74,8 +93,9 @@ obra revela quais ambientes estão prontos. Ganchos que já existem e casam com 
 
 ## 7. Decisões abertas (para fechar antes de codar)
 
-1. **Reusar `ParcelaProjeto` para o operacional** (com os campos financeiros nulos/ignorados) **ou**
-   criar um agrupamento operacional próprio (`grupo_operacional`)? (Menos acoplamento vs mais tabelas.)
+1. ~~Reusar `ParcelaProjeto` ou criar grupo próprio?~~ **RESOLVIDA (2026-07-27): parcela UNIFICADA** —
+   reusa `ParcelaProjeto` (operacional + reconhecimento financeiro são a mesma unidade, §2/§4). Só os
+   recebimentos do cliente ficam por fora.
 2. O "retido pela obra" é por **ambiente** ou por **grupo** (parcela)?
 3. Desmembrar exige gerência, ou o operador da medição pode? (Provável: gerência define; medidor sinaliza.)
 4. Quando a obra libera, é **nova medição** do ambiente ou **continuação** do ponto onde parou?

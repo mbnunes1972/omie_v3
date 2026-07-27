@@ -550,7 +550,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="sb-secao">
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
-      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat</div>
+      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="cc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -2926,6 +2926,7 @@ function _atualizarUIUsuario(){
   if(mpLim)   mpLim.textContent   = `Limite de desconto: ${(_usuarioAtual?.limite_desconto ?? 10)}%`;
   if(mpIni)   mpIni.textContent   = inicial;
   _renderSeletorLoja();
+  if(typeof ccPollBadge === 'function') ccPollBadge();   // badge de não-lidos do Orizon Chat
 }
 
 function _renderSeletorLoja(){
@@ -12076,20 +12077,39 @@ async function ccCarregarInbox(){
   catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
   if(!d.ok){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
   _ccInbox = d.conversas || [];
+  ccAtualizarBadgeTotal(_ccInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
   if(!_ccInbox.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa ainda.</div>'; return; }
   box.innerHTML = _ccInbox.map((c,i)=>{
-    const icon = c.tipo === 'grupo' ? 'ti-users' : 'ti-user';
+    const icon = c.tipo === 'publico' ? 'ti-speakerphone' : (c.tipo === 'grupo' ? 'ti-users' : 'ti-user');
     const ativo = (c.id === _ccConvAtiva);
     const seg = (c.assunto && c.assunto.tipo !== 'livre' && c.assunto.label) ? c.assunto.label : '';
+    const nl = c.nao_lidas || 0;
+    const badge = nl > 0 ? '<span style="float:right;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center">'+(nl>99?'99+':nl)+'</span>' : '';
     return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;'
       + (ativo ? 'background:var(--surface-2)' : '') + '"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\''+(ativo?'var(--surface-2)':'')+'\'">'
-      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')
+      + '<div style="font-weight:'+(nl>0?'800':'700')+';font-size:13px">'+badge+'<i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')
       + (seg ? ' <span style="font-weight:400;color:var(--accent);font-size:11px">· '+esc(seg)+'</span>' : '') + '</div>'
       + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
       + '</div>';
   }).join('');
 }
+
+function ccAtualizarBadgeTotal(total){
+  const b = document.getElementById('cc-badge');
+  if(!b) return;
+  if(total > 0){ b.textContent = total > 99 ? '99+' : total; b.style.display = 'inline-block'; }
+  else b.style.display = 'none';
+}
+async function ccPollBadge(){
+  const nav = document.getElementById('nav-central-com');
+  if(!_usuarioAtual || !nav || nav.style.display === 'none') return;
+  try{
+    const d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json());
+    if(d && d.ok) ccAtualizarBadgeTotal((d.conversas||[]).reduce((s,c)=>s+(c.nao_lidas||0),0));
+  }catch(e){}
+}
+setInterval(ccPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só com usuário/loja)
 
 async function ccAbrirConversa(idx){
   const c = _ccInbox[idx];

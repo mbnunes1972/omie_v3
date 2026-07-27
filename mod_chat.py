@@ -405,11 +405,69 @@ def listar_todas_conversas(db, loja_id, participante_id=None,
     return itens
 
 
-def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
+def get_or_create_publico(db, loja_id):
+    """Mural PÚBLICO da loja (Fatia 3): conversa única tipo='publico'. Audiência = a loja inteira
+    (implícita, sem participantes). get-or-create idempotente."""
+    c = (db.query(Conversa)
+           .filter_by(loja_id=loja_id, tipo="publico")
+           .order_by(Conversa.id.asc()).first())
+    if c is None:
+        c = Conversa(loja_id=loja_id, tipo="publico", titulo="Mural da loja",
+                     assunto_tipo="livre")
+        db.add(c); db.flush()
+    return c
+
+
+def pode_acessar_conversa(db, c, loja_id, usuario_id):
+    """Leitura/escrita numa conversa: público = qualquer usuário da loja; direct/grupo =
+    participante. (Oversight de gerente é tratado à parte, só para leitura.)"""
+    if c is None or c.loja_id != loja_id:
+        return False
+    if c.tipo == "publico":
+        return True
+    return eh_participante(db, c.id, usuario_id)
+
+
+def _ultimo_id_mensagem(db, conversa_id):
+    r = (db.query(ConversaMensagem.id).filter_by(conversa_id=conversa_id)
+           .order_by(ConversaMensagem.id.desc()).first())
+    return r[0] if r else 0
+
+
+def marcar_lido(db, conversa, usuario_id):
+    """Marca a conversa como lida até a última mensagem para o usuário. Para público (sem linha de
+    participante) cria a linha SÓ para guardar o marcador de leitura — não muda a audiência."""
+    ultimo = _ultimo_id_mensagem(db, conversa.id)
+    p = (db.query(ConversaParticipante)
+           .filter_by(conversa_id=conversa.id, usuario_id=usuario_id).first())
+    if p is None:
+        if conversa.tipo != "publico":
+            return   # não-participante em direct/grupo (ex.: gerente em oversight) não marca
+        p = ConversaParticipante(conversa_id=conversa.id, usuario_id=usuario_id,
+                                 papel="membro", lido_ate_mensagem_id=ultimo)
+        db.add(p)
+    else:
+        p.lido_ate_mensagem_id = ultimo
+    db.flush()
+
+
+def _conta_nao_lidas(db, conversa_id, usuario_id, lido_ate):
+    """Mensagens acima do marcador de leitura que NÃO foram escritas pelo próprio usuário."""
+    return (db.query(ConversaMensagem)
+              .filter(ConversaMensagem.conversa_id == conversa_id,
+                      ConversaMensagem.id > (lido_ate or 0),
+                      (ConversaMensagem.autor_usuario_id != usuario_id)
+                      | (ConversaMensagem.autor_usuario_id.is_(None)))
+              .count())
+
+
+def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_lidas=0):
     """Item da inbox: id/tipo/título de exibição + prévia da última mensagem. Para direct, o
     'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`)."""
     titulo = c.titulo
     outro_id = None
+    if c.tipo == "publico":
+        titulo = "📣 Mural da loja"
     if c.tipo == "direct":
         parts = participantes if participantes is not None else [
             p.usuario_id for p in db.query(ConversaParticipante)
@@ -433,6 +491,7 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
         "id": c.id, "tipo": c.tipo, "titulo": titulo,
         "projeto_nome": c.projeto_nome, "outro_usuario_id": outro_id,
         "assunto": _assunto_do(db, c),
+        "nao_lidas": nao_lidas,
         "ultima_previa": previa[:120],
         "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
         "criado_em": c.criado_em.isoformat() if c.criado_em else None,
@@ -440,18 +499,25 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
 
 
 def listar_inbox(db, loja_id, usuario_id):
-    """Conversas direct/grupo de que o usuário participa, na loja, mais recentes primeiro."""
-    conv_ids = [r[0] for r in db.query(ConversaParticipante.conversa_id)
-                .filter_by(usuario_id=usuario_id).all()]
-    if not conv_ids:
-        return []
+    """Inbox: o mural PÚBLICO da loja + conversas direct/grupo do usuário, mais recentes primeiro,
+    cada uma com contagem de não-lidas. O público é sempre incluído (audiência = a loja)."""
+    # marcador de leitura por conversa (linhas de participante do usuário)
+    lido = {p.conversa_id: (p.lido_ate_mensagem_id or 0)
+            for p in db.query(ConversaParticipante).filter_by(usuario_id=usuario_id).all()}
+    conv_ids = list(lido.keys())
     convs = (db.query(Conversa)
-               .filter(Conversa.id.in_(conv_ids), Conversa.loja_id == loja_id,
-                       Conversa.tipo.in_(("direct", "grupo")))
-               .all())
-    itens = [serializar_conversa(db, c, usuario_id) for c in convs]
-    itens.sort(key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
-    return itens
+               .filter(Conversa.id.in_(conv_ids or [-1]), Conversa.loja_id == loja_id,
+                       Conversa.tipo.in_(("direct", "grupo"))).all()) if conv_ids else []
+    pub = get_or_create_publico(db, loja_id)
+    convs = [pub] + [c for c in convs if c.id != pub.id]
+    itens = [serializar_conversa(db, c, usuario_id,
+                                 nao_lidas=_conta_nao_lidas(db, c.id, usuario_id, lido.get(c.id, 0)))
+             for c in convs]
+    # público sempre no topo; o resto por recência (desc)
+    pubs = [x for x in itens if x["tipo"] == "publico"]
+    resto = sorted([x for x in itens if x["tipo"] != "publico"],
+                   key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
+    return pubs + resto
 
 
 # ── Resolução por Função (decisões 6/9 — Financeiro/Logística/SAC) ───────────

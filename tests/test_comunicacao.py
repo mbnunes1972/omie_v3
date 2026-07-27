@@ -238,6 +238,64 @@ def test_admin_le_conversa_que_nao_participa(http_client_factory, app_db, seed):
     assert st == 200 and [m["corpo"] for m in b["mensagens"]] == ["particular"]
 
 
+# ── Fatia 3: mural público da loja ─────────────────────────────────────────────
+
+def _publico_id(client):
+    b = client.get("/api/comunicacao/inbox")[1]
+    pub = [x for x in b["conversas"] if x["tipo"] == "publico"]
+    assert pub, "mural público não veio na inbox"
+    return pub[0]["id"]
+
+
+def test_publico_na_inbox_de_todos(http_client_factory, seed):
+    for who in ("dir_l1", "cons_l1"):
+        c = _login(http_client_factory, who)
+        b = c.get("/api/comunicacao/inbox")[1]
+        pub = [x for x in b["conversas"] if x["tipo"] == "publico"]
+        assert pub and pub[0]["titulo"] == "📣 Mural da loja"
+
+
+def test_publico_todos_leem_e_postam(http_client_factory, seed):
+    autor = _login(http_client_factory, "cons_l1")
+    pid = _publico_id(autor)
+    st, b = autor.post("/api/comunicacao/conversas/%d/mensagens" % pid, {"corpo": "aviso geral"})
+    assert st == 201, b
+    # outro usuário da loja (não "participante") lê o mural
+    leitor = _login(http_client_factory, "dir_l1")
+    st, b = leitor.get("/api/comunicacao/conversas/%d/mensagens" % pid)
+    assert st == 200 and "aviso geral" in [m["corpo"] for m in b["mensagens"]]
+
+
+def test_publico_isolado_por_loja(http_client_factory, seed):
+    c1 = _login(http_client_factory, "dir_l1"); p1 = _publico_id(c1)
+    c2 = _login(http_client_factory, "dir_l2"); p2 = _publico_id(c2)
+    assert p1 != p2                                             # cada loja tem o seu
+    assert c2.get("/api/comunicacao/conversas/%d/mensagens" % p1)[0] == 404   # não cruza loja
+
+
+# ── Fatia 3: não-lidos ──────────────────────────────────────────────────────---
+
+def test_nao_lidos_conta_e_zera(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    # assunto próprio → conversa NOVA (isola do estado de outros testes do módulo)
+    aid = dono.post("/api/comunicacao/assuntos", {"nome": "NaoLidos QA"})[1]["assunto"]["id"]
+    cid = dono.post("/api/comunicacao/conversas",
+                    {"tipo": "direct", "usuario_id": alvo,
+                     "assunto_tipo": "custom", "assunto_id": aid})[1]["conversa"]["id"]
+    dono.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "m1"})
+    dono.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "m2"})
+    outro = _login(http_client_factory, "cons_l1")
+    item = [x for x in outro.get("/api/comunicacao/inbox")[1]["conversas"] if x["id"] == cid][0]
+    assert item["nao_lidas"] == 2                                # 2 mensagens do outro
+    outro.get("/api/comunicacao/conversas/%d/mensagens" % cid)   # abrir marca como lido
+    item = [x for x in outro.get("/api/comunicacao/inbox")[1]["conversas"] if x["id"] == cid][0]
+    assert item["nao_lidas"] == 0
+    # as PRÓPRIAS mensagens não contam como não-lidas para quem escreveu
+    item_dono = [x for x in dono.get("/api/comunicacao/inbox")[1]["conversas"] if x["id"] == cid][0]
+    assert item_dono["nao_lidas"] == 0
+
+
 # ── auth ────────────────────────────────────────────────────────────────────---
 
 def test_inbox_exige_login(http_client_factory, seed):

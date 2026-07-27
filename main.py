@@ -2687,8 +2687,9 @@ class Handler(BaseHTTPRequestHandler):
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     import mod_chat
-                    self.send_json({"ok": True,
-                                    "conversas": mod_chat.listar_inbox(db, loja_id, usuario["id"])})
+                    _inbox = mod_chat.listar_inbox(db, loja_id, usuario["id"])
+                    db.commit()   # get_or_create_publico pode ter criado o mural da loja
+                    self.send_json({"ok": True, "conversas": _inbox})
                 finally:
                     db.close()
                 return
@@ -2791,12 +2792,15 @@ class Handler(BaseHTTPRequestHandler):
                     import mod_chat
                     from database import Conversa as _CV_get
                     conv = db.get(_CV_get, conv_id)
-                    # Leitura: participante OU gerente/diretor (ver_todas_conversas — oversight).
+                    # Leitura: participante/público OU gerente/diretor (ver_todas_conversas).
                     _admin_chat = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
                     if (conv is None or conv.loja_id != loja_id
-                            or not (mod_chat.eh_participante(db, conv_id, usuario["id"]) or _admin_chat)):
+                            or not (mod_chat.pode_acessar_conversa(db, conv, loja_id, usuario["id"])
+                                    or _admin_chat)):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
+                    # marca como lida (não p/ oversight de não-participante — marcar_lido já filtra)
+                    mod_chat.marcar_lido(db, conv, usuario["id"]); db.commit()
                     self.send_json({"ok": True,
                                     "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"]),
                                     "mensagens": mod_chat.listar_mensagens(
@@ -4974,8 +4978,10 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat
                 from database import Conversa as _CV_post
                 conv = db.get(_CV_post, conv_id)
+                # Postar: participante (direct/grupo) ou qualquer usuário da loja (público).
+                # Oversight de gerente NÃO permite postar em DM alheia — só ler.
                 if (conv is None or conv.loja_id != loja_id
-                        or not mod_chat.eh_participante(db, conv_id, usuario["id"])):
+                        or not mod_chat.pode_acessar_conversa(db, conv, loja_id, usuario["id"])):
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 dd = json.loads(body or b'{}')
                 seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])

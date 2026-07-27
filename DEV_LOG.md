@@ -1386,7 +1386,17 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (filtro por assunto/participante; leitura de qualquer conversa da loja — oversight, sem postar).
 > Frontend: seletor de assunto + criar assunto na "Nova mensagem"; botão "Administração" no header
 > (gated) com lista filtrável e thread em modo leitura. Testes: +8 em `test_comunicacao.py` (20 no
-> total) + metadado de capacidade. Público-da-loja e **não-lidos ficaram para a Fatia 3**.
+> total) + metadado de capacidade. Modal "criar assunto" no design (`promptPopup` temático).
+>
+> **6) Fatia 3 entregue (suíte 1531 verde).** **Mural público da loja:** `get_or_create_publico`
+> (conversa única tipo='publico' por loja, audiência = a loja inteira, sem participantes);
+> `pode_acessar_conversa` (público = qualquer usuário da loja; direct/grupo = participante);
+> aparece sempre no topo da inbox ("📣 Mural da loja"), todos leem e postam; isolado por loja.
+> **Não-lidos:** `marcar_lido` (auto ao abrir a conversa, via `lido_ate_mensagem_id`;
+> para público cria a linha de participante só como marcador), `_conta_nao_lidas` (exclui as
+> próprias mensagens). `listar_inbox` agora inclui o público e devolve `nao_lidas` por conversa.
+> Frontend: badge de não-lidas por item + total na entrada da sidebar (poll ~45s). Testes: +5
+> (23 no total). **Falta da frente (fatias seguintes):** anexos (foto/arquivo) e a ponte WhatsApp.
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

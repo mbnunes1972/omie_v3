@@ -345,6 +345,27 @@ def notificar_conversa(db, conversa, mensagem, autor_id):
     return enviados
 
 
+def notificar_gerentes_email(db, mensagem, destinatarios, corpo):
+    """Envia (config-gated) um e-mail a cada destinatário [{id, email}] — ex.: gerentes/diretores
+    avisados das lacunas no fechamento. Sem SMTP → 'pendente_config' (nada é enviado). Retorna os
+    EnvioExterno criados. Não commita."""
+    envs = []
+    for d in (destinatarios or []):
+        email = (d.get("email") or "").strip()
+        if not email:
+            continue
+        env = registrar_envio(db, mensagem, "email", None, "usuario", d.get("id"), email)
+        if env.status == "enfileirado":
+            ok, mid, err = despachar(env, corpo)
+            env.status = "enviado" if ok else "falhou"
+            env.id_externo = mid if ok else None
+            if err:
+                env.erro = err
+        envs.append(env)
+    db.flush()
+    return envs
+
+
 def processar_entrada_usuario(db, remetente, texto):
     """Resposta do FUNCIONÁRIO pelo WhatsApp: casa o número com um usuário e a posta como ELE na
     conversa da última notificação que recebeu. Retorna {status, conversa_id} ou None se não é um

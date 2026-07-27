@@ -52,8 +52,12 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
   - **Override manual (gerente):** `GET/POST /api/comunicacao/conversas/<id>/participantes`
     (`mod_chat.listar_participantes`/`gerir_participante`). GET = participante/gerência (devolve
     `origem` + `pode_gerir`); POST add|remove = só `ver_todas_conversas`. Front: botão "Membros" na
-    conversa do projeto → painel com badges auto/manual + adicionar/remover. Falta: e-mail de lacunas
-    do fechamento, convergência do roster de 7 papéis, gate de PE/montagem, remover modo privado.
+    conversa do projeto → painel com badges auto/manual + adicionar/remover.
+  - **E-mail de lacunas no fechamento** (IMPLEMENTADO): havendo lacunas, o hook do fechamento envia
+    e-mail aos gerentes/diretores da loja (`ver_todas_conversas` + e-mail) com o projeto + as funções
+    a definir (`mod_chat_externo.notificar_gerentes_email`, config-gated — sem SMTP fica
+    `pendente_config`). Os auto-designados já veem o resumo na inbox (são membros da conversa).
+    **Falta:** convergência do roster de 7 papéis, gate de PE/montagem, remover modo privado.
 - **Derivação do conjunto interno D — FONTE ÚNICA por FUNÇÃO (decisão 2026-07-27).** A origem é a
   **função responsável de cada etapa** (`CicloEtapa.funcao_responsavel_id`, vinda do Cronograma Padrão
   da loja — data-driven). O funcionário é **derivado**: **1 candidato ativo → automático**; **>1 →

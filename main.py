@@ -8961,11 +8961,27 @@ class Handler(BaseHTTPRequestHandler):
                             _eq = _meq.equipe_do_projeto(db, nome_safe, loja_id)
                             _mchat_f.sincronizar_participantes_projeto(db, _conv, _eq["membros_usuarios"])
                             _falta = ", ".join(l["funcao_nome"] or "?" for l in _res["lacunas"]) or "nenhuma"
-                            _mchat_f.enviar_mensagem(
+                            _summary = _mchat_f.enviar_mensagem(
                                 db, _conv, None,
                                 "📋 Contrato fechado — equipe montada. Responsáveis automáticos "
                                 "definidos: %d. Funções a definir (ação gerencial): %s."
                                 % (len(_res["definidos"]), _falta), permitir_vazio=True)
+                            # E-mail aos gerentes/diretores QUANDO há lacunas (config-gated: sem SMTP
+                            # nasce 'pendente_config', nada é enviado). Os auto-designados já veem o
+                            # resumo na inbox (são membros da conversa do projeto).
+                            if _res["lacunas"]:
+                                try:
+                                    import mod_chat_externo as _mce_f
+                                    _gers = [{"id": u.id, "email": u.email} for u in db.query(Usuario)
+                                             .filter(Usuario.loja_id == loja_id, Usuario.ativo == 1).all()
+                                             if (u.email or "").strip()
+                                             and perfis.pode(u.nivel, "ver_todas_conversas")]
+                                    _corpo_mail = ("Novo projeto contratado: %s.\nFunções a definir "
+                                                   "(mais de um candidato): %s.\nAbra o Orizon Chat "
+                                                   "para indicar os responsáveis." % (nome_safe, _falta))
+                                    _mce_f.notificar_gerentes_email(db, _summary, _gers, _corpo_mail)
+                                except Exception as _email:
+                                    print("[EQUIPE] e-mail de lacunas falhou:", _email)
                             db.commit()
                         except Exception as _eq:
                             db.rollback(); print("[EQUIPE] montar_equipe_no_fechamento falhou:", _eq)

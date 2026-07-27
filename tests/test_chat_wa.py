@@ -98,3 +98,22 @@ def test_entrada_de_numero_desconhecido_none(app_db, seed):
     db = app_db.get_session()
     assert wa.processar_entrada_usuario(db, "55 00 00000-0000", "quem sou eu") is None
     db.close()
+
+
+def test_notificar_gerentes_email_config_off(app_db, seed, monkeypatch):
+    for k in ("ORIZON_SMTP_HOST", "ORIZON_SMTP_PORT", "ORIZON_SMTP_USER",
+              "ORIZON_SMTP_PASS", "ORIZON_SMTP_FROM"):
+        monkeypatch.delenv(k, raising=False)          # garante SMTP OFF (nada é enviado)
+    db = app_db.get_session()
+    try:
+        u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
+        conv = mod_chat.get_or_create_mural(db, u.loja_id); db.flush()
+        msg = mod_chat.enviar_mensagem(db, conv, u.id, "aviso"); db.flush()
+        envs = wa.notificar_gerentes_email(
+            db, msg, [{"id": 1, "email": "ger@x.com"}, {"id": 2, "email": ""}], "corpo do aviso")
+        db.commit()
+        assert len(envs) == 1                          # só o destinatário COM e-mail
+        assert envs[0].status == "pendente_config"     # SMTP off → nada enviado
+        assert envs[0].meio == "email" and envs[0].destino == "ger@x.com"
+    finally:
+        db.close()

@@ -166,15 +166,14 @@ def test_criar_e_listar_assunto(http_client_factory, app_db, seed):
     assert "Proj_L1" in [p["nome_safe"] for p in b["projetos"]]   # projetos entram no seletor
 
 
-def test_conversa_com_assunto_projeto(http_client_factory, app_db, seed):
+def test_assunto_projeto_abre_a_conversa_do_projeto(http_client_factory, app_db, seed):
+    # Unificação 2026-07-27: assunto=projeto NÃO cria direct — abre a conversa DO PROJETO.
     c = _login(http_client_factory, "dir_l1")
-    alvo = _uid(app_db, "cons_l1")
     st, b = c.post("/api/comunicacao/conversas",
-                   {"tipo": "direct", "usuario_id": alvo,
-                    "assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})
+                   {"assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})
     assert st == 201, b
-    assert b["conversa"]["assunto"]["tipo"] == "projeto"
-    assert b["conversa"]["assunto"]["label"] == "Proj_L1"
+    assert b["conversa"]["tipo"] == "projeto"
+    assert b["conversa"]["projeto_nome"] == "Proj_L1"
 
 
 def test_direct_e_canonico_por_assunto(http_client_factory, app_db, seed):
@@ -183,10 +182,11 @@ def test_direct_e_canonico_por_assunto(http_client_factory, app_db, seed):
     livre1 = c.post("/api/comunicacao/conversas", {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
     livre2 = c.post("/api/comunicacao/conversas", {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
     assert livre1 == livre2                                        # mesma dupla+assunto → mesma
-    proj = c.post("/api/comunicacao/conversas",
-                  {"tipo": "direct", "usuario_id": alvo,
-                   "assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})[1]["conversa"]["id"]
-    assert proj != livre1                                          # assunto diferente → thread nova
+    aid = c.post("/api/comunicacao/assuntos", {"nome": "Canonico QA"})[1]["assunto"]["id"]
+    custom = c.post("/api/comunicacao/conversas",
+                    {"tipo": "direct", "usuario_id": alvo,
+                     "assunto_tipo": "custom", "assunto_id": aid})[1]["conversa"]["id"]
+    assert custom != livre1                                        # assunto diferente → thread nova
 
 
 def test_assunto_projeto_de_outra_loja_400(http_client_factory, app_db, seed):

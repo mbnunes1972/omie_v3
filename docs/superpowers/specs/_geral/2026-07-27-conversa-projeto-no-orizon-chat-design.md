@@ -44,8 +44,16 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
   `auto` com `removido=1` (remoção manual) NÃO volta. `eh_participante` ignora `removido=1`. A conversa
   `tipo=projeto` entra na **inbox** (`listar_inbox`, título "📁 <projeto>"); o sync roda ao **abrir** a
   conversa do projeto e no **fechamento** (os auto-designados passam a ver o resumo na inbox). O
-  **botão do projeto** e o item da inbox abrem a mesma conversa. Falta: UI de override manual (add/
-  remove pelo gerente) e o `assunto=projeto` da "Nova mensagem" abrir a conversa do projeto.
+  **botão do projeto** e o item da inbox abrem a mesma conversa.
+  - **`assunto=projeto` na "Nova mensagem" ABRE a conversa do projeto** (não cria direct):
+    `POST /api/comunicacao/conversas {assunto_tipo:'projeto', projeto_nome}` faz get-or-create +
+    sync e devolve a conversa. Front: seletor de assunto em modo projeto (esconde tipo/Para, botão
+    "Abrir conversa do projeto").
+  - **Override manual (gerente):** `GET/POST /api/comunicacao/conversas/<id>/participantes`
+    (`mod_chat.listar_participantes`/`gerir_participante`). GET = participante/gerência (devolve
+    `origem` + `pode_gerir`); POST add|remove = só `ver_todas_conversas`. Front: botão "Membros" na
+    conversa do projeto → painel com badges auto/manual + adicionar/remover. Falta: e-mail de lacunas
+    do fechamento, convergência do roster de 7 papéis, gate de PE/montagem, remover modo privado.
 - **Derivação do conjunto interno D — FONTE ÚNICA por FUNÇÃO (decisão 2026-07-27).** A origem é a
   **função responsável de cada etapa** (`CicloEtapa.funcao_responsavel_id`, vinda do Cronograma Padrão
   da loja — data-driven). O funcionário é **derivado**: **1 candidato ativo → automático**; **>1 →

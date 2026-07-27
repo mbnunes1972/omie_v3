@@ -2868,6 +2868,33 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/conversas/<id>/participantes — membros da conversa (projeto):
+            # lista participante/gerência; devolve origem (auto|manual) para a UI de override.
+            m_cp = _re.match(r'^/api/comunicacao/conversas/(\d+)/participantes$', path)
+            if m_cp:
+                conv_id = int(m_cp.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from database import Conversa as _CV_p
+                    conv = db.get(_CV_p, conv_id)
+                    _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                    if (conv is None or conv.loja_id != loja_id
+                            or not (mod_chat.eh_participante(db, conv_id, usuario["id"]) or _adm)):
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    self.send_json({"ok": True, "pode_gerir": bool(_adm),
+                                    "participantes": mod_chat.listar_participantes(db, conv)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/conversas/<id>/mensagens — histórico de uma conversa
             # direct/grupo (só participante lê).
             m_cm = _re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
@@ -5047,6 +5074,26 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": _err}, code=403); return
                 import mod_chat
                 dd = json.loads(body or b'{}')
+                # assunto=projeto NÃO cria direct/grupo — ABRE a CONVERSA DO PROJETO (unificação
+                # 2026-07-27), com a equipe derivada já sincronizada.
+                if (dd.get("assunto_tipo") or "").strip() == "projeto":
+                    _pn = dd.get("projeto_nome")
+                    if not _pn or _projeto_da_loja(db, _pn, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Projeto inválido nesta loja."}, code=400); return
+                    import mod_equipe
+                    _pm = db.query(Projeto).filter_by(nome_safe=_pn).first()
+                    conv = mod_chat.get_or_create_conversa_projeto(
+                        db, loja_id, _pn, cliente_id=(_pm.cliente_id if _pm else None))
+                    try:
+                        _eqp = mod_equipe.equipe_do_projeto(db, _pn, loja_id)
+                        mod_chat.sincronizar_participantes_projeto(db, conv, _eqp["membros_usuarios"])
+                    except Exception as _es:
+                        print("[EQUIPE] sync na abertura via chat falhou:", _es)
+                    db.commit()
+                    self.send_json({"ok": True,
+                                    "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"])},
+                                   code=201)
+                    return
                 tipo = (dd.get("tipo") or "").strip()
                 if tipo not in ("direct", "grupo"):
                     self.send_json({"ok": False, "erro": "Tipo inválido (direct|grupo)."}, code=400); return
@@ -5166,6 +5213,41 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "mensagem": mod_chat.serializar_mensagem(
                     msg, autor_nome=nome, pode_ver_privada=_pode_priv,
                     anexos=[mod_chat._serializar_anexo(anexo)])}, code=201)
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/conversas/<id>/participantes — override manual da membership
+        # (add|remove). Só Gerente/Diretor (ver_todas_conversas). Body: {usuario_id, acao}.
+        m_cp = re.match(r'^/api/comunicacao/conversas/(\d+)/participantes$', path)
+        if m_cp:
+            conv_id = int(m_cp.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "ver_todas_conversas"):
+                self.send_json({"ok": False, "erro": "Sem permissão para gerir membros."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                from database import Conversa as _CV_gp
+                conv = db.get(_CV_gp, conv_id)
+                if conv is None or conv.loja_id != loja_id or conv.tipo != "projeto":
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                dd = json.loads(body or b'{}')
+                alvo = dd.get("usuario_id")
+                if not alvo or db.query(Usuario).filter_by(id=int(alvo), loja_id=loja_id, ativo=1).first() is None:
+                    self.send_json({"ok": False, "erro": "Escolha um usuário desta loja."}, code=400); return
+                try:
+                    mod_chat.gerir_participante(db, conv, alvo, (dd.get("acao") or "").strip())
+                except ValueError as ve:
+                    db.rollback(); self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "participantes": mod_chat.listar_participantes(db, conv)})
             finally:
                 db.close()
             return

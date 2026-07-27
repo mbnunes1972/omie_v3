@@ -99,3 +99,47 @@ def test_inbox_inclui_conversa_projeto(app_db, seed):
         db.close()
     proj = [x for x in itens if x["id"] == cid]
     assert proj and proj[0]["tipo"] == "projeto" and proj[0]["titulo"].startswith("📁")
+
+
+# ── endpoints: assunto=projeto abre a conversa + override manual ────────────────
+
+def _login(f, who):
+    c = f(); c.login(who, "senha123"); assert c.cookie; return c
+
+
+def test_assunto_projeto_abre_conversa_do_projeto(http_client_factory, seed):
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post("/api/comunicacao/conversas",
+                   {"assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})
+    assert st == 201 and b["conversa"]["tipo"] == "projeto"
+    assert b["conversa"]["projeto_nome"] == "Proj_L1"
+    cid = b["conversa"]["id"]
+    b2 = c.post("/api/comunicacao/conversas",
+                {"assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})[1]
+    assert b2["conversa"]["id"] == cid                        # get-or-create
+
+
+def test_override_manual_add_remove_e_permissao(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    cid = c.post("/api/comunicacao/conversas",
+                 {"assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})[1]["conversa"]["id"]
+    (alvo,) = _users(app_db, "cons_l1")
+    st, b = c.post("/api/comunicacao/conversas/%d/participantes" % cid,
+                   {"usuario_id": alvo, "acao": "add"})
+    assert st == 200 and any(p["usuario_id"] == alvo and p["origem"] == "manual"
+                             for p in b["participantes"])
+    st, b = c.post("/api/comunicacao/conversas/%d/participantes" % cid,
+                   {"usuario_id": alvo, "acao": "remove"})
+    assert st == 200 and alvo not in [p["usuario_id"] for p in b["participantes"]]
+    # operador não pode gerir membros
+    op = _login(http_client_factory, "cons_l1")
+    assert op.post("/api/comunicacao/conversas/%d/participantes" % cid,
+                   {"usuario_id": alvo, "acao": "add"})[0] == 403
+
+
+def test_get_participantes(http_client_factory, seed):
+    c = _login(http_client_factory, "dir_l1")
+    cid = c.post("/api/comunicacao/conversas",
+                 {"assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})[1]["conversa"]["id"]
+    st, b = c.get("/api/comunicacao/conversas/%d/participantes" % cid)
+    assert st == 200 and b["pode_gerir"] is True and isinstance(b["participantes"], list)

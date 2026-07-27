@@ -287,6 +287,40 @@ def eh_participante(db, conversa_id, usuario_id):
               .first() is not None)
 
 
+def listar_participantes(db, conversa):
+    """Participantes ATIVOS (não removidos) da conversa, com nome e origem (auto|manual)."""
+    rows = (db.query(ConversaParticipante, Usuario.nome)
+              .outerjoin(Usuario, ConversaParticipante.usuario_id == Usuario.id)
+              .filter(ConversaParticipante.conversa_id == conversa.id,
+                      ConversaParticipante.removido == 0)
+              .order_by(Usuario.nome.asc()).all())
+    return [{"usuario_id": p.usuario_id, "nome": nome or "—",
+             "origem": p.origem, "papel": p.papel} for p, nome in rows]
+
+
+def gerir_participante(db, conversa, usuario_id, acao):
+    """Override manual do gerente: 'add' (entra/reativa como manual) | 'remove' (tombstone
+    removido=1 — o sync não readiciona, mesmo sendo derivado). Não commita."""
+    usuario_id = int(usuario_id)
+    p = (db.query(ConversaParticipante)
+           .filter_by(conversa_id=conversa.id, usuario_id=usuario_id).first())
+    if acao == "add":
+        if p is None:
+            db.add(ConversaParticipante(conversa_id=conversa.id, usuario_id=usuario_id,
+                                        papel="membro", origem="manual", removido=0))
+        else:
+            p.removido = 0
+    elif acao == "remove":
+        if p is None:
+            db.add(ConversaParticipante(conversa_id=conversa.id, usuario_id=usuario_id,
+                                        papel="membro", origem="auto", removido=1))
+        else:
+            p.removido = 1
+    else:
+        raise ValueError("Ação inválida (add|remove).")
+    db.flush()
+
+
 def sincronizar_participantes_projeto(db, conversa, membros_usuarios):
     """Sincroniza os participantes de uma CONVERSA DE PROJETO com o conjunto DERIVADO da equipe
     (membros_usuarios). Regra 'override vence': adição manual (origem='manual') fica; remoção manual

@@ -8,7 +8,7 @@ Puro exceto pela sessão db. Fonte única: automáticos nunca são copiados; só
 """
 import json
 
-from database import Projeto, Funcionario, Terceiro, Funcao, Usuario
+from database import Projeto, Funcionario, Terceiro, Funcao, Usuario, CicloEtapa
 
 FUNCAO_GERENTE = "Gerente de Vendas"          # rótulo do papel = "Gerente Comercial"
 FUNCAO_SAC = "SAC"
@@ -138,3 +138,87 @@ def salvar(db, projeto_nome, papel, selecao):
     sel[papel] = selecao
     proj.equipe_json = json.dumps(sel, ensure_ascii=False)
     return (True, "")
+
+
+# ═══ FONTE ÚNICA: equipe derivada das FUNÇÕES do ciclo ════════════════════════════════════════
+# Spec conversa-projeto-no-orizon-chat (2026-07-27): a origem dos integrantes é a FUNÇÃO responsável
+# de cada etapa (CicloEtapa.funcao_responsavel_id, do Cronograma Padrão da loja). O funcionário é
+# DERIVADO: 1 candidato ativo → automático; >1 → LACUNA (ação gerencial no fechamento); 0 → sem
+# responsável. Funcionário já fixado na etapa (responsavel_funcionario_id) é respeitado. Montagem
+# mantém o refinamento por AMBIENTE no Mapa de Atribuições (decisão do lojista). O CRIADOR entra
+# sempre. O roster de 7 papéis acima passará a DERIVAR desta fonte numa fatia seguinte (convergência).
+
+def candidatos_da_funcao(db, loja_id, funcao_id):
+    """Funcionários ATIVOS da função na loja (ordem estável por id)."""
+    if not funcao_id:
+        return []
+    return (db.query(Funcionario)
+              .filter(Funcionario.loja_id == loja_id, Funcionario.funcao_id == funcao_id)
+              .filter((Funcionario.status == "ativo") | (Funcionario.status.is_(None)))
+              .order_by(Funcionario.id.asc()).all())
+
+
+def usuario_do_funcionario(db, funcionario_id):
+    """Ponte Funcionário→Usuário: Funcionario.usuario_id; fallback Usuario.funcionario_id."""
+    if not funcionario_id:
+        return None
+    f = db.get(Funcionario, funcionario_id)
+    if f is not None and getattr(f, "usuario_id", None):
+        return f.usuario_id
+    u = db.query(Usuario).filter_by(funcionario_id=funcionario_id).first()
+    return u.id if u else None
+
+
+def equipe_do_projeto(db, nome_safe, loja_id):
+    """Equipe do projeto derivada das FUNÇÕES responsáveis das etapas (fonte única).
+
+    Retorna {membros, membros_usuarios, lacunas, criador_usuario_id}:
+      - membros: [{funcionario_id, usuario_id, funcao_id, via}] deduplicado (via='definido'|'auto').
+      - membros_usuarios: ids de USUÁRIO da equipe (funcionários resolvidos + criador), sem repetir.
+      - lacunas: [{etapa_codigo, funcao_id, funcao_nome, candidatos:[{id,nome}]}] — funções com >1
+        candidato e ainda sem funcionário definido na etapa (ação gerencial no fechamento).
+      - criador_usuario_id: dono/consultor do projeto (sempre integrante).
+    """
+    etapas = (db.query(CicloEtapa).filter_by(projeto_nome=nome_safe)
+                .order_by(CicloEtapa.etapa_codigo.asc()).all())
+    membros = {}
+    lacunas, lac_key, _fnome = [], set(), {}
+
+    def nome_funcao(fid):
+        if fid not in _fnome:
+            f = db.get(Funcao, fid) if fid else None
+            _fnome[fid] = f.nome if f else None
+        return _fnome[fid]
+
+    def add_membro(func_id, funcao_id, via):
+        if func_id and func_id not in membros:
+            membros[func_id] = {"funcionario_id": func_id,
+                                "usuario_id": usuario_do_funcionario(db, func_id),
+                                "funcao_id": funcao_id, "via": via}
+
+    for et in etapas:
+        if et.responsavel_funcionario_id:                 # já definido (manual/transferência)
+            add_membro(et.responsavel_funcionario_id, et.funcao_responsavel_id, "definido")
+            continue
+        cand = candidatos_da_funcao(db, loja_id, et.funcao_responsavel_id)
+        if len(cand) == 1:
+            add_membro(cand[0].id, et.funcao_responsavel_id, "auto")
+        elif len(cand) > 1:
+            k = (et.etapa_codigo, et.funcao_responsavel_id)
+            if k not in lac_key:
+                lac_key.add(k)
+                lacunas.append({"etapa_codigo": et.etapa_codigo,
+                                "funcao_id": et.funcao_responsavel_id,
+                                "funcao_nome": nome_funcao(et.funcao_responsavel_id),
+                                "candidatos": [{"id": c.id, "nome": c.nome} for c in cand]})
+        # 0 candidatos → etapa sem responsável (nem membro, nem lacuna acionável)
+
+    pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+    criador_uid = pm.criado_por_id if pm else None
+    usuarios = {m["usuario_id"] for m in membros.values() if m["usuario_id"]}
+    if criador_uid:
+        usuarios.add(criador_uid)
+    return {"membros": list(membros.values()),
+            "membros_usuarios": sorted(usuarios),
+            "lacunas": lacunas,
+            "criador_usuario_id": criador_uid}

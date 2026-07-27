@@ -41,9 +41,19 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
 - **`conversa_participantes` ganha `origem`** (`auto` | `manual`) **+ `removido`** (0/1). Isso sustenta o
   "override vence": o sync recomputa o conjunto derivado D; membros `auto` fora de D saem (se não forem
   `manual`); membros `manual` ficam; um `auto` marcado `removido=1` (remoção manual) **não volta**.
-- **Derivação do conjunto interno D** (usuários): `{criado_por_id}` ∪ `{responsáveis de etapa}`
-  (`CicloEtapa.responsavel_funcionario_id`/`responsavel_efetivo` → usuário) ∪ `{equipe}` (`equipe_json`
-  → usuários). Ponte funcionário↔usuário via `Usuario.funcionario_id`.
+- **Derivação do conjunto interno D — FONTE ÚNICA por FUNÇÃO (decisão 2026-07-27).** A origem é a
+  **função responsável de cada etapa** (`CicloEtapa.funcao_responsavel_id`, vinda do Cronograma Padrão
+  da loja — data-driven). O funcionário é **derivado**: **1 candidato ativo → automático**; **>1 →
+  LACUNA** (ação gerencial no fechamento); **0 → sem responsável**. Funcionário já fixado na etapa
+  (`responsavel_funcionario_id`) é respeitado. **Montagem** mantém o refinamento **por AMBIENTE** no
+  Mapa de Atribuições (função geral + ambiente). O **criador** sempre entra. Implementado em
+  `mod_equipe.equipe_do_projeto()` → `{membros, membros_usuarios, lacunas, criador_usuario_id}`.
+  **Convergência:** o roster de 7 papéis (`mod_equipe.equipe()`, client-facing) passará a **DERIVAR
+  desta fonte** numa fatia seguinte — os seletores medidor/finalizador/montagem viram **resolução de
+  lacuna** (grava `responsavel_funcionario_id`), aposentando o `equipe_json`.
+- **Montagem da equipe no FECHAMENTO** (2ª assinatura → `fechado`, decisão 2026-07-27): resolve os
+  automáticos, deixa as lacunas, e **notifica** — os auto-designados ("novo contrato, veja o
+  cronograma") e os gerentes/diretores (e-mail + chat) com a equipe definida + as lacunas a preencher.
 - **Externos (cliente/arquiteto) NÃO entram em `conversa_participantes`** — não são usuários. São
   alcançados por **envio externo dirigido** (o `EnvioExterno`/canal externo que já existe), e as
   respostas roteiam de volta pra conversa (roteamento de entrada já implementado).

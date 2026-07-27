@@ -56,7 +56,7 @@ MODULOS = {
                                  "mod_contrato.py", "mod_marcadores.py",
                                  "mod_documentos_import.py", "mod_documentos.py", "mod_arvore.py",
                                  "_ler_aymore.py", "mod_fin",
-                                 "mod_pe_comparacao.py", "mod_parcelas.py",
+                                 "mod_pe_comparacao.py", "mod_parcelas.py", "mod_retido.py",
                                  # Medição (etapas 9/10 do ciclo): o antigo módulo 'producao' (rótulo UI
                                  # "Projetos") foi retirado da navegação por ser tela-vazia e duplicar o
                                  # nome; seu código é dono aqui, pois Medição pertence ao ciclo comercial.
@@ -67,7 +67,8 @@ MODULOS = {
                                 "orcamento_ambientes", "contratos", "contratos_assinaturas",
                                 "aditivos", "aditivos_assinaturas",   # Termo Aditivo (Fatia 3 PE)
                                 "aprovacoes_pe", "aprovacoes_pe_assinaturas",   # Aprovação do PE (Fatia 3)
-                                "arquivo_pe", "parcela_projeto", "parcela_ambiente", "medicoes",
+                                "arquivo_pe", "parcela_projeto", "parcela_ambiente",
+                                "sinal_retido", "medicoes",
                                 "documento_modelos",
                                 "documento_tipos"],   # tipos customizados ("Novo Documento", 2026-07-22)
                     "rotas": ["/api/orcamentos", "/api/contratos", "/api/medicoes", "/api/comercial",

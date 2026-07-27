@@ -785,6 +785,20 @@ class ParcelaAmbiente(Base):
     pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"),  primary_key=True)
 
 
+class SinalRetido(Base):
+    """Desmembramento OPERACIONAL (Fatia 1, spec 2026-07-27): o MEDIDOR sinaliza que um ambiente está
+    RETIDO pela obra. Por AMBIENTE. A gerência CONFIRMA → vira parcela retida (`confirmado=1`)."""
+    __tablename__ = "sinal_retido"
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    projeto_nome      = Column(Text,    nullable=False, index=True)
+    pool_ambiente_id  = Column(Integer, ForeignKey("pool_ambientes.id"), nullable=False)
+    sinalizado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    motivo            = Column(Text,    nullable=True)
+    confirmado        = Column(Integer, nullable=False, default=0)
+    criado_em         = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("projeto_nome", "pool_ambiente_id", name="uq_sinal_retido"),)
+
+
 class ArquivoPE(Base):
     """XML/Promob do Projeto Executivo — FORA do pool do orçamento (decisão #2). Documento de
     comparação/liquidação: NÃO cria PoolAmbiente, NÃO vincula a orçamento, NÃO alimenta o motor →

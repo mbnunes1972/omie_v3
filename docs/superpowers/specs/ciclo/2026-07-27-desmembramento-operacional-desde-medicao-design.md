@@ -114,9 +114,13 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
 
 ## 8. Fatiamento (backend/TDD)
 
-1. **Retido por ambiente + desmembrar na medição:** sinal do medidor (por ambiente) + confirmação da
-   gerência → cria as parcelas (pronta × retida) desde a etapa 9, reusando `ParcelaProjeto` +
-   `particionar_por_selecao` + `congelar_parcelas`. Estado `retido` na parcela. (SEM tocar no razão.)
+1. **Retido por ambiente + desmembrar na medição** — ✅ FEITA 2026-07-27. `SinalRetido` (por ambiente,
+   medidor sinaliza) + `mod_retido.sinalizar`/`limpar_sinal`/`listar_sinais`/`confirmar` (gerência).
+   `confirmar` reusa `particionar_por_selecao` + `congelar_parcelas` → parcela `aguardando` (pronta) ×
+   `retido` (aguarda obra); `Σ val_cont_congelado` exato. Endpoints `POST .../retido/{sinalizar,limpar,
+   confirmar}` (sinalizar/limpar = `registrar_medicao`; confirmar = `autorizar`) + sinais na GET
+   `/parcelas`. **NÃO toca no razão.** Testes: `test_retido.py` (6). Primeiro split apenas (progressivo
+   fica p/ a Fatia 3).
 2. **Ciclo operacional por parcela:** etapas 9–17 com status por `parcela_id`; gate de execução
    (`etapa_executavel`) por parcela; parcela retida não avança.
 3. **Liberação/continuação:** obra libera o ambiente → a parcela volta a seguir a partir da etapa

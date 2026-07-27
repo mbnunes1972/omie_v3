@@ -1304,7 +1304,12 @@ class Handler(BaseHTTPRequestHandler):
                                 "val_cont_congelado": round(p.val_cont_congelado or 0.0, 2),
                                 "ambientes": [{"id": a.pool_ambiente_id,
                                                "nome": pa_nome.get(a.pool_ambiente_id, "")} for a in ambs]})
+                import mod_retido as _mret
+                sinais = [{"pool_ambiente_id": s["pool_ambiente_id"], "motivo": s["motivo"],
+                           "nome": pa_nome.get(s["pool_ambiente_id"], "")}
+                          for s in _mret.listar_sinais(db, nome)]
                 self.send_json({"ok": True, "parcelas": out, "desmembrado": bool(out),
+                                "sinais_retido": sinais,
                                 "pool": [{"id": i, "nome": n} for i, n in pa_nome.items()]})
             finally:
                 db.close()
@@ -4094,6 +4099,56 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 _mdoc.ativar(db, modelo.id)
                 self.send_json({"ok": True, "modelo": _serializar_modelo_documento(modelo)})
+            finally:
+                db.close()
+            return
+
+        # ── Desmembramento OPERACIONAL (Fatia 1): ambientes retidos pela obra ──────────────────
+        # POST .../retido/sinalizar — MEDIDOR marca ambientes retidos. Body: {pool_ambiente_ids, motivo}.
+        m_rsig = re.match(r'^/api/projetos/([^/]+)/retido/(sinalizar|limpar|confirmar)$', path)
+        if m_rsig:
+            nome = unquote(m_rsig.group(1)); acao = m_rsig.group(2)
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_retido as _mret
+                req = json.loads(body) if body else {}
+                if acao in ("sinalizar", "limpar"):
+                    if not perfis.pode(usuario.get("nivel"), "registrar_medicao"):
+                        self.send_json({"ok": False, "erro": "Ação do medidor (registrar_medicao)."}, code=403); return
+                    if acao == "sinalizar":
+                        marcados = _mret.sinalizar(db, nome, req.get("pool_ambiente_ids") or [],
+                                                   usuario.get("id"), req.get("motivo"))
+                        db.commit()
+                        self.send_json({"ok": True, "marcados": marcados})
+                    else:
+                        _mret.limpar_sinal(db, nome, req.get("pool_ambiente_id"))
+                        db.commit()
+                        self.send_json({"ok": True})
+                    return
+                # confirmar — GERÊNCIA
+                if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                    self.send_json({"ok": False, "erro": "Confirmação exige gerência (autorizar)."}, code=403); return
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                if contrato is None:
+                    self.send_json({"ok": False, "erro": "Desmembre após o contrato assinado."}, code=409); return
+                valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
+                ok, erro, parcelas = _mret.confirmar(db, nome, contrato.orcamento_id, valores,
+                                                     val_cont, usuario.get("id"))
+                if not ok:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": erro}, code=409); return
+                db.commit()
+                self.send_json({"ok": True, "parcelas": parcelas})
             finally:
                 db.close()
             return

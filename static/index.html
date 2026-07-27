@@ -550,7 +550,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="sb-secao">
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
-      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Central de Comunicação"><i class="ti ti-messages"></i>Comunicação</div>
+      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -665,8 +665,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 <div id="modal-central-com" class="modal-overlay" style="display:none;z-index:9200" onclick="if(event.target===this)this.style.display='none'">
   <div class="modal-box" style="max-width:900px;width:96%;height:86vh;display:flex;flex-direction:column">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-messages"></i> Central de Comunicação</div>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-central-com').style.display='none'">Fechar</button>
+      <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-messages"></i> Orizon Chat</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="cc-admin-btn" style="display:none" onclick="ccAdminAbrir()"><i class="ti ti-shield-cog"></i> Administração</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-central-com').style.display='none'">Fechar</button>
+      </div>
     </div>
     <div style="flex:1;display:flex;gap:12px;min-height:0">
       <!-- coluna esquerda: inbox -->
@@ -689,6 +692,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <label class="field-label">Nome do grupo</label>
             <input id="cc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
           </div>
+          <label class="field-label">Assunto</label>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <select id="cc-assunto" style="flex:1;padding:6px 8px"></select>
+            <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto()" title="Criar novo assunto"><i class="ti ti-plus"></i> Criar assunto</button>
+          </div>
           <label class="field-label">Para <span id="cc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
           <input id="cc-busca-user" type="search" placeholder="buscar por nome…" oninput="ccFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
           <div id="cc-users" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
@@ -698,11 +706,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
           <div id="cc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
         </div>
+        <!-- painel de administração (ver_todas_conversas) -->
+        <div id="cc-admin" style="display:none;flex:1;flex-direction:column;min-height:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:800"><i class="ti ti-shield-cog"></i> Todas as conversas</div>
+            <button class="btn btn-ghost btn-sm" onclick="ccAdminFechar()">Voltar</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <select id="cc-adm-assunto" onchange="ccAdminCarregar()" style="flex:1;padding:6px 8px"></select>
+            <select id="cc-adm-part" onchange="ccAdminCarregar()" style="flex:1;padding:6px 8px"></select>
+          </div>
+          <div id="cc-adm-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
+        </div>
         <!-- thread -->
         <div id="cc-thread" style="display:none;flex:1;flex-direction:column;min-height:0">
           <div id="cc-thread-titulo" style="font-weight:800;padding:0 2px 8px"></div>
           <div id="cc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
-          <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+          <div id="cc-compositor" style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
             <textarea id="cc-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia)"
                       style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
@@ -12033,12 +12053,18 @@ let _ccUsuarios = [];     // usuários da loja (seletor "Para")
 let _ccSel = new Set();   // ids selecionados no seletor
 let _ccConvAtiva = null;  // id da conversa aberta
 
+let _ccAssuntoCache = null;   // {assuntos:[], projetos:[]}
+let _ccAdminView = false;     // thread aberta pelo painel admin (read-only)
+
 async function abrirCentralComunicacao(){
   document.getElementById('modal-central-com').style.display = 'flex';
   ccNovaFechar();
   document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-admin').style.display = 'none';
   document.getElementById('cc-vazio').style.display = 'flex';
-  _ccConvAtiva = null;
+  const admBtn = document.getElementById('cc-admin-btn');
+  admBtn.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas) ? '' : 'none';
+  _ccConvAtiva = null; _ccAdminView = false;
   await ccCarregarInbox();
 }
 
@@ -12054,10 +12080,12 @@ async function ccCarregarInbox(){
   box.innerHTML = _ccInbox.map((c,i)=>{
     const icon = c.tipo === 'grupo' ? 'ti-users' : 'ti-user';
     const ativo = (c.id === _ccConvAtiva);
+    const seg = (c.assunto && c.assunto.tipo !== 'livre' && c.assunto.label) ? c.assunto.label : '';
     return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;'
       + (ativo ? 'background:var(--surface-2)' : '') + '"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\''+(ativo?'var(--surface-2)':'')+'\'">'
-      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')+'</div>'
+      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')
+      + (seg ? ' <span style="font-weight:400;color:var(--accent);font-size:11px">· '+esc(seg)+'</span>' : '') + '</div>'
       + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
       + '</div>';
   }).join('');
@@ -12066,13 +12094,21 @@ async function ccCarregarInbox(){
 async function ccAbrirConversa(idx){
   const c = _ccInbox[idx];
   if(!c) return;
-  _ccConvAtiva = c.id;
+  _ccConvAtiva = c.id; _ccAdminView = false;
   ccNovaFechar();
+  document.getElementById('cc-admin').style.display = 'none';
   document.getElementById('cc-vazio').style.display = 'none';
+  document.getElementById('cc-compositor').style.display = 'flex';   // participante → pode escrever
   document.getElementById('cc-thread').style.display = 'flex';
-  document.getElementById('cc-thread-titulo').textContent = c.titulo || 'Conversa';
+  document.getElementById('cc-thread-titulo').textContent = _ccTituloComAssunto(c);
   await ccCarregarMsgs();
   ccCarregarInbox();  // reflete "ativo" na lista
+}
+
+function _ccTituloComAssunto(c){
+  const t = c.titulo || 'Conversa';
+  const a = c.assunto && c.assunto.label ? c.assunto.label : null;
+  return a ? (t + '  ·  ' + a) : t;
 }
 
 async function ccCarregarMsgs(){
@@ -12115,6 +12151,7 @@ async function ccEnviar(){
 // ── nova conversa ──────────────────────────────────────────────────────────────
 function ccNovaAbrir(){
   document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-admin').style.display = 'none';
   document.getElementById('cc-vazio').style.display = 'none';
   document.getElementById('cc-nova').style.display = 'block';
   document.getElementById('cc-nova-aviso').textContent = '';
@@ -12123,6 +12160,49 @@ function ccNovaAbrir(){
   _ccSel = new Set();
   ccTipoToggle();
   ccCarregarUsuarios();
+  ccCarregarAssuntos();
+}
+
+// ── Assuntos (Conversa Livre + projetos + custom) ────────────────────────────
+async function ccCarregarAssuntos(){
+  try { _ccAssuntoCache = await fetch('/api/comunicacao/assuntos',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ _ccAssuntoCache = {ok:false}; }
+  ccPreencherSelectAssunto(document.getElementById('cc-assunto'), false);
+}
+function ccPreencherSelectAssunto(sel, comTodos){
+  if(!sel || !_ccAssuntoCache || !_ccAssuntoCache.ok){ if(sel) sel.innerHTML='<option value="livre">Conversa Livre</option>'; return; }
+  const manter = sel.value;
+  let html = comTodos ? '<option value="">— todos os assuntos —</option>' : '';
+  html += '<option value="livre">Conversa Livre</option>';
+  const projs = _ccAssuntoCache.projetos || [];
+  if(projs.length){
+    html += '<optgroup label="Projetos">' + projs.map(p=>'<option value="projeto:'+esc(p.nome_safe)+'">'+esc(p.nome||p.nome_safe)+'</option>').join('') + '</optgroup>';
+  }
+  const cst = _ccAssuntoCache.assuntos || [];
+  if(cst.length){
+    html += '<optgroup label="Assuntos">' + cst.map(a=>'<option value="custom:'+a.id+'">'+esc(a.nome)+'</option>').join('') + '</optgroup>';
+  }
+  sel.innerHTML = html;
+  if(manter) sel.value = manter;
+}
+async function ccCriarAssunto(){
+  const nome = (prompt('Nome do novo assunto:') || '').trim();
+  if(!nome) return;
+  try{
+    const d = await fetch('/api/comunicacao/assuntos',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({nome})}).then(r=>r.json());
+    if(!d.ok){ showToast(d.erro||'Falha ao criar assunto.', true); return; }
+    await ccCarregarAssuntos();
+    document.getElementById('cc-assunto').value = 'custom:' + d.assunto.id;   // já seleciona
+  }catch(e){ showToast('Erro de rede.', true); }
+}
+function _ccParseAssunto(valor){
+  // valor do <select> → campos do payload
+  if(!valor || valor === 'livre') return {assunto_tipo:'livre'};
+  if(valor.indexOf('projeto:') === 0) return {assunto_tipo:'projeto', projeto_nome: valor.slice(8)};
+  if(valor.indexOf('custom:') === 0) return {assunto_tipo:'custom', assunto_id: parseInt(valor.slice(7),10)};
+  return {assunto_tipo:'livre'};
 }
 function ccNovaFechar(){
   document.getElementById('cc-nova').style.display = 'none';
@@ -12172,6 +12252,7 @@ async function ccCriar(){
   const ids = [..._ccSel];
   if(!ids.length){ aviso.textContent = 'Selecione ao menos um usuário.'; return; }
   const payload = {tipo, participante_ids: ids};
+  Object.assign(payload, _ccParseAssunto(document.getElementById('cc-assunto').value));
   if(tipo === 'grupo'){
     const nome = document.getElementById('cc-grupo-nome').value.trim();
     if(!nome){ aviso.textContent = 'Dê um nome ao grupo.'; return; }
@@ -12192,6 +12273,72 @@ async function ccCriar(){
            document.getElementById('cc-thread-titulo').textContent = d.conversa.titulo || 'Conversa';
            await ccCarregarMsgs(); }
   }catch(e){ aviso.textContent = 'Erro de rede.'; }
+}
+
+// ── painel de administração (ver_todas_conversas) ─────────────────────────────
+let _ccAdminInbox = [];
+async function ccAdminAbrir(){
+  document.getElementById('cc-nova').style.display = 'none';
+  document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-vazio').style.display = 'none';
+  document.getElementById('cc-admin').style.display = 'flex';
+  // filtros: assunto (com "todos") + participante (com "todos")
+  if(!_ccAssuntoCache) await ccCarregarAssuntos();
+  ccPreencherSelectAssunto(document.getElementById('cc-adm-assunto'), true);
+  const selP = document.getElementById('cc-adm-part');
+  if(selP && selP.options.length <= 1){
+    try{
+      const d = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
+      selP.innerHTML = '<option value="">— todos os participantes —</option>'
+        + ((d.usuarios||[]).map(u=>'<option value="'+u.id+'">'+esc(u.nome)+'</option>').join(''));
+    }catch(e){ selP.innerHTML = '<option value="">— todos —</option>'; }
+  }
+  await ccAdminCarregar();
+}
+function ccAdminFechar(){
+  document.getElementById('cc-admin').style.display = 'none';
+  document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-vazio').style.display = 'flex';
+  _ccAdminView = false; _ccConvAtiva = null;
+}
+async function ccAdminCarregar(){
+  const box = document.getElementById('cc-adm-lista');
+  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
+  const a = _ccParseAssunto(document.getElementById('cc-adm-assunto').value);
+  const part = document.getElementById('cc-adm-part').value;
+  const qp = [];
+  if(a.assunto_tipo && document.getElementById('cc-adm-assunto').value){ qp.push('assunto_tipo='+encodeURIComponent(a.assunto_tipo));
+    const ref = a.projeto_nome || a.assunto_id;
+    if(ref) qp.push('assunto_ref='+encodeURIComponent(ref)); }
+  if(part) qp.push('participante='+encodeURIComponent(part));
+  let d;
+  try{ d = await fetch('/api/comunicacao/admin/conversas'+(qp.length?('?'+qp.join('&')):''),{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
+  _ccAdminInbox = d.conversas || [];
+  if(!_ccAdminInbox.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>'; return; }
+  box.innerHTML = _ccAdminInbox.map((c,i)=>{
+    const icon = c.tipo==='grupo'?'ti-users':'ti-user';
+    const seg = (c.assunto && c.assunto.label) ? c.assunto.label : 'Conversa Livre';
+    return '<div onclick="ccAdminAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
+      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
+      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')+'</div>'
+      + '<div style="font-size:11px;color:var(--muted)">'+esc((c.participantes||[]).join(', '))+'  ·  <span style="color:var(--accent)">'+esc(seg)+'</span></div>'
+      + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
+      + '</div>';
+  }).join('');
+}
+async function ccAdminAbrirConversa(idx){
+  const c = _ccAdminInbox[idx];
+  if(!c) return;
+  _ccConvAtiva = c.id; _ccAdminView = true;
+  document.getElementById('cc-admin').style.display = 'none';
+  document.getElementById('cc-vazio').style.display = 'none';
+  document.getElementById('cc-compositor').style.display = 'none';   // oversight: leitura apenas
+  document.getElementById('cc-thread').style.display = 'flex';
+  const seg = (c.assunto && c.assunto.label) ? ('  ·  '+c.assunto.label) : '';
+  document.getElementById('cc-thread-titulo').textContent = (c.titulo||'Conversa') + seg + '  (somente leitura)';
+  await ccCarregarMsgs();
 }
 
 async function convResolver(mid){

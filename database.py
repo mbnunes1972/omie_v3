@@ -1052,7 +1052,26 @@ class Conversa(Base):
     tipo          = Column(String(20), nullable=False, default="projeto")
     titulo        = Column(Text,       nullable=True)
     criado_por_id = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)
+    # Assunto da conversa (Orizon Chat, Fatia 2): livre (Conversa Livre) | projeto (usa
+    # `projeto_nome`) | custom (usa `assunto_id`). Ortogonal ao `tipo` (direct/grupo): categoriza
+    # sobre O QUE se fala. Registros antigos = 'livre' (mas os do projeto herdam via projeto_nome).
+    assunto_tipo  = Column(String(12), nullable=False, default="livre")
+    assunto_id    = Column(Integer,    ForeignKey("assuntos.id"), nullable=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
+
+
+class Assunto(Base):
+    """Assunto CUSTOM do Orizon Chat (Fatia 2), criado pelo usuário via "criar assunto". Os
+    assuntos-projeto NÃO vivem aqui (são a lista viva de projetos) e "Conversa Livre" é o default
+    (assunto_tipo='livre', sem linha). Um assunto por loja (isolado)."""
+    __tablename__ = "assuntos"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    loja_id       = Column(Integer, ForeignKey("lojas.id"), nullable=False, index=True)
+    nome          = Column(Text,    nullable=False)
+    criado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    ativo         = Column(Integer, nullable=False, default=1)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
 class ConversaParticipante(Base):
@@ -1596,6 +1615,11 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS titulo TEXT",
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS criado_por_id INTEGER",
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS canal_segmento VARCHAR(20)",
+        # Orizon Chat Fatia 2: assunto da conversa (livre|projeto|custom). Linhas do projeto
+        # herdam via projeto_nome; as demais nascem 'livre'.
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS assunto_tipo VARCHAR(12) DEFAULT 'livre'",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS assunto_id INTEGER",
+        "UPDATE conversas SET assunto_tipo='projeto' WHERE projeto_nome IS NOT NULL AND (assunto_tipo IS NULL OR assunto_tipo='livre')",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

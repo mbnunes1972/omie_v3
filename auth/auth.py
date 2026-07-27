@@ -215,6 +215,7 @@ def _usuario_dict(u: Usuario) -> dict:
         "pode_aprovar_financeiro":  perfis.pode(u.nivel, "aprovar_financeiro"),
         "pode_registrar_medicao":   perfis.pode(u.nivel, "registrar_medicao"),
         "pode_aprovar_medicao_reprovada": perfis.pode(u.nivel, "aprovar_medicao_reprovada"),
+        "pode_ver_todas_conversas": perfis.pode(u.nivel, "ver_todas_conversas"),  # Orizon Chat F2
         "precisa_trocar_senha": bool(getattr(u, "senha_provisoria", 0)),
     }
 

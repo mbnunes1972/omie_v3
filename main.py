@@ -2693,6 +2693,58 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/assuntos — Orizon Chat (Fatia 2): opções do seletor "Assunto":
+            # assuntos custom da loja + a lista de PROJETOS visíveis (Conversa Livre é fixa na UI).
+            if path == "/api/comunicacao/assuntos":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    projs = [{"nome_safe": p.nome_safe,
+                              "nome": (p.nome_safe or "").replace("_", " ")}
+                             for p in db.query(Projeto)
+                                        .filter(Projeto.loja_id == loja_id)
+                                        .order_by(Projeto.nome_safe.asc()).all()
+                             if _projeto_visivel_ao_ator(p, usuario, db)]
+                    self.send_json({"ok": True,
+                                    "assuntos": mod_chat.listar_assuntos(db, loja_id),
+                                    "projetos": projs})
+                finally:
+                    db.close()
+                return
+
+            # GET /api/comunicacao/admin/conversas — painel de administração (ver_todas_conversas):
+            # TODAS as conversas da loja, com filtro ?participante=&assunto_tipo=&assunto_ref=.
+            if path == "/api/comunicacao/admin/conversas":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                if not perfis.pode(usuario.get("nivel"), "ver_todas_conversas"):
+                    self.send_json({"ok": False, "erro": "Sem acesso ao painel de conversas."}, code=403); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from urllib.parse import parse_qs as _pq_adm
+                    qs = _pq_adm(urlparse(self.path).query)
+                    self.send_json({"ok": True, "conversas": mod_chat.listar_todas_conversas(
+                        db, loja_id,
+                        participante_id=(qs.get("participante", [None])[0] or None),
+                        assunto_tipo=(qs.get("assunto_tipo", [None])[0] or None),
+                        assunto_ref=(qs.get("assunto_ref", [None])[0] or None))})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/usuarios — usuários da loja ativa para o seletor "Para"
             # (Central de Comunicação). Exclui o próprio usuário. Filtro opcional ?q=.
             if path == "/api/comunicacao/usuarios":
@@ -2739,8 +2791,10 @@ class Handler(BaseHTTPRequestHandler):
                     import mod_chat
                     from database import Conversa as _CV_get
                     conv = db.get(_CV_get, conv_id)
+                    # Leitura: participante OU gerente/diretor (ver_todas_conversas — oversight).
+                    _admin_chat = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
                     if (conv is None or conv.loja_id != loja_id
-                            or not mod_chat.eh_participante(db, conv_id, usuario["id"])):
+                            or not (mod_chat.eh_participante(db, conv_id, usuario["id"]) or _admin_chat)):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                     self.send_json({"ok": True,
@@ -4816,6 +4870,30 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/assuntos — Orizon Chat (Fatia 2): cria um assunto custom na loja.
+        if path == "/api/comunicacao/assuntos":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                try:
+                    a = mod_chat.criar_assunto(db, loja_id, usuario["id"], dd.get("nome"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "assunto": {"id": a.id, "nome": a.nome}}, code=201)
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/conversas — Central de Comunicação (Fatia 1): abre uma conversa
         # direct (idempotente pela dupla) ou grupo. Participantes têm que ser da loja ativa.
         if path == "/api/comunicacao/conversas":
@@ -4847,14 +4925,27 @@ class Handler(BaseHTTPRequestHandler):
                     if set(pedidos) - validos:
                         self.send_json({"ok": False, "erro": "Escolha usuários desta loja."},
                                        code=400); return
+                # Assunto (Fatia 2): livre (default) | projeto (projeto_nome, tem que ser da loja)
+                # | custom (assunto_id da loja). Projeto do assunto valida via _projeto_da_loja.
+                a_tipo = (dd.get("assunto_tipo") or "livre").strip()
+                a_proj = dd.get("projeto_nome")
+                a_id = dd.get("assunto_id")
+                if a_tipo == "projeto":
+                    if not a_proj or _projeto_da_loja(db, a_proj, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Projeto do assunto inválido nesta loja."},
+                                       code=400); return
                 try:
                     if tipo == "direct":
                         if len(pedidos) != 1:
                             self.send_json({"ok": False, "erro": "Direct precisa de exatamente 1 destinatário."}, code=400); return
-                        conv = mod_chat.get_or_create_direct(db, loja_id, usuario["id"], pedidos[0])
+                        conv = mod_chat.get_or_create_direct(db, loja_id, usuario["id"], pedidos[0],
+                                                             assunto_tipo=a_tipo, projeto_nome=a_proj,
+                                                             assunto_id=a_id)
                     else:
                         conv = mod_chat.criar_grupo(db, loja_id, usuario["id"],
-                                                    dd.get("titulo"), pedidos)
+                                                    dd.get("titulo"), pedidos,
+                                                    assunto_tipo=a_tipo, projeto_nome=a_proj,
+                                                    assunto_id=a_id)
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return

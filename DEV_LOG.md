@@ -1375,11 +1375,18 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > sidebar + modal global top-level (fora do `#page-02`) com inbox/thread/nova mensagem. Testes:
 > `tests/test_comunicacao.py` (12). Rename inicial Conversa→Mensageria (`8792d93`).
 >
-> **5) EM ANDAMENTO — Fatia 2 (2026-07-27):** rename "Comunicação"→**"Orizon Chat"**; campo
-> **Assunto** (seletor: Conversa Livre + lista de projetos + assuntos custom com botão "criar
-> assunto"); **Gerente/Diretor veem TODAS as conversas** + painel de administração interno com
-> filtro por assunto/participante (capacidade `ver_todas_conversas`). Público-da-loja e não-lidos
-> ficaram para uma fatia seguinte.
+> **5) Fatia 2 entregue (suíte 1527 verde).** Rename UI "Comunicação"→**"Orizon Chat"**. Campo
+> **Assunto** por conversa: `Conversa.assunto_tipo` (livre|projeto|custom) + `assunto_id` (FK nova
+> tabela `assuntos`) + reuso de `projeto_nome`; seletor com **Conversa Livre + lista de projetos +
+> assuntos custom** e botão **"criar assunto"**. Direct virou **canônico por (dupla + assunto)** —
+> a mesma dupla tem threads distintas por assunto. `mod_chat`: `criar_assunto`, `listar_assuntos`,
+> `normalizar_assunto`, `_assunto_do`, `listar_todas_conversas`. Endpoints
+> `/api/comunicacao/{assuntos (GET+POST), admin/conversas}`. **Gerente/Diretor veem TODAS as
+> conversas** (capacidade `ver_todas_conversas`, master+gerencial) + **painel de administração**
+> (filtro por assunto/participante; leitura de qualquer conversa da loja — oversight, sem postar).
+> Frontend: seletor de assunto + criar assunto na "Nova mensagem"; botão "Administração" no header
+> (gated) com lista filtrável e thread em modo leitura. Testes: +8 em `test_comunicacao.py` (20 no
+> total) + metadado de capacidade. Público-da-loja e **não-lidos ficaram para a Fatia 3**.
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

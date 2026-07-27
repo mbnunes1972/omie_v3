@@ -12,8 +12,10 @@ e natureza/transferência/bloqueador/privada nas fatias 2-4.
 import json
 import os
 
+from sqlalchemy import func
+
 from database import (Conversa, ConversaParticipante, ConversaMensagem, ContatoConfirmacao,
-                      Usuario, Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
+                      Assunto, Usuario, Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
 
 # ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
 MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
@@ -251,11 +253,73 @@ def eh_participante(db, conversa_id, usuario_id):
               .first() is not None)
 
 
-def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id):
-    """Conversa 1:1 canônica entre dois usuários da loja (idempotente pela dupla)."""
+# ── Assunto (Orizon Chat, Fatia 2) ────────────────────────────────────────────
+ASSUNTO_TIPOS = ("livre", "projeto", "custom")
+
+
+def normalizar_assunto(db, loja_id, assunto_tipo, projeto_nome=None, assunto_id=None):
+    """Valida e devolve (assunto_tipo, projeto_nome, assunto_id) prontos p/ gravar. 'livre' zera
+    tudo; 'projeto' exige projeto_nome; 'custom' exige um Assunto ATIVO da loja."""
+    at = (assunto_tipo or "livre").strip()
+    if at not in ASSUNTO_TIPOS:
+        raise ValueError("Assunto inválido.")
+    if at == "projeto":
+        if not projeto_nome:
+            raise ValueError("Escolha o projeto do assunto.")
+        return ("projeto", projeto_nome, None)
+    if at == "custom":
+        a = db.get(Assunto, int(assunto_id)) if assunto_id else None
+        if a is None or a.loja_id != loja_id or not a.ativo:
+            raise ValueError("Assunto inexistente nesta loja.")
+        return ("custom", None, a.id)
+    return ("livre", None, None)
+
+
+def criar_assunto(db, loja_id, criado_por_id, nome):
+    """Cria (ou reaproveita) um assunto custom por nome na loja."""
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("Dê um nome ao assunto.")
+    existente = (db.query(Assunto)
+                   .filter(Assunto.loja_id == loja_id, Assunto.ativo == 1,
+                           func.lower(Assunto.nome) == nome.lower())
+                   .first())
+    if existente is not None:
+        return existente
+    a = Assunto(loja_id=loja_id, nome=nome, criado_por_id=criado_por_id)
+    db.add(a); db.flush()
+    return a
+
+
+def listar_assuntos(db, loja_id):
+    """Assuntos custom ativos da loja (para o seletor 'Assunto')."""
+    return [{"id": a.id, "nome": a.nome}
+            for a in db.query(Assunto)
+                       .filter(Assunto.loja_id == loja_id, Assunto.ativo == 1)
+                       .order_by(Assunto.nome.asc()).all()]
+
+
+def _assunto_do(db, c):
+    """Rótulo/estrutura do assunto de uma conversa, para serialização."""
+    at = c.assunto_tipo or ("projeto" if c.projeto_nome else "livre")
+    if at == "projeto":
+        return {"tipo": "projeto", "label": c.projeto_nome or "Projeto",
+                "projeto_nome": c.projeto_nome, "assunto_id": None}
+    if at == "custom" and c.assunto_id:
+        a = db.get(Assunto, c.assunto_id)
+        return {"tipo": "custom", "label": (a.nome if a else "Assunto"),
+                "projeto_nome": None, "assunto_id": c.assunto_id}
+    return {"tipo": "livre", "label": "Conversa Livre", "projeto_nome": None, "assunto_id": None}
+
+
+def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id,
+                         assunto_tipo="livre", projeto_nome=None, assunto_id=None):
+    """Conversa 1:1 canônica entre dois usuários da loja PARA UM ASSUNTO (idempotente pela dupla
+    + assunto). Directs da mesma dupla com assuntos diferentes são threads distintas."""
     if not outro_usuario_id or int(outro_usuario_id) == int(criado_por_id):
         raise ValueError("Escolha outro usuário para a conversa direta.")
     outro_usuario_id = int(outro_usuario_id)
+    at, pnome, aid = normalizar_assunto(db, loja_id, assunto_tipo, projeto_nome, assunto_id)
     minhas = {r[0] for r in db.query(ConversaParticipante.conversa_id)
               .filter_by(usuario_id=criado_por_id).all()}
     do_outro = {r[0] for r in db.query(ConversaParticipante.conversa_id)
@@ -264,11 +328,13 @@ def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id):
     if comuns:
         c = (db.query(Conversa)
                .filter(Conversa.id.in_(comuns), Conversa.loja_id == loja_id,
-                       Conversa.tipo == "direct")
+                       Conversa.tipo == "direct", Conversa.assunto_tipo == at,
+                       Conversa.projeto_nome == pnome, Conversa.assunto_id == aid)
                .order_by(Conversa.id.asc()).first())
         if c is not None:
             return c
-    c = Conversa(loja_id=loja_id, tipo="direct", criado_por_id=criado_por_id)
+    c = Conversa(loja_id=loja_id, tipo="direct", criado_por_id=criado_por_id,
+                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)
     db.add(c); db.flush()
     db.add_all([ConversaParticipante(conversa_id=c.id, usuario_id=criado_por_id),
                 ConversaParticipante(conversa_id=c.id, usuario_id=outro_usuario_id)])
@@ -276,21 +342,67 @@ def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id):
     return c
 
 
-def criar_grupo(db, loja_id, criado_por_id, titulo, participante_ids):
-    """Cria uma conversa de grupo com título e N participantes (o criador entra como admin)."""
+def criar_grupo(db, loja_id, criado_por_id, titulo, participante_ids,
+                assunto_tipo="livre", projeto_nome=None, assunto_id=None):
+    """Cria uma conversa de grupo com título, assunto e N participantes (criador = admin)."""
     titulo = (titulo or "").strip()
     if not titulo:
         raise ValueError("Dê um nome ao grupo.")
+    at, pnome, aid = normalizar_assunto(db, loja_id, assunto_tipo, projeto_nome, assunto_id)
     ids = {int(x) for x in (participante_ids or []) if x} | {int(criado_por_id)}
     if len(ids) < 2:
         raise ValueError("Um grupo precisa de ao menos 2 participantes.")
-    c = Conversa(loja_id=loja_id, tipo="grupo", titulo=titulo, criado_por_id=criado_por_id)
+    c = Conversa(loja_id=loja_id, tipo="grupo", titulo=titulo, criado_por_id=criado_por_id,
+                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)
     db.add(c); db.flush()
     for uid in ids:
         db.add(ConversaParticipante(conversa_id=c.id, usuario_id=uid,
                                     papel="admin" if uid == int(criado_por_id) else "membro"))
     db.flush()
     return c
+
+
+def _nomes_participantes(db, conversa_id):
+    rows = (db.query(Usuario.nome)
+              .join(ConversaParticipante, ConversaParticipante.usuario_id == Usuario.id)
+              .filter(ConversaParticipante.conversa_id == conversa_id)
+              .order_by(Usuario.nome.asc()).all())
+    return [r[0] for r in rows]
+
+
+def listar_todas_conversas(db, loja_id, participante_id=None,
+                           assunto_tipo=None, assunto_ref=None):
+    """ADMIN (ver_todas_conversas): TODAS as conversas direct/grupo da loja, com filtro opcional
+    por participante e por assunto. `assunto_ref` = projeto_nome (tipo projeto) ou id (custom)."""
+    q = (db.query(Conversa)
+           .filter(Conversa.loja_id == loja_id, Conversa.tipo.in_(("direct", "grupo"))))
+    if assunto_tipo:
+        q = q.filter(Conversa.assunto_tipo == assunto_tipo)
+        if assunto_tipo == "projeto" and assunto_ref:
+            q = q.filter(Conversa.projeto_nome == assunto_ref)
+        if assunto_tipo == "custom" and assunto_ref:
+            q = q.filter(Conversa.assunto_id == int(assunto_ref))
+    if participante_id:
+        ids = {r[0] for r in db.query(ConversaParticipante.conversa_id)
+               .filter_by(usuario_id=int(participante_id)).all()}
+        q = q.filter(Conversa.id.in_(ids or {-1}))
+    convs = q.all()
+    itens = []
+    for c in convs:
+        nomes = _nomes_participantes(db, c.id)
+        ultima = (db.query(ConversaMensagem).filter_by(conversa_id=c.id)
+                    .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
+        itens.append({
+            "id": c.id, "tipo": c.tipo,
+            "titulo": c.titulo or (" ↔ ".join(nomes) if c.tipo == "direct" else "Conversa"),
+            "participantes": nomes, "assunto": _assunto_do(db, c),
+            "ultima_previa": (("" if ultima is None else
+                               (MASCARA_PRIVADA if ultima.privada else (ultima.corpo or "")))[:120]),
+            "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
+            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+        })
+    itens.sort(key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
+    return itens
 
 
 def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
@@ -320,6 +432,7 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
     return {
         "id": c.id, "tipo": c.tipo, "titulo": titulo,
         "projeto_nome": c.projeto_nome, "outro_usuario_id": outro_id,
+        "assunto": _assunto_do(db, c),
         "ultima_previa": previa[:120],
         "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
         "criado_em": c.criado_em.isoformat() if c.criado_em else None,

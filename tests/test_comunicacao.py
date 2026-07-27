@@ -154,6 +154,90 @@ def test_canal_segmento_vem_da_funcao(http_client_factory, app_db, seed):
     assert st == 201 and b["mensagem"]["canal_segmento"] == "financeiro", b
 
 
+# ── Fatia 2: assunto ────────────────────────────────────────────────────────--
+
+def test_criar_e_listar_assunto(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post("/api/comunicacao/assuntos", {"nome": "Marketing"})
+    assert st == 201 and b["assunto"]["nome"] == "Marketing", b
+    st, b = c.get("/api/comunicacao/assuntos")
+    assert st == 200 and b["ok"]
+    assert "Marketing" in [a["nome"] for a in b["assuntos"]]
+    assert "Proj_L1" in [p["nome_safe"] for p in b["projetos"]]   # projetos entram no seletor
+
+
+def test_conversa_com_assunto_projeto(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    st, b = c.post("/api/comunicacao/conversas",
+                   {"tipo": "direct", "usuario_id": alvo,
+                    "assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})
+    assert st == 201, b
+    assert b["conversa"]["assunto"]["tipo"] == "projeto"
+    assert b["conversa"]["assunto"]["label"] == "Proj_L1"
+
+
+def test_direct_e_canonico_por_assunto(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    livre1 = c.post("/api/comunicacao/conversas", {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
+    livre2 = c.post("/api/comunicacao/conversas", {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
+    assert livre1 == livre2                                        # mesma dupla+assunto → mesma
+    proj = c.post("/api/comunicacao/conversas",
+                  {"tipo": "direct", "usuario_id": alvo,
+                   "assunto_tipo": "projeto", "projeto_nome": "Proj_L1"})[1]["conversa"]["id"]
+    assert proj != livre1                                          # assunto diferente → thread nova
+
+
+def test_assunto_projeto_de_outra_loja_400(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    st, b = c.post("/api/comunicacao/conversas",
+                   {"tipo": "direct", "usuario_id": alvo,
+                    "assunto_tipo": "projeto", "projeto_nome": "Proj_L2"})   # loja 2
+    assert st == 400 and b["ok"] is False
+
+
+# ── Fatia 2: painel admin (ver_todas_conversas) ────────────────────────────────
+
+def test_admin_ve_todas_e_operador_nao(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    dono.post("/api/comunicacao/conversas", {"tipo": "direct", "usuario_id": alvo})
+    # master (Diretor) enxerga o painel
+    st, b = dono.get("/api/comunicacao/admin/conversas")
+    assert st == 200 and b["ok"] and len(b["conversas"]) >= 1
+    # operador não
+    op = _login(http_client_factory, "cons_l1")
+    assert op.get("/api/comunicacao/admin/conversas")[0] == 403
+
+
+def test_admin_filtra_por_participante(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    cid = dono.post("/api/comunicacao/conversas",
+                    {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
+    st, b = dono.get("/api/comunicacao/admin/conversas?participante=%d" % alvo)
+    assert st == 200 and cid in [x["id"] for x in b["conversas"]]
+
+
+def test_admin_le_conversa_que_nao_participa(http_client_factory, app_db, seed):
+    # conversa entre cons_l1 e um 3º usuário da loja (dir_l1 não participa)
+    db = app_db.get_session()
+    u = app_db.Usuario(nome="Beltrano L1", login="beltrano_l1", nivel="operador",
+                       loja_id=seed["loja1_id"], ativo=1)
+    u.set_senha("senha123"); db.add(u); db.commit(); uid_b = u.id; db.close()
+    autor = _login(http_client_factory, "cons_l1")
+    alvo = uid_b
+    cid = autor.post("/api/comunicacao/conversas",
+                     {"tipo": "direct", "usuario_id": alvo})[1]["conversa"]["id"]
+    autor.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "particular"})
+    # Diretor (master) NÃO participa, mas lê (oversight)
+    diretor = _login(http_client_factory, "dir_l1")
+    st, b = diretor.get("/api/comunicacao/conversas/%d/mensagens" % cid)
+    assert st == 200 and [m["corpo"] for m in b["mensagens"]] == ["particular"]
+
+
 # ── auth ────────────────────────────────────────────────────────────────────---
 
 def test_inbox_exige_login(http_client_factory, seed):

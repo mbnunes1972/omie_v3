@@ -49,6 +49,28 @@ def _etapa(app_db, nome, codigo, funcao_id):
         db.close()
 
 
+def _etapa_status(app_db, nome, codigo, status):
+    db = app_db.get_session()
+    try:
+        db.add(app_db.CicloEtapa(projeto_nome=nome, etapa_codigo=codigo, status=status))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _parcela_retida(app_db, nome, amb_ids):
+    db = app_db.get_session()
+    try:
+        p = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status="retido",
+                                  fracao_val_cont=1.0, val_cont_congelado=1.0)
+        db.add(p); db.flush()
+        for a in amb_ids:
+            db.add(app_db.ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=a, valor_ambiente=1.0))
+        db.commit()
+    finally:
+        db.close()
+
+
 def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 
@@ -103,3 +125,14 @@ def test_pe_documento_liberado_com_um_candidato(http_client_factory, app_db, see
     st, b = c.post_multipart("/api/projetos/GPE_b/ciclo/11a/documento",
                              files={"arquivo": ("p.pdf", b"x")}, fields={})
     assert st != 409   # passou do gate (para em outra validação, não no bloqueador de responsável)
+
+
+def test_montagem_barrada_por_ambiente_retido(http_client_factory, app_db, seed):
+    """Achado da Vera 🟠: concluir Montagem (17) do PROJETO INTEIRO com um ambiente ainda RETIDO pela
+    obra é barrado (409) — a etapa 17/18 não pode marcar 'montado' o que a obra segura."""
+    ids = _proj(app_db, seed["loja1_id"], "GM_ret", n_amb=2)
+    _etapa_status(app_db, "GM_ret", "16", "concluido")   # libera pode_avancar("17")
+    _parcela_retida(app_db, "GM_ret", [ids[1]])
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.patch("/api/projetos/GM_ret/ciclo/17", {"status": "concluido"})
+    assert st == 409 and "retido" in (b.get("erro") or "").lower()

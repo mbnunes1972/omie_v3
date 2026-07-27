@@ -201,6 +201,19 @@ def test_fracao_reconhecivel(app_db, seed):
         db.close()
 
 
+def test_endpoints_isolados_por_loja(http_client_factory, app_db, seed):
+    """Achado da Vera 🟡: os endpoints novos respeitam o isolamento de loja — usuário da loja 2 não
+    enxerga (404) o projeto da loja 1 em /parcelas nem age nele em /retido/*."""
+    ids = _proj_amb(app_db, seed, "RET_iso", 2)                     # projeto na loja 1
+    outro = _login(http_client_factory, "dir_l2")                  # master da loja 2
+    assert outro.get("/api/projetos/RET_iso/parcelas")[0] == 404
+    assert outro.post("/api/projetos/RET_iso/retido/sinalizar",
+                      {"pool_ambiente_ids": [ids[0]]})[0] == 404
+    assert outro.post("/api/projetos/RET_iso/retido/confirmar", {})[0] == 404
+    assert outro.post("/api/projetos/RET_iso/retido/liberar",
+                      {"pool_ambiente_ids": [ids[0]]})[0] == 404
+
+
 def test_endpoint_conciliar_barrado_por_retido(http_client_factory, app_db, seed):
     """Fatia 4 (achado da Vera 🔴): a Conciliação Final (etapa 21) NÃO pode fechar enquanto houver
     ambiente retido — senão reconheceria a provisão retida como sobra (receita) antes da execução."""

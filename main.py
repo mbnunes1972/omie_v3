@@ -10717,6 +10717,16 @@ class Handler(BaseHTTPRequestHandler):
                     # Só trava na LACUNA (>1 candidato e ambiente sem responsável) — mesma regra do
                     # bloqueador invertido, mas por ambiente (fecha o gate de PE/montagem do chat).
                     if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and etapa_cod in ("17", "18"):
+                        # Desmembramento operacional (achado da Vera): a etapa 17/18 é de PROJETO INTEIRO —
+                        # concluí-la com um ambiente ainda RETIDO pela obra registraria "montado" algo que
+                        # fisicamente não pôde ser montado. Barra até liberar (mesmo padrão do pe/upload e
+                        # da Conciliação Final).
+                        import mod_retido as _mret
+                        if _mret.ambientes_retidos(db, nome_safe):
+                            self.send_json({"ok": False, "erro": "Há ambientes retidos pela obra: "
+                                "libere-os (Retenção por Obra) antes de concluir a montagem/assistência."},
+                                code=409)
+                            return
                         import mod_equipe as _meq
                         faltam = _meq.montagem_lacunas(
                             db, loja_id, _ETAPA_PAPEL.get(etapa_cod),

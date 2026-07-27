@@ -1470,8 +1470,15 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (17/18)** — responsável por AMBIENTE no Mapa: `mod_equipe.montagem_lacunas` trava a conclusão (PATCH
 > `/ciclo/17|18`) só quando há **>1 candidato** de montagem e algum ambiente sem responsável (0/1
 > candidato = auto/sem_candidato, retrocompatível — projetos sem Mapa seguem como hoje). Testes:
-> `test_gate_pe_montagem.py` (4). **Deploy:** ✅ na VPS A (`6e0a08e`, ver nota de deploy no topo);
-> **VPS B intocada** na `Pre_Teste`; produção pendente.
+> `test_gate_pe_montagem.py`. **Auditoria da Vera (UI Retenção + gates) → 1 correção + 2 testes:**
+> (🟠) o gate de Montagem/Assistência (17/18) não olhava ambiente retido → concluir a etapa do
+> projeto inteiro registraria "montado" um ambiente que a obra ainda segura; agora o PATCH `/ciclo/17|18`
+> também barra (409) se `mod_retido.ambientes_retidos` não vazio (mesmo padrão do pe/upload e da
+> Conciliação Final; NÃO era risco de razão — a 21 já protegia o contábil). +teste da montagem barrada
+> por retido; +teste de isolamento por loja (404 cross-loja em `/parcelas` e `/retido/*`). Achados 🟡
+> restantes (labels `em_aprovacao`/`liquidada` no front sem wiring ainda; restart local aplica
+> migração) = informativos, não bloqueiam. **Deploy:** VPS A em `6e0a08e` (a correção é POSTERIOR —
+> repromover A antes de liberar B); **VPS B intocada** na `Pre_Teste`; produção pendente.
 >
 > **11) Frente "Desmembramento OPERACIONAL por ambiente desde a medição" (spec
 > `2026-07-27-desmembramento-operacional-desde-medicao-design.md`).** Dor: a obra do cliente segura

@@ -1396,7 +1396,19 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > para público cria a linha de participante só como marcador), `_conta_nao_lidas` (exclui as
 > próprias mensagens). `listar_inbox` agora inclui o público e devolve `nao_lidas` por conversa.
 > Frontend: badge de não-lidas por item + total na entrada da sidebar (poll ~45s). Testes: +5
-> (23 no total). **Falta da frente (fatias seguintes):** anexos (foto/arquivo) e a ponte WhatsApp.
+> (23 no total).
+>
+> **7) Fatia 4 entregue (suíte 1534 verde).** O canal público único virou **três**:
+> **Mural** (avisos, por loja, todos leem, **só gerência posta** — `pode_escrever_conversa`),
+> **Fórum da Loja** (`forum_loja`) e **Fórum Orizon** (`forum_orizon`, **CROSS-LOJA pela rede** —
+> primeiro dado cross-loja deliberado, gated por `Conversa.rede_id`). Fóruns = **DEBATES**: cada
+> conversa é um tópico com título+assunto; busca por título; decisão do lojista. `mod_chat`:
+> `get_or_create_mural`, `criar_debate`, `listar_debates`, `pode_ler_conversa`/
+> `pode_escrever_conversa`, `_rede_da_loja`. Endpoints `/api/comunicacao/forum` (GET lista/busca +
+> POST cria debate). Migração: `publico`→`forum_loja` "Geral". Frontend: botões Fórum da Loja/Orizon
+> (Orizon só se a loja tem rede), lista de debates com busca + "Novo debate" (título+assunto), mural
+> em leitura p/ quem não é gerência. Testes: +6 (26 no total). **Falta da frente:** anexos
+> (foto/arquivo) e a ponte WhatsApp do funcionário.
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

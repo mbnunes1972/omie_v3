@@ -123,6 +123,24 @@ já registra o remetente — então "origem" e "conversa sem projeto" já são s
   confinado — anexos seguem princípio de não confiar em conteúdo).
 - Notificações no navegador (Web Push) — provável fatia própria.
 
+## 8b. Canais públicos — revisão 2026-07-27 (decisão do lojista, Fatia 4)
+
+O "público = a loja" foi refinado para **três** canais, e o nome do app virou **Orizon Chat**:
+
+- **Mural** (`tipo='mural'`): quadro de **avisos** por loja. Todos leem; **só Gerente/Diretor**
+  postam (`pode_escrever_conversa` exige `ver_todas_conversas`). Um por loja (get-or-create).
+- **Fórum da Loja** (`tipo='forum_loja'`): comunicação interna aberta da loja. É um **fórum de
+  debates** — cada conversa é um **tópico** (título + Assunto), todos da loja leem/postam; busca por
+  título/assunto.
+- **Fórum Orizon** (`tipo='forum_orizon'`): **cross-loja pela REDE** (`Conversa.rede_id`) — o
+  primeiro dado cross-loja deliberado do sistema. **Todos os usuários das lojas da rede** leem e
+  postam (decisão do lojista). Também é fórum de debates (título; assunto fica 'livre' porque
+  projeto/custom são por loja). Sem rede associada → o fórum não aparece.
+
+Tenancy: mural/forum_loja seguem isolados por loja; forum_orizon é a exceção gated pela rede
+(`pode_ler_conversa`/`pode_escrever_conversa` centralizam a regra). O antigo canal `publico` da
+Fatia 3 migrou para um debate `forum_loja` "Geral".
+
 ## 9. Fatiamento proposto (TDD backend → UI, uma fatia por vez)
 
 1. **Fatia 1 — núcleo interno:** rename UI → "Central de Comunicação"; `Conversa.tipo` +

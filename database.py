@@ -1049,8 +1049,12 @@ class Conversa(Base):
     # tipo: projeto (a de sempre) | direct (1:1) | grupo (N) | publico (mural da loja, Fatia 2).
     # `titulo` é o nome do grupo. `criado_por_id` = quem abriu. Registros antigos = 'projeto'
     # (default preenche as linhas existentes na migração).
+    # tipo: projeto | direct | grupo | mural | forum_loja | forum_orizon (Fatia 4). mural =
+    # canal de avisos por loja (gerência posta); forum_loja/forum_orizon = DEBATES (cada conversa
+    # é um tópico com título+assunto). forum_orizon é CROSS-LOJA (escopo rede_id).
     tipo          = Column(String(20), nullable=False, default="projeto")
     titulo        = Column(Text,       nullable=True)
+    rede_id       = Column(Integer,    ForeignKey("redes.id"), nullable=True)   # só forum_orizon
     criado_por_id = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)
     # Assunto da conversa (Orizon Chat, Fatia 2): livre (Conversa Livre) | projeto (usa
     # `projeto_nome`) | custom (usa `assunto_id`). Ortogonal ao `tipo` (direct/grupo): categoriza
@@ -1620,6 +1624,10 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS assunto_tipo VARCHAR(12) DEFAULT 'livre'",
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS assunto_id INTEGER",
         "UPDATE conversas SET assunto_tipo='projeto' WHERE projeto_nome IS NOT NULL AND (assunto_tipo IS NULL OR assunto_tipo='livre')",
+        # Fatia 4: canais públicos viram 3 (mural avisos + forum_loja + forum_orizon cross-loja).
+        # O antigo 'publico' (canal aberto único) vira um debate 'forum_loja' "Geral".
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS rede_id INTEGER",
+        "UPDATE conversas SET tipo='forum_loja', titulo=COALESCE(titulo,'Geral') WHERE tipo='publico'",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

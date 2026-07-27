@@ -238,39 +238,80 @@ def test_admin_le_conversa_que_nao_participa(http_client_factory, app_db, seed):
     assert st == 200 and [m["corpo"] for m in b["mensagens"]] == ["particular"]
 
 
-# ── Fatia 3: mural público da loja ─────────────────────────────────────────────
+# ── Fatia 3/4: MURAL de avisos (por loja, gerência posta, todos leem) ───────────
 
-def _publico_id(client):
+def _mural_id(client):
     b = client.get("/api/comunicacao/inbox")[1]
-    pub = [x for x in b["conversas"] if x["tipo"] == "publico"]
-    assert pub, "mural público não veio na inbox"
-    return pub[0]["id"]
+    m = [x for x in b["conversas"] if x["tipo"] == "mural"]
+    assert m, "mural não veio na inbox"
+    return m[0]["id"]
 
 
-def test_publico_na_inbox_de_todos(http_client_factory, seed):
+def test_mural_na_inbox_de_todos(http_client_factory, seed):
     for who in ("dir_l1", "cons_l1"):
         c = _login(http_client_factory, who)
         b = c.get("/api/comunicacao/inbox")[1]
-        pub = [x for x in b["conversas"] if x["tipo"] == "publico"]
-        assert pub and pub[0]["titulo"] == "📣 Mural da loja"
+        m = [x for x in b["conversas"] if x["tipo"] == "mural"]
+        assert m and m[0]["titulo"] == "📣 Mural da loja"
 
 
-def test_publico_todos_leem_e_postam(http_client_factory, seed):
-    autor = _login(http_client_factory, "cons_l1")
-    pid = _publico_id(autor)
-    st, b = autor.post("/api/comunicacao/conversas/%d/mensagens" % pid, {"corpo": "aviso geral"})
+def test_mural_so_gerencia_posta_todos_leem(http_client_factory, seed):
+    # operador NÃO posta (403)
+    op = _login(http_client_factory, "cons_l1")
+    mid = _mural_id(op)
+    assert op.post("/api/comunicacao/conversas/%d/mensagens" % mid, {"corpo": "x"})[0] == 403
+    # Diretor (master) posta; todos leem
+    dir1 = _login(http_client_factory, "dir_l1")
+    assert dir1.post("/api/comunicacao/conversas/%d/mensagens" % mid, {"corpo": "aviso oficial"})[0] == 201
+    st, b = op.get("/api/comunicacao/conversas/%d/mensagens" % mid)
+    assert st == 200 and "aviso oficial" in [m["corpo"] for m in b["mensagens"]]
+
+
+def test_mural_isolado_por_loja(http_client_factory, seed):
+    c1 = _login(http_client_factory, "dir_l1"); m1 = _mural_id(c1)
+    c2 = _login(http_client_factory, "dir_l2"); m2 = _mural_id(c2)
+    assert m1 != m2
+    assert c2.get("/api/comunicacao/conversas/%d/mensagens" % m1)[0] == 404   # não cruza loja
+
+
+# ── Fatia 4: Fórum da Loja (debates com assunto) ───────────────────────────────
+
+def test_forum_loja_debate_lista_busca_e_posta(http_client_factory, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    st, b = dono.post("/api/comunicacao/forum",
+                      {"escopo": "loja", "titulo": "Reforma da vitrine"})
     assert st == 201, b
-    # outro usuário da loja (não "participante") lê o mural
-    leitor = _login(http_client_factory, "dir_l1")
-    st, b = leitor.get("/api/comunicacao/conversas/%d/mensagens" % pid)
-    assert st == 200 and "aviso geral" in [m["corpo"] for m in b["mensagens"]]
+    did = b["debate"]["id"]
+    # aparece na lista e na busca por título
+    st, b = dono.get("/api/comunicacao/forum?escopo=loja&q=vitrine")
+    assert st == 200 and did in [x["id"] for x in b["debates"]]
+    # qualquer usuário da loja lê e posta
+    op = _login(http_client_factory, "cons_l1")
+    assert op.post("/api/comunicacao/conversas/%d/mensagens" % did, {"corpo": "boa ideia"})[0] == 201
+    st, b = op.get("/api/comunicacao/conversas/%d/mensagens" % did)
+    assert st == 200 and "boa ideia" in [m["corpo"] for m in b["mensagens"]]
 
 
-def test_publico_isolado_por_loja(http_client_factory, seed):
-    c1 = _login(http_client_factory, "dir_l1"); p1 = _publico_id(c1)
-    c2 = _login(http_client_factory, "dir_l2"); p2 = _publico_id(c2)
-    assert p1 != p2                                             # cada loja tem o seu
-    assert c2.get("/api/comunicacao/conversas/%d/mensagens" % p1)[0] == 404   # não cruza loja
+def test_forum_loja_nao_cruza_loja(http_client_factory, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    did = dono.post("/api/comunicacao/forum", {"escopo": "loja", "titulo": "Só da L1"})[1]["debate"]["id"]
+    outra = _login(http_client_factory, "dir_l2")
+    assert outra.get("/api/comunicacao/conversas/%d/mensagens" % did)[0] == 404
+
+
+# ── Fatia 4: Fórum Orizon (cross-loja pela rede) ───────────────────────────────
+
+def test_forum_orizon_cross_loja_mesma_rede(http_client_factory, seed):
+    # dir_l1 (loja1) e dir_l2 (loja2) estão na MESMA rede (seed)
+    dono = _login(http_client_factory, "dir_l1")
+    st, b = dono.post("/api/comunicacao/forum", {"escopo": "orizon", "titulo": "Compra conjunta"})
+    assert st == 201 and b["debate"]["tipo"] == "forum_orizon", b
+    did = b["debate"]["id"]
+    # loja 2 (mesma rede) VÊ o debate e posta
+    outra = _login(http_client_factory, "dir_l2")
+    st, b = outra.get("/api/comunicacao/forum?escopo=orizon")
+    assert st == 200 and did in [x["id"] for x in b["debates"]]
+    assert outra.post("/api/comunicacao/conversas/%d/mensagens" % did, {"corpo": "topo"})[0] == 201
 
 
 # ── Fatia 3: não-lidos ──────────────────────────────────────────────────────---

@@ -674,8 +674,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div style="flex:1;display:flex;gap:12px;min-height:0">
       <!-- coluna esquerda: inbox -->
       <div style="width:280px;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        <div style="padding:8px;border-bottom:1px solid var(--border)">
+        <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">
           <button class="btn btn-primary btn-sm" style="width:100%" onclick="ccNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start" onclick="ccForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
+          <button class="btn btn-ghost btn-sm" id="cc-forum-orizon-btn" style="width:100%;justify-content:flex-start;display:none" onclick="ccForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
         </div>
         <div id="cc-inbox" style="flex:1;overflow-y:auto;padding:6px"></div>
       </div>
@@ -717,6 +719,32 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <select id="cc-adm-part" onchange="ccAdminCarregar()" style="flex:1;padding:6px 8px"></select>
           </div>
           <div id="cc-adm-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
+        </div>
+        <!-- fórum (Fatia 4): lista de debates + novo debate + busca -->
+        <div id="cc-forum" style="display:none;flex:1;flex-direction:column;min-height:0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:800" id="cc-forum-titulo"><i class="ti ti-messages"></i> Fórum</div>
+            <button class="btn btn-primary btn-sm" onclick="ccNovoDebateAbrir()"><i class="ti ti-plus"></i> Novo debate</button>
+          </div>
+          <input id="cc-forum-busca" type="search" placeholder="buscar debate por título…" oninput="ccForumBuscarDebounce()" style="width:100%;padding:6px 8px;margin-bottom:8px">
+          <!-- form novo debate -->
+          <div id="cc-novo-debate" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+            <label class="field-label">Título do debate</label>
+            <input id="cc-debate-titulo" type="text" placeholder="Ex.: Reforma da vitrine" style="width:100%;margin-bottom:8px">
+            <div id="cc-debate-assunto-wrap">
+              <label class="field-label">Assunto</label>
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <select id="cc-debate-assunto" style="flex:1;padding:6px 8px"></select>
+                <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto('cc-debate-assunto')"><i class="ti ti-plus"></i> Criar</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" onclick="ccNovoDebateCriar()">Criar debate</button>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('cc-novo-debate').style.display='none'">Cancelar</button>
+            </div>
+            <div id="cc-debate-aviso" style="font-size:12px;color:var(--err);margin-top:6px"></div>
+          </div>
+          <div id="cc-forum-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
         </div>
         <!-- thread -->
         <div id="cc-thread" style="display:none;flex:1;flex-direction:column;min-height:0">
@@ -12060,11 +12088,14 @@ let _ccAdminView = false;     // thread aberta pelo painel admin (read-only)
 async function abrirCentralComunicacao(){
   document.getElementById('modal-central-com').style.display = 'flex';
   ccNovaFechar();
-  document.getElementById('cc-thread').style.display = 'none';
-  document.getElementById('cc-admin').style.display = 'none';
+  ['cc-thread','cc-admin','cc-forum'].forEach(id=>document.getElementById(id).style.display='none');
   document.getElementById('cc-vazio').style.display = 'flex';
   const admBtn = document.getElementById('cc-admin-btn');
   admBtn.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas) ? '' : 'none';
+  // Fórum Orizon só aparece se a loja ativa pertence a uma rede
+  const aId = _lojaAtiva || (_usuarioAtual && (_usuarioAtual.loja_ativa_id || _usuarioAtual.loja_id));
+  const lojaObj = ((_usuarioAtual && _usuarioAtual.lojas) || []).find(l=>l.id === aId);
+  document.getElementById('cc-forum-orizon-btn').style.display = (lojaObj && lojaObj.rede_id) ? '' : 'none';
   _ccConvAtiva = null; _ccAdminView = false;
   await ccCarregarInbox();
 }
@@ -12111,17 +12142,24 @@ async function ccPollBadge(){
 }
 setInterval(ccPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só com usuário/loja)
 
+function _ccMostrarThread(titulo, podePostar){
+  ccNovaFechar();
+  ['cc-admin','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
+  document.getElementById('cc-compositor').style.display = podePostar ? 'flex' : 'none';
+  document.getElementById('cc-thread').style.display = 'flex';
+  document.getElementById('cc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
+}
+async function ccAbrirConversaPorId(id, titulo, podePostar){
+  _ccConvAtiva = id; _ccAdminView = false;
+  _ccMostrarThread(titulo, podePostar);
+  await ccCarregarMsgs();
+}
 async function ccAbrirConversa(idx){
   const c = _ccInbox[idx];
   if(!c) return;
-  _ccConvAtiva = c.id; _ccAdminView = false;
-  ccNovaFechar();
-  document.getElementById('cc-admin').style.display = 'none';
-  document.getElementById('cc-vazio').style.display = 'none';
-  document.getElementById('cc-compositor').style.display = 'flex';   // participante → pode escrever
-  document.getElementById('cc-thread').style.display = 'flex';
-  document.getElementById('cc-thread-titulo').textContent = _ccTituloComAssunto(c);
-  await ccCarregarMsgs();
+  let podePostar = true;
+  if(c.tipo === 'mural') podePostar = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
+  await ccAbrirConversaPorId(c.id, _ccTituloComAssunto(c), podePostar);
   ccCarregarInbox();  // reflete "ativo" na lista
 }
 
@@ -12170,9 +12208,7 @@ async function ccEnviar(){
 
 // ── nova conversa ──────────────────────────────────────────────────────────────
 function ccNovaAbrir(){
-  document.getElementById('cc-thread').style.display = 'none';
-  document.getElementById('cc-admin').style.display = 'none';
-  document.getElementById('cc-vazio').style.display = 'none';
+  ['cc-thread','cc-admin','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
   document.getElementById('cc-nova').style.display = 'block';
   document.getElementById('cc-nova-aviso').textContent = '';
   document.getElementById('cc-grupo-nome').value = '';
@@ -12188,6 +12224,7 @@ async function ccCarregarAssuntos(){
   try { _ccAssuntoCache = await fetch('/api/comunicacao/assuntos',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ _ccAssuntoCache = {ok:false}; }
   ccPreencherSelectAssunto(document.getElementById('cc-assunto'), false);
+  ccPreencherSelectAssunto(document.getElementById('cc-debate-assunto'), false);
 }
 function ccPreencherSelectAssunto(sel, comTodos){
   if(!sel || !_ccAssuntoCache || !_ccAssuntoCache.ok){ if(sel) sel.innerHTML='<option value="livre">Conversa Livre</option>'; return; }
@@ -12205,7 +12242,8 @@ function ccPreencherSelectAssunto(sel, comTodos){
   sel.innerHTML = html;
   if(manter) sel.value = manter;
 }
-async function ccCriarAssunto(){
+async function ccCriarAssunto(targetId){
+  targetId = targetId || 'cc-assunto';
   const nome = await promptPopup('', {titulo:'Novo assunto', placeholder:'Ex.: Marketing, Pós-venda…', okLabel:'Criar'});
   if(!nome) return;
   try{
@@ -12214,7 +12252,8 @@ async function ccCriarAssunto(){
        body: JSON.stringify({nome})}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha ao criar assunto.', true); return; }
     await ccCarregarAssuntos();
-    document.getElementById('cc-assunto').value = 'custom:' + d.assunto.id;   // já seleciona
+    const sel = document.getElementById(targetId);
+    if(sel) sel.value = 'custom:' + d.assunto.id;   // já seleciona no seletor de origem
   }catch(e){ showToast('Erro de rede.', true); }
 }
 function _ccParseAssunto(valor){
@@ -12298,9 +12337,7 @@ async function ccCriar(){
 // ── painel de administração (ver_todas_conversas) ─────────────────────────────
 let _ccAdminInbox = [];
 async function ccAdminAbrir(){
-  document.getElementById('cc-nova').style.display = 'none';
-  document.getElementById('cc-thread').style.display = 'none';
-  document.getElementById('cc-vazio').style.display = 'none';
+  ['cc-nova','cc-thread','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
   document.getElementById('cc-admin').style.display = 'flex';
   // filtros: assunto (com "todos") + participante (com "todos")
   if(!_ccAssuntoCache) await ccCarregarAssuntos();
@@ -12359,6 +12396,78 @@ async function ccAdminAbrirConversa(idx){
   const seg = (c.assunto && c.assunto.label) ? ('  ·  '+c.assunto.label) : '';
   document.getElementById('cc-thread-titulo').textContent = (c.titulo||'Conversa') + seg + '  (somente leitura)';
   await ccCarregarMsgs();
+}
+
+// ── Fóruns (Fatia 4): debates com assunto + busca ─────────────────────────────
+let _ccForumEscopo = 'loja';
+let _ccForumDebates = [];
+let _ccForumTimer = null;
+async function ccForumAbrir(escopo){
+  _ccForumEscopo = escopo;
+  ccNovaFechar();
+  ['cc-thread','cc-admin','cc-vazio'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('cc-forum').style.display = 'flex';
+  document.getElementById('cc-forum-titulo').innerHTML = escopo === 'orizon'
+    ? '<i class="ti ti-world"></i> Fórum Orizon <span style="font-weight:400;color:var(--muted);font-size:12px">· entre lojas da rede</span>'
+    : '<i class="ti ti-building-store"></i> Fórum da Loja';
+  document.getElementById('cc-novo-debate').style.display = 'none';
+  document.getElementById('cc-forum-busca').value = '';
+  // assunto (projeto/custom) só no fórum da loja; no Orizon o título organiza
+  document.getElementById('cc-debate-assunto-wrap').style.display = (escopo === 'orizon') ? 'none' : 'block';
+  await ccForumCarregar();
+}
+function ccForumBuscarDebounce(){ clearTimeout(_ccForumTimer); _ccForumTimer = setTimeout(ccForumCarregar, 300); }
+async function ccForumCarregar(){
+  const box = document.getElementById('cc-forum-lista');
+  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
+  const q = (document.getElementById('cc-forum-busca').value || '').trim();
+  let d;
+  try{ d = await fetch('/api/comunicacao/forum?escopo='+_ccForumEscopo+(q?('&q='+encodeURIComponent(q)):''),{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
+  _ccForumDebates = d.debates || [];
+  if(!_ccForumDebates.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum debate ainda — crie o primeiro.</div>'; return; }
+  box.innerHTML = _ccForumDebates.map((c,i)=>{
+    const seg = (c.assunto && c.assunto.label) ? c.assunto.label : '—';
+    const loja = c.loja_nome ? ' · '+esc(c.loja_nome) : '';
+    return '<div onclick="ccAbrirDebate('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
+      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
+      + '<div style="font-weight:700;font-size:13px"><i class="ti ti-message-circle"></i> '+esc(c.titulo||'Debate')
+      + ' <span style="float:right;color:var(--muted);font-size:11px;font-weight:400">'+(c.n_mensagens||0)+' msg</span></div>'
+      + '<div style="font-size:11px;color:var(--muted)"><span style="color:var(--accent)">'+esc(seg)+'</span>'
+      + (c.criado_por_nome?(' · '+esc(c.criado_por_nome)):'')+loja+'</div>'
+      + '</div>';
+  }).join('');
+}
+function ccNovoDebateAbrir(){
+  const box = document.getElementById('cc-novo-debate');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('cc-debate-aviso').textContent = '';
+  document.getElementById('cc-debate-titulo').value = '';
+  if(_ccForumEscopo !== 'orizon' && !_ccAssuntoCache) ccCarregarAssuntos();
+}
+async function ccNovoDebateCriar(){
+  const aviso = document.getElementById('cc-debate-aviso'); aviso.textContent = '';
+  const titulo = document.getElementById('cc-debate-titulo').value.trim();
+  if(!titulo){ aviso.textContent = 'Dê um título ao debate.'; return; }
+  const payload = {escopo:_ccForumEscopo, titulo};
+  if(_ccForumEscopo !== 'orizon'){
+    Object.assign(payload, _ccParseAssunto(document.getElementById('cc-debate-assunto').value));
+  }
+  try{
+    const d = await fetch('/api/comunicacao/forum',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(payload)}).then(r=>r.json());
+    if(!d.ok){ aviso.textContent = d.erro || 'Falha ao criar.'; return; }
+    document.getElementById('cc-novo-debate').style.display = 'none';
+    await ccForumCarregar();
+    ccAbrirConversaPorId(d.debate.id, d.debate.titulo, true);   // abre o debate criado
+  }catch(e){ aviso.textContent = 'Erro de rede.'; }
+}
+function ccAbrirDebate(idx){
+  const c = _ccForumDebates[idx];
+  if(!c) return;
+  ccAbrirConversaPorId(c.id, c.titulo, true);
 }
 
 async function convResolver(mid){

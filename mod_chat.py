@@ -405,27 +405,114 @@ def listar_todas_conversas(db, loja_id, participante_id=None,
     return itens
 
 
-def get_or_create_publico(db, loja_id):
-    """Mural PÚBLICO da loja (Fatia 3): conversa única tipo='publico'. Audiência = a loja inteira
-    (implícita, sem participantes). get-or-create idempotente."""
+# ── Canais públicos: Mural + Fóruns (Fatia 4) ─────────────────────────────────
+TIPOS_PUBLICOS = ("mural", "forum_loja", "forum_orizon")
+
+
+def _rede_da_loja(db, loja_id):
+    from database import Loja
+    l = db.get(Loja, loja_id) if loja_id else None
+    return l.rede_id if l else None
+
+
+def get_or_create_mural(db, loja_id):
+    """Mural de AVISOS da loja (Fatia 4): conversa única tipo='mural'. Todos leem; só gerência
+    posta (regra em pode_escrever_conversa). get-or-create idempotente."""
     c = (db.query(Conversa)
-           .filter_by(loja_id=loja_id, tipo="publico")
+           .filter_by(loja_id=loja_id, tipo="mural")
            .order_by(Conversa.id.asc()).first())
     if c is None:
-        c = Conversa(loja_id=loja_id, tipo="publico", titulo="Mural da loja",
-                     assunto_tipo="livre")
+        c = Conversa(loja_id=loja_id, tipo="mural", titulo="Mural da loja", assunto_tipo="livre")
         db.add(c); db.flush()
     return c
 
 
-def pode_acessar_conversa(db, c, loja_id, usuario_id):
-    """Leitura/escrita numa conversa: público = qualquer usuário da loja; direct/grupo =
-    participante. (Oversight de gerente é tratado à parte, só para leitura.)"""
-    if c is None or c.loja_id != loja_id:
+def criar_debate(db, escopo, loja_id, rede_id, criado_por_id, titulo,
+                 assunto_tipo="livre", projeto_nome=None, assunto_id=None):
+    """Cria um DEBATE (tópico) no Fórum da Loja (escopo='loja') ou no Fórum Orizon
+    (escopo='orizon', cross-loja pela rede). Título obrigatório + assunto (reusa Assunto)."""
+    titulo = (titulo or "").strip()
+    if not titulo:
+        raise ValueError("Dê um título ao debate.")
+    if escopo == "orizon":
+        if not rede_id:
+            raise ValueError("Sua loja não está associada a uma rede — sem Fórum Orizon.")
+        # assunto custom/projeto é por loja; no fórum da rede só 'livre' (título organiza).
+        c = Conversa(loja_id=loja_id, rede_id=rede_id, tipo="forum_orizon",
+                     titulo=titulo, criado_por_id=criado_por_id, assunto_tipo="livre")
+    else:
+        at, pnome, aid = normalizar_assunto(db, loja_id, assunto_tipo, projeto_nome, assunto_id)
+        c = Conversa(loja_id=loja_id, tipo="forum_loja", titulo=titulo,
+                     criado_por_id=criado_por_id, assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)
+    db.add(c); db.flush()
+    return c
+
+
+def listar_debates(db, escopo, loja_id, rede_id, q=None, assunto_tipo=None, assunto_ref=None):
+    """Debates de um fórum, mais recentes primeiro, com busca por título (q) e filtro de assunto.
+    escopo='loja' → forum_loja da loja; 'orizon' → forum_orizon da rede."""
+    if escopo == "orizon":
+        if not rede_id:
+            return []
+        query = db.query(Conversa).filter(Conversa.rede_id == rede_id,
+                                          Conversa.tipo == "forum_orizon")
+    else:
+        query = db.query(Conversa).filter(Conversa.loja_id == loja_id,
+                                          Conversa.tipo == "forum_loja")
+    if q:
+        query = query.filter(Conversa.titulo.ilike("%" + q.strip() + "%"))
+    if assunto_tipo:
+        query = query.filter(Conversa.assunto_tipo == assunto_tipo)
+        if assunto_tipo == "projeto" and assunto_ref:
+            query = query.filter(Conversa.projeto_nome == assunto_ref)
+        if assunto_tipo == "custom" and assunto_ref:
+            query = query.filter(Conversa.assunto_id == int(assunto_ref))
+    convs = query.all()
+    itens = []
+    for c in convs:
+        ultima = (db.query(ConversaMensagem).filter_by(conversa_id=c.id)
+                    .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
+        n = (db.query(ConversaMensagem).filter_by(conversa_id=c.id).count())
+        itens.append({
+            "id": c.id, "tipo": c.tipo, "titulo": c.titulo or "Debate",
+            "assunto": _assunto_do(db, c), "n_mensagens": n,
+            "criado_por_nome": (db.get(Usuario, c.criado_por_id).nome
+                                if c.criado_por_id and db.get(Usuario, c.criado_por_id) else None),
+            "loja_nome": (_nome_loja(db, c.loja_id) if escopo == "orizon" else None),
+            "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
+            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+        })
+    itens.sort(key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
+    return itens
+
+
+def _nome_loja(db, loja_id):
+    from database import Loja
+    l = db.get(Loja, loja_id) if loja_id else None
+    return l.nome if l else None
+
+
+def pode_ler_conversa(db, c, loja_id, usuario_id, rede_id=None):
+    """Leitura: mural/forum_loja = usuário da loja; forum_orizon = usuário de loja da MESMA rede;
+    direct/grupo = participante."""
+    if c is None:
         return False
-    if c.tipo == "publico":
+    if c.tipo == "forum_orizon":
+        return rede_id is not None and c.rede_id == rede_id
+    if c.loja_id != loja_id:
+        return False
+    if c.tipo in ("mural", "forum_loja", "publico"):
         return True
     return eh_participante(db, c.id, usuario_id)
+
+
+def pode_escrever_conversa(db, c, loja_id, usuario_id, rede_id=None, is_admin_chat=False):
+    """Escrita: igual à leitura, EXCETO o mural (só gerência posta — is_admin_chat)."""
+    if not pode_ler_conversa(db, c, loja_id, usuario_id, rede_id=rede_id):
+        return False
+    if c.tipo == "mural":
+        return bool(is_admin_chat)
+    return True
 
 
 def _ultimo_id_mensagem(db, conversa_id):
@@ -441,8 +528,10 @@ def marcar_lido(db, conversa, usuario_id):
     p = (db.query(ConversaParticipante)
            .filter_by(conversa_id=conversa.id, usuario_id=usuario_id).first())
     if p is None:
-        if conversa.tipo != "publico":
-            return   # não-participante em direct/grupo (ex.: gerente em oversight) não marca
+        # em direct/grupo, não-participante (ex.: gerente em oversight) não vira participante;
+        # nos canais públicos (mural/fórum) a linha é só marcador de leitura.
+        if conversa.tipo in ("direct", "grupo", "projeto"):
+            return
         p = ConversaParticipante(conversa_id=conversa.id, usuario_id=usuario_id,
                                  papel="membro", lido_ate_mensagem_id=ultimo)
         db.add(p)
@@ -466,7 +555,7 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
     'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`)."""
     titulo = c.titulo
     outro_id = None
-    if c.tipo == "publico":
+    if c.tipo in ("mural", "publico"):
         titulo = "📣 Mural da loja"
     if c.tipo == "direct":
         parts = participantes if participantes is not None else [
@@ -508,16 +597,16 @@ def listar_inbox(db, loja_id, usuario_id):
     convs = (db.query(Conversa)
                .filter(Conversa.id.in_(conv_ids or [-1]), Conversa.loja_id == loja_id,
                        Conversa.tipo.in_(("direct", "grupo"))).all()) if conv_ids else []
-    pub = get_or_create_publico(db, loja_id)
-    convs = [pub] + [c for c in convs if c.id != pub.id]
+    mural = get_or_create_mural(db, loja_id)
+    convs = [mural] + [c for c in convs if c.id != mural.id]
     itens = [serializar_conversa(db, c, usuario_id,
                                  nao_lidas=_conta_nao_lidas(db, c.id, usuario_id, lido.get(c.id, 0)))
              for c in convs]
-    # público sempre no topo; o resto por recência (desc)
-    pubs = [x for x in itens if x["tipo"] == "publico"]
-    resto = sorted([x for x in itens if x["tipo"] != "publico"],
+    # mural sempre no topo; o resto por recência (desc)
+    tops = [x for x in itens if x["tipo"] in ("mural", "publico")]
+    resto = sorted([x for x in itens if x["tipo"] not in ("mural", "publico")],
                    key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
-    return pubs + resto
+    return tops + resto
 
 
 # ── Resolução por Função (decisões 6/9 — Financeiro/Logística/SAC) ───────────

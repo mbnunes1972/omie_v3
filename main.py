@@ -2746,6 +2746,33 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/forum — Fatia 4: lista de DEBATES de um fórum. ?escopo=loja|orizon
+            # &q=<busca no título>&assunto_tipo=&assunto_ref=. orizon é cross-loja (pela rede).
+            if path == "/api/comunicacao/forum":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from urllib.parse import parse_qs as _pq_f
+                    qs = _pq_f(urlparse(self.path).query)
+                    escopo = (qs.get("escopo", ["loja"])[0] or "loja")
+                    rede = mod_chat._rede_da_loja(db, loja_id)
+                    self.send_json({"ok": True, "rede_id": rede,
+                                    "debates": mod_chat.listar_debates(
+                                        db, escopo, loja_id, rede,
+                                        q=(qs.get("q", [None])[0] or None),
+                                        assunto_tipo=(qs.get("assunto_tipo", [None])[0] or None),
+                                        assunto_ref=(qs.get("assunto_ref", [None])[0] or None))})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/usuarios — usuários da loja ativa para o seletor "Para"
             # (Central de Comunicação). Exclui o próprio usuário. Filtro opcional ?q=.
             if path == "/api/comunicacao/usuarios":
@@ -2792,11 +2819,12 @@ class Handler(BaseHTTPRequestHandler):
                     import mod_chat
                     from database import Conversa as _CV_get
                     conv = db.get(_CV_get, conv_id)
-                    # Leitura: participante/público OU gerente/diretor (ver_todas_conversas).
+                    # Leitura: participante/público/rede OU gerente/diretor (ver_todas_conversas).
                     _admin_chat = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
-                    if (conv is None or conv.loja_id != loja_id
-                            or not (mod_chat.pode_acessar_conversa(db, conv, loja_id, usuario["id"])
-                                    or _admin_chat)):
+                    _rede = mod_chat._rede_da_loja(db, loja_id)
+                    if (conv is None
+                            or not (mod_chat.pode_ler_conversa(db, conv, loja_id, usuario["id"], rede_id=_rede)
+                                    or (_admin_chat and conv.loja_id == loja_id))):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                     # marca como lida (não p/ oversight de não-participante — marcar_lido já filtra)
@@ -4898,6 +4926,42 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/forum — Fatia 4: cria um DEBATE no Fórum da Loja (escopo=loja) ou
+        # no Fórum Orizon (escopo=orizon, cross-loja pela rede). Título + assunto.
+        if path == "/api/comunicacao/forum":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                escopo = (dd.get("escopo") or "loja")
+                a_tipo = (dd.get("assunto_tipo") or "livre").strip()
+                a_proj = dd.get("projeto_nome")
+                if escopo == "loja" and a_tipo == "projeto":
+                    if not a_proj or _projeto_da_loja(db, a_proj, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Projeto do assunto inválido nesta loja."},
+                                       code=400); return
+                rede = mod_chat._rede_da_loja(db, loja_id)
+                try:
+                    conv = mod_chat.criar_debate(db, escopo, loja_id, rede, usuario["id"],
+                                                 dd.get("titulo"), assunto_tipo=a_tipo,
+                                                 projeto_nome=a_proj, assunto_id=dd.get("assunto_id"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "debate": {"id": conv.id, "titulo": conv.titulo,
+                                "tipo": conv.tipo}}, code=201)
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/conversas — Central de Comunicação (Fatia 1): abre uma conversa
         # direct (idempotente pela dupla) ou grupo. Participantes têm que ser da loja ativa.
         if path == "/api/comunicacao/conversas":
@@ -4978,11 +5042,18 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat
                 from database import Conversa as _CV_post
                 conv = db.get(_CV_post, conv_id)
-                # Postar: participante (direct/grupo) ou qualquer usuário da loja (público).
-                # Oversight de gerente NÃO permite postar em DM alheia — só ler.
-                if (conv is None or conv.loja_id != loja_id
-                        or not mod_chat.pode_acessar_conversa(db, conv, loja_id, usuario["id"])):
+                # Postar: participante (direct/grupo), usuário da loja (forum_loja), usuário da rede
+                # (forum_orizon) ou GERÊNCIA (mural). Oversight não permite postar em DM alheia.
+                _rede = mod_chat._rede_da_loja(db, loja_id)
+                _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                _pode_ler = conv is not None and (
+                    mod_chat.pode_ler_conversa(db, conv, loja_id, usuario["id"], rede_id=_rede)
+                    or (_adm and conv.loja_id == loja_id))
+                if not _pode_ler:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_chat.pode_escrever_conversa(db, conv, loja_id, usuario["id"],
+                                                       rede_id=_rede, is_admin_chat=_adm):
+                    self.send_json({"ok": False, "erro": "Sem permissão para postar aqui."}, code=403); return
                 dd = json.loads(body or b'{}')
                 seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
                 try:

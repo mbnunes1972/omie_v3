@@ -87,7 +87,8 @@ def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, cr
                            orcamento_id=orcamento_id, criado_por_id=criado_por_id)
         db.add(p); db.flush()
         for aid in grupo:
-            db.add(ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid))
+            db.add(ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid,
+                                   valor_ambiente=float(valores_por_ambiente.get(aid, 0.0))))
         parcelas.append({"id": p.id, "ordem": p.ordem, "status": status,
                          "val_cont_congelado": p.val_cont_congelado, "ambientes": grupo})
     for s in sinais:
@@ -131,3 +132,79 @@ def gate_operacao_ambiente(db, projeto_nome, pool_ambiente_id):
     if ambiente_retido(db, projeto_nome, pool_ambiente_id):
         return (False, "Ambiente retido pela obra: a parcela aguarda liberação para executar.")
     return (True, None)
+
+
+# ── Fatia 3: liberação / continuação de onde parou (a obra libera, em ondas) ─────────────────────
+
+def _split_fracao(fracao_pai, valor_pai, valor_filho):
+    """Fração do FILHO relativa ao projeto, proporcional ao pai (Σ filhos == fração do pai)."""
+    if not valor_pai:
+        return 0.0
+    return round(float(fracao_pai) * float(valor_filho) / float(valor_pai), 6)
+
+
+def liberar(db, projeto_nome, pool_ambiente_ids, liberado_por_id=None):
+    """Obra LIBERA ambientes retidos → a parcela retoma o ciclo (`retido` → `aguardando`,
+    continuação de onde parou — decisão #4). Se a obra libera só PARTE de uma parcela retida
+    (ondas), faz SPLIT: os liberados viram uma parcela `aguardando`, o restante fica `retido`.
+    Reusa `mod_parcelas.congelar_parcelas` para manter `Σ val_cont_congelado` exato ao centavo.
+    NÃO toca no razão. Não commita. Retorna (ok, erro, parcelas_afetadas)."""
+    pedidos = set()
+    for aid in (pool_ambiente_ids or []):
+        try:
+            pedidos.add(int(aid))
+        except (TypeError, ValueError):
+            continue
+    if not pedidos:
+        return (False, "Nenhum ambiente informado.", None)
+
+    retidas = (db.query(ParcelaProjeto)
+                 .filter_by(projeto_nome=projeto_nome, status=STATUS_RETIDO).all())
+    afetadas = []
+    tratou_algum = False
+    for parc in retidas:
+        membros = db.query(ParcelaAmbiente).filter_by(parcela_id=parc.id).all()
+        ids_parc = {m.pool_ambiente_id for m in membros}
+        libs = pedidos & ids_parc
+        if not libs:
+            continue
+        tratou_algum = True
+        resto = ids_parc - libs
+        if not resto:
+            # Liberação TOTAL da parcela — retoma sem repartir.
+            parc.status = "aguardando"
+            afetadas.append({"id": parc.id, "status": "aguardando",
+                             "val_cont_congelado": parc.val_cont_congelado,
+                             "ambientes": sorted(ids_parc)})
+            continue
+        # Liberação PARCIAL → split. Ordena membros: liberados primeiro, resto depois.
+        por_amb = {m.pool_ambiente_id: (m.valor_ambiente or 0.0) for m in membros}
+        libs_ord, resto_ord = sorted(libs), sorted(resto)
+        cong = mod_parcelas.congelar_parcelas(
+            [[por_amb[a] for a in libs_ord], [por_amb[a] for a in resto_ord]],
+            parc.val_cont_congelado)
+        v_lib, v_resto = cong[0]["val_cont_congelado"], cong[1]["val_cont_congelado"]
+        fr_lib = _split_fracao(parc.fracao_val_cont, parc.val_cont_congelado, v_lib)
+        # A parcela existente vira a LIBERADA (segue); cria uma nova RETIDA para o resto.
+        nova_ordem = (db.query(ParcelaProjeto)
+                        .filter_by(projeto_nome=projeto_nome).count()) + 1
+        r = ParcelaProjeto(projeto_nome=projeto_nome, ordem=nova_ordem, status=STATUS_RETIDO,
+                           fracao_val_cont=round((parc.fracao_val_cont or 0.0) - fr_lib, 6),
+                           val_cont_congelado=v_resto, orcamento_id=parc.orcamento_id,
+                           criado_por_id=liberado_por_id)
+        db.add(r); db.flush()
+        for m in membros:
+            if m.pool_ambiente_id in resto:
+                m.parcela_id = r.id
+        parc.status = "aguardando"
+        parc.fracao_val_cont = fr_lib
+        parc.val_cont_congelado = v_lib
+        db.flush()
+        afetadas.append({"id": parc.id, "status": "aguardando", "val_cont_congelado": v_lib,
+                         "ambientes": libs_ord})
+        afetadas.append({"id": r.id, "status": STATUS_RETIDO, "val_cont_congelado": v_resto,
+                         "ambientes": resto_ord})
+    if not tratou_algum:
+        return (False, "Nenhum ambiente retido entre os informados.", None)
+    db.flush()
+    return (True, None, afetadas)

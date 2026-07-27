@@ -1473,12 +1473,19 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > execução. `mod_retido.parcela_do_ambiente`/`ambiente_retido`/`ambientes_retidos`/
 > `gate_operacao_ambiente` (legado/não desmembrado/parcela que segue ⇒ passa). Gate plugado no
 > **upload de PE por ambiente** (`POST .../pe/upload`) → **409** se o ambiente está em parcela retida.
-> Testes `test_retido.py` (+2 = 7). **Suíte 1568 verde.** _Adiado às fatias seguintes:_ linha de
-> `CicloEtapa` por parcela (mudar o `UniqueConstraint` rippla todo o ciclo — só quando a visibilidade
-> na tela exigir) e estender o gate a montagem/produção (mesmo helper). **Falta:** Fatias 3
-> (liberação/continuação), 4 (reconhecimento contábil por parcela — área sensível: razão), 5 (UI).
-> **Deploy:** tudo local na `main` (`90eca97` + Fatia 2 por commitar); A/B/produção pendentes. Ao
-> fechar o operacional, retomar o **gate de PE/montagem do chat** (item 10).
+> Testes `test_retido.py` (+2 = 7). _Adiado às fatias seguintes:_ linha de `CicloEtapa` por parcela
+> (mudar o `UniqueConstraint` rippla todo o ciclo — só quando a visibilidade na tela exigir) e
+> estender o gate a montagem/produção (mesmo helper).
+> — **Fatia 3 (liberação/continuação).** A obra LIBERA ambientes retidos → a parcela retoma
+> (`retido`→`aguardando`, continuação de onde parou — decisão #4). `mod_retido.liberar`: liberação
+> TOTAL = flip de status; liberação PARCIAL (ondas) = **SPLIT** (liberados seguem, resto fica retido,
+> reusando `congelar_parcelas` p/ `Σ val_cont_congelado` exato). Habilitado por
+> `ParcelaAmbiente.valor_ambiente` (valor bruto por ambiente, gravado na confirmação → split exato sem
+> reler o contrato). Endpoint `POST .../retido/liberar` (`autorizar`). Testes `test_retido.py`
+> (+3 = 10). **NÃO toca no razão.** **Suíte 1571 verde.** **Falta:** Fatias 4 (reconhecimento
+> contábil por parcela — área sensível: razão) e 5 (UI). **Deploy:** tudo local na `main`
+> (`90eca97`/`5f1fe0e` + Fatia 3 por commitar); A/B/produção pendentes. Ao fechar o operacional,
+> retomar o **gate de PE/montagem do chat** (item 10).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

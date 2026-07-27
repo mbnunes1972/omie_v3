@@ -130,8 +130,14 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
    parcela (mudar o `UniqueConstraint` de `(projeto,etapa)` p/ incluir `parcela_id` é mudança grande
    que rippla todo o ciclo — só quando a visibilidade status-por-parcela na tela exigir) e estender o
    gate a montagem/produção (mesmo helper, outros pontos). **NÃO toca no razão.**
-3. **Liberação/continuação:** obra libera o ambiente → a parcela volta a seguir a partir da etapa
-   retida.
+3. **Liberação/continuação** — ✅ FEITA 2026-07-27. A obra LIBERA ambientes retidos → a parcela
+   retoma (`retido`→`aguardando`, continuação de onde parou — decisão #4). `mod_retido.liberar`:
+   liberação TOTAL da parcela = flip de status; liberação PARCIAL (ondas) = **SPLIT** — os liberados
+   viram parcela `aguardando`, o resto fica `retido`, reusando `congelar_parcelas` p/ manter
+   `Σ val_cont_congelado` exato. Habilitado por `ParcelaAmbiente.valor_ambiente` (valor bruto por
+   ambiente, gravado na confirmação → split exato sem reler o contrato). Endpoint `POST
+   .../retido/liberar` (`autorizar` = gerência). Testes: `test_retido.py` (+3 = 10). **NÃO toca no
+   razão.**
 4. **Reconhecimento contábil por parcela (área sensível — razão):** NF-e/`reconhecer_despesas_nfe`
    dispara por parcela ao executar; parcela retida fica diferida. Alinhar com o desmembramento
    financeiro de 2026-07-13 para não duplicar.

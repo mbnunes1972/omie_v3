@@ -82,18 +82,22 @@ def test_confirmar_todos_retidos_erro(app_db, seed):
         db.close()
 
 
-def _desmembrar_direto(app_db, nome, retido_ids, pronto_ids):
+def _desmembrar_direto(app_db, nome, retido_ids, pronto_ids, valores=None):
     """Cria direto no banco 1 parcela RETIDA (retido_ids) + 1 que SEGUE (pronto_ids) — atalho
-    p/ os testes do gate operacional (Fatia 2), sem passar pelo fluxo de confirmação."""
+    p/ os testes do gate/liberação (Fatia 2/3), sem passar pelo fluxo de confirmação. `valores`
+    (dict id→valor) alimenta ParcelaAmbiente.valor_ambiente e o val_cont_congelado da parcela."""
+    valores = valores or {}
     db = app_db.get_session()
     try:
         for ordem, (status, ids) in enumerate([("aguardando", pronto_ids),
                                                ("retido", retido_ids)], start=1):
+            vc = sum(float(valores.get(a, 1.0)) for a in ids)
             p = app_db.ParcelaProjeto(projeto_nome=nome, ordem=ordem, status=status,
-                                      fracao_val_cont=0.5, val_cont_congelado=1.0)
+                                      fracao_val_cont=0.5, val_cont_congelado=vc)
             db.add(p); db.flush()
             for aid in ids:
-                db.add(app_db.ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid))
+                db.add(app_db.ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid,
+                                              valor_ambiente=float(valores.get(aid, 1.0))))
         db.commit()
     finally:
         db.close()
@@ -126,6 +130,55 @@ def test_endpoint_pe_upload_barrado_por_retido(http_client_factory, app_db, seed
                               files={"arquivo": ("pe.promob", b"conteudo")},
                               fields={"pool_ambiente_id": ids[0]})
     assert st == 409 and "retido" in (b.get("erro") or "").lower()
+
+
+def test_liberar_total(app_db, seed):
+    """Fatia 3: a obra libera a parcela retida INTEIRA → retoma ('retido'→'aguardando'), sem repartir."""
+    ids = _proj_amb(app_db, seed, "RET_lt", 2)
+    _desmembrar_direto(app_db, "RET_lt", retido_ids=[ids[1]], pronto_ids=[ids[0]],
+                       valores={ids[0]: 700.0, ids[1]: 300.0})
+    db = app_db.get_session()
+    try:
+        ok, erro, afet = mod_retido.liberar(db, "RET_lt", [ids[1]]); db.commit()
+        assert ok, erro
+        assert afet == [{"id": afet[0]["id"], "status": "aguardando",
+                         "val_cont_congelado": 300.0, "ambientes": [ids[1]]}]
+        assert mod_retido.ambientes_retidos(db, "RET_lt") == set()   # nada mais retido
+    finally:
+        db.close()
+
+
+def test_liberar_parcial_split(app_db, seed):
+    """Fatia 3 (ondas): a obra libera só PARTE da parcela retida → SPLIT — liberados seguem, resto
+    fica retido; Σ val_cont_congelado preservado ao centavo."""
+    ids = _proj_amb(app_db, seed, "RET_lp", 3)
+    _desmembrar_direto(app_db, "RET_lp", retido_ids=[ids[1], ids[2]], pronto_ids=[ids[0]],
+                       valores={ids[0]: 500.0, ids[1]: 300.0, ids[2]: 200.0})   # retida = 500
+    db = app_db.get_session()
+    try:
+        ok, erro, afet = mod_retido.liberar(db, "RET_lp", [ids[1]]); db.commit()
+        assert ok, erro
+        by = {p["status"]: p for p in afet}
+        assert by["aguardando"]["ambientes"] == [ids[1]]
+        assert by["retido"]["ambientes"] == [ids[2]]
+        assert round(by["aguardando"]["val_cont_congelado"], 2) == 300.0
+        assert round(by["retido"]["val_cont_congelado"], 2) == 200.0     # 500 - 300, exato
+        assert mod_retido.ambientes_retidos(db, "RET_lp") == {ids[2]}
+        # o gate agora libera ids[1] e ainda barra ids[2]
+        assert mod_retido.gate_operacao_ambiente(db, "RET_lp", ids[1])[0] is True
+        assert mod_retido.gate_operacao_ambiente(db, "RET_lp", ids[2])[0] is False
+    finally:
+        db.close()
+
+
+def test_endpoint_liberar_permissao(http_client_factory, app_db, seed):
+    ids = _proj_amb(app_db, seed, "RET_lb", 2)
+    _desmembrar_direto(app_db, "RET_lb", retido_ids=[ids[1]], pronto_ids=[ids[0]])
+    op = _login(http_client_factory, "cons_l1")
+    assert op.post("/api/projetos/RET_lb/retido/liberar", {"pool_ambiente_ids": [ids[1]]})[0] == 403
+    ger = _login(http_client_factory, "dir_l1")                            # master = autorizar
+    st, b = ger.post("/api/projetos/RET_lb/retido/liberar", {"pool_ambiente_ids": [ids[1]]})
+    assert st == 200 and b["parcelas"][0]["status"] == "aguardando"
 
 
 def test_endpoint_sinalizar_e_permissao(http_client_factory, app_db, seed):

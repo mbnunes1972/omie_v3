@@ -4105,7 +4105,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── Desmembramento OPERACIONAL (Fatia 1): ambientes retidos pela obra ──────────────────
         # POST .../retido/sinalizar — MEDIDOR marca ambientes retidos. Body: {pool_ambiente_ids, motivo}.
-        m_rsig = re.match(r'^/api/projetos/([^/]+)/retido/(sinalizar|limpar|confirmar)$', path)
+        m_rsig = re.match(r'^/api/projetos/([^/]+)/retido/(sinalizar|limpar|confirmar|liberar)$', path)
         if m_rsig:
             nome = unquote(m_rsig.group(1)); acao = m_rsig.group(2)
             usuario = get_usuario_sessao(self)
@@ -4134,9 +4134,17 @@ class Handler(BaseHTTPRequestHandler):
                         db.commit()
                         self.send_json({"ok": True})
                     return
-                # confirmar — GERÊNCIA
+                # confirmar / liberar — GERÊNCIA
                 if not perfis.pode(usuario.get("nivel"), "autorizar"):
-                    self.send_json({"ok": False, "erro": "Confirmação exige gerência (autorizar)."}, code=403); return
+                    self.send_json({"ok": False, "erro": "Ação exige gerência (autorizar)."}, code=403); return
+                if acao == "liberar":
+                    ok, erro, afetadas = _mret.liberar(db, nome, req.get("pool_ambiente_ids") or [],
+                                                       usuario.get("id"))
+                    if not ok:
+                        db.rollback()
+                        self.send_json({"ok": False, "erro": erro}, code=409); return
+                    db.commit()
+                    self.send_json({"ok": True, "parcelas": afetadas}); return
                 contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
                               .order_by(Contrato.id.desc()).first())
                 if contrato is None:

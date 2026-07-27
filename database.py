@@ -783,6 +783,9 @@ class ParcelaAmbiente(Base):
     __tablename__ = "parcela_ambiente"
     parcela_id       = Column(Integer, ForeignKey("parcela_projeto.id"), primary_key=True)
     pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"),  primary_key=True)
+    # Valor de contrato BRUTO do ambiente (Val_Cont rateado, não o CFO — #4/#5). Guardado na
+    # confirmação p/ permitir SPLIT exato na liberação em ondas (Fatia 3) sem reler o contrato.
+    valor_ambiente   = Column(Float, nullable=False, default=0.0)
 
 
 class SinalRetido(Base):
@@ -1683,6 +1686,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",
         # Fonte única da equipe (2026-07-27): responsável TERCEIRO por etapa.
         "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS responsavel_terceiro_id INTEGER",
+        # Desmembramento operacional Fatia 3: valor bruto por ambiente (split exato na liberação).
+        "ALTER TABLE parcela_ambiente ADD COLUMN IF NOT EXISTS valor_ambiente DOUBLE PRECISION DEFAULT 0.0",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

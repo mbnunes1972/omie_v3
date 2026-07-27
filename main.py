@@ -2690,14 +2690,11 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception as _es:
                         print("[EQUIPE] sync participantes na abertura falhou:", _es)
                     db.commit()
-                    # Fatia 4: quem TEM ver_mensagem_privada lê o claro; os demais, a máscara
-                    _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                     self.send_json({"ok": True,
                                     "conversa": {"id": conv.id,
                                                  "projeto_nome": conv.projeto_nome,
                                                  "cliente_id": conv.cliente_id},
-                                    "mensagens": mod_chat.listar_mensagens(
-                                        db, conv.id, pode_ver_privada=_pode_priv)})
+                                    "mensagens": mod_chat.listar_mensagens(db, conv.id)})
                 finally:
                     db.close()
                 return
@@ -2919,13 +2916,11 @@ class Handler(BaseHTTPRequestHandler):
                             or not (mod_chat.pode_ler_conversa(db, conv, loja_id, usuario["id"], rede_id=_rede)
                                     or (_admin_chat and conv.loja_id == loja_id))):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                     # marca como lida (não p/ oversight de não-participante — marcar_lido já filtra)
                     mod_chat.marcar_lido(db, conv, usuario["id"]); db.commit()
                     self.send_json({"ok": True,
                                     "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"]),
-                                    "mensagens": mod_chat.listar_mensagens(
-                                        db, conv_id, pode_ver_privada=_pode_priv)})
+                                    "mensagens": mod_chat.listar_mensagens(db, conv_id)})
                 finally:
                     db.close()
                 return
@@ -5195,7 +5190,6 @@ class Handler(BaseHTTPRequestHandler):
                 seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
                 try:
                     msg = mod_chat.enviar_mensagem(db, conv, usuario["id"], campos.get("corpo") or "",
-                                                   privada=bool(campos.get("privada")),
                                                    canal_segmento=seg, permitir_vazio=True)
                     anexo = mod_chat.criar_anexo(db, msg.id, base_nome, mime, len(data), rel)
                 except ValueError as ve:
@@ -5208,10 +5202,9 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     db.rollback()   # ponte WhatsApp é best-effort — nunca quebra o anexo
                 storage_salvar_binario(os.path.join(_BASE_DIR, "COMUNICACAO", rel), data)
-                _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
                 self.send_json({"ok": True, "mensagem": mod_chat.serializar_mensagem(
-                    msg, autor_nome=nome, pode_ver_privada=_pode_priv,
+                    msg, autor_nome=nome,
                     anexos=[mod_chat._serializar_anexo(anexo)])}, code=201)
             finally:
                 db.close()
@@ -5285,7 +5278,6 @@ class Handler(BaseHTTPRequestHandler):
                 seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
                 try:
                     msg = mod_chat.enviar_mensagem(db, conv, usuario["id"], dd.get("corpo"),
-                                                   privada=bool(dd.get("privada")),
                                                    canal_segmento=seg)
                 except ValueError as ve:
                     db.rollback()
@@ -5296,11 +5288,9 @@ class Handler(BaseHTTPRequestHandler):
                     _mce.notificar_conversa(db, conv, msg, usuario["id"]); db.commit()
                 except Exception:
                     db.rollback()   # ponte WhatsApp best-effort — nunca quebra a mensagem
-                _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
                 self.send_json({"ok": True,
-                                "mensagem": mod_chat.serializar_mensagem(
-                                    msg, autor_nome=nome, pode_ver_privada=_pode_priv)},
+                                "mensagem": mod_chat.serializar_mensagem(msg, autor_nome=nome)},
                                code=201)
             finally:
                 db.close()
@@ -5371,8 +5361,7 @@ class Handler(BaseHTTPRequestHandler):
                         db, conv, usuario.get("id"), dd.get("corpo"),
                         natureza=natureza, etapa_codigo=etapa_codigo,
                         transferido_para_funcionario_id=transf_id,
-                        documento_ref_id=doc_ref, bloqueador=bloqueador,
-                        privada=bool(dd.get("privada")))
+                        documento_ref_id=doc_ref, bloqueador=bloqueador)
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
@@ -5387,8 +5376,6 @@ class Handler(BaseHTTPRequestHandler):
                                 "mensagem": mod_chat.serializar_mensagem(
                                     msg, usuario.get("nome"),
                                     transferido.nome if transferido else None,
-                                    pode_ver_privada=perfis.pode(
-                                        usuario.get("nivel"), "ver_mensagem_privada"),
                                     documento=documento)},
                                code=201)
             except Exception as e:

@@ -1061,10 +1061,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label style="font-size:12px;color:var(--text);cursor:pointer;margin-right:16px">
             <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
             Transferência de responsabilidade</label>
-          <label style="font-size:12px;color:var(--text);cursor:pointer;margin-right:16px"
-                 title="O texto é criptografado no servidor; todos veem QUE houve a mensagem, só a gerência lê o conteúdo.">
-            <input type="checkbox" id="conv-privada-chk">
-            Privada &#128274;</label>
           <label style="font-size:12px;color:var(--text);cursor:pointer"
                  title="Enviar por WhatsApp/e-mail ao cliente, arquiteto ou contato avulso (canal externo).">
             <input type="checkbox" id="conv-externo-chk" onchange="convExternoToggle()">
@@ -11941,14 +11937,8 @@ async function convCarregar(){
           + new Date(m.resolvido_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</div>';
       }
     }
-    // Fatia 4: cadeado SEMPRE visível em privada; tag "privada" discreta pra quem lê o claro
-    const ehMascarada = m.privada && (m.corpo||'').startsWith('🔒');
-    const seloPriv = m.privada
-      ? ' <span title="Mensagem privada">&#128274;</span>'
-        + (!ehMascarada ? '<span style="color:var(--warn);font-size:9px;font-weight:700"> privada</span>' : '')
-      : '';
     return '<div style="margin-bottom:10px;'+(minha(m)?'text-align:right':'')+'">'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">'+esc(m.autor_nome)+' · '+dt+seloPriv+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">'+esc(m.autor_nome)+' · '+dt+'</div>'
       +'<div style="display:inline-block;max-width:85%;text-align:left;background:'
         +(minha(m)?'var(--accent-tint)':'var(--surface-2)')
         +';border:1px solid '+(m.bloqueador && !m.resolvido_em ? 'var(--err-line)' : 'var(--border)')
@@ -12056,7 +12046,6 @@ async function convEnviar(){
     return;
   }
   const payload = {corpo};
-  if (document.getElementById('conv-privada-chk').checked) payload.privada = true;
   const ehTransf = document.getElementById('conv-transf-chk').checked;
   if (ehTransf) {
     const fid = document.getElementById('conv-transf-func').value;
@@ -12077,7 +12066,6 @@ async function convEnviar(){
        body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
     ta.value='';
-    document.getElementById('conv-privada-chk').checked = false;
     if (ehTransf) {
       document.getElementById('conv-transf-chk').checked = false;
       document.getElementById('conv-transf-bloq').checked = false;

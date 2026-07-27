@@ -1451,8 +1451,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > FEITA:** `CicloEtapa.responsavel_terceiro_id` (montador/medidor/PE terceirizados); `mod_equipe.equipe`/
 > `salvar` derivam/gravam da fonte única — medidor/finalizador(=Projetista Executivo) = responsável da
 > etapa; Equipe de Montagem = Mapa de Atribuições; Gerente Comercial/SAC/Supervisor informativos;
-> `equipe_json` aposentado. **Falta:** gate de PE/montagem, remover modo privado. **Deploy:** VPS A
-> atualizada; **VPS B intocada** na `V_pre_teste`; produção pendente.
+> `equipe_json` aposentado. **MODO PRIVADO REMOVIDO** (criação tirada da UI+backend; `enviar_mensagem`/
+> `serializar_mensagem`/`listar_mensagens` sem privada; capacidade `ver_mensagem_privada` retirada;
+> colunas `privada`/`corpo_cifrado` ficam legado; `test_chat_fatia4.py` removido). **Falta:** só o gate
+> de PE/montagem. **Deploy:** VPS A atualizada; **VPS B intocada** na `V_pre_teste`; produção pendente.
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

@@ -16,7 +16,6 @@ PERFIS = {
         "aprovar_medicao_reprovada": True, "gerir_usuarios": True, "gerir_perfis": True,
         "editar_dados_loja": True, "gerir_documentos": True,
         "executar_pe": True, "revisar_pe": True, "registrar_medicao": True,
-        "ver_mensagem_privada": True,    # chat Fatia 4 (decisão 8)
         "ver_todas_conversas": True},    # Orizon Chat Fatia 2 (Gerente/Diretor veem tudo + admin)
     "gerencial": {"rotulo": "Gerente", "desconto_max": 20.0,   # rótulo padronizado 2026-07-22 (slug não muda)
         "acesso_operacional": True, "acesso_financeiro": True, "acesso_fiscal": True,
@@ -25,7 +24,6 @@ PERFIS = {
         "aprovar_medicao_reprovada": True, "gerir_usuarios": False, "gerir_perfis": False,
         "editar_dados_loja": False, "gerir_documentos": False,
         "executar_pe": True, "revisar_pe": True, "registrar_medicao": True,
-        "ver_mensagem_privada": True,    # chat Fatia 4 (decisão 8: master E gerencial)
         "ver_todas_conversas": True},    # Orizon Chat Fatia 2 (Gerente/Diretor veem tudo + admin)
     "operador": {"rotulo": "Operador", "desconto_max": 10.0,
         # 2026-07-24 (decisão do usuário): operador também SEM Fiscal (era True)
@@ -35,7 +33,7 @@ PERFIS = {
         "aprovar_medicao_reprovada": False, "gerir_usuarios": False, "gerir_perfis": False,
         "editar_dados_loja": False, "gerir_documentos": False,
         "executar_pe": True, "revisar_pe": False, "registrar_medicao": True,
-        "ver_mensagem_privada": False, "ver_todas_conversas": False},
+        "ver_todas_conversas": False},
     # ── Plataforma/Rede (fora dos perfis de loja; NÃO entram na tabela perfil_acesso) ──
     "super_admin": {"rotulo": "Administrador da Plataforma", "desconto_max": 0.0,
         "acesso_operacional": True, "acesso_financeiro": True, "acesso_fiscal": True,
@@ -59,7 +57,7 @@ _DEFAULT = {"rotulo": "—", "desconto_max": 0.0, "ver_parametros": False,
             "gerir_redes": False, "gerir_lojas": False, "editar_dados_loja": False,
             "gerir_documentos": False,
             "executar_pe": False, "revisar_pe": False,
-            "ver_mensagem_privada": False, "ver_todas_conversas": False,
+            "ver_todas_conversas": False,
             "acesso_operacional": False, "acesso_financeiro": False, "acesso_fiscal": False,
             "acesso_admin": False, "acesso_config": False}
 
@@ -178,8 +176,6 @@ CAPACIDADES = {
         "descricao": "Ver o painel de apoio da negociação (margens/custos internos)."},
     "autorizar":                 {"rotulo": "Autorizar desconto",         "grupo": "Comercial",
         "descricao": "Autorizar desconto acima do limite e ações que exigem gerência."},
-    "ver_mensagem_privada":      {"rotulo": "Ler mensagens privadas",     "grupo": "Comercial",
-        "descricao": "Descriptografar o conteúdo de mensagens privadas do chat do projeto (o fato de existirem é visível a todos)."},
     "ver_todas_conversas":       {"rotulo": "Administrar o Orizon Chat",  "grupo": "Comercial",
         "descricao": "Ver TODAS as conversas da loja (direct/grupo) e o painel de administração com filtro por assunto/participante."},
     "aprovar_financeiro":        {"rotulo": "Aprovar financeiro",         "grupo": "Financeiro",
@@ -273,7 +269,7 @@ def opcoes_da_loja(loja_id):
 
 
 # Capacidades finas booleanas SELECIONÁVEIS no modal (exclui os acesso_* de módulo/painel e as de plataforma).
-CAPS_SELECIONAVEIS = ["ver_parametros", "autorizar", "ver_mensagem_privada",
+CAPS_SELECIONAVEIS = ["ver_parametros", "autorizar",
                       "aprovar_financeiro", "gerir_usuarios",
                       "gerir_perfis", "editar_dados_loja", "gerir_documentos",
                       "registrar_medicao", "aprovar_medicao_reprovada", "executar_pe", "revisar_pe"]

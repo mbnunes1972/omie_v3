@@ -57,7 +57,7 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
     e-mail aos gerentes/diretores da loja (`ver_todas_conversas` + e-mail) com o projeto + as funções
     a definir (`mod_chat_externo.notificar_gerentes_email`, config-gated — sem SMTP fica
     `pendente_config`). Os auto-designados já veem o resumo na inbox (são membros da conversa).
-    **Falta:** convergência do roster de 7 papéis, gate de PE/montagem, remover modo privado.
+    **Falta:** gate de PE/montagem. (Convergência do roster e remoção do modo privado FEITAS.)
 - **Derivação do conjunto interno D — FONTE ÚNICA por FUNÇÃO (decisão 2026-07-27).** A origem é a
   **função responsável de cada etapa** (`CicloEtapa.funcao_responsavel_id`, vinda do Cronograma Padrão
   da loja — data-driven). O funcionário é **derivado**: **1 candidato ativo → automático**; **>1 →
@@ -137,7 +137,10 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
 3. **Documento oficial pelo chat:** modo documento no compositor → `CicloDocumento` (stage-aware,
    autoridade da etapa/gerência).
 4. **Override manual de membros (UI):** gerente adiciona/remove, ciente da `origem`.
-5. **Remover o modo privado** (limpeza).
+5. **Remover o modo privado** (limpeza). ✅ FEITO 2026-07-27 — criação removida (UI+backend),
+   `enviar_mensagem`/`serializar_mensagem`/`listar_mensagens` sem `privada`/`pode_ver_privada`,
+   capacidade `ver_mensagem_privada` retirada; colunas `privada`/`corpo_cifrado` ficam como legado
+   (mensagens antigas exibem marcador de descontinuado). `test_chat_fatia4.py` removido.
 6. **Externo dirigido na conversa unificada:** confirmar o canal externo (cliente/arquiteto) a partir da
    nova UI + roteamento de resposta.
 

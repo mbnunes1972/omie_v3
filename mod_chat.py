@@ -10,7 +10,6 @@ externos (comercial/financeiro/logistica/suporte_tecnico/sac) entram nas fatias 
 e natureza/transferência/bloqueador/privada nas fatias 2-4.
 """
 import json
-import os
 
 from sqlalchemy import func
 
@@ -18,23 +17,11 @@ from database import (Conversa, ConversaParticipante, ConversaMensagem, Mensagem
                       ContatoConfirmacao, Assunto, Usuario, Cliente, Parceiro, Funcionario,
                       Funcao, CicloDocumento)
 
-# ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
-MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
-_MASCARA_CHAVE_TROCADA = ("🔒 Mensagem privada — não foi possível decifrar "
-                          "(a chave do ambiente mudou?)")
-
-
-def _fernet():
-    """Fernet da chave ORIZON_CHAT_ENC_KEY do ambiente, ou None quando não configurada.
-    NUNCA gere chave descartável aqui: mensagem cifrada com chave de processo fica
-    ilegível PARA SEMPRE no próximo restart — sem chave, o modo privado é RECUSADO com
-    erro claro (requisito de deploy: a variável precisa existir nos 3 ambientes ANTES
-    de habilitar o modo privado neles)."""
-    chave = (os.environ.get("ORIZON_CHAT_ENC_KEY") or "").strip()
-    if not chave:
-        return None
-    from cryptography.fernet import Fernet
-    return Fernet(chave.encode("ascii"))
+# ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
+# Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
+# corpo_cifrado) já não são decifradas — exibem este marcador. As colunas privada/corpo_cifrado
+# ficam no schema como legado (sem migração destrutiva).
+MASCARA_PRIVADA = "🔒 (mensagem privada — recurso descontinuado)"
 
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
 _CANAIS_FATIA_1 = ("interno",)
@@ -139,7 +126,7 @@ def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
 def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
-                    bloqueador=False, privada=False, _permitir_externo=False,
+                    bloqueador=False, _permitir_externo=False,
                     canal_segmento=None, permitir_vazio=False):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
@@ -164,42 +151,22 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
     else:
         if transferido_para_funcionario_id or etapa_codigo or documento_ref_id or bloqueador:
             raise ValueError("Campos de transferência só valem em natureza=transferencia.")
-    corpo_cifrado = None
-    if privada:
-        f = _fernet()
-        if f is None:
-            raise ValueError("Modo privado indisponível — chave de criptografia não "
-                             "configurada neste ambiente.")
-        corpo_cifrado = f.encrypt(corpo.encode("utf-8")).decode("ascii")
-        corpo = ""    # o claro NUNCA persiste junto do cifrado (decisão 8)
     m = ConversaMensagem(conversa_id=conversa.id, autor_usuario_id=autor_usuario_id,
                          corpo=corpo, canal=canal, natureza=natureza,
                          etapa_codigo=etapa_codigo,
                          transferido_para_funcionario_id=transferido_para_funcionario_id,
                          documento_ref_id=documento_ref_id,
                          bloqueador=1 if bloqueador else 0,
-                         privada=1 if privada else 0,
-                         corpo_cifrado=corpo_cifrado,
                          canal_segmento=canal_segmento)
     db.add(m)
     db.flush()
     return m
 
 
-def _corpo_visivel(m, pode_ver_privada):
-    """Texto que sai na API: claro para mensagem comum; para privada, decripta SÓ para quem
-    tem a capacidade — os demais recebem a MÁSCARA fixa (nunca o cifrado bruto)."""
-    if not m.privada:
-        return m.corpo
-    if not pode_ver_privada:
-        return MASCARA_PRIVADA
-    f = _fernet()
-    if f is None or not m.corpo_cifrado:
-        return _MASCARA_CHAVE_TROCADA
-    try:
-        return f.decrypt(m.corpo_cifrado.encode("ascii")).decode("utf-8")
-    except Exception:
-        return _MASCARA_CHAVE_TROCADA
+def _corpo_visivel(m):
+    """Texto que sai na API. Modo privado removido: mensagem comum mostra o claro; mensagem
+    privada LEGADA (privada=1) mostra o marcador de descontinuado (não decifra)."""
+    return m.corpo if not m.privada else MASCARA_PRIVADA
 
 
 def _serializar_anexo(a):
@@ -231,12 +198,12 @@ def criar_anexo(db, mensagem_id, nome, mime, tamanho, caminho):
 
 
 def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
-                        pode_ver_privada=False, documento=None, anexos=None):
+                        documento=None, anexos=None):
     """`documento`: CicloDocumento já resolvido pelo chamador (ou None) — a mensagem devolve
     nome/tipo prontos, não só o id cru (Fatia 5)."""
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
             "autor_nome": autor_nome or "—",
-            "corpo": _corpo_visivel(m, pode_ver_privada), "canal": m.canal,
+            "corpo": _corpo_visivel(m), "canal": m.canal,
             "canal_segmento": m.canal_segmento,
             "natureza": m.natureza or "interacao",
             "etapa_codigo": m.etapa_codigo,
@@ -252,10 +219,9 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
             "criado_em": m.criado_em.isoformat() if m.criado_em else None}
 
 
-def listar_mensagens(db, conversa_id, pode_ver_privada=False):
+def listar_mensagens(db, conversa_id):
     """Histórico cronológico ASC, com nomes de autor e destinatário resolvidos (outerjoin/
-    batch: autor NULL — resposta externa futura — não derruba a listagem). O chamador diz
-    se o leitor pode decifrar privadas (perfis.pode fica no composition root, não aqui)."""
+    batch: autor NULL — resposta externa — não derruba a listagem)."""
     rows = (db.query(ConversaMensagem, Usuario.nome)
               .outerjoin(Usuario, ConversaMensagem.autor_usuario_id == Usuario.id)
               .filter(ConversaMensagem.conversa_id == conversa_id)
@@ -270,7 +236,6 @@ def listar_mensagens(db, conversa_id, pode_ver_privada=False):
              .filter(CicloDocumento.id.in_(ids_docs)).all()} if ids_docs else {})
     anexos = anexos_por_mensagem(db, [m.id for m, _ in rows])
     return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id),
-                                pode_ver_privada=pode_ver_privada,
                                 documento=docs.get(m.documento_ref_id),
                                 anexos=anexos.get(m.id))
             for m, nome in rows]

@@ -12148,6 +12148,10 @@ function aplicarBloqueioNegociacao(travar) {
   alvos.forEach(el => {
     if (el.closest('.action-row')) return;            // não mexe nos botões de ação
     if (el.closest('#ciclo-panel')) return;           // o painel do Ciclo é fluxo pós-aprovação (medição, etc.)
+    // Painéis de COMUNICAÇÃO ficam aninhados no #page-02 mas NÃO são controles de negociação:
+    // travá-los deixava o chat/grupo de acompanhamento com o textarea readonly (não dava pra
+    // digitar mensagem) em projeto assinado. A comunicação vale em qualquer status do contrato.
+    if (el.closest('#modal-conversa-proj') || el.closest('#modal-contatos-conf')) return;
     if (travar) {
       if (el.tagName === 'SELECT') el.disabled = true;
       else el.readOnly = true;

@@ -1447,9 +1447,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > `sincronizar_participantes_projeto` (derivado ∪ override manual — override vence); conversa de
 > projeto na inbox ("📁"); `assunto=projeto` ABRE a conversa do projeto; painel de **Membros**
 > (add/remove por gerente, `GET/POST .../participantes`). Testes: `test_equipe_fonte_unica.py`,
-> `test_membership_projeto.py`, +`test_chat_wa.py`. **Suíte 1565 verde.** **Falta:** convergir o
-> roster de 7 papéis para a fonte única, gate de PE/montagem, remover modo privado. **Deploy:** VPS A
-> atualizada neste passo; **VPS B intocada** na `V_pre_teste`; produção pendente.
+> `test_membership_projeto.py`, +`test_chat_wa.py`. **Suíte 1566 verde.** **Convergência do roster
+> FEITA:** `CicloEtapa.responsavel_terceiro_id` (montador/medidor/PE terceirizados); `mod_equipe.equipe`/
+> `salvar` derivam/gravam da fonte única — medidor/finalizador(=Projetista Executivo) = responsável da
+> etapa; Equipe de Montagem = Mapa de Atribuições; Gerente Comercial/SAC/Supervisor informativos;
+> `equipe_json` aposentado. **Falta:** gate de PE/montagem, remover modo privado. **Deploy:** VPS A
+> atualizada; **VPS B intocada** na `V_pre_teste`; produção pendente.
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

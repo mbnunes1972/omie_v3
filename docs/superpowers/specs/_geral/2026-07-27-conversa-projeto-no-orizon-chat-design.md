@@ -65,9 +65,13 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
   (`responsavel_funcionario_id`) é respeitado. **Montagem** mantém o refinamento **por AMBIENTE** no
   Mapa de Atribuições (função geral + ambiente). O **criador** sempre entra. Implementado em
   `mod_equipe.equipe_do_projeto()` → `{membros, membros_usuarios, lacunas, criador_usuario_id}`.
-  **Convergência:** o roster de 7 papéis (`mod_equipe.equipe()`, client-facing) passará a **DERIVAR
-  desta fonte** numa fatia seguinte — os seletores medidor/finalizador/montagem viram **resolução de
-  lacuna** (grava `responsavel_funcionario_id`), aposentando o `equipe_json`.
+  **Convergência do roster (IMPLEMENTADA 2026-07-27):** `mod_equipe.equipe()` DERIVA da fonte única.
+  Mapeamento do lojista: **Finalizador = Projetista Executivo** (PE); **medidor/finalizador** = o
+  RESPONSÁVEL resolvido da etapa da função (grava em `responsavel_funcionario_id`/
+  `responsavel_terceiro_id`); **Equipe de Montagem = Mapa de Atribuições** (papel 'montagem', projeto
+  inteiro); **Gerente Comercial/SAC/Supervisor = informativos** (funcionários da função — Supervisor e
+  Gerente Comercial ficam por "monitoramento interno" das etapas, sem virar responsável). `equipe_json`
+  aposentado para esses papéis. `salvar` grava na fonte canônica (não mais no JSON).
 - **Montagem da equipe no FECHAMENTO** (2ª assinatura → `fechado`, decisão 2026-07-27): resolve os
   automáticos, deixa as lacunas, e **notifica** — os auto-designados ("novo contrato, veja o
   cronograma") e os gerentes/diretores (e-mail + chat) com a equipe definida + as lacunas a preencher.

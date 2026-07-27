@@ -7316,7 +7316,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": _err}, code=403); return
                 if _projeto_da_loja(db, nome_safe, loja_id) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                ok, erro = _meq.salvar(db, nome_safe, (req.get("papel") or "").strip(), req.get("selecao"))
+                ok, erro = _meq.salvar(db, nome_safe, (req.get("papel") or "").strip(),
+                                       req.get("selecao"), loja_id=loja_id)
                 if not ok:
                     self.send_json({"ok": False, "erro": erro}, code=400); return
                 db.commit()

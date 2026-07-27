@@ -2,7 +2,7 @@
 (Consultor = criado_por; Gerente Comercial/SAC/Supervisor = funcionário da loja com a função);
 seletores (medidor/finalizador/montagem[N]) são escolhidos e guardados em projetos_meta.equipe_json."""
 import mod_equipe as eq
-from database import Projeto, Funcionario, Terceiro, Funcao, Usuario, Loja
+from database import Projeto, Funcionario, Terceiro, Funcao, Usuario, Loja, CicloEtapa
 
 
 def _mkfunc(db, loja_id, nome):
@@ -22,11 +22,14 @@ def _seed_eq(db, tag):
     db.add(Funcionario(loja_id=loja_id, nome="Sac Sac", funcao_id=sac))
     db.add(Funcionario(loja_id=loja_id, nome="Super Sup", funcao_id=sup))
     fm = Funcionario(loja_id=loja_id, nome="Med Func", funcao_id=med); db.add(fm)
+    db.add(Funcionario(loja_id=loja_id, nome="Med Func 2", funcao_id=med))   # 2º → medidor vira LACUNA
     t1 = Terceiro(loja_id=loja_id, nome="Montador T1"); db.add(t1)
     t2 = Terceiro(loja_id=loja_id, nome="Montador T2"); db.add(t2)
     u = Usuario(nome="Consultor Criador", login="cc_eq_%s" % tag, senha_hash="x", nivel="operador")
     db.add(u); db.flush()
     db.add(Projeto(nome_safe="EQ_%s" % tag, status="quente", loja_id=loja_id, criado_por_id=u.id))
+    # etapa de medição (função Medidor) — o seletor 'medidor' grava o responsável nela.
+    db.add(CicloEtapa(projeto_nome="EQ_%s" % tag, etapa_codigo="10", funcao_responsavel_id=med))
     db.commit()
     return {"loja_id": loja_id, "fm": fm.id, "t1": t1.id, "t2": t2.id, "u": u.id}
 
@@ -49,14 +52,16 @@ def test_equipe_automaticos_resolvem(app_db):
 def test_equipe_salva_seletores(app_db):
     db = app_db.get_session()
     try:
-        ids = _seed_eq(db, 6002)
-        ok, _ = eq.salvar(db, "EQ_6002", "medidor", {"tipo": "funcionario", "id": ids["fm"]}); db.commit()
+        ids = _seed_eq(db, 6002); lid = ids["loja_id"]
+        ok, _ = eq.salvar(db, "EQ_6002", "medidor",
+                          {"tipo": "funcionario", "id": ids["fm"]}, loja_id=lid); db.commit()
         assert ok
         ok2, _ = eq.salvar(db, "EQ_6002", "montagem",
-                           [{"tipo": "terceiro", "id": ids["t1"]}, {"tipo": "terceiro", "id": ids["t2"]}])
+                           [{"tipo": "terceiro", "id": ids["t1"]}, {"tipo": "terceiro", "id": ids["t2"]}],
+                           loja_id=lid)
         db.commit(); assert ok2
-        by = {p["papel"]: p for p in eq.equipe(db, "EQ_6002", ids["loja_id"])["papeis"]}
-        assert [x["nome"] for x in by["medidor"]["pessoas"]] == ["Med Func"]
+        by = {p["papel"]: p for p in eq.equipe(db, "EQ_6002", lid)["papeis"]}
+        assert [x["nome"] for x in by["medidor"]["pessoas"]] == ["Med Func"]        # resolveu a lacuna
         assert [x["nome"] for x in by["montagem"]["pessoas"]] == ["Montador T1", "Montador T2"]
     finally:
         db.close()

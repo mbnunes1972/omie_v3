@@ -8,11 +8,16 @@ Puro exceto pela sessão db. Fonte única: automáticos nunca são copiados; só
 """
 import json
 
-from database import Projeto, Funcionario, Terceiro, Funcao, Usuario, CicloEtapa
+from database import (Projeto, Funcionario, Terceiro, Funcao, Usuario, CicloEtapa,
+                      AtribuicaoAmbiente)
 
 FUNCAO_GERENTE = "Gerente de Vendas"          # rótulo do papel = "Gerente Comercial"
 FUNCAO_SAC = "SAC"
 FUNCAO_SUPERVISOR = "Supervisor de Montagem"
+# Convergência do roster (2026-07-27): medidor/finalizador viram o responsável da ETAPA da função;
+# montagem vira o Mapa de Atribuições (papel 'montagem', projeto inteiro).
+FUNCAO_MEDIDOR = "Medidor"
+FUNCAO_PROJETISTA = "Projetista Executivo"    # papel "Finalizador" = quem faz o PE
 
 _SELETORES = ("medidor", "finalizador", "montagem")   # papéis escolhidos (persistidos)
 _MULTI = ("montagem",)                                  # aceitam vários responsáveis
@@ -88,12 +93,34 @@ def _selecoes(proj):
     return {}
 
 
-def equipe(db, projeto_nome, loja_id):
-    """Roster completo do projeto: 7 papéis com suas pessoas resolvidas (automáticas derivadas +
-    seletoras persistidas). Retorna {'papeis': [{papel, rotulo, auto, multi?, pessoas:[...]}]}."""
-    proj = db.get(Projeto, projeto_nome)
-    sel = _selecoes(proj)
+def _etapa_da_funcao_nome(db, projeto_nome, loja_id, funcao_nome):
+    """A etapa do projeto cuja FUNÇÃO responsável tem esse nome (medição→Medidor, PE→Projetista)."""
+    fids = [f.id for f in db.query(Funcao).filter(Funcao.nome == funcao_nome).all()
+            if (not loja_id) or f.loja_id == loja_id or f.loja_id is None]
+    if not fids:
+        return None
+    return (db.query(CicloEtapa)
+              .filter(CicloEtapa.projeto_nome == projeto_nome,
+                      CicloEtapa.funcao_responsavel_id.in_(fids))
+              .order_by(CicloEtapa.etapa_codigo.asc()).first())
 
+
+def _pessoa_de_resp(db, r):
+    """A pessoa (funcionário/terceiro) de um responsavel_da_etapa resolvido, ou []."""
+    if not r or not r.get("resolvido"):
+        return []
+    if r["tipo"] == "funcionario":
+        f = db.get(Funcionario, r["id"]);  return [_pessoa_pub("funcionario", f)] if f else []
+    t = db.get(Terceiro, r["id"]);          return [_pessoa_pub("terceiro", t)] if t else []
+
+
+def equipe(db, projeto_nome, loja_id):
+    """Roster do projeto DERIVADO DA FONTE ÚNICA (convergência 2026-07-27):
+    - gerente_comercial/sac/supervisor: informativos (funcionários da função — monitoramento);
+    - consultor: criador do projeto;
+    - medidor/finalizador: RESPONSÁVEL resolvido da etapa da função (Medidor / Projetista Executivo);
+    - montagem: Mapa de Atribuições (papel 'montagem'). O `equipe_json` foi aposentado."""
+    proj = db.get(Projeto, projeto_nome)
     consultor = None
     if proj and proj.criado_por_id:
         u = db.get(Usuario, proj.criado_por_id)
@@ -101,11 +128,21 @@ def equipe(db, projeto_nome, loja_id):
             consultor = {"tipo": "usuario", "id": u.id, "nome": u.nome,
                          "telefone": u.telefone, "email": u.email}
 
-    def _um(papel):
-        return [p for p in [_resolver_pessoa(db, sel.get(papel))] if p]
+    def resp_da_funcao(funcao_nome):
+        et = _etapa_da_funcao_nome(db, projeto_nome, loja_id, funcao_nome)
+        return _pessoa_de_resp(db, responsavel_da_etapa(db, loja_id, et)) if et is not None else []
 
-    def _varios(papel):
-        return [p for p in (_resolver_pessoa(db, s) for s in (sel.get(papel) or [])) if p]
+    def montagem_pessoas():
+        out = []
+        for a in (db.query(AtribuicaoAmbiente)
+                    .filter_by(projeto_nome=projeto_nome, papel="montagem").all()):
+            if a.funcionario_id:
+                f = db.get(Funcionario, a.funcionario_id)
+                if f: out.append(_pessoa_pub("funcionario", f))
+            elif a.terceiro_id:
+                t = db.get(Terceiro, a.terceiro_id)
+                if t: out.append(_pessoa_pub("terceiro", t))
+        return out
 
     papeis = [
         {"papel": "gerente_comercial", "rotulo": "Gerente Comercial", "auto": True,
@@ -114,30 +151,63 @@ def equipe(db, projeto_nome, loja_id):
          "pessoas": [consultor] if consultor else []},
         {"papel": "sac", "rotulo": "SAC", "auto": True,
          "pessoas": _funcionarios_por_funcao(db, loja_id, FUNCAO_SAC)},
-        {"papel": "medidor", "rotulo": "Medidor", "auto": False, "pessoas": _um("medidor")},
-        {"papel": "finalizador", "rotulo": "Finalizador", "auto": False, "pessoas": _um("finalizador")},
+        {"papel": "medidor", "rotulo": "Medidor", "auto": False, "pessoas": resp_da_funcao(FUNCAO_MEDIDOR)},
+        {"papel": "finalizador", "rotulo": "Finalizador", "auto": False,
+         "pessoas": resp_da_funcao(FUNCAO_PROJETISTA)},
         {"papel": "supervisor_montagem", "rotulo": "Supervisor de Montagem", "auto": True,
          "pessoas": _funcionarios_por_funcao(db, loja_id, FUNCAO_SUPERVISOR)},
         {"papel": "montagem", "rotulo": "Equipe de Montagem", "auto": False, "multi": True,
-         "pessoas": _varios("montagem")},
+         "pessoas": montagem_pessoas()},
     ]
     return {"papeis": papeis}
 
 
-def salvar(db, projeto_nome, papel, selecao):
-    """Grava a seleção de um papel SELETOR. `selecao`: {tipo,id} (ou lista deles p/ 'montagem').
-    Não commita — quem chama decide. Retorna (ok, erro)."""
-    if papel not in _SELETORES:
-        return (False, "Papel '%s' não é seletor (é automático)." % papel)
-    if papel in _MULTI and not isinstance(selecao, list):
-        return (False, "Equipe de Montagem espera uma lista de responsáveis.")
-    proj = db.get(Projeto, projeto_nome)
-    if not proj:
-        return (False, "Projeto não encontrado.")
-    sel = _selecoes(proj)
-    sel[papel] = selecao
-    proj.equipe_json = json.dumps(sel, ensure_ascii=False)
+def _salvar_resp_etapa(db, projeto_nome, loja_id, funcao_nome, sel):
+    """Grava o responsável (funcionário OU terceiro) da etapa da função. sel={tipo,id} ou None (limpa)."""
+    et = _etapa_da_funcao_nome(db, projeto_nome, loja_id, funcao_nome)
+    if et is None:
+        return (False, "A etapa da função '%s' não existe no cronograma do projeto." % funcao_nome)
+    et.responsavel_funcionario_id = None
+    et.responsavel_terceiro_id = None
+    if sel and sel.get("id"):
+        if sel.get("tipo") == "terceiro":
+            et.responsavel_terceiro_id = int(sel["id"])
+        else:
+            et.responsavel_funcionario_id = int(sel["id"])
+    db.flush()
     return (True, "")
+
+
+def _salvar_montagem(db, projeto_nome, loja_id, lista):
+    """Substitui a Equipe de Montagem (projeto inteiro) no Mapa de Atribuições. lista=[{tipo,id}]."""
+    if lista is not None and not isinstance(lista, list):
+        return (False, "Equipe de Montagem espera uma lista.")
+    (db.query(AtribuicaoAmbiente)
+       .filter_by(projeto_nome=projeto_nome, papel="montagem", pool_ambiente_id=None).delete())
+    for sel in (lista or []):
+        if not sel or not sel.get("id"):
+            continue
+        a = AtribuicaoAmbiente(loja_id=loja_id, projeto_nome=projeto_nome,
+                               papel="montagem", pool_ambiente_id=None)
+        if sel.get("tipo") == "terceiro":
+            a.terceiro_id = int(sel["id"])
+        else:
+            a.funcionario_id = int(sel["id"])
+        db.add(a)
+    db.flush()
+    return (True, "")
+
+
+def salvar(db, projeto_nome, papel, selecao, loja_id=None):
+    """Grava a seleção de um papel SELETOR na FONTE ÚNICA (não mais no equipe_json):
+    medidor/finalizador → responsável da etapa; montagem → Mapa de Atribuições. Não commita."""
+    if papel == "medidor":
+        return _salvar_resp_etapa(db, projeto_nome, loja_id, FUNCAO_MEDIDOR, selecao)
+    if papel == "finalizador":
+        return _salvar_resp_etapa(db, projeto_nome, loja_id, FUNCAO_PROJETISTA, selecao)
+    if papel == "montagem":
+        return _salvar_montagem(db, projeto_nome, loja_id, selecao)
+    return (False, "Papel '%s' não é seletor (é automático/informativo)." % papel)
 
 
 # ═══ FONTE ÚNICA: equipe derivada das FUNÇÕES do ciclo ════════════════════════════════════════

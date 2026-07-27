@@ -38,6 +38,7 @@ MODULOS = {
                     "tabelas": ["conversas", "conversa_mensagens",
                                 "conversa_participantes", # Central de Comunicação (Fatia 1, 2026-07-27)
                                 "assuntos",               # Orizon Chat (Fatia 2, 2026-07-27)
+                                "mensagem_anexos",        # Orizon Chat anexos (Fatia 5, 2026-07-27)
                                 "contato_confirmacoes",   # decisão 13 (mini-frente 2026-07-25)
                                 "envios_externos"],       # canais externos (Fatias 6-7, 2026-07-26)
                     "rotas": []},

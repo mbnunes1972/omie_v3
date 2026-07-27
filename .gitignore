@@ -71,3 +71,6 @@ wt-*/
 # backups pg_dump (ex.: backup_orizon_pg_*.dump)
 *.dump
 keys/
+
+# Anexos do Orizon Chat (binários fora do git)
+COMUNICACAO/

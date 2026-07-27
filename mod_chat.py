@@ -14,8 +14,9 @@ import os
 
 from sqlalchemy import func
 
-from database import (Conversa, ConversaParticipante, ConversaMensagem, ContatoConfirmacao,
-                      Assunto, Usuario, Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
+from database import (Conversa, ConversaParticipante, ConversaMensagem, MensagemAnexo,
+                      ContatoConfirmacao, Assunto, Usuario, Cliente, Parceiro, Funcionario,
+                      Funcao, CicloDocumento)
 
 # ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
 MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
@@ -139,14 +140,14 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
                     bloqueador=False, privada=False, _permitir_externo=False,
-                    canal_segmento=None):
+                    canal_segmento=None, permitir_vazio=False):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
     quem mandou achando que transferiu precisa saber que não transferiu). `bloqueador` nesta
     fatia SÓ grava o flag — o gate real em pode_avancar() é a Fatia 3."""
     corpo = (corpo or "").strip()
-    if not corpo:
+    if not corpo and not permitir_vazio:   # anexo-only (Fatia 5) passa permitir_vazio=True
         raise ValueError("Escreva a mensagem antes de enviar.")
     if canal not in CANAIS:
         raise ValueError("canal inválido: %r (aceitos: %s)" % (canal, ", ".join(CANAIS)))
@@ -201,8 +202,36 @@ def _corpo_visivel(m, pode_ver_privada):
         return _MASCARA_CHAVE_TROCADA
 
 
+def _serializar_anexo(a):
+    return {"id": a.id, "tipo": a.tipo, "nome": a.nome, "mime": a.mime,
+            "tamanho": a.tamanho, "url": "/api/comunicacao/anexos/%d" % a.id}
+
+
+def anexos_por_mensagem(db, mensagem_ids):
+    """Mapa {mensagem_id: [anexos serializados]} para um lote de mensagens."""
+    if not mensagem_ids:
+        return {}
+    out = {}
+    for a in (db.query(MensagemAnexo)
+                .filter(MensagemAnexo.mensagem_id.in_(list(mensagem_ids)))
+                .order_by(MensagemAnexo.id.asc()).all()):
+        out.setdefault(a.mensagem_id, []).append(_serializar_anexo(a))
+    return out
+
+
+def tipo_anexo_por_mime(mime):
+    return "imagem" if (mime or "").lower().startswith("image/") else "arquivo"
+
+
+def criar_anexo(db, mensagem_id, nome, mime, tamanho, caminho):
+    a = MensagemAnexo(mensagem_id=mensagem_id, tipo=tipo_anexo_por_mime(mime),
+                      nome=nome, mime=mime, tamanho=tamanho, caminho=caminho)
+    db.add(a); db.flush()
+    return a
+
+
 def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
-                        pode_ver_privada=False, documento=None):
+                        pode_ver_privada=False, documento=None, anexos=None):
     """`documento`: CicloDocumento já resolvido pelo chamador (ou None) — a mensagem devolve
     nome/tipo prontos, não só o id cru (Fatia 5)."""
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
@@ -219,6 +248,7 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
             "bloqueador": bool(m.bloqueador),
             "resolvido_em": m.resolvido_em.isoformat() if m.resolvido_em else None,
             "privada": bool(m.privada),
+            "anexos": anexos or [],
             "criado_em": m.criado_em.isoformat() if m.criado_em else None}
 
 
@@ -238,9 +268,11 @@ def listar_mensagens(db, conversa_id, pode_ver_privada=False):
     ids_docs = {m.documento_ref_id for m, _ in rows if m.documento_ref_id}
     docs = ({d.id: d for d in db.query(CicloDocumento)
              .filter(CicloDocumento.id.in_(ids_docs)).all()} if ids_docs else {})
+    anexos = anexos_por_mensagem(db, [m.id for m, _ in rows])
     return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id),
                                 pode_ver_privada=pode_ver_privada,
-                                documento=docs.get(m.documento_ref_id))
+                                documento=docs.get(m.documento_ref_id),
+                                anexos=anexos.get(m.id))
             for m, nome in rows]
 
 

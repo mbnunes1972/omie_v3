@@ -1407,8 +1407,16 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > `pode_escrever_conversa`, `_rede_da_loja`. Endpoints `/api/comunicacao/forum` (GET lista/busca +
 > POST cria debate). Migração: `publico`→`forum_loja` "Geral". Frontend: botões Fórum da Loja/Orizon
 > (Orizon só se a loja tem rede), lista de debates com busca + "Novo debate" (título+assunto), mural
-> em leitura p/ quem não é gerência. Testes: +6 (26 no total). **Falta da frente:** anexos
-> (foto/arquivo) e a ponte WhatsApp do funcionário.
+> em leitura p/ quem não é gerência. Testes: +6 (26 no total).
+>
+> **8) Fatia 5 entregue (suíte 1538 verde).** **Anexos (foto/arquivo)** nas mensagens: tabela
+> `mensagem_anexos` (metadados + caminho); binário no storage `COMUNICACAO/<loja>/` (gitignored).
+> `mod_chat`: `criar_anexo`, `anexos_por_mensagem` (lote), `tipo_anexo_por_mime`, `permitir_vazio`
+> em `enviar_mensagem` (mensagem só-anexo). Endpoints `POST /conversas/<id>/anexos` (multipart,
+> mesmas regras de escrita) e `GET /anexos/<id>` (serve o binário, gated por `pode_ler_conversa`).
+> Front: clipe no compositor, chip do arquivo escolhido, imagens inline (thumb→abre) e arquivos
+> como link. Teste: `HttpClient.post_multipart` novo; +5 (30 no total). **Falta da frente:** só a
+> ponte WhatsApp do funcionário (presença + espelho/template, regras Meta).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

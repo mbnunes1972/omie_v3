@@ -2773,6 +2773,44 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/anexos/<id> — Fatia 5: baixa/serve um anexo (só quem lê a conversa).
+            m_anxg = _re.match(r'^/api/comunicacao/anexos/(\d+)$', path)
+            if m_anxg:
+                anexo_id = int(m_anxg.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from database import MensagemAnexo as _MA, ConversaMensagem as _CMx, Conversa as _CVx
+                    a = db.get(_MA, anexo_id)
+                    msg = db.get(_CMx, a.mensagem_id) if a else None
+                    conv = db.get(_CVx, msg.conversa_id) if msg else None
+                    _rede = mod_chat._rede_da_loja(db, loja_id)
+                    _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                    if (a is None or conv is None
+                            or not (mod_chat.pode_ler_conversa(db, conv, loja_id, usuario["id"], rede_id=_rede)
+                                    or (_adm and conv.loja_id == loja_id))):
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    caminho = os.path.join(_BASE_DIR, "COMUNICACAO", a.caminho)
+                    if not os.path.exists(caminho):
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    conteudo = storage_ler_binario(caminho)
+                    self.send_response(200)
+                    self.send_header("Content-Type", a.mime or "application/octet-stream")
+                    self.send_header("Content-Disposition", 'inline; filename="%s"' % (a.nome or "arquivo"))
+                    self.send_header("Content-Length", str(len(conteudo)))
+                    self.end_headers()
+                    self.wfile.write(conteudo)
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/usuarios — usuários da loja ativa para o seletor "Para"
             # (Central de Comunicação). Exclui o próprio usuário. Filtro opcional ?q=.
             if path == "/api/comunicacao/usuarios":
@@ -5021,6 +5059,61 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True,
                                 "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"])},
                                code=201)
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/conversas/<id>/anexos — Fatia 5: mensagem com ANEXO (foto/arquivo).
+        # Multipart: campo 'arquivo' (obrigatório) + 'corpo' (opcional). Mesmas regras de escrita.
+        m_anx = re.match(r'^/api/comunicacao/conversas/(\d+)/anexos$', path)
+        if m_anx:
+            conv_id = int(m_anx.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            arquivos, campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat, mimetypes
+                from database import Conversa as _CV_anx
+                conv = db.get(_CV_anx, conv_id)
+                _rede = mod_chat._rede_da_loja(db, loja_id)
+                _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                _pode_ler = conv is not None and (
+                    mod_chat.pode_ler_conversa(db, conv, loja_id, usuario["id"], rede_id=_rede)
+                    or (_adm and conv.loja_id == loja_id))
+                if not _pode_ler:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_chat.pode_escrever_conversa(db, conv, loja_id, usuario["id"],
+                                                       rede_id=_rede, is_admin_chat=_adm):
+                    self.send_json({"ok": False, "erro": "Sem permissão para postar aqui."}, code=403); return
+                if "arquivo" not in arquivos or not arquivos["arquivo"][1]:
+                    self.send_json({"ok": False, "erro": "Anexe um arquivo."}, code=400); return
+                fname, data = arquivos["arquivo"]
+                base_nome = os.path.basename(fname) or "arquivo"
+                mime = mimetypes.guess_type(base_nome)[0] or "application/octet-stream"
+                unico = datetime.utcnow().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "_" + base_nome
+                rel = os.path.join(str(loja_id or "rede"), unico)
+                seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
+                try:
+                    msg = mod_chat.enviar_mensagem(db, conv, usuario["id"], campos.get("corpo") or "",
+                                                   privada=bool(campos.get("privada")),
+                                                   canal_segmento=seg, permitir_vazio=True)
+                    anexo = mod_chat.criar_anexo(db, msg.id, base_nome, mime, len(data), rel)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                storage_salvar_binario(os.path.join(_BASE_DIR, "COMUNICACAO", rel), data)
+                _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
+                nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
+                self.send_json({"ok": True, "mensagem": mod_chat.serializar_mensagem(
+                    msg, autor_nome=nome, pode_ver_privada=_pode_priv,
+                    anexos=[mod_chat._serializar_anexo(anexo)])}, code=201)
             finally:
                 db.close()
             return

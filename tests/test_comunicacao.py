@@ -337,6 +337,69 @@ def test_nao_lidos_conta_e_zera(http_client_factory, app_db, seed):
     assert item_dono["nao_lidas"] == 0
 
 
+# ── Fatia 5: anexos (foto/arquivo) ─────────────────────────────────────────────
+
+def _direct_isolado(dono, app_db, nome_assunto):
+    aid = dono.post("/api/comunicacao/assuntos", {"nome": nome_assunto})[1]["assunto"]["id"]
+    alvo = _uid(app_db, "cons_l1")
+    return dono.post("/api/comunicacao/conversas",
+                     {"tipo": "direct", "usuario_id": alvo,
+                      "assunto_tipo": "custom", "assunto_id": aid})[1]["conversa"]["id"]
+
+
+def test_anexo_imagem_upload_e_download(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    cid = _direct_isolado(dono, app_db, "Anexo IMG")
+    dados = b"\x89PNG\r\n\x1a\n" + b"conteudo-fake-de-imagem"
+    st, b = dono.post_multipart("/api/comunicacao/conversas/%d/anexos" % cid,
+                                files={"arquivo": ("foto.png", dados)},
+                                fields={"corpo": "olha a foto"})
+    assert st == 201, b
+    anx = b["mensagem"]["anexos"]
+    assert len(anx) == 1 and anx[0]["tipo"] == "imagem" and anx[0]["nome"] == "foto.png"
+    # download devolve os MESMOS bytes
+    st, raw = dono.get(anx[0]["url"])
+    assert st == 200 and raw == dados
+
+
+def test_anexo_arquivo_detecta_tipo(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    cid = _direct_isolado(dono, app_db, "Anexo DOC")
+    st, b = dono.post_multipart("/api/comunicacao/conversas/%d/anexos" % cid,
+                                files={"arquivo": ("contrato.pdf", b"%PDF-1.4 fake")})
+    assert st == 201 and b["mensagem"]["anexos"][0]["tipo"] == "arquivo"   # corpo vazio ok
+    assert b["mensagem"]["corpo"] == ""
+
+
+def test_anexo_aparece_na_listagem(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    cid = _direct_isolado(dono, app_db, "Anexo LISTA")
+    dono.post_multipart("/api/comunicacao/conversas/%d/anexos" % cid,
+                        files={"arquivo": ("nota.txt", b"abc")}, fields={"corpo": "segue"})
+    st, b = dono.get("/api/comunicacao/conversas/%d/mensagens" % cid)
+    m = b["mensagens"][-1]
+    assert m["anexos"] and m["anexos"][0]["nome"] == "nota.txt"
+
+
+def test_anexo_nao_participante_bloqueado(http_client_factory, app_db, seed):
+    dono = _login(http_client_factory, "dir_l1")
+    cid = _direct_isolado(dono, app_db, "Anexo PRIV")
+    _, b = dono.post_multipart("/api/comunicacao/conversas/%d/anexos" % cid,
+                               files={"arquivo": ("x.png", b"\x89PNG data")})
+    url = b["mensagem"]["anexos"][0]["url"]
+    # terceiro da loja, fora da conversa: nem baixa nem sobe
+    db = app_db.get_session()
+    if not db.query(app_db.Usuario).filter_by(login="anx_terceiro").first():
+        u = app_db.Usuario(nome="Anx Terceiro", login="anx_terceiro", nivel="operador",
+                           loja_id=seed["loja1_id"], ativo=1); u.set_senha("senha123")
+        db.add(u); db.commit()
+    db.close()
+    terc = _login(http_client_factory, "anx_terceiro")
+    assert terc.get(url)[0] == 404
+    assert terc.post_multipart("/api/comunicacao/conversas/%d/anexos" % cid,
+                               files={"arquivo": ("y.png", b"data")})[0] == 404
+
+
 # ── auth ────────────────────────────────────────────────────────────────────---
 
 def test_inbox_exige_login(http_client_factory, seed):

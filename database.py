@@ -1078,6 +1078,21 @@ class Assunto(Base):
     criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class MensagemAnexo(Base):
+    """Anexo (foto/arquivo) de uma mensagem do Orizon Chat (Fatia 5). O binário vive no storage
+    (dir de comunicação, fora do git); aqui ficam os metadados + caminho relativo."""
+    __tablename__ = "mensagem_anexos"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    mensagem_id = Column(Integer, ForeignKey("conversa_mensagens.id"), nullable=False, index=True)
+    tipo        = Column(String(12), nullable=False, default="arquivo")   # imagem | arquivo
+    nome        = Column(Text,    nullable=False)
+    mime        = Column(String(120), nullable=True)
+    tamanho     = Column(Integer, nullable=True)
+    caminho     = Column(Text,    nullable=False)   # relativo ao dir de comunicação
+    criado_em   = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaParticipante(Base):
     """Membro de uma Conversa direct/grupo (Central de Comunicação, Fatia 1). Público NÃO lista
     participantes (audiência = a loja); projeto tampouco (audiência = o time do projeto). direct

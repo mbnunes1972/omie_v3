@@ -240,6 +240,37 @@ class HttpClient:
             out = raw
         return status, out
 
+    def post_multipart(self, path, files, fields=None):
+        """files = {name: (filename, bytes)}; fields = {name: valor}. Para testar uploads."""
+        boundary = "orizonTESTboundary1234"
+        parts = []
+        for k, v in (fields or {}).items():
+            parts += [("--" + boundary).encode(),
+                      ('Content-Disposition: form-data; name="%s"' % k).encode(),
+                      b"", str(v).encode()]
+        for name, (fname, data) in files.items():
+            parts += [("--" + boundary).encode(),
+                      ('Content-Disposition: form-data; name="%s"; filename="%s"' % (name, fname)).encode(),
+                      b"Content-Type: application/octet-stream", b"", data]
+        parts += [("--" + boundary + "--").encode(), b""]
+        body = b"\r\n".join(parts)
+        req = urllib.request.Request(self.base + path, data=body, method="POST")
+        req.add_header("Content-Type", "multipart/form-data; boundary=" + boundary)
+        if self.cookie:
+            req.add_header("Cookie", self.cookie)
+        if self.loja_ativa is not None:
+            req.add_header("X-Loja-Ativa", str(self.loja_ativa))
+        try:
+            resp = urllib.request.urlopen(req, timeout=5)
+            status, raw = resp.status, resp.read()
+        except urllib.error.HTTPError as e:
+            status, raw = e.code, e.read()
+        try:
+            out = _json.loads(raw) if raw else None
+        except Exception:
+            out = raw
+        return status, out
+
     def get(self, path):             return self._req("GET", path)
     def post(self, path, body=None): return self._req("POST", path, body)
     def put(self, path, body=None):  return self._req("PUT", path, body)

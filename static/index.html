@@ -750,7 +750,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div id="cc-thread" style="display:none;flex:1;flex-direction:column;min-height:0">
           <div id="cc-thread-titulo" style="font-weight:800;padding:0 2px 8px"></div>
           <div id="cc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
+          <div id="cc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
+            <i class="ti ti-paperclip"></i><span id="cc-anexo-nome"></span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ccRemoverAnexo()">×</button>
+          </div>
           <div id="cc-compositor" style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+            <input type="file" id="cc-file" style="display:none" onchange="ccArquivoSelecionado(this)">
+            <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('cc-file').click()"><i class="ti ti-paperclip"></i></button>
             <textarea id="cc-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia)"
                       style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
@@ -12144,6 +12150,7 @@ setInterval(ccPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só
 
 function _ccMostrarThread(titulo, podePostar){
   ccNovaFechar();
+  if(typeof ccRemoverAnexo === 'function') ccRemoverAnexo();   // limpa anexo pendente ao trocar
   ['cc-admin','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
   document.getElementById('cc-compositor').style.display = podePostar ? 'flex' : 'none';
   document.getElementById('cc-thread').style.display = 'flex';
@@ -12179,27 +12186,56 @@ async function ccCarregarMsgs(){
   if(!(d.mensagens||[]).length){ box.innerHTML = '<em style="color:var(--muted);font-size:12px">Sem mensagens — comece a conversar.</em>'; return; }
   box.innerHTML = d.mensagens.map(m=>{
     const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
+    const anexos = (m.anexos||[]).map(a=>{
+      if(a.tipo === 'imagem')
+        return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener"><img src="'+a.url+'" alt="'+esc(a.nome)+'" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border)"></a></div>';
+      return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
+    }).join('');
     return '<div style="margin-bottom:10px">'
       + '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>'
-      + '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo||'')+'</div>'
+      + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
+      + anexos
       + '</div>';
   }).join('');
   box.scrollTop = box.scrollHeight;
+}
+
+let _ccArquivo = null;
+function ccArquivoSelecionado(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  _ccArquivo = f;
+  document.getElementById('cc-anexo-nome').textContent = f.name + ' (' + Math.ceil(f.size/1024) + ' KB)';
+  document.getElementById('cc-anexo-chip').style.display = 'flex';
+}
+function ccRemoverAnexo(){
+  _ccArquivo = null;
+  const fi = document.getElementById('cc-file'); if(fi) fi.value = '';
+  document.getElementById('cc-anexo-chip').style.display = 'none';
 }
 
 async function ccEnviar(){
   if(!_ccConvAtiva) return;
   const ta = document.getElementById('cc-texto');
   const corpo = ta.value.trim();
-  if(!corpo) return;
+  if(!corpo && !_ccArquivo) return;   // precisa de texto OU anexo
   const btn = document.getElementById('cc-enviar-btn');
   btn.disabled = true;
   try{
-    const d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({corpo})}).then(r=>r.json());
+    let d;
+    if(_ccArquivo){
+      const fd = new FormData();
+      fd.append('arquivo', _ccArquivo);
+      if(corpo) fd.append('corpo', corpo);
+      d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/anexos',
+        {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
+    } else {
+      d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify({corpo})}).then(r=>r.json());
+    }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
-    ta.value = '';
+    ta.value = ''; ccRemoverAnexo();
     await ccCarregarMsgs();
     ccCarregarInbox();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }

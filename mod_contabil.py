@@ -987,22 +987,39 @@ _MATCHING_NFE = {
 }
 
 
-def reconhecer_despesas_nfe(db, owner_tipo, owner_id, projeto_id, ref_base):
+def reconhecer_despesas_nfe(db, owner_tipo, owner_id, projeto_id, ref_base, fracao=None):
     """FASE D2 — matching pleno na NF-e: reconhece de UMA vez TODAS as despesas planejadas do projeto.
     Para cada rubrica com saldo em aberto no ativo diferido 1.1.06.0X, debita a despesa (5.6.0X, ou
     5.1.01 p/ Custo de Fábrica) × credita a baixa do ativo. A Provisão (2.1.04.0X) SOBREVIVE (paga/
     reconciliada depois). Idempotente por ref (`ref_base:<rubrica>`) E por saldo (rubrica já baixada →
     nada a reconhecer). Impostos NÃO entram aqui (faturamento_impostos_deducao/obrigacao). Retorna
-    {rubrica: valor_reconhecido}."""
+    {rubrica: valor_reconhecido}.
+
+    `fracao` (desmembramento operacional, Fatia 4): quando informado (0..1 = parte do projeto ELEGÍVEL
+    — as parcelas NÃO retidas), limita o reconhecido de cada rubrica a `fracao × constituído`, deixando
+    o resto DIFERIDO no ativo 1.1.06 (a parcela retida). A fração entra no `ref` (`ref_base:fNNNN:rubrica`)
+    para que, ao liberar a parcela (fração maior), a re-emissão reconheça só o DELTA. `None` = projeto
+    inteiro (legado intacto, ref e valores idênticos ao anterior)."""
     out = {}
+    if fracao is not None:
+        fracao = max(0.0, min(1.0, float(fracao)))
+        suf = ":f%04d:" % int(round(fracao * 10000))
     for chave, evento in _MATCHING_NFE.items():
         ativo = EVENTOS[evento][1]   # crédito do evento = ativo diferido 1.1.06.0X
-        val = round(total_lancado(db, owner_tipo, owner_id, ativo, "debito", projeto_id)
-                    - total_lancado(db, owner_tipo, owner_id, ativo, "credito", projeto_id), 2)
+        deb = total_lancado(db, owner_tipo, owner_id, ativo, "debito", projeto_id)
+        cred = total_lancado(db, owner_tipo, owner_id, ativo, "credito", projeto_id)
+        saldo = round(deb - cred, 2)
+        if saldo <= 0:
+            continue
+        if fracao is None:
+            val, ref = saldo, ref_base + ":" + chave
+        else:
+            # reconhecido-alvo dado o elegível − o já reconhecido (crédito), limitado ao saldo
+            val = round(min(saldo, round(fracao * deb, 2) - cred), 2)
+            ref = ref_base + suf + chave
         if val <= 0:
             continue
-        registrar_evento(db, owner_tipo, owner_id, evento, val, projeto_id=projeto_id,
-                         ref=ref_base + ":" + chave)
+        registrar_evento(db, owner_tipo, owner_id, evento, val, projeto_id=projeto_id, ref=ref)
         out[chave] = val
     return out
 

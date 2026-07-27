@@ -672,7 +672,12 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
             # FASE D2: matching pleno — reconhece TODAS as despesas planejadas (10 rubricas, incl. o CMV da
             # fábrica) na NF-e, baixando os ativos diferidos 1.1.06.0X. Idempotente por projeto+rubrica e por
             # saldo → seguro disparar em ambas as emissões (mercadoria/serviço). Substitui o faturamento_cmv.
-            mod_contabil.reconhecer_despesas_nfe(db, ot, oid, projeto_nome, ref_base="match:" + projeto_nome)
+            # Desmembramento operacional (Fatia 4): limita ao ELEGÍVEL (parcelas não retidas) — a retida
+            # fica DIFERIDA; ao liberar (fração maior), a re-emissão reconhece só o delta. None = inteiro.
+            import mod_retido
+            _fr = mod_retido.fracao_reconhecivel(db, projeto_nome)
+            mod_contabil.reconhecer_despesas_nfe(db, ot, oid, projeto_nome,
+                                                 ref_base="match:" + projeto_nome, fracao=_fr)
         finally:
             db.close()
     except Exception as e:

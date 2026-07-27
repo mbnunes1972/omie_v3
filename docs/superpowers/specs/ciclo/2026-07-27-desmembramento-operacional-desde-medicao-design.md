@@ -138,9 +138,18 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
    ambiente, gravado na confirmação → split exato sem reler o contrato). Endpoint `POST
    .../retido/liberar` (`autorizar` = gerência). Testes: `test_retido.py` (+3 = 10). **NÃO toca no
    razão.**
-4. **Reconhecimento contábil por parcela (área sensível — razão):** NF-e/`reconhecer_despesas_nfe`
-   dispara por parcela ao executar; parcela retida fica diferida. Alinhar com o desmembramento
-   financeiro de 2026-07-13 para não duplicar.
+4. **Reconhecimento contábil por parcela (área sensível — razão)** — ✅ FEITA 2026-07-27.
+   `reconhecer_despesas_nfe` ganhou `fracao` (default `None` = projeto inteiro, **byte-idêntico** ao
+   legado): quando informado, limita o reconhecido de cada rubrica a `fracao × constituído`, deixando
+   o resto DIFERIDO no ativo `1.1.06` — **a parcela retida fica diferida**. A fração entra no `ref`
+   (`match:<proj>:fNNNN:<rubrica>`) → ao LIBERAR (fração maior), a re-emissão da NF-e reconhece só o
+   **DELTA**; mesma fração é idempotente. O wiring vivo (`_fin_faturamento_segmentado_seguro`) passa
+   `mod_retido.fracao_reconhecivel(db, projeto)` = `Σ val_cont_congelado(não-retidas)/Σ(todas)`
+   (exato por #5; `None` se não desmembrado). **Não duplica** o fluxo financeiro de 2026-07-13 (mesma
+   função de matching, agora com teto por fração). Testes: `test_fase_d2_nfe.py` (defer+delta+idemp.)
+   + `test_retido.py` (`fracao_reconhecivel`). _Simplificação consciente:_ a granularidade é a fração
+   ELEGÍVEL (não-retida) do projeto — NF-e verdadeiramente por-parcela (uma emissão por parcela) vem
+   com a etapa-15-por-parcela da Fatia 5. **Impostos e recebimento do cliente seguem por fora (§2).**
 5. **UI:** sinalização do medidor + painel de confirmação da gerência + visão do ciclo por parcela.
 
 Cada fatia: suíte verde, DEV_LOG + spec, Vera antes de fechar (áreas sensíveis: ciclo + contábil).

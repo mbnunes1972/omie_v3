@@ -181,6 +181,26 @@ def test_endpoint_liberar_permissao(http_client_factory, app_db, seed):
     assert st == 200 and b["parcelas"][0]["status"] == "aguardando"
 
 
+def test_fracao_reconhecivel(app_db, seed):
+    """Fatia 4: a fração ELEGÍVEL a reconhecer = parcelas não retidas / total (por val_cont_congelado).
+    None quando o projeto não foi desmembrado (reconhece o inteiro, legado)."""
+    ids = _proj_amb(app_db, seed, "RET_fr", 3)
+    db = app_db.get_session()
+    try:
+        assert mod_retido.fracao_reconhecivel(db, "RET_fr") is None       # sem parcela = legado
+    finally:
+        db.close()
+    _desmembrar_direto(app_db, "RET_fr", retido_ids=[ids[2]], pronto_ids=[ids[0], ids[1]],
+                       valores={ids[0]: 500.0, ids[1]: 300.0, ids[2]: 200.0})   # retido = 200 de 1000
+    db = app_db.get_session()
+    try:
+        assert round(mod_retido.fracao_reconhecivel(db, "RET_fr"), 4) == 0.8   # 800/1000
+        mod_retido.liberar(db, "RET_fr", [ids[2]]); db.commit()
+        assert round(mod_retido.fracao_reconhecivel(db, "RET_fr"), 4) == 1.0   # tudo liberado
+    finally:
+        db.close()
+
+
 def test_endpoint_sinalizar_e_permissao(http_client_factory, app_db, seed):
     ids = _proj_amb(app_db, seed, "RET_ep", 2)
     op = _login(http_client_factory, "cons_l1")                            # operador tem registrar_medicao

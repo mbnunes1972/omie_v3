@@ -58,6 +58,28 @@ def test_matching_reconhece_todas_as_despesas_uma_vez(app_db):
     db.close()
 
 
+def test_matching_por_fracao_difere_a_retida(app_db):
+    """Desmembramento operacional (Fatia 4): com `fracao` < 1 (parte não retida), a NF-e reconhece só
+    a fração ELEGÍVEL; o resto fica DIFERIDO no ativo 1.1.06. Ao LIBERAR (fração maior), a re-emissão
+    reconhece só o DELTA. Σ ao final == constituído; mesma fração re-emitida é idempotente."""
+    db = app_db.get_session(); ot, oid = "loja", 730; mc.seed_plano(db, ot, oid)
+    _contrato(db, ot, oid, "P")
+    # 1ª NF-e com 80% elegível (uma parcela retida vale 20%)
+    out1 = mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P", fracao=0.8)
+    for chave, (ativo, prov, desp) in RUBRICAS.items():
+        assert round(out1[chave], 2) == round(VALORES[chave] * 0.8, 2)        # reconhece 80%
+        assert round(_s(db, ot, oid, ativo), 2) == round(VALORES[chave] * 0.2, 2)  # 20% DIFERIDO
+    # re-emitir a MESMA fração não reconhece de novo (idempotente por ref)
+    assert mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P", fracao=0.8) == {}
+    # obra libera → 100% elegível: a re-emissão reconhece só o DELTA (20%)
+    out2 = mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P", fracao=1.0)
+    for chave, (ativo, prov, desp) in RUBRICAS.items():
+        assert round(out2[chave], 2) == round(VALORES[chave] * 0.2, 2)        # delta 20%
+        assert round(_s(db, ot, oid, ativo), 2) == 0.0                        # ativo zerado
+        assert round(_s(db, ot, oid, desp), 2) == VALORES[chave]              # total reconhecido
+    db.close()
+
+
 def test_matching_idempotente(app_db):
     db = app_db.get_session(); ot, oid = "loja", 721; mc.seed_plano(db, ot, oid)
     _contrato(db, ot, oid, "P")

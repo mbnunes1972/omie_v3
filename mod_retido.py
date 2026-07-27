@@ -208,3 +208,20 @@ def liberar(db, projeto_nome, pool_ambiente_ids, liberado_por_id=None):
         return (False, "Nenhum ambiente retido entre os informados.", None)
     db.flush()
     return (True, None, afetadas)
+
+
+# ── Fatia 4: reconhecimento contábil dirigido pela execução (retida fica DIFERIDA) ───────────────
+
+def fracao_reconhecivel(db, projeto_nome):
+    """Fração do projeto ELEGÍVEL a reconhecimento contábil na NF-e = parcelas que NÃO estão
+    retidas (`Σ val_cont_congelado das não-retidas / Σ de todas`, exato por #5). A parcela retida
+    fica DIFERIDA (segue como ativo diferido 1.1.06 até liberar). Retorna None se o projeto não
+    foi desmembrado → o chamador reconhece o projeto inteiro (comportamento legado intacto)."""
+    parts = db.query(ParcelaProjeto).filter_by(projeto_nome=projeto_nome).all()
+    if not parts:
+        return None
+    total = round(sum(p.val_cont_congelado or 0.0 for p in parts), 2)
+    if total <= 0:
+        return 0.0
+    disp = round(sum(p.val_cont_congelado or 0.0 for p in parts if p.status != STATUS_RETIDO), 2)
+    return round(disp / total, 6)

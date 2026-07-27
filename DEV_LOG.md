@@ -1482,10 +1482,20 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > reusando `congelar_parcelas` p/ `Σ val_cont_congelado` exato). Habilitado por
 > `ParcelaAmbiente.valor_ambiente` (valor bruto por ambiente, gravado na confirmação → split exato sem
 > reler o contrato). Endpoint `POST .../retido/liberar` (`autorizar`). Testes `test_retido.py`
-> (+3 = 10). **NÃO toca no razão.** **Suíte 1571 verde.** **Falta:** Fatias 4 (reconhecimento
-> contábil por parcela — área sensível: razão) e 5 (UI). **Deploy:** tudo local na `main`
-> (`90eca97`/`5f1fe0e` + Fatia 3 por commitar); A/B/produção pendentes. Ao fechar o operacional,
-> retomar o **gate de PE/montagem do chat** (item 10).
+> (+3 = 10). **NÃO toca no razão.**
+> — **Fatia 4 (reconhecimento contábil — área sensível: razão).** `reconhecer_despesas_nfe` ganhou
+> `fracao` (default `None` = projeto inteiro, **byte-idêntico** ao legado): quando informado, limita
+> o reconhecido de cada rubrica a `fracao × constituído`, deixando o resto DIFERIDO no ativo `1.1.06`
+> — **a parcela retida fica diferida**. A fração entra no `ref` (`match:<proj>:fNNNN:<rubrica>`) → ao
+> LIBERAR (fração maior), a re-emissão reconhece só o **DELTA**; mesma fração é idempotente. Wiring
+> vivo (`_fin_faturamento_segmentado_seguro`) passa `mod_retido.fracao_reconhecivel` =
+> `Σ val_cont_congelado(não-retidas)/Σ(todas)` (exato por #5; `None` se não desmembrado). **Não
+> duplica** o fluxo de 2026-07-13. Impostos e recebimento do cliente seguem por fora (§2). Testes
+> `test_fase_d2_nfe.py` (defer+delta+idemp.) + `test_retido.py` (`fracao_reconhecivel`). _Simplificação:_
+> granularidade = fração ELEGÍVEL do projeto; NF-e verdadeiramente por-parcela vem com a Fatia 5.
+> **Falta:** só a Fatia 5 (UI). **Deploy:** tudo local na `main` (`90eca97`/`5f1fe0e`/`b04de05` +
+> Fatia 4 por commitar); A/B/produção pendentes. **Vera** chamada antes de fechar (razão). Ao fechar
+> o operacional, retomar o **gate de PE/montagem do chat** (item 10).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

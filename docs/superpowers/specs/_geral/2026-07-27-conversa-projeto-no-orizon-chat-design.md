@@ -38,9 +38,14 @@ do projeto**, com **todos os envolvidos**, acessível de dentro do projeto E na 
 Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_create_conversa_projeto`), com
 `projeto_nome`/`cliente_id` e `documento_ref_id`/transferência já no modelo de mensagem.
 
-- **`conversa_participantes` ganha `origem`** (`auto` | `manual`) **+ `removido`** (0/1). Isso sustenta o
-  "override vence": o sync recomputa o conjunto derivado D; membros `auto` fora de D saem (se não forem
-  `manual`); membros `manual` ficam; um `auto` marcado `removido=1` (remoção manual) **não volta**.
+- **`conversa_participantes` ganha `origem`** (`auto` | `manual`) **+ `removido`** (0/1) — IMPLEMENTADO.
+  `mod_chat.sincronizar_participantes_projeto(db, conversa, membros_usuarios)` recomputa: adiciona os
+  derivados ausentes como `auto`; remove `auto` que saiu do time; **override vence** — `manual` fica e
+  `auto` com `removido=1` (remoção manual) NÃO volta. `eh_participante` ignora `removido=1`. A conversa
+  `tipo=projeto` entra na **inbox** (`listar_inbox`, título "📁 <projeto>"); o sync roda ao **abrir** a
+  conversa do projeto e no **fechamento** (os auto-designados passam a ver o resumo na inbox). O
+  **botão do projeto** e o item da inbox abrem a mesma conversa. Falta: UI de override manual (add/
+  remove pelo gerente) e o `assunto=projeto` da "Nova mensagem" abrir a conversa do projeto.
 - **Derivação do conjunto interno D — FONTE ÚNICA por FUNÇÃO (decisão 2026-07-27).** A origem é a
   **função responsável de cada etapa** (`CicloEtapa.funcao_responsavel_id`, vinda do Cronograma Padrão
   da loja — data-driven). O funcionário é **derivado**: **1 candidato ativo → automático**; **>1 →

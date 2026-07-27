@@ -12117,7 +12117,7 @@ async function ccCarregarInbox(){
   ccAtualizarBadgeTotal(_ccInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
   if(!_ccInbox.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa ainda.</div>'; return; }
   box.innerHTML = _ccInbox.map((c,i)=>{
-    const icon = c.tipo === 'publico' ? 'ti-speakerphone' : (c.tipo === 'grupo' ? 'ti-users' : 'ti-user');
+    const icon = c.tipo === 'publico' ? 'ti-speakerphone' : (c.tipo === 'projeto' ? 'ti-folder' : (c.tipo === 'grupo' ? 'ti-users' : 'ti-user'));
     const ativo = (c.id === _ccConvAtiva);
     const seg = (c.assunto && c.assunto.tipo !== 'livre' && c.assunto.label) ? c.assunto.label : '';
     const nl = c.nao_lidas || 0;

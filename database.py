@@ -1116,6 +1116,11 @@ class ConversaParticipante(Base):
     papel         = Column(String(12), nullable=False, default="membro")   # membro | admin
     arquivada     = Column(Integer, nullable=False, default=0)
     lido_ate_mensagem_id = Column(Integer, nullable=True)
+    # Membership da CONVERSA DO PROJETO (Orizon Chat, unificação 2026-07-27): a origem distingue o
+    # membro DERIVADO da equipe (auto) do adicionado à mão (manual); `removido` é o tombstone da
+    # remoção manual de um auto — o sync respeita ("override vence"): não readiciona.
+    origem        = Column(String(8),  nullable=False, default="manual")   # auto | manual
+    removido      = Column(Integer,    nullable=False, default=0)
     adicionado_em = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1656,6 +1661,9 @@ def _migrar_colunas_pg():
         "UPDATE conversas SET tipo='forum_loja', titulo=COALESCE(titulo,'Geral') WHERE tipo='publico'",
         # Fatia 6: ponte WhatsApp — preferência de notificação do usuário (presença é tabela nova).
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS notificar_whatsapp VARCHAR(16) DEFAULT 'quando_offline'",
+        # Unificação conversa-do-projeto (2026-07-27): origem/removido na membership.
+        "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS origem VARCHAR(8) DEFAULT 'manual'",
+        "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

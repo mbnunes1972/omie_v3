@@ -2678,11 +2678,17 @@ class Handler(BaseHTTPRequestHandler):
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
                         return
-                    import mod_chat
+                    import mod_chat, mod_equipe
                     p_meta = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
                     conv = mod_chat.get_or_create_conversa_projeto(
                         db, loja_id, nome_safe,
                         cliente_id=(p_meta.cliente_id if p_meta else None))
+                    # membership: mantém os participantes em dia com a equipe derivada do projeto
+                    try:
+                        _eqp = mod_equipe.equipe_do_projeto(db, nome_safe, loja_id)
+                        mod_chat.sincronizar_participantes_projeto(db, conv, _eqp["membros_usuarios"])
+                    except Exception as _es:
+                        print("[EQUIPE] sync participantes na abertura falhou:", _es)
                     db.commit()
                     # Fatia 4: quem TEM ver_mensagem_privada lê o claro; os demais, a máscara
                     _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
@@ -8868,6 +8874,10 @@ class Handler(BaseHTTPRequestHandler):
                             _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
                             _conv = _mchat_f.get_or_create_conversa_projeto(
                                 db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
+                            # membership: sincroniza os participantes com a equipe derivada (os
+                            # auto-designados passam a ver a conversa/o resumo na inbox).
+                            _eq = _meq.equipe_do_projeto(db, nome_safe, loja_id)
+                            _mchat_f.sincronizar_participantes_projeto(db, _conv, _eq["membros_usuarios"])
                             _falta = ", ".join(l["funcao_nome"] or "?" for l in _res["lacunas"]) or "nenhuma"
                             _mchat_f.enviar_mensagem(
                                 db, _conv, None,

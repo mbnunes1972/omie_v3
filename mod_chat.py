@@ -279,10 +279,35 @@ def listar_mensagens(db, conversa_id, pode_ver_privada=False):
 # ── Conversas direct / grupo / inbox (Central de Comunicação, Fatia 1) ────────
 
 def eh_participante(db, conversa_id, usuario_id):
-    """True se o usuário participa da conversa (direct/grupo)."""
+    """True se o usuário participa da conversa (direct/grupo/projeto) e NÃO foi removido."""
     return (db.query(ConversaParticipante.id)
-              .filter_by(conversa_id=conversa_id, usuario_id=usuario_id)
+              .filter(ConversaParticipante.conversa_id == conversa_id,
+                      ConversaParticipante.usuario_id == usuario_id,
+                      ConversaParticipante.removido == 0)
               .first() is not None)
+
+
+def sincronizar_participantes_projeto(db, conversa, membros_usuarios):
+    """Sincroniza os participantes de uma CONVERSA DE PROJETO com o conjunto DERIVADO da equipe
+    (membros_usuarios). Regra 'override vence': adição manual (origem='manual') fica; remoção manual
+    de um auto (removido=1) é respeitada (não readiciona); auto que saiu do time é removido. Não
+    commita. Retorna a lista atual de usuarios participantes."""
+    D = {int(u) for u in (membros_usuarios or []) if u}
+    rows = {p.usuario_id: p for p in db.query(ConversaParticipante)
+            .filter_by(conversa_id=conversa.id).all()}
+    for uid in D:
+        p = rows.get(uid)
+        if p is None:
+            db.add(ConversaParticipante(conversa_id=conversa.id, usuario_id=uid,
+                                        papel="membro", origem="auto", removido=0))
+        # p existente (auto presente, auto-removido-manual, ou manual) → não mexe
+    for uid, p in rows.items():
+        if p.origem == "auto" and not p.removido and uid not in D:
+            db.delete(p)                       # deixou o time → sai (manual/removidos ficam)
+    db.flush()
+    return [p.usuario_id for p in db.query(ConversaParticipante)
+            .filter(ConversaParticipante.conversa_id == conversa.id,
+                    ConversaParticipante.removido == 0).all()]
 
 
 # ── Assunto (Orizon Chat, Fatia 2) ────────────────────────────────────────────
@@ -589,6 +614,8 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
     outro_id = None
     if c.tipo in ("mural", "publico"):
         titulo = "📣 Mural da loja"
+    if c.tipo == "projeto":
+        titulo = "📁 " + ((c.projeto_nome or "Projeto").replace("_", " "))
     if c.tipo == "direct":
         parts = participantes if participantes is not None else [
             p.usuario_id for p in db.query(ConversaParticipante)
@@ -622,13 +649,15 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
 def listar_inbox(db, loja_id, usuario_id):
     """Inbox: o mural PÚBLICO da loja + conversas direct/grupo do usuário, mais recentes primeiro,
     cada uma com contagem de não-lidas. O público é sempre incluído (audiência = a loja)."""
-    # marcador de leitura por conversa (linhas de participante do usuário)
+    # marcador de leitura por conversa (linhas de participante do usuário, exceto removidos)
     lido = {p.conversa_id: (p.lido_ate_mensagem_id or 0)
-            for p in db.query(ConversaParticipante).filter_by(usuario_id=usuario_id).all()}
+            for p in db.query(ConversaParticipante)
+            .filter(ConversaParticipante.usuario_id == usuario_id,
+                    ConversaParticipante.removido == 0).all()}
     conv_ids = list(lido.keys())
     convs = (db.query(Conversa)
                .filter(Conversa.id.in_(conv_ids or [-1]), Conversa.loja_id == loja_id,
-                       Conversa.tipo.in_(("direct", "grupo"))).all()) if conv_ids else []
+                       Conversa.tipo.in_(("direct", "grupo", "projeto"))).all()) if conv_ids else []
     mural = get_or_create_mural(db, loja_id)
     convs = [mural] + [c for c in convs if c.id != mural.id]
     itens = [serializar_conversa(db, c, usuario_id,

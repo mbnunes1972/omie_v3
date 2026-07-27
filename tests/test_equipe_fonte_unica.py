@@ -171,3 +171,42 @@ def test_gate_execucao_por_etapa(app_db, seed):
     assert _gate(app_db, p, "18", lid) is False
     _etapa(app_db, p, "19", f2, resp_func=a)                  # definido (apesar de vários) → executável
     assert _gate(app_db, p, "19", lid) is True
+
+
+def _login(f, who):
+    c = f(); c.login(who, "senha123"); assert c.cookie; return c
+
+
+def test_gate_bloqueia_execucao_no_endpoint(http_client_factory, app_db, seed):
+    lid = seed["loja1_id"]
+    fid = _funcao(app_db, lid, "Logistica Gate EP")
+    _func(app_db, lid, fid, "L1"); _func(app_db, lid, fid, "L2")      # 2 candidatos → lacuna
+    _etapa(app_db, "Proj_L1", "13", fid)
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post_multipart("/api/projetos/Proj_L1/ciclo/13/pedido-xml",
+                             files={"arquivo": ("p.xml", b"<xml/>")})
+    assert st == 409 and isinstance(b, dict) and "responsável" in b.get("erro", "")
+
+
+def test_montar_equipe_persiste_autos_e_apura_lacunas(app_db, seed):
+    lid = seed["loja1_id"]; p = _proj(app_db, seed, "EqFech")
+    f1 = _funcao(app_db, lid, "Medidor Fech1"); u1 = _func(app_db, lid, f1, "Único Fech")
+    _etapa(app_db, p, "10", f1)                             # 1 candidato → auto
+    f2 = _funcao(app_db, lid, "Logistica Fech2")
+    _func(app_db, lid, f2, "A"); _func(app_db, lid, f2, "B")
+    _etapa(app_db, p, "13", f2)                             # 2 candidatos → lacuna
+    db = app_db.get_session()
+    try:
+        res = mod_equipe.montar_equipe_no_fechamento(db, p, lid); db.commit()
+    finally:
+        db.close()
+    assert any(d["etapa_codigo"] == "10" and d["funcionario_id"] == u1 for d in res["definidos"])
+    assert any(l["etapa_codigo"] == "13" for l in res["lacunas"])
+    db = app_db.get_session()
+    try:
+        et10 = db.query(app_db.CicloEtapa).filter_by(projeto_nome=p, etapa_codigo="10").first()
+        et13 = db.query(app_db.CicloEtapa).filter_by(projeto_nome=p, etapa_codigo="13").first()
+        assert et10.responsavel_funcionario_id == u1        # auto persistido
+        assert et13.responsavel_funcionario_id is None      # lacuna não persistida
+    finally:
+        db.close()

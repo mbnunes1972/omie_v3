@@ -148,6 +148,11 @@ def salvar(db, projeto_nome, papel, selecao):
 # mantém o refinamento por AMBIENTE no Mapa de Atribuições (decisão do lojista). O CRIADOR entra
 # sempre. O roster de 7 papéis acima passará a DERIVAR desta fonte numa fatia seguinte (convergência).
 
+# Etapas cujo responsável é POR AMBIENTE (Mapa de Atribuições) — fora da resolução por função
+# única (montagem/assistência). Espelha main._ETAPAS_POR_AMBIENTE.
+ETAPAS_POR_AMBIENTE = frozenset({"17", "18"})
+
+
 def usuario_do_funcionario(db, funcionario_id):
     """Ponte Funcionário→Usuário: Funcionario.usuario_id; fallback Usuario.funcionario_id."""
     if not funcionario_id:
@@ -262,3 +267,22 @@ def equipe_do_projeto(db, nome_safe, loja_id):
             "membros_usuarios": sorted(usuarios),
             "lacunas": lacunas,
             "criador_usuario_id": criador_uid}
+
+
+def montar_equipe_no_fechamento(db, nome_safe, loja_id):
+    """No FECHAMENTO do contrato (2ª assinatura → 'fechado'): PERSISTE os responsáveis AUTOMÁTICOS
+    (função com 1 candidato FUNCIONÁRIO) em `CicloEtapa.responsavel_funcionario_id`; deixa as LACUNAS
+    (>1 candidato) para ação gerencial. Etapas por ambiente (montagem/assistência) ficam de fora.
+    Não commita. Retorna {definidos, lacunas, auto_usuarios} para as notificações."""
+    definidos = []
+    for et in db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all():
+        if et.responsavel_funcionario_id or str(et.etapa_codigo) in ETAPAS_POR_AMBIENTE:
+            continue
+        r = responsavel_da_etapa(db, loja_id, et)
+        if r["resolvido"] and r["tipo"] == "funcionario" and r["motivo"] == "auto":
+            et.responsavel_funcionario_id = r["id"]
+            definidos.append({"etapa_codigo": et.etapa_codigo, "funcionario_id": r["id"]})
+    db.flush()
+    eq = equipe_do_projeto(db, nome_safe, loja_id)
+    return {"definidos": definidos, "lacunas": eq["lacunas"],
+            "auto_usuarios": [m["usuario_id"] for m in eq["membros"] if m["usuario_id"]]}

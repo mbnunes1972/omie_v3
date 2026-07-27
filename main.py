@@ -364,6 +364,28 @@ def _get_or_create_medicao(db, nome_safe):
     return md
 
 
+# Etapas cujo responsável é POR AMBIENTE (Mapa de Atribuições) — o gate por FUNÇÃO não se aplica a
+# elas (evita falso-bloqueio de montagem/assistência já atribuídas por ambiente). Decisão 2026-07-27.
+_ETAPAS_POR_AMBIENTE = frozenset({"17", "18"})
+
+
+def _bloqueio_execucao_etapa(db, nome_safe, loja_id, codigo):
+    """Gate de EXECUÇÃO (bloqueador invertido, decisão 2026-07-27): devolve a mensagem de erro se a
+    etapa está TRAVADA por falta de responsável definido (LACUNA — a função tem >1 candidato e
+    ninguém foi escolhido), ou None se liberada. Só bloqueia na LACUNA: etapas de responsável único/
+    já-definido passam; etapas por ambiente (montagem/assistência) ficam de fora deste gate."""
+    if str(codigo) in _ETAPAS_POR_AMBIENTE:
+        return None
+    import mod_equipe
+    et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=str(codigo)).first()
+    if et is None or not et.funcao_responsavel_id:
+        return None
+    if mod_equipe.responsavel_da_etapa(db, loja_id, et)["motivo"] == "lacuna":
+        return ("Defina o responsável desta etapa antes de executá-la: a função tem mais de um "
+                "candidato — um gerente ou diretor precisa indicar o nome.")
+    return None
+
+
 def _aprovador_financeiro(db, login, senha, sessao=None):
     """Usuario apto a aprovar financeiro, ou None. Sessão-primeiro: ver _usuario_com_capacidade."""
     return _usuario_com_capacidade(db, login, senha, "aprovar_financeiro", sessao=sessao)
@@ -8837,6 +8859,24 @@ class Handler(BaseHTTPRequestHandler):
                             upsert_projeto_status(nome_safe, "fechado")
                         except Exception as _e:
                             print("[FECHADO] upsert_projeto_status falhou:", _e)
+                        # Montagem da equipe no fechamento (decisão 2026-07-27): persiste os
+                        # responsáveis automáticos, apura as lacunas e posta o resumo na conversa
+                        # do projeto (gerência vê por oversight). Best-effort — nunca quebra a assinatura.
+                        try:
+                            import mod_equipe as _meq, mod_chat as _mchat_f
+                            _res = _meq.montar_equipe_no_fechamento(db, nome_safe, loja_id)
+                            _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                            _conv = _mchat_f.get_or_create_conversa_projeto(
+                                db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
+                            _falta = ", ".join(l["funcao_nome"] or "?" for l in _res["lacunas"]) or "nenhuma"
+                            _mchat_f.enviar_mensagem(
+                                db, _conv, None,
+                                "📋 Contrato fechado — equipe montada. Responsáveis automáticos "
+                                "definidos: %d. Funções a definir (ação gerencial): %s."
+                                % (len(_res["definidos"]), _falta), permitir_vazio=True)
+                            db.commit()
+                        except Exception as _eq:
+                            db.rollback(); print("[EQUIPE] montar_equipe_no_fechamento falhou:", _eq)
                     self.send_json({"ok": True, "status": contrato.status, "parte": parte})
                 except Exception as e:
                     db.rollback()
@@ -9084,6 +9124,9 @@ class Handler(BaseHTTPRequestHandler):
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
                         return
+                    _blk = _bloqueio_execucao_etapa(db, nome_safe, loja_id, "10")   # gate: medição precisa de nome
+                    if _blk:
+                        self.send_json({"ok": False, "erro": _blk}, code=409); return
                     u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Registro exige login+senha do Medidor (ou Diretor)."}, code=403); return
@@ -9214,6 +9257,9 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    _blk = _bloqueio_execucao_etapa(db, nome_safe, loja_id, codigo)   # gate de execução
+                    if _blk:
+                        self.send_json({"ok": False, "erro": _blk}, code=409); return
                     tipo_esperado = mod_ciclo.tipo_doc_operacional(codigo)
                     if not tipo_esperado:
                         self.send_json({"ok": False, "erro": "Esta etapa não aceita upload de pedidos."}, code=400); return

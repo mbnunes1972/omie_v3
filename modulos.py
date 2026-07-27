@@ -36,6 +36,7 @@ MODULOS = {
                     # desligável por loja, promove a domínio.
                     "arquivos": ["mod_chat.py", "mod_chat_externo.py"],
                     "tabelas": ["conversas", "conversa_mensagens",
+                                "conversa_participantes", # Central de Comunicação (Fatia 1, 2026-07-27)
                                 "contato_confirmacoes",   # decisão 13 (mini-frente 2026-07-25)
                                 "envios_externos"],       # canais externos (Fatias 6-7, 2026-07-26)
                     "rotas": []},

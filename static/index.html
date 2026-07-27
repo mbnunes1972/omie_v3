@@ -550,6 +550,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="sb-secao">
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
+      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Central de Comunicação"><i class="ti ti-messages"></i>Comunicação</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -658,6 +659,64 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="seletor-loja-wrap" style="display:none;align-items:center;margin:8px 0"></div>
   </div>
 </aside>
+
+<!-- CENTRAL DE COMUNICAÇÃO (spec 2026-07-27, Fatia 1) — modal GLOBAL (top-level, fora do
+     #page-02 de propósito: não pode cair no lock de negociação). Inbox + thread + nova mensagem. -->
+<div id="modal-central-com" class="modal-overlay" style="display:none;z-index:9200" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-box" style="max-width:900px;width:96%;height:86vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-messages"></i> Central de Comunicação</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-central-com').style.display='none'">Fechar</button>
+    </div>
+    <div style="flex:1;display:flex;gap:12px;min-height:0">
+      <!-- coluna esquerda: inbox -->
+      <div style="width:280px;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="padding:8px;border-bottom:1px solid var(--border)">
+          <button class="btn btn-primary btn-sm" style="width:100%" onclick="ccNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
+        </div>
+        <div id="cc-inbox" style="flex:1;overflow-y:auto;padding:6px"></div>
+      </div>
+      <!-- coluna direita: thread OU formulário de nova conversa -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <!-- nova conversa -->
+        <div id="cc-nova" style="display:none;border:1px solid var(--border);border-radius:10px;padding:14px">
+          <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
+          <div style="display:flex;gap:16px;margin-bottom:10px">
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Direct (1:1)</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="grupo" onchange="ccTipoToggle()"> Grupo</label>
+          </div>
+          <div id="cc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
+            <label class="field-label">Nome do grupo</label>
+            <input id="cc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
+          </div>
+          <label class="field-label">Para <span id="cc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
+          <input id="cc-busca-user" type="search" placeholder="buscar por nome…" oninput="ccFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
+          <div id="cc-users" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="btn btn-primary btn-sm" onclick="ccCriar()">Iniciar conversa</button>
+            <button class="btn btn-ghost btn-sm" onclick="ccNovaFechar()">Cancelar</button>
+          </div>
+          <div id="cc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+        </div>
+        <!-- thread -->
+        <div id="cc-thread" style="display:none;flex:1;flex-direction:column;min-height:0">
+          <div id="cc-thread-titulo" style="font-weight:800;padding:0 2px 8px"></div>
+          <div id="cc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+            <textarea id="cc-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia)"
+                      style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
+                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
+            <button class="btn btn-primary btn-sm" id="cc-enviar-btn" onclick="ccEnviar()">Enviar</button>
+          </div>
+        </div>
+        <!-- estado inicial -->
+        <div id="cc-vazio" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
+          Selecione uma conversa ou clique em <b style="margin:0 4px">Nova mensagem</b>.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL PERFIL ─────────────────────────────────────────────── -->
 <div id="modal-perfil" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
@@ -2887,9 +2946,9 @@ function _alinharLojaAoProjeto(loja_id){
 
 function _aterrissarPorPapel(){
   const u = _usuarioAtual || {};
-  // super_admin: esconde o menu operacional (Projetos)
+  // super_admin: esconde o menu operacional (Projetos + Comunicação — sem loja não há inbox)
   if (u.pode_gerir_redes && !u.loja_id) {
-    ['nav-00'].forEach(id => {
+    ['nav-00', 'nav-central-com'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -11966,6 +12025,173 @@ async function convEnviar(){
     await convCarregar();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }
   finally{ btn.disabled = false; ta.focus(); }
+}
+
+// ═══ Central de Comunicação (spec 2026-07-27, Fatia 1) ════════════════════════
+let _ccInbox = [];        // conversas da inbox (índice usado nos onclick)
+let _ccUsuarios = [];     // usuários da loja (seletor "Para")
+let _ccSel = new Set();   // ids selecionados no seletor
+let _ccConvAtiva = null;  // id da conversa aberta
+
+async function abrirCentralComunicacao(){
+  document.getElementById('modal-central-com').style.display = 'flex';
+  ccNovaFechar();
+  document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-vazio').style.display = 'flex';
+  _ccConvAtiva = null;
+  await ccCarregarInbox();
+}
+
+async function ccCarregarInbox(){
+  const box = document.getElementById('cc-inbox');
+  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
+  let d;
+  try { d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
+  if(!d.ok){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
+  _ccInbox = d.conversas || [];
+  if(!_ccInbox.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa ainda.</div>'; return; }
+  box.innerHTML = _ccInbox.map((c,i)=>{
+    const icon = c.tipo === 'grupo' ? 'ti-users' : 'ti-user';
+    const ativo = (c.id === _ccConvAtiva);
+    return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;'
+      + (ativo ? 'background:var(--surface-2)' : '') + '"'
+      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\''+(ativo?'var(--surface-2)':'')+'\'">'
+      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')+'</div>'
+      + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function ccAbrirConversa(idx){
+  const c = _ccInbox[idx];
+  if(!c) return;
+  _ccConvAtiva = c.id;
+  ccNovaFechar();
+  document.getElementById('cc-vazio').style.display = 'none';
+  document.getElementById('cc-thread').style.display = 'flex';
+  document.getElementById('cc-thread-titulo').textContent = c.titulo || 'Conversa';
+  await ccCarregarMsgs();
+  ccCarregarInbox();  // reflete "ativo" na lista
+}
+
+async function ccCarregarMsgs(){
+  const box = document.getElementById('cc-msgs');
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  let d;
+  try { d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
+  if(!(d.mensagens||[]).length){ box.innerHTML = '<em style="color:var(--muted);font-size:12px">Sem mensagens — comece a conversar.</em>'; return; }
+  box.innerHTML = d.mensagens.map(m=>{
+    const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
+    return '<div style="margin-bottom:10px">'
+      + '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>'
+      + '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo||'')+'</div>'
+      + '</div>';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function ccEnviar(){
+  if(!_ccConvAtiva) return;
+  const ta = document.getElementById('cc-texto');
+  const corpo = ta.value.trim();
+  if(!corpo) return;
+  const btn = document.getElementById('cc-enviar-btn');
+  btn.disabled = true;
+  try{
+    const d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({corpo})}).then(r=>r.json());
+    if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
+    ta.value = '';
+    await ccCarregarMsgs();
+    ccCarregarInbox();
+  }catch(e){ showToast('Erro de rede ao enviar.', true); }
+  finally{ btn.disabled = false; ta.focus(); }
+}
+
+// ── nova conversa ──────────────────────────────────────────────────────────────
+function ccNovaAbrir(){
+  document.getElementById('cc-thread').style.display = 'none';
+  document.getElementById('cc-vazio').style.display = 'none';
+  document.getElementById('cc-nova').style.display = 'block';
+  document.getElementById('cc-nova-aviso').textContent = '';
+  document.getElementById('cc-grupo-nome').value = '';
+  document.getElementById('cc-busca-user').value = '';
+  _ccSel = new Set();
+  ccTipoToggle();
+  ccCarregarUsuarios();
+}
+function ccNovaFechar(){
+  document.getElementById('cc-nova').style.display = 'none';
+  if(!_ccConvAtiva){ document.getElementById('cc-vazio').style.display = 'flex'; }
+}
+function _ccTipo(){ return document.querySelector('input[name=cc-tipo]:checked').value; }
+function ccTipoToggle(){
+  const grupo = (_ccTipo() === 'grupo');
+  document.getElementById('cc-grupo-nome-wrap').style.display = grupo ? 'block' : 'none';
+  document.getElementById('cc-para-hint').textContent = grupo ? '(selecione um ou mais)' : '(selecione um)';
+  _ccSel = new Set();
+  ccRenderUsuarios();
+}
+async function ccCarregarUsuarios(){
+  const box = document.getElementById('cc-users');
+  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Carregando…</div>';
+  let d;
+  try { d = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px">Erro de rede.</div>'; return; }
+  if(!d.ok){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px">'+esc(d.erro||'Erro.')+'</div>'; return; }
+  _ccUsuarios = d.usuarios || [];
+  ccRenderUsuarios();
+}
+function ccFiltrarUsuarios(){ ccRenderUsuarios(); }
+function ccRenderUsuarios(){
+  const box = document.getElementById('cc-users');
+  const q = (document.getElementById('cc-busca-user').value || '').trim().toLowerCase();
+  const lista = _ccUsuarios.filter(u => !q || (u.nome||'').toLowerCase().includes(q));
+  if(!lista.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum usuário.</div>'; return; }
+  box.innerHTML = lista.map(u=>{
+    const sel = _ccSel.has(u.id);
+    const fn = u.funcao_nome ? ' <span style="color:var(--muted);font-size:11px">· '+esc(u.funcao_nome)+'</span>' : '';
+    return '<div onclick="ccToggleUser('+u.id+')" style="padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;'
+      + (sel ? 'background:var(--surface-2)' : '') + '">'
+      + '<i class="ti '+(sel?'ti-circle-check':'ti-circle')+'" style="'+(sel?'color:var(--accent)':'color:var(--muted)')+'"></i>'
+      + '<span style="font-size:13px">'+esc(u.nome)+fn+'</span></div>';
+  }).join('');
+}
+function ccToggleUser(id){
+  if(_ccTipo() === 'direct'){ _ccSel = new Set([id]); }   // direct: só um
+  else { if(_ccSel.has(id)) _ccSel.delete(id); else _ccSel.add(id); }
+  ccRenderUsuarios();
+}
+async function ccCriar(){
+  const aviso = document.getElementById('cc-nova-aviso'); aviso.textContent = '';
+  const tipo = _ccTipo();
+  const ids = [..._ccSel];
+  if(!ids.length){ aviso.textContent = 'Selecione ao menos um usuário.'; return; }
+  const payload = {tipo, participante_ids: ids};
+  if(tipo === 'grupo'){
+    const nome = document.getElementById('cc-grupo-nome').value.trim();
+    if(!nome){ aviso.textContent = 'Dê um nome ao grupo.'; return; }
+    payload.titulo = nome;
+  }
+  try{
+    const d = await fetch('/api/comunicacao/conversas',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(payload)}).then(r=>r.json());
+    if(!d.ok){ aviso.textContent = d.erro || 'Falha ao criar.'; return; }
+    document.getElementById('cc-nova').style.display = 'none';
+    await ccCarregarInbox();
+    // abre a conversa recém-criada
+    const idx = _ccInbox.findIndex(c => c.id === d.conversa.id);
+    if(idx >= 0) ccAbrirConversa(idx);
+    else { _ccConvAtiva = d.conversa.id; document.getElementById('cc-vazio').style.display='none';
+           document.getElementById('cc-thread').style.display='flex';
+           document.getElementById('cc-thread-titulo').textContent = d.conversa.titulo || 'Conversa';
+           await ccCarregarMsgs(); }
+  }catch(e){ aviso.textContent = 'Erro de rede.'; }
 }
 
 async function convResolver(mid){

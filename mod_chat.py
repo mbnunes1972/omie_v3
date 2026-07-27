@@ -12,8 +12,8 @@ e natureza/transferência/bloqueador/privada nas fatias 2-4.
 import json
 import os
 
-from database import (Conversa, ConversaMensagem, ContatoConfirmacao, Usuario, Cliente,
-                      Parceiro, Funcionario, Funcao, CicloDocumento)
+from database import (Conversa, ConversaParticipante, ConversaMensagem, ContatoConfirmacao,
+                      Usuario, Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
 
 # ── Modo privado (Fatia 4, decisão 8) ────────────────────────────────────────
 MASCARA_PRIVADA = "🔒 Mensagem privada — visível apenas à gerência"
@@ -35,6 +35,32 @@ def _fernet():
 
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
 _CANAIS_FATIA_1 = ("interno",)
+
+# ── Central de Comunicação (spec 2026-07-27, Fatia 1) ─────────────────────────
+TIPOS_CONVERSA = ("projeto", "direct", "grupo", "publico")
+
+# Segmento derivado da FUNÇÃO do autor (rótulo automático, não seleção). Casa palavra-chave
+# no nome da função → segmento. Sem função ou sem match → None.
+_SEGMENTO_POR_PALAVRA = (
+    ("financ", "financeiro"),
+    ("comerc", "comercial"), ("vend", "comercial"), ("consult", "comercial"), ("projet", "comercial"),
+    ("logist", "logistica"), ("montag", "logistica"), ("montador", "logistica"), ("entreg", "logistica"),
+    ("tecnic", "suporte_tecnico"), ("suporte", "suporte_tecnico"), ("assist", "suporte_tecnico"),
+)
+
+
+def canal_segmento_do_usuario(db, loja_id, usuario_id):
+    """Segmento (comercial/financeiro/logistica/...) a partir da Função do usuário. None se não
+    houver função ou nenhuma palavra-chave casar."""
+    u = db.get(Usuario, usuario_id) if usuario_id else None
+    if not u or not getattr(u, "funcao_id", None):
+        return None
+    fn = db.get(Funcao, u.funcao_id)
+    nome = (fn.nome if fn and fn.nome else "").lower()
+    for chave, seg in _SEGMENTO_POR_PALAVRA:
+        if chave in nome:
+            return seg
+    return None
 
 # Fatia 2: interação não muda nada; transferência oficializa a troca de responsabilidade
 # (grava no v12 — quem escreve em CicloEtapa é o ENDPOINT, com as validações de vínculo).
@@ -110,7 +136,8 @@ def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
 def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
-                    bloqueador=False, privada=False, _permitir_externo=False):
+                    bloqueador=False, privada=False, _permitir_externo=False,
+                    canal_segmento=None):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
@@ -149,7 +176,8 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                          documento_ref_id=documento_ref_id,
                          bloqueador=1 if bloqueador else 0,
                          privada=1 if privada else 0,
-                         corpo_cifrado=corpo_cifrado)
+                         corpo_cifrado=corpo_cifrado,
+                         canal_segmento=canal_segmento)
     db.add(m)
     db.flush()
     return m
@@ -178,6 +206,7 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
             "autor_nome": autor_nome or "—",
             "corpo": _corpo_visivel(m, pode_ver_privada), "canal": m.canal,
+            "canal_segmento": m.canal_segmento,
             "natureza": m.natureza or "interacao",
             "etapa_codigo": m.etapa_codigo,
             "transferido_para_funcionario_id": m.transferido_para_funcionario_id,
@@ -211,6 +240,105 @@ def listar_mensagens(db, conversa_id, pode_ver_privada=False):
                                 pode_ver_privada=pode_ver_privada,
                                 documento=docs.get(m.documento_ref_id))
             for m, nome in rows]
+
+
+# ── Conversas direct / grupo / inbox (Central de Comunicação, Fatia 1) ────────
+
+def eh_participante(db, conversa_id, usuario_id):
+    """True se o usuário participa da conversa (direct/grupo)."""
+    return (db.query(ConversaParticipante.id)
+              .filter_by(conversa_id=conversa_id, usuario_id=usuario_id)
+              .first() is not None)
+
+
+def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id):
+    """Conversa 1:1 canônica entre dois usuários da loja (idempotente pela dupla)."""
+    if not outro_usuario_id or int(outro_usuario_id) == int(criado_por_id):
+        raise ValueError("Escolha outro usuário para a conversa direta.")
+    outro_usuario_id = int(outro_usuario_id)
+    minhas = {r[0] for r in db.query(ConversaParticipante.conversa_id)
+              .filter_by(usuario_id=criado_por_id).all()}
+    do_outro = {r[0] for r in db.query(ConversaParticipante.conversa_id)
+                .filter_by(usuario_id=outro_usuario_id).all()}
+    comuns = minhas & do_outro
+    if comuns:
+        c = (db.query(Conversa)
+               .filter(Conversa.id.in_(comuns), Conversa.loja_id == loja_id,
+                       Conversa.tipo == "direct")
+               .order_by(Conversa.id.asc()).first())
+        if c is not None:
+            return c
+    c = Conversa(loja_id=loja_id, tipo="direct", criado_por_id=criado_por_id)
+    db.add(c); db.flush()
+    db.add_all([ConversaParticipante(conversa_id=c.id, usuario_id=criado_por_id),
+                ConversaParticipante(conversa_id=c.id, usuario_id=outro_usuario_id)])
+    db.flush()
+    return c
+
+
+def criar_grupo(db, loja_id, criado_por_id, titulo, participante_ids):
+    """Cria uma conversa de grupo com título e N participantes (o criador entra como admin)."""
+    titulo = (titulo or "").strip()
+    if not titulo:
+        raise ValueError("Dê um nome ao grupo.")
+    ids = {int(x) for x in (participante_ids or []) if x} | {int(criado_por_id)}
+    if len(ids) < 2:
+        raise ValueError("Um grupo precisa de ao menos 2 participantes.")
+    c = Conversa(loja_id=loja_id, tipo="grupo", titulo=titulo, criado_por_id=criado_por_id)
+    db.add(c); db.flush()
+    for uid in ids:
+        db.add(ConversaParticipante(conversa_id=c.id, usuario_id=uid,
+                                    papel="admin" if uid == int(criado_por_id) else "membro"))
+    db.flush()
+    return c
+
+
+def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None):
+    """Item da inbox: id/tipo/título de exibição + prévia da última mensagem. Para direct, o
+    'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`)."""
+    titulo = c.titulo
+    outro_id = None
+    if c.tipo == "direct":
+        parts = participantes if participantes is not None else [
+            p.usuario_id for p in db.query(ConversaParticipante)
+            .filter_by(conversa_id=c.id).all()]
+        outros = [p for p in parts if p != viewer_id]
+        outro_id = outros[0] if outros else None
+        nome_outro = None
+        if outro_id:
+            u = db.get(Usuario, outro_id)
+            nome_outro = u.nome if u else None
+        titulo = nome_outro or "Conversa"
+    if ultima is None:
+        ultima = (db.query(ConversaMensagem)
+                    .filter_by(conversa_id=c.id)
+                    .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc())
+                    .first())
+    previa = ""
+    if ultima is not None:
+        previa = MASCARA_PRIVADA if ultima.privada else (ultima.corpo or "")
+    return {
+        "id": c.id, "tipo": c.tipo, "titulo": titulo,
+        "projeto_nome": c.projeto_nome, "outro_usuario_id": outro_id,
+        "ultima_previa": previa[:120],
+        "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
+        "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+    }
+
+
+def listar_inbox(db, loja_id, usuario_id):
+    """Conversas direct/grupo de que o usuário participa, na loja, mais recentes primeiro."""
+    conv_ids = [r[0] for r in db.query(ConversaParticipante.conversa_id)
+                .filter_by(usuario_id=usuario_id).all()]
+    if not conv_ids:
+        return []
+    convs = (db.query(Conversa)
+               .filter(Conversa.id.in_(conv_ids), Conversa.loja_id == loja_id,
+                       Conversa.tipo.in_(("direct", "grupo")))
+               .all())
+    itens = [serializar_conversa(db, c, usuario_id) for c in convs]
+    itens.sort(key=lambda x: (x["ultima_em"] or x["criado_em"] or ""), reverse=True)
+    return itens
 
 
 # ── Resolução por Função (decisões 6/9 — Financeiro/Logística/SAC) ───────────

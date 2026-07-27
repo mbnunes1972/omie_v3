@@ -1045,7 +1045,29 @@ class Conversa(Base):
     loja_id      = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     projeto_nome = Column(Text,     nullable=True, index=True)
     cliente_id   = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
+    # Central de Comunicação (spec 2026-07-27, Fatia 1): a Conversa deixa de ser só "do projeto".
+    # tipo: projeto (a de sempre) | direct (1:1) | grupo (N) | publico (mural da loja, Fatia 2).
+    # `titulo` é o nome do grupo. `criado_por_id` = quem abriu. Registros antigos = 'projeto'
+    # (default preenche as linhas existentes na migração).
+    tipo          = Column(String(20), nullable=False, default="projeto")
+    titulo        = Column(Text,       nullable=True)
+    criado_por_id = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
+
+
+class ConversaParticipante(Base):
+    """Membro de uma Conversa direct/grupo (Central de Comunicação, Fatia 1). Público NÃO lista
+    participantes (audiência = a loja); projeto tampouco (audiência = o time do projeto). direct
+    tem exatamente 2 linhas. `lido_ate_mensagem_id` é a base do "não lido" (Fatia 2)."""
+    __tablename__ = "conversa_participantes"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    conversa_id   = Column(Integer, ForeignKey("conversas.id"), nullable=False, index=True)
+    usuario_id    = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    papel         = Column(String(12), nullable=False, default="membro")   # membro | admin
+    arquivada     = Column(Integer, nullable=False, default=0)
+    lido_ate_mensagem_id = Column(Integer, nullable=True)
+    adicionado_em = Column(DateTime, default=datetime.utcnow)
 
 
 class ConversaMensagem(Base):
@@ -1060,6 +1082,9 @@ class ConversaMensagem(Base):
     autor_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     corpo            = Column(Text,     nullable=False)
     canal            = Column(String(20), nullable=False, default="interno")
+    # Central de Comunicação (spec 2026-07-27): segmento derivado da FUNÇÃO do autor no envio
+    # (comercial|financeiro|logistica|...). Rótulo automático, não seleção manual.
+    canal_segmento   = Column(String(20), nullable=True)
     # Fatia 2 (Responsabilidade + transferência — spec seção 6): 'transferencia' oficializa a
     # troca de responsabilidade gravando em CicloEtapa.responsavel_funcionario_id (o campo do
     # v12; NADA de estado paralelo). `bloqueador` nesta fatia é SÓ flag — o gate real em
@@ -1565,6 +1590,12 @@ def _migrar_colunas_pg():
         # Chat Fatia 4 (modo privado, 2026-07-25)
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS privada INTEGER DEFAULT 0",
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS corpo_cifrado TEXT",
+        # Central de Comunicação (spec 2026-07-27, Fatia 1): tipo/titulo/criado_por na conversa
+        # + segmento derivado da função na mensagem. tipo='projeto' preenche as linhas existentes.
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'projeto'",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS titulo TEXT",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS criado_por_id INTEGER",
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS canal_segmento VARCHAR(20)",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

@@ -2674,6 +2674,83 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/inbox — Central de Comunicação (Fatia 1): conversas
+            # direct/grupo de que o usuário participa, na loja ativa.
+            if path == "/api/comunicacao/inbox":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    self.send_json({"ok": True,
+                                    "conversas": mod_chat.listar_inbox(db, loja_id, usuario["id"])})
+                finally:
+                    db.close()
+                return
+
+            # GET /api/comunicacao/usuarios — usuários da loja ativa para o seletor "Para"
+            # (Central de Comunicação). Exclui o próprio usuário. Filtro opcional ?q=.
+            if path == "/api/comunicacao/usuarios":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    from urllib.parse import parse_qs as _pq_com
+                    q = (_pq_com(urlparse(self.path).query).get("q", [""])[0] or "").strip().lower()
+                    us = (db.query(Usuario)
+                            .filter(Usuario.loja_id == loja_id, Usuario.ativo == 1,
+                                    Usuario.id != usuario["id"])
+                            .order_by(Usuario.nome.asc()).all())
+                    fmap = {f.id: f.nome for f in db.query(Funcao)
+                            .filter(Funcao.loja_id == loja_id).all()}
+                    itens = [{"id": u.id, "nome": u.nome,
+                              "funcao_nome": fmap.get(u.funcao_id)}
+                             for u in us
+                             if (not q or q in (u.nome or "").lower())]
+                    self.send_json({"ok": True, "usuarios": itens})
+                finally:
+                    db.close()
+                return
+
+            # GET /api/comunicacao/conversas/<id>/mensagens — histórico de uma conversa
+            # direct/grupo (só participante lê).
+            m_cm = _re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
+            if m_cm:
+                conv_id = int(m_cm.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from database import Conversa as _CV_get
+                    conv = db.get(_CV_get, conv_id)
+                    if (conv is None or conv.loja_id != loja_id
+                            or not mod_chat.eh_participante(db, conv_id, usuario["id"])):
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
+                    self.send_json({"ok": True,
+                                    "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"]),
+                                    "mensagens": mod_chat.listar_mensagens(
+                                        db, conv_id, pode_ver_privada=_pode_priv)})
+                finally:
+                    db.close()
+                return
+
             m = _re.match(r'^/api/projetos/([^/]+)/ciclo$', path)
             if m:
                 nome_safe = unquote(m.group(1))
@@ -4735,6 +4812,96 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/conversas — Central de Comunicação (Fatia 1): abre uma conversa
+        # direct (idempotente pela dupla) ou grupo. Participantes têm que ser da loja ativa.
+        if path == "/api/comunicacao/conversas":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                tipo = (dd.get("tipo") or "").strip()
+                if tipo not in ("direct", "grupo"):
+                    self.send_json({"ok": False, "erro": "Tipo inválido (direct|grupo)."}, code=400); return
+                # participantes solicitados precisam ser usuários ATIVOS da loja ativa
+                raw_ids = dd.get("participante_ids") or ([] if tipo == "grupo" else
+                          ([dd.get("usuario_id")] if dd.get("usuario_id") else []))
+                try:
+                    pedidos = [int(x) for x in raw_ids if x]
+                except (TypeError, ValueError):
+                    self.send_json({"ok": False, "erro": "Participantes inválidos."}, code=400); return
+                if pedidos:
+                    validos = {u.id for u in db.query(Usuario)
+                               .filter(Usuario.id.in_(pedidos), Usuario.loja_id == loja_id,
+                                       Usuario.ativo == 1).all()}
+                    if set(pedidos) - validos:
+                        self.send_json({"ok": False, "erro": "Escolha usuários desta loja."},
+                                       code=400); return
+                try:
+                    if tipo == "direct":
+                        if len(pedidos) != 1:
+                            self.send_json({"ok": False, "erro": "Direct precisa de exatamente 1 destinatário."}, code=400); return
+                        conv = mod_chat.get_or_create_direct(db, loja_id, usuario["id"], pedidos[0])
+                    else:
+                        conv = mod_chat.criar_grupo(db, loja_id, usuario["id"],
+                                                    dd.get("titulo"), pedidos)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True,
+                                "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"])},
+                               code=201)
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/conversas/<id>/mensagens — nova mensagem numa conversa
+        # direct/grupo (só participante posta). canal_segmento derivado da função do autor.
+        m_cmsg = re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
+        if m_cmsg:
+            conv_id = int(m_cmsg.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                from database import Conversa as _CV_post
+                conv = db.get(_CV_post, conv_id)
+                if (conv is None or conv.loja_id != loja_id
+                        or not mod_chat.eh_participante(db, conv_id, usuario["id"])):
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                dd = json.loads(body or b'{}')
+                seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
+                try:
+                    msg = mod_chat.enviar_mensagem(db, conv, usuario["id"], dd.get("corpo"),
+                                                   privada=bool(dd.get("privada")),
+                                                   canal_segmento=seg)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
+                nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
+                self.send_json({"ok": True,
+                                "mensagem": mod_chat.serializar_mensagem(
+                                    msg, autor_nome=nome, pode_ver_privada=_pode_priv)},
+                               code=201)
             finally:
                 db.close()
             return

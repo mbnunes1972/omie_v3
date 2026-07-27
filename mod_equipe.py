@@ -190,6 +190,9 @@ def responsavel_da_etapa(db, loja_id, etapa):
     if etapa.responsavel_funcionario_id:
         return {"resolvido": True, "tipo": "funcionario",
                 "id": etapa.responsavel_funcionario_id, "motivo": "definido"}
+    if getattr(etapa, "responsavel_terceiro_id", None):
+        return {"resolvido": True, "tipo": "terceiro",
+                "id": etapa.responsavel_terceiro_id, "motivo": "definido"}
     cand = candidatos_da_funcao(db, loja_id, etapa.funcao_responsavel_id)
     if len(cand) == 1:
         return {"resolvido": True, "tipo": cand[0]["tipo"], "id": cand[0]["id"], "motivo": "auto"}
@@ -276,12 +279,17 @@ def montar_equipe_no_fechamento(db, nome_safe, loja_id):
     Não commita. Retorna {definidos, lacunas, auto_usuarios} para as notificações."""
     definidos = []
     for et in db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all():
-        if et.responsavel_funcionario_id or str(et.etapa_codigo) in ETAPAS_POR_AMBIENTE:
+        if (et.responsavel_funcionario_id or getattr(et, "responsavel_terceiro_id", None)
+                or str(et.etapa_codigo) in ETAPAS_POR_AMBIENTE):
             continue
         r = responsavel_da_etapa(db, loja_id, et)
-        if r["resolvido"] and r["tipo"] == "funcionario" and r["motivo"] == "auto":
-            et.responsavel_funcionario_id = r["id"]
-            definidos.append({"etapa_codigo": et.etapa_codigo, "funcionario_id": r["id"]})
+        if r["resolvido"] and r["motivo"] == "auto":
+            if r["tipo"] == "funcionario":
+                et.responsavel_funcionario_id = r["id"]
+            else:
+                et.responsavel_terceiro_id = r["id"]
+            definidos.append({"etapa_codigo": et.etapa_codigo,
+                              "tipo": r["tipo"], "id": r["id"]})
     db.flush()
     eq = equipe_do_projeto(db, nome_safe, loja_id)
     return {"definidos": definidos, "lacunas": eq["lacunas"],

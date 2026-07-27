@@ -200,7 +200,8 @@ def test_montar_equipe_persiste_autos_e_apura_lacunas(app_db, seed):
         res = mod_equipe.montar_equipe_no_fechamento(db, p, lid); db.commit()
     finally:
         db.close()
-    assert any(d["etapa_codigo"] == "10" and d["funcionario_id"] == u1 for d in res["definidos"])
+    assert any(d["etapa_codigo"] == "10" and d["tipo"] == "funcionario" and d["id"] == u1
+               for d in res["definidos"])
     assert any(l["etapa_codigo"] == "13" for l in res["lacunas"])
     db = app_db.get_session()
     try:
@@ -208,5 +209,29 @@ def test_montar_equipe_persiste_autos_e_apura_lacunas(app_db, seed):
         et13 = db.query(app_db.CicloEtapa).filter_by(projeto_nome=p, etapa_codigo="13").first()
         assert et10.responsavel_funcionario_id == u1        # auto persistido
         assert et13.responsavel_funcionario_id is None      # lacuna não persistida
+    finally:
+        db.close()
+
+
+def test_terceiro_definido_e_auto_persistido(app_db, seed):
+    lid = seed["loja1_id"]; p = _proj(app_db, seed, "EqTerFech")
+    # etapa com 1 candidato TERCEIRO → auto (persiste em responsavel_terceiro_id)
+    f1 = _funcao(app_db, lid, "Montador TerFech")
+    tid = _terceiro(app_db, lid, f1, "Terça Única")
+    _etapa(app_db, p, "13", f1)
+    db = app_db.get_session()
+    try:
+        res = mod_equipe.montar_equipe_no_fechamento(db, p, lid); db.commit()
+    finally:
+        db.close()
+    assert any(d["tipo"] == "terceiro" and d["id"] == tid for d in res["definidos"])
+    db = app_db.get_session()
+    try:
+        et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=p, etapa_codigo="13").first()
+        assert et.responsavel_terceiro_id == tid and et.responsavel_funcionario_id is None
+        # responsável DEFINIDO como terceiro + etapa executável (gate liberado)
+        r = mod_equipe.responsavel_da_etapa(db, lid, et)
+        assert r["resolvido"] and r["tipo"] == "terceiro" and r["motivo"] == "definido"
+        assert mod_equipe.etapa_executavel(db, lid, et) is True
     finally:
         db.close()

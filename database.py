@@ -679,6 +679,9 @@ class CicloEtapa(Base):
     # escolhido depois, restrito aos funcionários que têm essa função.
     funcao_responsavel_id       = Column(Integer, ForeignKey("funcoes.id"), nullable=True)
     responsavel_funcionario_id  = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    # Fonte única da equipe (2026-07-27): o responsável da etapa pode ser um TERCEIRO (montador/
+    # medidor/PE terceirizados). Exatamente um dos dois responsáveis fica preenchido.
+    responsavel_terceiro_id     = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
     observacoes    = Column(Text,     nullable=True)
 
     __table_args__ = (UniqueConstraint("projeto_nome", "etapa_codigo", name="uq_ciclo_etapa"),)
@@ -1664,6 +1667,8 @@ def _migrar_colunas_pg():
         # Unificação conversa-do-projeto (2026-07-27): origem/removido na membership.
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS origem VARCHAR(8) DEFAULT 'manual'",
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",
+        # Fonte única da equipe (2026-07-27): responsável TERCEIRO por etapa.
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS responsavel_terceiro_id INTEGER",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

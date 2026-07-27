@@ -83,6 +83,10 @@ Reuso máximo. `Conversa.tipo=projeto` já existe (um por projeto, `get_or_creat
   **só a etapa**, não o fluxo → a **venda programada** fecha com equipe incompleta e cada etapa
   (medição, PE, montagem) só executa quando seu responsável for indicado, o que pode vir **até a época
   do pedido**.
+- **Responsável TERCEIRO por etapa (2026-07-27):** `CicloEtapa.responsavel_terceiro_id` (além do
+  `responsavel_funcionario_id`) — montador/medidor/PE terceirizados podem ser o responsável DEFINIDO
+  da etapa. `responsavel_da_etapa` reconhece o terceiro definido; `montar_equipe_no_fechamento`
+  persiste também os autos-terceiro. Base para a convergência do roster (seletores que gravam terceiro).
 - **Externos (cliente/arquiteto) NÃO entram em `conversa_participantes`** — não são usuários. São
   alcançados por **envio externo dirigido** (o `EnvioExterno`/canal externo que já existe), e as
   respostas roteiam de volta pra conversa (roteamento de entrada já implementado).

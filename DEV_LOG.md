@@ -1431,6 +1431,26 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > da janela de 24h; UI de preferência por usuário fica como refinamento futuro (default
 > quando_offline). Orizon Chat: fatias 1-6 concluídas, tudo local na `main` (A/B/produção pendentes).
 >
+> **10) Frente "Conversa do Projeto no Orizon Chat" + "Equipe por Função" (spec
+> `2026-07-27-conversa-projeto-no-orizon-chat-design.md`).** Decisões do lojista: a conversa do
+> projeto é a instância do projeto no Chat; membros DERIVADOS da equipe (interno) + cliente/arquiteto/
+> **terceiros** como EXTERNOS dirigidos; engrenagens do ciclo mantidas; documento oficial pelo chat;
+> autoridade stage-aware; modo privado a remover. **Fonte única da equipe = FUNÇÃO responsável da
+> etapa** (`CicloEtapa.funcao_responsavel_id`, do Cronograma Padrão): funcionário DERIVADO — 1
+> candidato = auto, >1 = LACUNA (ação gerencial), 0 = sem responsável; **terceiros contam** (têm
+> funcao_id); montagem/assistência seguem por AMBIENTE (Mapa). `mod_equipe.equipe_do_projeto`,
+> `candidatos_da_funcao`, `responsavel_da_etapa`, `etapa_executavel`, `montar_equipe_no_fechamento`.
+> **Bloqueador INVERTIDO** = gate de execução por etapa (`main._bloqueio_execucao_etapa`, 409 na
+> lacuna) ligado em medição(10) e operacional(12–16); PE/montagem pendentes. **Montagem no fechamento**
+> (2ª assinatura→'fechado'): persiste os autos + resumo na conversa do projeto + **e-mail aos gerentes
+> nas lacunas** (config-gated). **Membership**: `conversa_participantes.origem/removido` +
+> `sincronizar_participantes_projeto` (derivado ∪ override manual — override vence); conversa de
+> projeto na inbox ("📁"); `assunto=projeto` ABRE a conversa do projeto; painel de **Membros**
+> (add/remove por gerente, `GET/POST .../participantes`). Testes: `test_equipe_fonte_unica.py`,
+> `test_membership_projeto.py`, +`test_chat_wa.py`. **Suíte 1565 verde.** **Falta:** convergir o
+> roster de 7 papéis para a fonte única, gate de PE/montagem, remover modo privado. **Deploy:** VPS A
+> atualizada neste passo; **VPS B intocada** na `V_pre_teste`; produção pendente.
+>
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 
 ## ⏸️ ESTADO ATUAL (2026-07-23) — retomar aqui

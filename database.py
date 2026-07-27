@@ -1669,6 +1669,13 @@ def lojas_acessiveis_ids(db, usuario_id, nivel=None, loja_id=None):
     em usuario_lojas, então PDVs novos e diretores novos entram/saem sozinhos. Direção
     ÚNICA: usuário do PDV não ganha a mãe. Demais perfis (gerencial/operador) inalterados."""
     ids = membership_loja_ids(db, usuario_id)
+    # A própria loja do usuário é SEMPRE acessível, mesmo sem linha em usuario_lojas (o
+    # backfill pode não ter rodado neste banco). Antes, quem não tinha o vínculo ficava com
+    # a própria loja de FORA da lista — no Diretor da mãe sobrava só o PDV, e a loja ativa
+    # podia cair no PDV, quebrando toda operação nos projetos da mãe (chat 403/404). Direção
+    # única preservada: isto só adiciona a loja NATIVA — PDV não ganha a mãe por aqui.
+    if loja_id and loja_id not in ids:
+        ids = ids + [loja_id]
     try:
         from auth import perfis as _perfis   # import local: evita ciclo auth<->database
         eh_diretor = _perfis.base(nivel) == "master"

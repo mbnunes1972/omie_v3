@@ -1499,9 +1499,15 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > `mod_retido.ambientes_retidos`, padrão do gate de PE); (🟠) `ref` do matching fracionado passou de
 > bucket de fração truncada (`f%04d`, colidível) p/ o **ALVO em centavos** (`:a<cents>:<rubrica>`,
 > colisão-livre) + `order_by(id)` em `fracao_reconhecivel`. Legado (`fracao=None`) byte-idêntico
-> confirmado. Testes +2 (conciliar 409, frações próximas). **Falta:** só a Fatia 5 (UI). **Deploy:**
-> tudo local na `main` (`90eca97`/`5f1fe0e`/`b04de05`/`d2414bc` + correções da Vera por commitar);
-> A/B/produção pendentes. Ao fechar o operacional, retomar o **gate de PE/montagem do chat** (item 10).
+> confirmado. Testes +2 (conciliar 409, frações próximas).
+> — **Fatia 5 (UI) — FRENTE OPERACIONAL COMPLETA.** Modal **"Retenção por Obra"** (botão na barra do
+> Ciclo): não desmembrado → pool com toggle "Marcar retido" (medidor) + "Confirmar desmembramento"
+> (gerência); desmembrado → cartões de parcela (status colorido Segue/Retido/Em aprovação/Liquidada +
+> Val_Cont + ambientes) com "Liberar selecionados" nas retidas (gerência). Consome `GET /parcelas`;
+> sem step-up (backend enforça `registrar_medicao`/`autorizar`). `node --check` verde, tokens OK.
+> **Desmembramento operacional: Fatias 1–5 COMPLETAS**, razão auditado pela Vera. **Deploy:** tudo
+> local na `main`; A/B/produção pendentes. **Próximo (plano do lojista): o gate de PE/montagem do
+> chat** (item 10, último pendente do Orizon Chat).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

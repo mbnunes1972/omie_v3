@@ -159,6 +159,13 @@ parcelas distintas (a obra libera em ondas). `parcela_id` NULL segue sendo o pro
    colisão-livre por construção (frações próximas reconhecem cada delta). +`order_by(id)` em
    `fracao_reconhecivel` (soma float determinística). Testes: `test_retido.py`
    (conciliar 409), `test_fase_d2_nfe.py` (frações próximas não colidem).
-5. **UI:** sinalização do medidor + painel de confirmação da gerência + visão do ciclo por parcela.
+5. **UI** — ✅ FEITA 2026-07-27. Modal **"Retenção por Obra"** (botão na barra do Ciclo, ao lado de
+   Mapa/Equipe): (a) **não desmembrado** — lista o pool de ambientes com toggle "Marcar retido"
+   (medidor → sinalizar/limpar) + botão "Confirmar desmembramento" (só gerência, `_podeAutorizarFront`);
+   (b) **desmembrado** — cartões de parcela com status colorido (Segue/Retido/Em aprovação/Liquidada)
+   + Val_Cont congelado + ambientes; parcela retida mostra checkboxes + "Liberar selecionados" (só
+   gerência). Consome `GET /parcelas` (pool/sinais/parcelas). Sem step-up (a sessão do medidor/gerência
+   já carrega a capacidade); backend enforça `registrar_medicao`/`autorizar`. `node --check` verde;
+   tokens de design OK.
 
 Cada fatia: suíte verde, DEV_LOG + spec, Vera antes de fechar (áreas sensíveis: ciclo + contábil).

@@ -2191,6 +2191,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
   </div>
 
+  <!-- Modal: Retenção por Obra — desmembramento operacional por ambiente (spec 2026-07-27) -->
+  <div id="modal-retido" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:24px;max-width:720px;width:94%;max-height:90vh;overflow:auto;animation:mIn .18s ease">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Retenção por Obra</div>
+        <span onclick="retidoFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">A obra do cliente pode segurar alguns ambientes. O <strong style="color:var(--text)">Medidor</strong> sinaliza os ambientes retidos; a <strong style="color:var(--text)">Gerência</strong> confirma o desmembramento (parcela que <strong style="color:var(--text)">segue</strong> × parcela <strong style="color:var(--text)">retida</strong>). Ao liberar, a parcela retoma de onde parou.</div>
+      <div id="retido-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    </div>
+  </div>
+
 </main>
 
 <!-- Modal: Novo Orçamento (EP-07) -->
@@ -12916,6 +12928,7 @@ function renderCiclo() {
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirCronograma('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-calendar-stats"></i>Cronograma</button>` : ''}
       ${projetoAtivo && _usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}
+      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos pela obra — desmembramento operacional por parcela"><i class="ti ti-building-community"></i>Retenção por Obra</button>` : ''}
     </div>
   `;
   for (const etapa of ETAPAS_CICLO) {
@@ -13185,6 +13198,108 @@ async function mapaSetAtribuicao(papel, ambId, sel){
     headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json().catch(()=>({}));
   if(!d.ok) showToast('Erro: '+(d.erro||'falha'), true); else showToast('Atribuição salva.', false);
   mapaAbrir(_mapaNome);   // recarrega o grid (reflete substituições/limpezas)
+}
+
+// ── Retenção por Obra — desmembramento operacional por ambiente (spec 2026-07-27) ──────────
+// Medidor SINALIZA ambientes retidos; Gerência CONFIRMA (parcela que segue × retida) e LIBERA
+// (a obra libera → a parcela retoma). Backend enforça registrar_medicao/autorizar; aqui o gate
+// de gerência (_podeAutorizarFront) é só UX.
+let _retidoNome = null;
+const _RETIDO_STATUS = {
+  aguardando:   {rot:'Segue',            cor:'var(--ok)'},
+  em_aprovacao: {rot:'Em aprovação',     cor:'var(--accent)'},
+  liquidada:    {rot:'Liquidada',        cor:'var(--muted)'},
+  retido:       {rot:'Retido pela obra', cor:'var(--warn)'},
+};
+async function retidoAbrir(nomeSafe){
+  _retidoNome = nomeSafe;
+  document.getElementById('retido-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  document.getElementById('modal-retido').style.display = 'flex';
+  await retidoRecarregar();
+}
+function retidoFechar(){ document.getElementById('modal-retido').style.display = 'none'; }
+async function retidoRecarregar(){
+  const d = await (await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/parcelas',{credentials:'same-origin'})).json().catch(()=>({}));
+  const body = document.getElementById('retido-body');
+  if(!d || !d.ok){ body.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc((d&&d.erro)||'Sem acesso.')+'</em>'; return; }
+  body.innerHTML = d.desmembrado ? _retidoRenderParcelas(d) : _retidoRenderPool(d);
+}
+function _retidoRenderPool(d){
+  const pool = d.pool || [];
+  if(!pool.length) return '<em style="color:var(--muted);font-size:12px">Este projeto ainda não tem ambientes no pool.</em>';
+  const sin = new Set((d.sinais_retido||[]).map(s=>s.pool_ambiente_id));
+  let h = '<div style="font-size:12px;color:var(--text);font-weight:700;margin-bottom:8px">Ambientes do projeto</div>'
+        + '<div style="display:flex;flex-direction:column;gap:6px">';
+  pool.forEach(a=>{
+    const r = sin.has(a.id);
+    h += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">
+      <span style="font-size:13px;color:var(--text)">${esc(a.nome||('Ambiente '+a.id))}${r?' <span style="font-size:10px;color:var(--warn);font-weight:700;margin-left:6px">● retido</span>':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="retidoToggle(${a.id},${r?1:0})">${r?'Desmarcar':'Marcar retido'}</button>
+    </div>`;
+  });
+  h += '</div>';
+  const nSin = pool.filter(a=>sin.has(a.id)).length;
+  if(nSin<=0){
+    h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">Nenhum ambiente retido. Marque os que a obra está segurando (ação do Medidor).</div>';
+  } else if(nSin>=pool.length){
+    h += '<div style="font-size:11px;color:var(--warn);margin-top:12px">Todos os ambientes estão marcados — deixe ao menos um para seguir (não há o que desmembrar com tudo retido).</div>';
+  } else if(_podeAutorizarFront()){
+    h += `<div style="margin-top:14px;text-align:right"><button onclick="retidoConfirmar()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Confirmar desmembramento (gerência)</button></div>`;
+  } else {
+    h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">'+nSin+' ambiente(s) sinalizado(s) — aguardando a gerência confirmar o desmembramento.</div>';
+  }
+  return h;
+}
+function _retidoRenderParcelas(d){
+  const parc = d.parcelas || [];
+  const podeLib = _podeAutorizarFront();
+  let h = '<div style="font-size:12px;color:var(--text);font-weight:700;margin-bottom:8px">Parcelas do projeto</div>'
+        + '<div style="display:flex;flex-direction:column;gap:10px">';
+  parc.forEach(p=>{
+    const s = _RETIDO_STATUS[p.status] || {rot:p.status,cor:'var(--muted)'};
+    const ambs = (p.ambientes||[]).map(a=>esc(a.nome||('Amb '+a.id))).join(', ');
+    h += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:700;color:${s.cor}">● ${esc(s.rot)}</span>
+        <span style="font-size:12px;color:var(--muted)">R$ ${fmt(p.val_cont_congelado||0)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text)">${ambs||'—'}</div>`;
+    if(p.status==='retido' && podeLib){
+      h += `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">`;
+      (p.ambientes||[]).forEach(a=>{
+        h += `<label style="font-size:12px;color:var(--text);display:inline-flex;align-items:center;gap:4px"><input type="checkbox" class="retido-lib-chk-${p.id}" value="${a.id}"> ${esc(a.nome||('Amb '+a.id))}</label>`;
+      });
+      h += ` <button onclick="retidoLiberar(${p.id})" style="margin-left:auto;background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer">Liberar selecionados</button>`;
+      h += `</div>`;
+    }
+    h += `</div>`;
+  });
+  h += '</div>';
+  h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">A parcela <strong style="color:var(--text)">retida</strong> fica fora do fluxo (execução e reconhecimento contábil diferidos) até ser liberada.</div>';
+  return h;
+}
+async function retidoToggle(ambId, jaRetido){
+  const url = '/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/'+(jaRetido?'limpar':'sinalizar');
+  const payload = jaRetido ? {pool_ambiente_id: ambId} : {pool_ambiente_ids:[ambId]};
+  const d = await (await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json().catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  await retidoRecarregar();
+}
+async function retidoConfirmar(){
+  if(!(await confirmarPopup('Confirmar o desmembramento? Os ambientes retidos formam uma parcela que aguarda a obra; os demais seguem o ciclo.',
+      {titulo:'Retenção por Obra', okLabel:'Confirmar', cancelLabel:'Cancelar'}))) return;
+  const d = await (await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/confirmar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  showToast('Desmembramento confirmado.', false);
+  await retidoRecarregar();
+}
+async function retidoLiberar(pid){
+  const ids = Array.from(document.querySelectorAll('.retido-lib-chk-'+pid+':checked')).map(c=>parseInt(c.value,10));
+  if(!ids.length){ showToast('Selecione ao menos um ambiente para liberar.', true); return; }
+  const d = await (await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/liberar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pool_ambiente_ids:ids})})).json().catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  showToast('Ambiente(s) liberado(s) — a parcela retoma o ciclo.', false);
+  await retidoRecarregar();
 }
 
 function _renderCardGenerico(etapa, dados, bloqueada) {

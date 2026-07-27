@@ -1341,8 +1341,17 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 
 ## ⏸️ ESTADO ATUAL (2026-07-27) — retomar aqui
 
-> **Frente CHAT → Central de Comunicação / "Orizon Chat" (omnichannel).** Tudo local na `main`,
-> nada em A/B/produção ainda.
+> **🚀 DEPLOY VPS A (2026-07-27):** `main` promovida à **VPS A** (`167.88.33.121`, `orizon-a` :8765)
+> no commit **`6e0a08e`** — inclui as DUAS frentes fechadas hoje (Desmembramento Operacional 1–5 +
+> gate de PE/montagem do Orizon Chat). A-only (stop/`git reset --hard origin/main`/restart `orizon-a`,
+> **sem `deploy_ab.sh`**). App responde 302; **migração verificada direto no Postgres do A** (`orizon`):
+> tabela `sinal_retido` ✓, colunas `parcela_ambiente.valor_ambiente` ✓ e `ciclo_etapas.responsavel_terceiro_id`
+> ✓. **VPS B intocada** na `Pre_Teste` (`9e13753`, `/root/orizon-homolog` :8766, 302). **Grafo MCP
+> reingerido** (fonte `all`: código 3148 nodes/2860 edges, banco 192/128, requisitos 31, domínio 19,
+> decisões 17). **VPS B → produção seguem pendentes de OK do usuário** (disciplina de versionamento).
+>
+> **Frente CHAT → Central de Comunicação / "Orizon Chat" (omnichannel).** Código na `main` e na VPS A
+> (deploy acima); VPS B/produção pendentes.
 >
 > **1) Correções de contexto de loja (commits `d08e6c1`, `abf38f0`, `8771877`).** O painel de
 > conversa recusava mensagens por **contexto de loja partido**: o interceptor de `fetch` só
@@ -1461,8 +1470,8 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (17/18)** — responsável por AMBIENTE no Mapa: `mod_equipe.montagem_lacunas` trava a conclusão (PATCH
 > `/ciclo/17|18`) só quando há **>1 candidato** de montagem e algum ambiente sem responsável (0/1
 > candidato = auto/sem_candidato, retrocompatível — projetos sem Mapa seguem como hoje). Testes:
-> `test_gate_pe_montagem.py` (4). **Deploy:** VPS A na versão anterior; **VPS B intocada** na
-> `V_pre_teste`; produção pendente.
+> `test_gate_pe_montagem.py` (4). **Deploy:** ✅ na VPS A (`6e0a08e`, ver nota de deploy no topo);
+> **VPS B intocada** na `Pre_Teste`; produção pendente.
 >
 > **11) Frente "Desmembramento OPERACIONAL por ambiente desde a medição" (spec
 > `2026-07-27-desmembramento-operacional-desde-medicao-design.md`).** Dor: a obra do cliente segura
@@ -1513,9 +1522,9 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (gerência); desmembrado → cartões de parcela (status colorido Segue/Retido/Em aprovação/Liquidada +
 > Val_Cont + ambientes) com "Liberar selecionados" nas retidas (gerência). Consome `GET /parcelas`;
 > sem step-up (backend enforça `registrar_medicao`/`autorizar`). `node --check` verde, tokens OK.
-> **Desmembramento operacional: Fatias 1–5 COMPLETAS**, razão auditado pela Vera. **Deploy:** tudo
-> local na `main`; A/B/produção pendentes. **Próximo (plano do lojista): o gate de PE/montagem do
-> chat** (item 10, último pendente do Orizon Chat).
+> **Desmembramento operacional: Fatias 1–5 COMPLETAS**, razão auditado pela Vera. **Deploy:** ✅ na
+> VPS A (`6e0a08e`, ver nota de deploy no topo); VPS B/produção pendentes. **Gate de PE/montagem do
+> chat FEITO** (item 10 — ver acima).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

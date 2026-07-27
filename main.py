@@ -3762,7 +3762,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 payload = json.loads(body or b'{}')
                 for msg in _ext.iter_mensagens_whatsapp(payload):
-                    if msg.get("from"):
+                    if not msg.get("from"):
+                        continue
+                    # Fatia 6: primeiro tenta casar com um FUNCIONÁRIO (celular cadastrado) e
+                    # rotear como ELE; se não for um usuário conhecido, cai no fluxo externo (cliente).
+                    res_u = _ext.processar_entrada_usuario(db, msg["from"], msg["texto"])
+                    if res_u is None:
                         _ext.processar_entrada(db, "whatsapp", remetente=msg["from"],
                                                texto=msg["texto"], id_externo_ref=msg.get("ref"),
                                                id_externo=msg.get("id"))
@@ -5063,6 +5068,20 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/presenca — Fatia 6: heartbeat de presença (ponte WhatsApp).
+        if path == "/api/comunicacao/presenca":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                import mod_chat_externo
+                mod_chat_externo.registrar_presenca(db, usuario["id"]); db.commit()
+                self.send_json({"ok": True})
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/conversas/<id>/anexos — Fatia 5: mensagem com ANEXO (foto/arquivo).
         # Multipart: campo 'arquivo' (obrigatório) + 'corpo' (opcional). Mesmas regras de escrita.
         m_anx = re.match(r'^/api/comunicacao/conversas/(\d+)/anexos$', path)
@@ -5108,6 +5127,11 @@ class Handler(BaseHTTPRequestHandler):
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
+                try:
+                    import mod_chat_externo as _mce
+                    _mce.notificar_conversa(db, conv, msg, usuario["id"]); db.commit()
+                except Exception:
+                    db.rollback()   # ponte WhatsApp é best-effort — nunca quebra o anexo
                 storage_salvar_binario(os.path.join(_BASE_DIR, "COMUNICACAO", rel), data)
                 _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
@@ -5157,6 +5181,11 @@ class Handler(BaseHTTPRequestHandler):
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
+                try:
+                    import mod_chat_externo as _mce
+                    _mce.notificar_conversa(db, conv, msg, usuario["id"]); db.commit()
+                except Exception:
+                    db.rollback()   # ponte WhatsApp best-effort — nunca quebra a mensagem
                 _pode_priv = perfis.pode(usuario.get("nivel"), "ver_mensagem_privada")
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
                 self.send_json({"ok": True,

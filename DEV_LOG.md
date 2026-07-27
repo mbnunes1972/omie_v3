@@ -1415,8 +1415,21 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > em `enviar_mensagem` (mensagem só-anexo). Endpoints `POST /conversas/<id>/anexos` (multipart,
 > mesmas regras de escrita) e `GET /anexos/<id>` (serve o binário, gated por `pode_ler_conversa`).
 > Front: clipe no compositor, chip do arquivo escolhido, imagens inline (thumb→abre) e arquivos
-> como link. Teste: `HttpClient.post_multipart` novo; +5 (30 no total). **Falta da frente:** só a
-> ponte WhatsApp do funcionário (presença + espelho/template, regras Meta).
+> como link. Teste: `HttpClient.post_multipart` novo; +5 (30 no total).
+>
+> **9) Fatia 6 entregue — FRENTE COMPLETA (suíte 1545 verde).** Ponte WhatsApp do funcionário
+> (número da EMPRESA, regras Meta). `mod_chat_externo`: `registrar_presenca`/`esta_online`
+> (heartbeat), `usuario_por_telefone` (celular cadastrado, últimos 8 dígitos), `dentro_da_janela_24h`
+> (livre dentro; template fora), `deve_notificar_usuario` (pref `Usuario.notificar_whatsapp`
+> sempre|quando_offline|nunca + presença), `notificar_usuario`/`notificar_conversa` (registra
+> EnvioExterno `destinatario_tipo='usuario'` — **config-gated: sem credencial Meta nasce
+> pendente_config**), `processar_entrada_usuario` (resposta do zap casa o número → posta como o
+> usuário na conversa da última notificação). Hooks em POST mensagens/anexos (best-effort, nunca
+> quebram o envio); webhook tenta o funcionário antes do fluxo externo; heartbeat no poll de 45s.
+> Presença = tabela `usuario_presenca`. Testes: `test_chat_wa.py` (8). **GO-LIVE (fora do código):**
+> credenciais Meta (`ORIZON_WA_TOKEN`/`ORIZON_WA_PHONE_ID`) + **templates aprovados** p/ envio fora
+> da janela de 24h; UI de preferência por usuário fica como refinamento futuro (default
+> quando_offline). Orizon Chat: fatias 1-6 concluídas, tudo local na `main` (A/B/produção pendentes).
 >
 > **(Anterior, 2026-07-23 — mantido abaixo por referência.)**
 

@@ -11,8 +11,10 @@ Ativar é ação de deploy do usuário (variáveis por ambiente), fora deste có
 """
 import os
 import re
+from datetime import datetime, timedelta
 
-from database import EnvioExterno, Conversa, ConversaMensagem, Cliente, Parceiro, Usuario
+from database import (EnvioExterno, Conversa, ConversaMensagem, ConversaParticipante,
+                      Cliente, Parceiro, Usuario, UsuarioPresenca)
 
 MEIOS = ("email", "whatsapp")
 # Canais externos (segmentos) — 'interno' NÃO é externo.
@@ -213,6 +215,160 @@ def iter_mensagens_whatsapp(payload):
                                  or "(mensagem sem texto)"),
                        "id": msg.get("id"),
                        "ref": (msg.get("context") or {}).get("id")}
+
+
+# ═══ Ponte WhatsApp do funcionário (Fatia 6) ═════════════════════════════════
+# A web é a casa; o WhatsApp (número da EMPRESA) alcança/recebe do funcionário pelo celular
+# CADASTRADO, dentro das regras da Meta: janela de 24h (livre) ou template (fora dela). Não há
+# acesso ao WhatsApp pessoal — funcionário↔funcionário não viaja pelo WhatsApp deles.
+JANELA_HORAS = 24
+PRESENCA_ONLINE_MIN = 5
+
+
+def registrar_presenca(db, usuario_id):
+    """Heartbeat da web: marca o usuário como visto agora."""
+    p = db.get(UsuarioPresenca, usuario_id)
+    if p is None:
+        p = UsuarioPresenca(usuario_id=usuario_id, visto_em=datetime.utcnow())
+        db.add(p)
+    else:
+        p.visto_em = datetime.utcnow()
+    db.flush()
+    return p
+
+
+def esta_online(db, usuario_id, minutos=PRESENCA_ONLINE_MIN):
+    p = db.get(UsuarioPresenca, usuario_id)
+    if p is None or p.visto_em is None:
+        return False
+    return (datetime.utcnow() - p.visto_em) <= timedelta(minutes=minutos)
+
+
+def usuario_por_telefone(db, telefone, loja_id=None):
+    """Casa um número (entrada do WhatsApp) com um USUÁRIO pelo celular cadastrado (whatsapp ou
+    telefone), comparando os últimos 8 dígitos (tolera DDI/DDD). Match único ou None (ambíguo)."""
+    d = _digitos(telefone)
+    if len(d) < 8:
+        return None
+    tail = d[-8:]
+    achados = []
+    q = db.query(Usuario).filter(Usuario.ativo == 1)
+    if loja_id:
+        q = q.filter(Usuario.loja_id == loja_id)
+    for u in q.all():
+        for campo in (u.whatsapp, u.telefone):
+            du = _digitos(campo)
+            if len(du) >= 8 and du[-8:] == tail:
+                achados.append(u); break
+    return achados[0] if len(achados) == 1 else None
+
+
+def dentro_da_janela_24h(db, usuario_id):
+    """True se há uma mensagem de ENTRADA do celular do usuário nas últimas 24h — nesse caso o
+    envio ao vivo é livre (texto). Fora da janela, a Meta exige TEMPLATE aprovado."""
+    u = db.get(Usuario, usuario_id)
+    if u is None:
+        return False
+    tail = _digitos(u.whatsapp or u.telefone)[-8:]
+    if len(tail) < 8:
+        return False
+    limite = datetime.utcnow() - timedelta(hours=JANELA_HORAS)
+    for env in (db.query(EnvioExterno)
+                  .filter(EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada",
+                          EnvioExterno.criado_em >= limite).all()):
+        if _digitos(env.destino)[-8:] == tail:
+            return True
+    return False
+
+
+def deve_notificar_usuario(db, usuario):
+    """Regra da preferência + presença: 'nunca' não notifica; 'sempre' sempre; 'quando_offline'
+    (default) só se estiver offline."""
+    pref = (getattr(usuario, "notificar_whatsapp", None) or "quando_offline")
+    if pref == "nunca":
+        return False
+    if pref == "sempre":
+        return True
+    return not esta_online(db, usuario.id)
+
+
+def notificar_usuario(db, conversa, mensagem, usuario_dest, autor_nome=None):
+    """Registra (config-gated) uma notificação WhatsApp para um usuário sobre uma mensagem. Dentro
+    da janela 24h → ESPELHA o texto; fora → TEMPLATE (aviso 'abra o sistema'). Sem credencial Meta
+    → nasce 'pendente_config' (a rede não é tocada). Retorna o EnvioExterno ou None (sem número)."""
+    destino = (usuario_dest.whatsapp or usuario_dest.telefone or "").strip()
+    if not destino:
+        return None
+    espelho = dentro_da_janela_24h(db, usuario_dest.id)
+    if espelho:
+        corpo = ("💬 %s: %s" % (autor_nome or "Nova mensagem", (mensagem.corpo or "").strip()
+                                or "(anexo)"))
+    else:
+        corpo = ("Você tem uma nova mensagem no Orizon Chat. Abra o sistema para responder.")
+    env = registrar_envio(db, mensagem, "whatsapp", "interno", "usuario", usuario_dest.id, destino)
+    env.id_externo_ref = None
+    # anota o modo no próprio registro (reusa 'erro' como nota quando pendente — não é falha)
+    if env.status == "pendente_config":
+        env.erro = "modo=%s (aguardando credencial Meta)" % ("espelho" if espelho else "template")
+    db.flush()
+    if env.status == "enfileirado":
+        ok, wamid, err = despachar(env, corpo)
+        env.status = "enviado" if ok else "falhou"
+        env.id_externo = wamid if ok else None
+        if err:
+            env.erro = err
+        db.flush()
+    return env
+
+
+def notificar_conversa(db, conversa, mensagem, autor_id):
+    """Ao postar numa DIRECT/GRUPO, notifica no WhatsApp os participantes (menos o autor) conforme
+    a preferência/presença de cada um. Canais públicos não notificam individualmente (audiência
+    ampla). Best-effort: nunca quebra o envio da mensagem."""
+    if conversa.tipo not in ("direct", "grupo"):
+        return []
+    dest_ids = [p.usuario_id for p in db.query(ConversaParticipante)
+                .filter_by(conversa_id=conversa.id).all() if p.usuario_id != autor_id]
+    enviados = []
+    autor = db.get(Usuario, autor_id)
+    autor_nome = autor.nome if autor else None
+    for uid in dest_ids:
+        u = db.get(Usuario, uid)
+        if u is None or not deve_notificar_usuario(db, u):
+            continue
+        try:
+            ev = notificar_usuario(db, conversa, mensagem, u, autor_nome=autor_nome)
+            if ev is not None:
+                enviados.append(ev.id)
+        except Exception:
+            pass   # best-effort
+    return enviados
+
+
+def processar_entrada_usuario(db, remetente, texto):
+    """Resposta do FUNCIONÁRIO pelo WhatsApp: casa o número com um usuário e a posta como ELE na
+    conversa da última notificação que recebeu. Retorna {status, conversa_id} ou None se não é um
+    usuário conhecido (aí o chamador cai no fluxo de contato externo)."""
+    import mod_chat as _mc
+    u = usuario_por_telefone(db, remetente)
+    if u is None:
+        return None
+    env = (db.query(EnvioExterno)
+             .filter(EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "saida",
+                     EnvioExterno.destinatario_tipo == "usuario",
+                     EnvioExterno.destinatario_id == u.id)
+             .order_by(EnvioExterno.id.desc()).first())
+    if env is None:
+        return {"status": "sem_conversa", "conversa_id": None, "usuario_id": u.id}
+    msg0 = db.get(ConversaMensagem, env.mensagem_id)
+    conv = db.get(Conversa, msg0.conversa_id) if msg0 else None
+    if conv is None:
+        return {"status": "sem_conversa", "conversa_id": None, "usuario_id": u.id}
+    msg = _mc.enviar_mensagem(db, conv, u.id, texto or "(sem texto)", permitir_vazio=True)
+    ev = EnvioExterno(mensagem_id=msg.id, meio="whatsapp", direcao="entrada", canal="interno",
+                      destino=remetente, status="recebido")
+    db.add(ev); db.flush()
+    return {"status": "roteado", "conversa_id": conv.id, "usuario_id": u.id}
 
 
 def rotear_entrada(db, meio, id_externo_ref=None, remetente=None):

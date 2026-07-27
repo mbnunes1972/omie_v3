@@ -57,6 +57,8 @@ class Usuario(Base):
     # de Usuários da Loja usa Funcionario.funcao_id se houver vínculo, senão este funcao_id.
     funcao_id     = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)
     tema          = Column(String(10),  default="escuro")   # 'claro' | 'escuro'
+    # Orizon Chat Fatia 6 (ponte WhatsApp): quando notificar o usuário no WhatsApp da empresa.
+    notificar_whatsapp = Column(String(16), default="quando_offline")  # sempre|quando_offline|nunca
     criado_em     = Column(DateTime,    default=datetime.utcnow)
     loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True)  # usuário de loja
     rede_id       = Column(Integer,     ForeignKey("redes.id"), nullable=True)  # admin de rede (loja_id NULL)
@@ -1078,6 +1080,15 @@ class Assunto(Base):
     criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class UsuarioPresenca(Base):
+    """Presença do usuário (Orizon Chat, Fatia 6): heartbeat da web. Offline há > N min → a ponte
+    WhatsApp pode espelhar/notificar (dentro das regras da Meta)."""
+    __tablename__ = "usuario_presenca"
+
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), primary_key=True)
+    visto_em   = Column(DateTime, default=datetime.utcnow)
+
+
 class MensagemAnexo(Base):
     """Anexo (foto/arquivo) de uma mensagem do Orizon Chat (Fatia 5). O binário vive no storage
     (dir de comunicação, fora do git); aqui ficam os metadados + caminho relativo."""
@@ -1643,6 +1654,8 @@ def _migrar_colunas_pg():
         # O antigo 'publico' (canal aberto único) vira um debate 'forum_loja' "Geral".
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS rede_id INTEGER",
         "UPDATE conversas SET tipo='forum_loja', titulo=COALESCE(titulo,'Geral') WHERE tipo='publico'",
+        # Fatia 6: ponte WhatsApp — preferência de notificação do usuário (presença é tabela nova).
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS notificar_whatsapp VARCHAR(16) DEFAULT 'quando_offline'",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

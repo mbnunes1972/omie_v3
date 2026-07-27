@@ -12141,6 +12141,7 @@ function ccAtualizarBadgeTotal(total){
 async function ccPollBadge(){
   const nav = document.getElementById('nav-central-com');
   if(!_usuarioAtual || !nav || nav.style.display === 'none') return;
+  try{ fetch('/api/comunicacao/presenca',{method:'POST',credentials:'same-origin'}); }catch(e){}  // heartbeat (ponte WhatsApp)
   try{
     const d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json());
     if(d && d.ok) ccAtualizarBadgeTotal((d.conversas||[]).reduce((s,c)=>s+(c.nao_lidas||0),0));

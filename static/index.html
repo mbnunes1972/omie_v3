@@ -11756,6 +11756,11 @@ const PE_SUBFASES = {
 // aqui sem a spec — esta é só a fundação.
 async function abrirConversaProjeto(){
   if(!projetoAtivo) return;
+  // Garante que a conversa (leitura E escrita) opere na loja do projeto aberto, não importa
+  // como o projeto foi aberto (lista, restauração, criação). Sem isso, um projeto aberto com a
+  // loja ativa em outra loja (ex.: seletor num PDV) dá 403/404 em TODA mensagem. Guarda
+  // anti-vazamento dentro de _alinharLojaAoProjeto (só alinha para loja acessível).
+  if(projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);
   document.getElementById('conv-proj-nome').textContent = projetoAtivo.nome_safe;
   document.getElementById('modal-conversa-proj').style.display='flex';
   document.getElementById('conv-msgs').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
@@ -11902,6 +11907,7 @@ async function _convCarregarSeletoresTransf(){
 
 async function convEnviar(){
   if(!projetoAtivo) return;
+  if(projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);  // trava a loja do projeto antes de enviar
   const ta = document.getElementById('conv-texto');
   const corpo = ta.value.trim();
   if(!corpo) return;

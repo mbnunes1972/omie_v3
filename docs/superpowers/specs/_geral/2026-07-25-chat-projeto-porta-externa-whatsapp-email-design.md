@@ -244,9 +244,11 @@ FORA do código, uma por ambiente):
 - **WhatsApp (Fatia 7):** `ORIZON_WA_TOKEN` (Meta Cloud API), `ORIZON_WA_PHONE_ID` (por número),
   `ORIZON_WA_VERIFY_TOKEN` (verificação do webhook). **Depende da APROVAÇÃO da Meta** (prazo
   externo). Webhook de entrada roteia por `rotear_entrada` (decisão 14, testável puro).
-A FUNDAÇÃO (modelo, resolução de destino, roteamento de entrada, gating, UI do compositor externo)
-é construída e testada agora; os transportes ao vivo ficam prontos-para-ativar quando as credenciais
-existirem.
+A FUNDAÇÃO e os TRANSPORTES AO VIVO estão IMPLEMENTADOS e testados (SMTP p/ e-mail via smtplib com
+Message-ID/In-Reply-To/References para threading; Meta Cloud API p/ WhatsApp via urllib; boundary de
+rede mockado nos testes). Os 5 endereços/números por canal são override de env
+(ORIZON_SMTP_FROM_<CANAL> / ORIZON_WA_PHONE_ID_<CANAL>). Falta APENAS: as credenciais por ambiente e a
+aprovação da Meta (ação do usuário) — sem elas o envio fica 'pendente_config' e a rede não é tocada.
 - **Responsabilidade NÃO ganha campo novo no `Projeto`** (correção 2026-07-25, ver seção 6): uma
   mensagem de transferência grava direto em `CicloEtapa.responsavel_funcionario_id` da etapa
   referenciada — a fonte de verdade continua sendo o `CicloEtapa`/`responsavel_efetivo` que já

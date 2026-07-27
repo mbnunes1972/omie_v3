@@ -232,3 +232,86 @@ def test_webhook_configurado_roteia_resposta(http_client_factory, seed, app_db, 
     st, _ = _post_raw(c, "/webhooks/whatsapp", raw,
                       {"Content-Type":"application/json","X-Hub-Signature-256":"sha256=deadbeef"})
     assert st == 403
+
+
+# ── despachar(): transportes AO VIVO (boundary de rede mockado) ──────────────
+
+class _FakeSMTP:
+    enviados = []
+    def __init__(self, host, port, timeout=None): _FakeSMTP.host = host
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def starttls(self): pass
+    def login(self, u, p): _FakeSMTP.login_user = u
+    def send_message(self, msg): _FakeSMTP.enviados.append(msg)
+
+
+def _cfg_email(mp):
+    mp.setenv("ORIZON_SMTP_HOST","smtp.x"); mp.setenv("ORIZON_SMTP_PORT","587")
+    mp.setenv("ORIZON_SMTP_USER","u@x"); mp.setenv("ORIZON_SMTP_PASS","p")
+    mp.setenv("ORIZON_SMTP_FROM","sac@loja.com")
+
+
+def test_despachar_email_smtp(app_db, seed, monkeypatch):
+    import mod_chat_externo as ext, smtplib
+    _cfg_email(monkeypatch)
+    _FakeSMTP.enviados = []
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    env = ext.EnvioExterno(mensagem_id=1, meio="email", direcao="saida", canal="comercial",
+                           destino="cliente@ex.com", status="enfileirado")
+    ok, idext, erro = ext.despachar(env, "corpo do e-mail")
+    assert ok and erro is None and idext                      # Message-ID gerado
+    m = _FakeSMTP.enviados[-1]
+    assert m["To"] == "cliente@ex.com" and m["From"] == "sac@loja.com"
+    assert "corpo do e-mail" in m.get_content()
+
+
+def test_despachar_email_from_por_canal(app_db, seed, monkeypatch):
+    import mod_chat_externo as ext, smtplib
+    _cfg_email(monkeypatch)
+    monkeypatch.setenv("ORIZON_SMTP_FROM_FINANCEIRO", "financeiro@loja.com")  # override por canal
+    _FakeSMTP.enviados = []; monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    env = ext.EnvioExterno(mensagem_id=1, meio="email", canal="financeiro",
+                           destino="x@y.z", status="enfileirado")
+    ok, _i, _e = ext.despachar(env, "oi")
+    assert ok and _FakeSMTP.enviados[-1]["From"] == "financeiro@loja.com"
+
+
+def test_despachar_whatsapp_meta(app_db, seed, monkeypatch):
+    import mod_chat_externo as ext, urllib.request, json, io
+    monkeypatch.setenv("ORIZON_WA_TOKEN","tok123"); monkeypatch.setenv("ORIZON_WA_PHONE_ID","999")
+    capt = {}
+    class _Resp(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    def fake_urlopen(req, timeout=None):
+        capt["url"]=req.full_url; capt["auth"]=req.get_header("Authorization")
+        capt["data"]=json.loads(req.data.decode())
+        return _Resp(json.dumps({"messages":[{"id":"wamid.NEW"}]}).encode())
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    env = ext.EnvioExterno(mensagem_id=1, meio="whatsapp", canal="comercial",
+                           destino="(12) 90000-1111", status="enfileirado")
+    ok, idext, erro = ext.despachar(env, "olá via zap")
+    assert ok and idext == "wamid.NEW" and erro is None
+    assert "999/messages" in capt["url"] and capt["auth"] == "Bearer tok123"
+    assert capt["data"]["to"] == "12900001111" and capt["data"]["text"]["body"] == "olá via zap"
+
+
+def test_despachar_falha_vira_erro(app_db, seed, monkeypatch):
+    import mod_chat_externo as ext, smtplib
+    _cfg_email(monkeypatch)
+    def boom(*a, **k): raise OSError("conexão recusada")
+    monkeypatch.setattr(smtplib, "SMTP", boom)
+    env = ext.EnvioExterno(mensagem_id=1, meio="email", canal="comercial",
+                           destino="x@y.z", status="enfileirado")
+    ok, idext, erro = ext.despachar(env, "oi")
+    assert ok is False and idext is None and "recusada" in erro
+
+
+def test_despachar_sem_config_nao_toca_rede(app_db, seed, monkeypatch):
+    import mod_chat_externo as ext
+    monkeypatch.delenv("ORIZON_SMTP_HOST", raising=False)
+    env = ext.EnvioExterno(mensagem_id=1, meio="email", canal="comercial",
+                           destino="x@y.z", status="pendente_config")
+    ok, idext, erro = ext.despachar(env, "oi")
+    assert ok is False and "não configurado" in erro.lower()

@@ -86,17 +86,79 @@ def registrar_envio(db, mensagem, meio, canal, destinatario_tipo, destinatario_i
     return env
 
 
+_CANAL_ROTULO = {"comercial": "Comercial", "financeiro": "Financeiro", "logistica": "Logística",
+                 "suporte_tecnico": "Suporte Técnico", "sac": "SAC"}
+
+
+def _env_por_canal(base, canal):
+    """Override por canal (os 5 endereços/números são CONFIG, não código — spec Fatia 6):
+    ORIZON_SMTP_FROM_FINANCEIRO, ORIZON_WA_PHONE_ID_SAC, etc.; fallback à base."""
+    if canal:
+        v = (os.environ.get("%s_%s" % (base, canal.upper())) or "").strip()
+        if v:
+            return v
+    return (os.environ.get(base) or "").strip()
+
+
+def _enviar_email(env, corpo):
+    import smtplib
+    from email.message import EmailMessage
+    from email.utils import make_msgid
+    host = (os.environ.get("ORIZON_SMTP_HOST") or "").strip()
+    port = int((os.environ.get("ORIZON_SMTP_PORT") or "587").strip())
+    user = (os.environ.get("ORIZON_SMTP_USER") or "").strip()
+    pw   = (os.environ.get("ORIZON_SMTP_PASS") or "").strip()
+    frm  = _env_por_canal("ORIZON_SMTP_FROM", env.canal)
+    msgid = make_msgid()   # threading por Message-ID (decisão 14, e-mail)
+    msg = EmailMessage()
+    msg["From"] = frm
+    msg["To"] = env.destino
+    msg["Subject"] = "[Orizon] %s — Projeto" % _CANAL_ROTULO.get(env.canal, "Comunicação")
+    msg["Message-ID"] = msgid
+    if env.id_externo_ref:                 # resposta encadeia no thread original
+        msg["In-Reply-To"] = env.id_externo_ref
+        msg["References"] = env.id_externo_ref
+    msg.set_content(corpo or "")
+    with smtplib.SMTP(host, port, timeout=15) as s:
+        s.starttls()
+        if user:
+            s.login(user, pw)
+        s.send_message(msg)
+    return True, msgid, None
+
+
+def _enviar_whatsapp(env, corpo):
+    import json as _json
+    import urllib.request as _u
+    token = (os.environ.get("ORIZON_WA_TOKEN") or "").strip()
+    phone = _env_por_canal("ORIZON_WA_PHONE_ID", env.canal)
+    url = "https://graph.facebook.com/v20.0/%s/messages" % phone
+    payload = {"messaging_product": "whatsapp", "to": _digitos(env.destino),
+               "type": "text", "text": {"body": corpo or ""}}
+    req = _u.Request(url, data=_json.dumps(payload).encode("utf-8"), method="POST",
+                     headers={"Authorization": "Bearer " + token,
+                              "Content-Type": "application/json"})
+    with _u.urlopen(req, timeout=15) as resp:
+        data = _json.loads(resp.read() or b"{}")
+    wamid = ((data.get("messages") or [{}])[0]).get("id")
+    return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
+
+
 def despachar(env, corpo):
-    """Disparo REAL — só chamado quando meio_configurado(env.meio). Isolado de propósito: é a
-    única parte que toca a rede e não roda nos testes (precisa de credencial). Prontos-para-
-    ativar: implementar SMTP (email) e Meta Cloud API (whatsapp) aqui quando as credenciais
-    existirem. Retorna (ok, id_externo, erro)."""
+    """Disparo REAL do envio externo — só quando meio_configurado(env.meio). SMTP (e-mail) e Meta
+    Cloud API (WhatsApp). A rede é a única parte não coberta por credencial nos testes (os testes
+    mockam o boundary smtplib/urlopen). Retorna (ok, id_externo, erro); exceção de rede vira
+    (False, None, erro) — o chamador marca o envio como 'falhou' com a mensagem."""
     if not meio_configurado(env.meio):
-        return False, None, "Transporte não configurado."
-    # NOTE: implementação ao vivo pendente de credenciais (ação de deploy do usuário).
-    # email  -> smtplib.SMTP(host, port).login(user, pass).sendmail(from, [destino], msg)
-    # whatsapp -> POST https://graph.facebook.com/v20.0/<PHONE_ID>/messages (Bearer TOKEN)
-    return False, None, "Transporte ao vivo ainda não ativado neste ambiente."
+        return False, None, "Transporte não configurado neste ambiente."
+    try:
+        if env.meio == "email":
+            return _enviar_email(env, corpo)
+        if env.meio == "whatsapp":
+            return _enviar_whatsapp(env, corpo)
+    except Exception as e:
+        return False, None, str(e)
+    return False, None, "Meio de envio desconhecido: %r" % env.meio
 
 
 # ── roteamento da resposta de entrada (decisão 14) ───────────────────────────

@@ -109,7 +109,10 @@ def _enviar_email(env, corpo):
     user = (os.environ.get("ORIZON_SMTP_USER") or "").strip()
     pw   = (os.environ.get("ORIZON_SMTP_PASS") or "").strip()
     frm  = _env_por_canal("ORIZON_SMTP_FROM", env.canal)
-    msgid = make_msgid()   # threading por Message-ID (decisão 14, e-mail)
+    # Message-ID no domínio do remetente (não no hostname da máquina) — threading da decisão 14
+    # + entregabilidade (filtros anti-spam olham o alinhamento do domínio do Message-ID).
+    _dom = frm.split("@")[-1].strip() if "@" in (frm or "") else None
+    msgid = make_msgid(domain=_dom) if _dom else make_msgid()
     msg = EmailMessage()
     msg["From"] = frm
     msg["To"] = env.destino

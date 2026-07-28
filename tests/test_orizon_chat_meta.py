@@ -16,6 +16,10 @@ import mod_chat_externo as mce
 from database import EnvioExterno, ConversaParticipante
 
 
+def _login(f, who):
+    c = f(); c.login(who, "senha123"); assert c.cookie; return c
+
+
 # ── G1 — Fornecedor como destinatário externo (RF-03) ──────────────────────────
 def test_resolver_destino_fornecedor(app_db, seed):
     db = app_db.get_session()
@@ -101,3 +105,43 @@ def test_transferencia_adiciona_responsavel_ao_grupo(app_db, seed):
         assert db.query(ConversaParticipante).filter_by(conversa_id=conv.id, usuario_id=u.id).count() == 1
     finally:
         db.close()
+
+
+# ── Fatia 2 — biblioteca de templates (RF-07) ──────────────────────────────────
+def test_slots_obrigatorios_sao_nove():
+    assert len(mod_chat.SLOTS_OBRIGATORIOS) == 9
+    assert {s["num"] for s in mod_chat.SLOTS_OBRIGATORIOS} == set(range(1, 10))
+
+
+def test_template_crud_e_slot_unico(app_db, seed):
+    db = app_db.get_session()
+    try:
+        lid = seed["loja1_id"]
+        t = mod_chat.criar_template(db, lid, {"nome_meta": "reeng_comercial", "segmento": "comercial",
+                                              "slot_obrigatorio": 4, "categoria": "utility"}); db.commit()
+        assert t.slot_obrigatorio == 4
+        with pytest.raises(ValueError):                                      # slot 4 já ocupado
+            mod_chat.criar_template(db, lid, {"nome_meta": "outro", "slot_obrigatorio": 4})
+        mod_chat.editar_template(db, lid, t.id, {"status": "aprovado"}); db.commit()
+        assert mod_chat.listar_templates(db, lid, segmento="comercial")[0]["status"] == "aprovado"
+        mod_chat.remover_template(db, lid, t.id); db.commit()               # remover libera o slot
+        mod_chat.criar_template(db, lid, {"nome_meta": "novo4", "slot_obrigatorio": 4}); db.commit()
+    finally:
+        db.close()
+
+
+def test_template_endpoint_e_tenancy(http_client_factory, app_db, seed):
+    ger = _login(http_client_factory, "dir_l1")
+    st, b = ger.post("/api/comunicacao/templates",   # slot 5 (o de CRUD usa o 4 — evita colisão no módulo)
+                     {"nome_meta": "t_suporte", "segmento": "suporte_tecnico", "slot_obrigatorio": 5})
+    assert st == 201, b
+    tid = b["template"]["id"]
+    st, b = ger.get("/api/comunicacao/templates")
+    assert st == 200 and len(b["slots"]) == 9 and any(t["id"] == tid for t in b["templates"])
+    op = _login(http_client_factory, "cons_l1")                             # operador não gere
+    assert op.post("/api/comunicacao/templates", {"nome_meta": "x"})[0] == 403
+    assert op.get("/api/comunicacao/templates")[0] == 403
+    outro = _login(http_client_factory, "dir_l2")                           # loja 2 não vê/edita
+    st, b = outro.get("/api/comunicacao/templates")
+    assert st == 200 and all(t["id"] != tid for t in b["templates"])
+    assert outro.post("/api/comunicacao/templates/%d" % tid, {"status": "aprovado"})[0] == 404

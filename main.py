@@ -2902,6 +2902,28 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/templates — biblioteca de templates da Meta (RF-07). Gerência.
+            if path == "/api/comunicacao/templates" or path.startswith("/api/comunicacao/templates?"):
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                    self.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from urllib.parse import parse_qs
+                    seg = (parse_qs(urlparse(self.path).query).get("segmento") or [None])[0]
+                    self.send_json({"ok": True, "slots": list(mod_chat.SLOTS_OBRIGATORIOS),
+                                    "templates": mod_chat.listar_templates(db, loja_id, segmento=seg)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/conversas/<id>/mensagens — histórico de uma conversa
             # direct/grupo (só participante lê).
             m_cm = _re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
@@ -5338,6 +5360,44 @@ class Handler(BaseHTTPRequestHandler):
                     db.rollback(); self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
                 self.send_json({"ok": True, "participantes": mod_chat.listar_participantes(db, conv)})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/templates[/<id>[/remover]] — CRUD da biblioteca de templates (RF-07).
+        # Só gerência (autorizar); escopado por loja. Criar (sem id) | editar (<id>) | remover (<id>/remover).
+        m_tpl = re.match(r'^/api/comunicacao/templates(?:/(\d+)(/remover)?)?$', path)
+        if m_tpl:
+            tpl_id, remover = m_tpl.group(1), m_tpl.group(2)
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                self.send_json({"ok": False, "erro": "Sem permissão para gerir templates."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                try:
+                    if remover:
+                        if not mod_chat.remover_template(db, loja_id, tpl_id):
+                            self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                        db.commit(); self.send_json({"ok": True}); return
+                    if tpl_id:
+                        t = mod_chat.editar_template(db, loja_id, tpl_id, dd)
+                        if t is None:
+                            self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    else:
+                        t = mod_chat.criar_template(db, loja_id, dd, criado_por_id=usuario.get("id"))
+                except ValueError as ve:
+                    db.rollback(); self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "template": mod_chat._serializar_template(t)},
+                               code=(200 if tpl_id else 201))
             finally:
                 db.close()
             return

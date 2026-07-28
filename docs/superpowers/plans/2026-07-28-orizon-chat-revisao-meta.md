@@ -152,17 +152,17 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
   (origem=auto), sem remover ninguém. Testes: destino entra; criador permanece; idempotente.
 - [x] Suíte verde (F1 sem tabela/arquivo novo).
 
-## Fatia 2 — Modelo e biblioteca de templates (RF-07)
+## Fatia 2 — Modelo e biblioteca de templates (RF-07) — ✅ FEITA 2026-07-28 (`test_orizon_chat_meta.py`, +3)
 **Depende de:** F1 (canais). · **Sub-skill:** `superpowers:subagent-driven-development`.
 **Pronto quando:** tabela + CRUD por loja + constante dos 9 slots, com testes de tenancy.
 
-- [ ] `database.py`: tabela `template_mensagem` (ver Decisões) + migração idempotente + `modulos.py`.
-- [ ] `mod_chat`: `SLOTS_OBRIGATORIOS` (as 9 linhas da tabela 4.1 — #, título, momento, categoria,
-  segmento) como fonte única; `criar/editar/listar/ativar_template` (puro, por loja).
-- [ ] `main.py`: endpoints `GET/POST /api/comunicacao/templates` (+ `PUT/DELETE`), gated a gerência
-  (`autorizar`), escopados por loja. Testes: CRUD; loja 2 não vê/edita template da loja 1 (404/403);
-  slot obrigatório único por (loja, slot).
-- [ ] Suíte verde.
+- [x] `database.py`: tabela `template_mensagem` (ver Decisões) + create_all + `modulos.py`.
+- [x] `mod_chat`: `SLOTS_OBRIGATORIOS` (as 9 linhas da tabela 4.1) como fonte única; `SEGMENTOS`;
+  `listar/criar/editar/remover_template` (por loja; slot obrigatório único por loja).
+- [x] `main.py`: `GET /api/comunicacao/templates` (+ slots) e `POST /api/comunicacao/templates[/<id>[/remover]]`
+  (criar/editar/soft-delete), gated a gerência (`autorizar`), escopados por loja. Testes: CRUD; slot único;
+  loja 2 não vê/edita (404); operador 403.
+- [x] Suíte verde.
 
 ## Fatia 3 — Envio por template + janela na composição (RF-05, RF-06)
 **Depende de:** F1 (janela, HTTPError) + F2 (templates). · **Sub-skill:** `subagent-driven-development`.

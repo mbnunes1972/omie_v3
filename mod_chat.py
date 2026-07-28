@@ -15,7 +15,7 @@ from sqlalchemy import func
 
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
-                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
+                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -26,6 +26,24 @@ MASCARA_PRIVADA = "🔒 (mensagem privada — recurso descontinuado)"
 CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac",
           "compras", "parceiros")
 _CANAIS_FATIA_1 = ("interno",)
+
+# Segmentos externos (Meta) — espelha mod_chat_externo.CANAIS_EXTERNOS (teste anti-drift na Fatia 1).
+SEGMENTOS = ("comercial", "financeiro", "logistica", "suporte_tecnico", "sac", "compras", "parceiros")
+
+# As 9 mensagens OBRIGATÓRIAS do sistema (spec §4.1) — fonte ÚNICA do checklist RF-16 (Fatia 5) e do
+# mapeamento segmento→template do reengajamento (Fatia 4). Ordem = número do slot.
+SLOTS_OBRIGATORIOS = (
+    {"num": 1, "titulo": "Triagem / boas-vindas",              "momento": "Primeiro contato sem conversa ativa",        "categoria": "utility", "segmento": None},
+    {"num": 2, "titulo": "Confirmação de vínculo a projeto",   "momento": "Cliente com projeto ativo entra em contato",  "categoria": "utility", "segmento": None},
+    {"num": 3, "titulo": "Aviso de janela prestes a fechar",   "momento": "~90% do prazo de 24h sem resposta",           "categoria": "utility", "segmento": None},
+    {"num": 4, "titulo": "Reengajamento — Comercial",          "momento": "Janela fechada, retomada de negociação",      "categoria": "utility", "segmento": "comercial"},
+    {"num": 5, "titulo": "Reengajamento — Suporte Técnico",    "momento": "Janela fechada, retomada pós-venda",          "categoria": "utility", "segmento": "suporte_tecnico"},
+    {"num": 6, "titulo": "Reengajamento/Cobrança — Financeiro","momento": "Janela fechada, aviso de pendência",          "categoria": "utility", "segmento": "financeiro"},
+    {"num": 7, "titulo": "Reengajamento — Compras",            "momento": "Janela fechada, alinhamento com fornecedor",  "categoria": "utility", "segmento": "compras"},
+    {"num": 8, "titulo": "Confirmação de agendamento — Logística","momento": "Entrega ou visita de montagem",             "categoria": "utility", "segmento": "logistica"},
+    {"num": 9, "titulo": "Reengajamento — Parceiros",          "momento": "Janela fechada, aviso de comissão/indicação", "categoria": "utility", "segmento": "parceiros"},
+)
+_SLOTS_NUM = {s["num"] for s in SLOTS_OBRIGATORIOS}
 
 # ── Central de Comunicação (spec 2026-07-27, Fatia 1) ─────────────────────────
 TIPOS_CONVERSA = ("projeto", "direct", "grupo", "publico")
@@ -386,6 +404,108 @@ def remover_externo(db, conversa, externo_id):
     if e is None:
         return False
     e.removido = 1; db.flush()
+    return True
+
+
+# ── Biblioteca de templates da Meta (RF-07, Fatia 2) ────────────────────────────────────────────
+
+def _serializar_template(t):
+    return {"id": t.id, "segmento": t.segmento, "slot_obrigatorio": t.slot_obrigatorio,
+            "nome_meta": t.nome_meta, "categoria": t.categoria, "idioma": t.idioma,
+            "corpo": t.corpo, "variaveis": (json.loads(t.variaveis_json) if t.variaveis_json else []),
+            "assinatura_var": t.assinatura_var, "status": t.status,
+            "meta_template_id": t.meta_template_id, "ativo": bool(t.ativo)}
+
+
+def listar_templates(db, loja_id, segmento=None, so_ativos=True):
+    q = db.query(TemplateMensagem).filter_by(loja_id=loja_id)
+    if so_ativos:
+        q = q.filter(TemplateMensagem.ativo == 1)
+    if segmento:
+        q = q.filter(TemplateMensagem.segmento == segmento)
+    return [_serializar_template(t) for t in
+            q.order_by(TemplateMensagem.slot_obrigatorio.asc().nullslast(),
+                       TemplateMensagem.id.asc()).all()]
+
+
+def _valida_template(dados):
+    seg = dados.get("segmento") or None
+    if seg is not None and seg not in SEGMENTOS:
+        raise ValueError("Segmento inválido.")
+    slot = dados.get("slot_obrigatorio")
+    if slot in ("", None):
+        slot = None
+    else:
+        try:
+            slot = int(slot)
+        except (TypeError, ValueError):
+            raise ValueError("Slot obrigatório inválido.")
+        if slot not in _SLOTS_NUM:
+            raise ValueError("Slot obrigatório fora de 1..9.")
+    if not (dados.get("nome_meta") or "").strip():
+        raise ValueError("Informe o nome do template na Meta.")
+    cat = dados.get("categoria") or "utility"
+    if cat not in ("utility", "marketing"):
+        raise ValueError("Categoria inválida (utility|marketing).")
+    st = dados.get("status") or "rascunho"
+    if st not in ("rascunho", "em_analise", "aprovado", "rejeitado"):
+        raise ValueError("Status inválido.")
+    return seg, slot, cat, st
+
+
+def _slot_livre(db, loja_id, slot, exceto_id=None):
+    if slot is None:
+        return True
+    q = db.query(TemplateMensagem).filter_by(loja_id=loja_id, slot_obrigatorio=slot, ativo=1)
+    if exceto_id is not None:
+        q = q.filter(TemplateMensagem.id != exceto_id)
+    return q.first() is None
+
+
+def criar_template(db, loja_id, dados, criado_por_id=None):
+    """Cria um template da loja. Um slot obrigatório (1..9) tem no máximo UM template ativo por loja."""
+    seg, slot, cat, st = _valida_template(dados)
+    if not _slot_livre(db, loja_id, slot):
+        raise ValueError("Já existe um template ativo para este slot obrigatório.")
+    t = TemplateMensagem(
+        loja_id=loja_id, segmento=seg, slot_obrigatorio=slot, nome_meta=dados["nome_meta"].strip(),
+        categoria=cat, idioma=(dados.get("idioma") or "pt_BR"), corpo=dados.get("corpo"),
+        variaveis_json=(json.dumps(dados["variaveis"]) if dados.get("variaveis") else None),
+        assinatura_var=dados.get("assinatura_var"), status=st,
+        meta_template_id=dados.get("meta_template_id"), criado_por_id=criado_por_id)
+    db.add(t); db.flush()
+    return t
+
+
+def editar_template(db, loja_id, template_id, dados):
+    """Atualiza um template da loja (patch dos campos válidos). Valida unicidade de slot. Retorna o
+    registro ou None se não for da loja."""
+    t = db.query(TemplateMensagem).filter_by(id=int(template_id), loja_id=loja_id).first()
+    if t is None:
+        return None
+    base = {"segmento": t.segmento, "slot_obrigatorio": t.slot_obrigatorio, "nome_meta": t.nome_meta,
+            "categoria": t.categoria, "status": t.status}
+    base.update({k: v for k, v in dados.items() if v is not None or k in ("segmento", "slot_obrigatorio")})
+    seg, slot, cat, st = _valida_template(base)
+    if not _slot_livre(db, loja_id, slot, exceto_id=t.id):
+        raise ValueError("Já existe um template ativo para este slot obrigatório.")
+    t.segmento, t.slot_obrigatorio, t.categoria, t.status = seg, slot, cat, st
+    t.nome_meta = base["nome_meta"].strip()
+    for campo in ("idioma", "corpo", "meta_template_id", "assinatura_var"):
+        if campo in dados:
+            setattr(t, campo, dados[campo])
+    if "variaveis" in dados:
+        t.variaveis_json = json.dumps(dados["variaveis"]) if dados["variaveis"] else None
+    db.flush()
+    return t
+
+
+def remover_template(db, loja_id, template_id):
+    """Soft-delete (ativo=0) — libera o slot obrigatório. Retorna True se removeu."""
+    t = db.query(TemplateMensagem).filter_by(id=int(template_id), loja_id=loja_id).first()
+    if t is None:
+        return False
+    t.ativo = 0; db.flush()
     return True
 
 

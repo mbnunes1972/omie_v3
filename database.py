@@ -1162,6 +1162,31 @@ class ConversaParticipanteExterno(Base):
     criado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class TemplateMensagem(Base):
+    """Template de mensagem aprovado pela Meta (RF-07, Orizon Chat/Meta 2026-07-28). Por LOJA. Cada
+    `slot_obrigatorio` (1..9 da tabela 4.1 da spec) tem no máximo UM template ativo por loja — é o
+    checklist de configuração inicial (RF-16). `assinatura_var` = posição da variável do responsável
+    real (RF-17a). Status espelha o painel: rascunho/pendente · em_analise ('Em análise na Meta') ·
+    aprovado · rejeitado."""
+    __tablename__ = "template_mensagem"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    loja_id          = Column(Integer, ForeignKey("lojas.id"), nullable=False, index=True)
+    segmento         = Column(String(20), nullable=True)    # comercial/.../sac/compras/parceiros (NULL=geral)
+    slot_obrigatorio = Column(Integer, nullable=True)       # 1..9 (tabela 4.1) ou NULL (extra)
+    nome_meta        = Column(Text,     nullable=False)     # nome do template na Meta
+    categoria        = Column(String(12), nullable=False, default="utility")   # utility | marketing
+    idioma           = Column(String(12), nullable=False, default="pt_BR")
+    corpo            = Column(Text,     nullable=True)      # texto com {{1}}…
+    variaveis_json   = Column(Text,     nullable=True)      # JSON: descrição das variáveis
+    assinatura_var   = Column(Integer,  nullable=True)      # posição da var de assinatura (RF-17a)
+    status           = Column(String(12), nullable=False, default="rascunho")  # rascunho|em_analise|aprovado|rejeitado
+    meta_template_id = Column(Text,     nullable=True)
+    ativo            = Column(Integer,  nullable=False, default=1)
+    criado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    criado_em        = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaMensagem(Base):
     """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
     modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
@@ -1713,6 +1738,7 @@ def _migrar_colunas_pg():
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS destinatario_usuario_id INTEGER",
+        # Orizon Chat/Meta Fatia 2: biblioteca de templates (RF-07) — tabela nova via create_all (marcador).
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

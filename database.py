@@ -1144,6 +1144,24 @@ class ConversaParticipante(Base):
     adicionado_em = Column(DateTime, default=datetime.utcnow)
 
 
+class ConversaParticipanteExterno(Base):
+    """Participante EXTERNO de uma conversa (contato por WhatsApp/e-mail, SEM Usuario) — Orizon Chat
+    2026-07-28. As mensagens da conversa ESPELHAM para o telefone/e-mail dele via mod_chat_externo
+    (Meta Cloud API / SMTP), sempre CONFIG-GATED: sem credencial nasce 'pendente_config'. Destacado
+    na UI (melhora a organização — pedido do lojista). `removido` = tombstone (mesma lógica do interno)."""
+    __tablename__ = "conversa_participantes_externos"
+
+    id            = Column(Integer, primary_key=True, autoincrement=True)
+    conversa_id   = Column(Integer, ForeignKey("conversas.id"), nullable=False, index=True)
+    nome          = Column(Text,    nullable=False)
+    telefone      = Column(Text,    nullable=True)     # WhatsApp (Meta)
+    email         = Column(Text,    nullable=True)
+    meio          = Column(String(16), nullable=False, default="whatsapp")   # whatsapp | email
+    removido      = Column(Integer, nullable=False, default=0)
+    criado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaMensagem(Base):
     """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
     modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
@@ -1688,6 +1706,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS responsavel_terceiro_id INTEGER",
         # Desmembramento operacional Fatia 3: valor bruto por ambiente (split exato na liberação).
         "ALTER TABLE parcela_ambiente ADD COLUMN IF NOT EXISTS valor_ambiente DOUBLE PRECISION DEFAULT 0.0",
+        # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
+        # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

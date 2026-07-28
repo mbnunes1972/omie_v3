@@ -5187,18 +5187,34 @@ class Handler(BaseHTTPRequestHandler):
                     if not a_proj or _projeto_da_loja(db, a_proj, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Projeto do assunto inválido nesta loja."},
                                        code=400); return
+                # Participantes EXTERNOS (contato WhatsApp/e-mail, sem Usuario) — Orizon Chat 2026-07-28.
+                externos = dd.get("externos") or []
+                if not isinstance(externos, list):
+                    externos = []
                 try:
                     if tipo == "direct":
-                        if len(pedidos) != 1:
-                            self.send_json({"ok": False, "erro": "Direct precisa de exatamente 1 destinatário."}, code=400); return
-                        conv = mod_chat.get_or_create_direct(db, loja_id, usuario["id"], pedidos[0],
-                                                             assunto_tipo=a_tipo, projeto_nome=a_proj,
-                                                             assunto_id=a_id)
+                        if len(pedidos) == 1 and not externos:
+                            conv = mod_chat.get_or_create_direct(db, loja_id, usuario["id"], pedidos[0],
+                                                                 assunto_tipo=a_tipo, projeto_nome=a_proj,
+                                                                 assunto_id=a_id)
+                        elif not pedidos and externos:
+                            # Individual com CONTATO EXTERNO → grupo com o criador + o externo.
+                            _tit = (externos[0].get("nome") or "Contato externo").strip()
+                            conv = mod_chat.criar_grupo(db, loja_id, usuario["id"], _tit, [],
+                                                        assunto_tipo=a_tipo, projeto_nome=a_proj,
+                                                        assunto_id=a_id, exige_dois=False)
+                        else:
+                            self.send_json({"ok": False, "erro": "Individual: escolha 1 destinatário interno "
+                                            "OU 1 contato externo."}, code=400); return
                     else:
                         conv = mod_chat.criar_grupo(db, loja_id, usuario["id"],
                                                     dd.get("titulo"), pedidos,
                                                     assunto_tipo=a_tipo, projeto_nome=a_proj,
-                                                    assunto_id=a_id)
+                                                    assunto_id=a_id, exige_dois=(not externos))
+                    for ex in externos:
+                        mod_chat.adicionar_externo(db, conv, ex.get("nome"), ex.get("telefone"),
+                                                   ex.get("email"), (ex.get("meio") or "whatsapp"),
+                                                   usuario["id"])
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
@@ -5270,7 +5286,8 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
                 try:
                     import mod_chat_externo as _mce
-                    _mce.notificar_conversa(db, conv, msg, usuario["id"]); db.commit()
+                    _mce.notificar_conversa(db, conv, msg, usuario["id"])
+                    _mce.espelhar_para_externos(db, conv, msg, autor_nome=usuario.get("nome")); db.commit()
                 except Exception:
                     db.rollback()   # ponte WhatsApp é best-effort — nunca quebra o anexo
                 storage_salvar_binario(os.path.join(_BASE_DIR, "COMUNICACAO", rel), data)
@@ -5304,11 +5321,19 @@ class Handler(BaseHTTPRequestHandler):
                 if conv is None or conv.loja_id != loja_id or conv.tipo not in ("projeto", "grupo"):
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 dd = json.loads(body or b'{}')
-                alvo = dd.get("usuario_id")
-                if not alvo or db.query(Usuario).filter_by(id=int(alvo), loja_id=loja_id, ativo=1).first() is None:
-                    self.send_json({"ok": False, "erro": "Escolha um usuário desta loja."}, code=400); return
+                acao = (dd.get("acao") or "").strip()
                 try:
-                    mod_chat.gerir_participante(db, conv, alvo, (dd.get("acao") or "").strip())
+                    if acao == "add_externo":
+                        mod_chat.adicionar_externo(db, conv, dd.get("nome"), dd.get("telefone"),
+                                                   dd.get("email"), (dd.get("meio") or "whatsapp"),
+                                                   usuario["id"])
+                    elif acao == "remove_externo":
+                        mod_chat.remover_externo(db, conv, dd.get("externo_id"))
+                    else:
+                        alvo = dd.get("usuario_id")
+                        if not alvo or db.query(Usuario).filter_by(id=int(alvo), loja_id=loja_id, ativo=1).first() is None:
+                            self.send_json({"ok": False, "erro": "Escolha um usuário desta loja."}, code=400); return
+                        mod_chat.gerir_participante(db, conv, alvo, acao)
                 except ValueError as ve:
                     db.rollback(); self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
@@ -5357,7 +5382,8 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
                 try:
                     import mod_chat_externo as _mce
-                    _mce.notificar_conversa(db, conv, msg, usuario["id"]); db.commit()
+                    _mce.notificar_conversa(db, conv, msg, usuario["id"])
+                    _mce.espelhar_para_externos(db, conv, msg, autor_nome=usuario.get("nome")); db.commit()
                 except Exception:
                     db.rollback()   # ponte WhatsApp best-effort — nunca quebra a mensagem
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
@@ -5443,6 +5469,11 @@ class Handler(BaseHTTPRequestHandler):
                     # A restrição por Função do painel NÃO se aplica aqui de propósito:
                     # transferir ENTRE faixas é a razão de existir da transferência.
                     etapa_alvo.responsavel_funcionario_id = transferido.id
+                try:
+                    import mod_chat_externo as _mce
+                    _mce.espelhar_para_externos(db, conv, msg, autor_nome=usuario.get("nome"))
+                except Exception:
+                    pass   # best-effort: espelho externo nunca quebra a mensagem interna
                 db.commit()
                 self.send_json({"ok": True,
                                 "mensagem": mod_chat.serializar_mensagem(

@@ -13,9 +13,9 @@ import json
 
 from sqlalchemy import func
 
-from database import (Conversa, ConversaParticipante, ConversaMensagem, MensagemAnexo,
-                      ContatoConfirmacao, Assunto, Usuario, Cliente, Parceiro, Funcionario,
-                      Funcao, CicloDocumento)
+from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
+                      ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
+                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -267,8 +267,8 @@ def _funcao_nome_do_usuario(db, usuario_id):
 
 
 def listar_participantes(db, conversa):
-    """Participantes ATIVOS (não removidos), com nome, FUNÇÃO (cargo), origem (auto|manual) e flag
-    `gerencia` (Diretor/Gerente — participa por padrão)."""
+    """Participantes ATIVOS (não removidos): INTERNOS (Usuario, com FUNÇÃO/origem/flag `gerencia`) +
+    EXTERNOS (contato WhatsApp/e-mail, `externo: True`, DESTACADOS na UI)."""
     from auth import perfis
     rows = (db.query(ConversaParticipante, Usuario)
               .outerjoin(Usuario, ConversaParticipante.usuario_id == Usuario.id)
@@ -280,10 +280,60 @@ def listar_participantes(db, conversa):
         nivel = getattr(u, "nivel", None) if u else None
         eh_ger = bool(nivel and (perfis.pode(nivel, "autorizar") or perfis.pode(nivel, "aprovar_financeiro")))
         out.append({"usuario_id": p.usuario_id, "nome": (u.nome if u else "—"),
-                    "origem": p.origem, "papel": p.papel,
+                    "origem": p.origem, "papel": p.papel, "externo": False,
                     "funcao_nome": _funcao_nome_do_usuario(db, p.usuario_id),
                     "gerencia": eh_ger})
+    for e in listar_externos(db, conversa):
+        out.append({"externo_id": e["id"], "nome": e["nome"], "origem": "externo",
+                    "externo": True, "meio": e["meio"], "contato": e["telefone"] or e["email"],
+                    "funcao_nome": "Externo", "gerencia": False})
     return out
+
+
+# ── Participantes EXTERNOS (contato WhatsApp/e-mail, sem Usuario) — Orizon Chat 2026-07-28 ──────
+
+def listar_externos(db, conversa, incluir_removidos=False):
+    q = db.query(ConversaParticipanteExterno).filter_by(conversa_id=conversa.id)
+    if not incluir_removidos:
+        q = q.filter(ConversaParticipanteExterno.removido == 0)
+    return [{"id": e.id, "nome": e.nome, "telefone": e.telefone, "email": e.email, "meio": e.meio}
+            for e in q.order_by(ConversaParticipanteExterno.nome.asc()).all()]
+
+
+def adicionar_externo(db, conversa, nome, telefone=None, email=None, meio="whatsapp", criado_por_id=None):
+    """Adiciona (ou reativa) um participante externo. `meio` = whatsapp exige telefone; email exige
+    e-mail. Reativa um homônimo pelo mesmo contato (não duplica). Não commita. Retorna o registro."""
+    nome = (nome or "").strip()
+    telefone = (telefone or "").strip() or None
+    email = (email or "").strip() or None
+    if not nome:
+        raise ValueError("Dê um nome ao contato externo.")
+    if meio == "whatsapp" and not telefone:
+        raise ValueError("Informe o telefone (WhatsApp) do contato externo.")
+    if meio == "email" and not email:
+        raise ValueError("Informe o e-mail do contato externo.")
+    # dedup pelo contato do MEIO (não misturar com IS NULL do outro campo — casaria linhas erradas)
+    if meio == "whatsapp":
+        ja = db.query(ConversaParticipanteExterno).filter_by(
+            conversa_id=conversa.id, meio="whatsapp", telefone=telefone).first()
+    else:
+        ja = db.query(ConversaParticipanteExterno).filter_by(
+            conversa_id=conversa.id, meio="email", email=email).first()
+    if ja is not None:
+        ja.removido = 0; ja.nome = nome; db.flush(); return ja
+    e = ConversaParticipanteExterno(conversa_id=conversa.id, nome=nome, telefone=telefone,
+                                    email=email, meio=meio, criado_por_id=criado_por_id)
+    db.add(e); db.flush()
+    return e
+
+
+def remover_externo(db, conversa, externo_id):
+    e = (db.query(ConversaParticipanteExterno)
+           .filter_by(id=int(externo_id), conversa_id=conversa.id).first())
+    if e is None:
+        return False
+    e.removido = 1; db.flush()
+    return True
 
 
 def gerir_participante(db, conversa, usuario_id, acao):
@@ -437,14 +487,15 @@ def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id,
 
 
 def criar_grupo(db, loja_id, criado_por_id, titulo, participante_ids,
-                assunto_tipo="livre", projeto_nome=None, assunto_id=None):
-    """Cria uma conversa de grupo com título, assunto e N participantes (criador = admin)."""
+                assunto_tipo="livre", projeto_nome=None, assunto_id=None, exige_dois=True):
+    """Cria uma conversa de grupo com título, assunto e N participantes (criador = admin). `exige_dois`
+    pode ser False quando o grupo terá participantes EXTERNOS (criador + externo já basta)."""
     titulo = (titulo or "").strip()
     if not titulo:
         raise ValueError("Dê um nome ao grupo.")
     at, pnome, aid = normalizar_assunto(db, loja_id, assunto_tipo, projeto_nome, assunto_id)
     ids = {int(x) for x in (participante_ids or []) if x} | {int(criado_por_id)}
-    if len(ids) < 2:
+    if exige_dois and len(ids) < 2:
         raise ValueError("Um grupo precisa de ao menos 2 participantes.")
     c = Conversa(loja_id=loja_id, tipo="grupo", titulo=titulo, criado_por_id=criado_por_id,
                  assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)

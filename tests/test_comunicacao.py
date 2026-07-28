@@ -87,6 +87,52 @@ def test_gerir_membros_de_grupo(http_client_factory, app_db, seed):
     assert outro.post("/api/comunicacao/conversas/%d/participantes" % cid, {"usuario_id": alvo, "acao": "add"})[0] == 404
 
 
+def test_participante_externo_e_espelho(app_db, seed):
+    """Contato EXTERNO (WhatsApp) entra na conversa (destacado) e as mensagens ESPELHAM — config-gated:
+    sem credencial Meta o envio nasce 'pendente_config' (a rede não é tocada)."""
+    import mod_chat, mod_chat_externo
+    from database import EnvioExterno
+    db = app_db.get_session()
+    try:
+        crid = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        mid = db.query(app_db.Usuario).filter_by(login="cons_l1").first().id
+        conv = mod_chat.criar_grupo(db, seed["loja1_id"], crid, "G ext", [mid]); db.flush()
+        e = mod_chat.adicionar_externo(db, conv, "Arquiteto João", telefone="11912345678"); db.commit()
+        ext = [p for p in mod_chat.listar_participantes(db, conv) if p.get("externo")]
+        assert ext and ext[0]["nome"] == "Arquiteto João" and ext[0]["meio"] == "whatsapp"
+        msg = mod_chat.enviar_mensagem(db, conv, crid, "olá arquiteto"); db.flush()
+        ids = mod_chat_externo.espelhar_para_externos(db, conv, msg, autor_nome="Diretor"); db.commit()
+        assert len(ids) == 1
+        env = db.get(EnvioExterno, ids[0])
+        assert env.status == "pendente_config" and env.meio == "whatsapp" and "11912345678" in (env.destino or "")
+        assert mod_chat.remover_externo(db, conv, e.id) is True; db.commit()
+        assert not [p for p in mod_chat.listar_participantes(db, conv) if p.get("externo")]
+    finally:
+        db.close()
+
+
+def test_endpoint_criar_grupo_com_externo(http_client_factory, app_db, seed):
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    st, b = c.post("/api/comunicacao/conversas",
+                   {"tipo": "grupo", "titulo": "Obra X", "participante_ids": [alvo],
+                    "externos": [{"nome": "Cliente Ana", "telefone": "11999998888", "meio": "whatsapp"}]})
+    assert st == 201, b
+    cid = b["conversa"]["id"]
+    st, b = c.post("/api/comunicacao/conversas/%d/participantes" % cid,
+                   {"acao": "add_externo", "nome": "Arq Beto", "telefone": "1188887777"})
+    assert st == 200 and sum(1 for p in b["participantes"] if p.get("externo")) == 2
+
+
+def test_endpoint_individual_externo_vira_grupo(http_client_factory, app_db, seed):
+    """Individual só com contato externo → cria conversa (grupo) com o criador + o externo."""
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post("/api/comunicacao/conversas",
+                   {"tipo": "direct", "participante_ids": [],
+                    "externos": [{"nome": "Cliente Zé", "telefone": "11970001122", "meio": "whatsapp"}]})
+    assert st == 201 and b["conversa"]["tipo"] == "grupo", b
+
+
 # ── mensagens + auth por participante ──────────────────────────────────────────
 
 def test_enviar_e_listar(http_client_factory, app_db, seed):

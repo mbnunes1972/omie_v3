@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timedelta
 
 from database import (EnvioExterno, Conversa, ConversaMensagem, ConversaParticipante,
-                      Cliente, Parceiro, Usuario, UsuarioPresenca)
+                      ConversaParticipanteExterno, Cliente, Parceiro, Usuario, UsuarioPresenca)
 
 MEIOS = ("email", "whatsapp")
 # Canais externos (segmentos) — 'interno' NÃO é externo.
@@ -340,6 +340,37 @@ def notificar_conversa(db, conversa, mensagem, autor_id):
             ev = notificar_usuario(db, conversa, mensagem, u, autor_nome=autor_nome)
             if ev is not None:
                 enviados.append(ev.id)
+        except Exception:
+            pass   # best-effort
+    return enviados
+
+
+def espelhar_para_externos(db, conversa, mensagem, autor_nome=None):
+    """Espelha uma mensagem da conversa para os participantes EXTERNOS (contatos WhatsApp/e-mail sem
+    Usuario) — Orizon Chat 2026-07-28. Um EnvioExterno por externo, CONFIG-GATED (sem credencial →
+    'pendente_config', a rede não é tocada). Best-effort: nunca quebra o envio interno. Retorna os ids
+    dos envios criados."""
+    externos = (db.query(ConversaParticipanteExterno)
+                  .filter_by(conversa_id=conversa.id, removido=0).all())
+    if not externos:
+        return []
+    corpo = "💬 %s: %s" % (autor_nome or "Nova mensagem",
+                           (mensagem.corpo or "").strip() or "(anexo)")
+    enviados = []
+    for e in externos:
+        destino = (e.telefone if e.meio == "whatsapp" else e.email or "").strip() if (e.telefone or e.email) else ""
+        if not destino:
+            continue
+        try:
+            env = registrar_envio(db, mensagem, e.meio, "comercial", "avulso", e.id, destino)
+            if env.status == "enfileirado":
+                ok, ext_id, err = despachar(env, corpo)
+                env.status = "enviado" if ok else "falhou"
+                env.id_externo = ext_id if ok else None
+                if err:
+                    env.erro = err
+                db.flush()
+            enviados.append(env.id)
         except Exception:
             pass   # best-effort
     return enviados

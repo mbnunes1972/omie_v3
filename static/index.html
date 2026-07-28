@@ -785,6 +785,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
             <button class="btn btn-primary btn-sm" id="cc-enviar-btn" onclick="ccEnviar()">Enviar</button>
           </div>
+          <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
+          <label id="cc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
+            <input type="checkbox" id="cc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
           <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
           <div id="cc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
             <label style="font-size:12px;color:var(--text);cursor:pointer">
@@ -12019,10 +12022,13 @@ async function ccAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   await ccCarregarMsgs();
 }
 async function ccCarregarDestinatarios(){
-  // Seletor "Para" (F2): dirige a mensagem a um membro (marcação visual). Só em grupo/projeto.
+  // Seletor "Para" (F2) + caixa "E-mail (oficializar)" (F3): só em grupo/projeto.
+  const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
+  const ofic = document.getElementById('cc-oficializar-wrap');
+  if(ofic) ofic.style.display = grupoOuProj ? '' : 'none';
+  const ofc = document.getElementById('cc-oficializar'); if(ofc) ofc.checked = false;
   const sel = document.getElementById('cc-dest');
   if(!sel) return;
-  const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
   sel.style.display = grupoOuProj ? '' : 'none';
   if(!grupoOuProj){ sel.innerHTML=''; return; }
   sel.innerHTML = '<option value="">Para: todos</option>';
@@ -12033,6 +12039,13 @@ async function ccCarregarDestinatarios(){
   }catch(e){}
 }
 function _ccDestSel(){ const s=document.getElementById('cc-dest'); const v=s&&s.value; return v?parseInt(v,10):null; }
+function _ccOficializar(){ const c=document.getElementById('cc-oficializar'); return !!(c&&c.checked); }
+function _ccToastEmail(e){
+  if(!e) return;
+  if(e.enviados) showToast('📧 E-mail oficial enviado a '+e.enviados+' integrante(s).');
+  else if(e.total) showToast('📧 E-mail oficial registrado — '+e.pendentes+' pendente(s) (canal de e-mail não configurado).');
+  else showToast('Nenhum integrante com e-mail cadastrado.', true);
+}
 async function ccAbrirConversa(idx){
   const c = _ccInbox[idx];
   if(!c) return;
@@ -12217,7 +12230,7 @@ async function ccEnviar(){
         {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
     } else if(_ccConvProjeto){
       // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
-      const payload = {corpo, destinatario_usuario_id: _ccDestSel()};
+      const payload = {corpo, destinatario_usuario_id: _ccDestSel(), oficializar_email: _ccOficializar()};
       const tchk = document.getElementById('conv-transf-chk');
       const ehTransf = tchk && tchk.checked;
       if(ehTransf){
@@ -12239,11 +12252,13 @@ async function ccEnviar(){
     } else {
       d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({corpo, destinatario_usuario_id: _ccDestSel()})}).then(r=>r.json());
+         body: JSON.stringify({corpo, destinatario_usuario_id: _ccDestSel(), oficializar_email: _ccOficializar()})}).then(r=>r.json());
     }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
+    _ccToastEmail(d.email);
     ta.value = ''; ccRemoverAnexo();
     const _cd = document.getElementById('cc-dest'); if(_cd) _cd.value = '';   // volta a "Para: todos"
+    const _of = document.getElementById('cc-oficializar'); if(_of) _of.checked = false;
     await ccCarregarMsgs();
     ccCarregarInbox();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }

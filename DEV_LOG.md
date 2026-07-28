@@ -1370,6 +1370,27 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > checa) — causa provável = página em cache (a correção do compositor readonly foi recém-publicada na
 > A); **hard-refresh (Ctrl+Shift+R)** deve resolver; investigar com o erro exato se persistir.
 >
+> **🧩 UNIFICAÇÃO do Orizon Chat (2026-07-28, LOCAL — ainda não na VPS A; commits `0dc3db1`→`908c2b6`
+> + F3).** Frente aprovada em plano (fatiada). **F1 (`0dc3db1`):** o chat do projeto deixa de ser um
+> modal separado e passa a abrir DENTRO do modal canônico do painel lateral (`#modal-central-com`) como
+> conversa `tipo=projeto`; thread project-aware (mensagens/envio nos endpoints do projeto, anexo nativo);
+> **Transferência+Bloqueador portados** para `#cc-transf` (só projeto); canal automático (sai o seletor
+> externo); "Direct"→"Individual"; gerir membros vale p/ **grupo** (não só projeto); `#modal-conversa-proj`
+> aposentado. **Nova conversa (`d7dde36`):** Individual = seletor de usuários; Grupo = NAVEGA grupos/
+> projetos existentes (filtro por nome) + botão **"Novo Grupo"**; **lembrete de assunto** ("Conversas sem
+> assunto. Deseja continuar?"); tirado o "1:1". **Usuário EXTERNO (`6c7e9d2`):** tabela
+> `conversa_participantes_externos` (contato WhatsApp/e-mail sem Usuario); `mod_chat.adicionar/remover/
+> listar_externo`, `listar_participantes` inclui externos (**destacados**); `criar_grupo(exige_dois)`;
+> `mod_chat_externo.espelhar_para_externos` (1 EnvioExterno por externo, **config-gated** → `pendente_config`);
+> endpoints (POST /conversas aceita `externos`; participantes `add_externo`/`remove_externo`); front:
+> "+ contato externo (WhatsApp)" no seletor e nos Membros (chips `--warn`). **F2 (`908c2b6`):** destinatário
+> por mensagem — `ConversaMensagem.destinatario_usuario_id` + seletor "Para: todos|<membro>"; **marcação
+> visual** ("→ para <nome>", todos leem). **F3 (a commitar):** caixa **"E-mail (oficializar)"** — encaminha
+> a mensagem a TODOS os integrantes pelo e-mail cadastrado (interno+externo), reusa `notificar_gerentes_email`
+> (SMTP, **config-gated** → `pendente_config`); `mod_chat.oficializar_por_email`. **GO-LIVE do envio real
+> (externo+e-mail)** depende de credenciais Meta/SMTP + templates. Testes: `test_comunicacao.py` (+9 no total
+> da frente). **Suíte 1589→ (F3) verde.**
+>
 > **1) Correções de contexto de loja (commits `d08e6c1`, `abf38f0`, `8771877`).** O painel de
 > conversa recusava mensagens por **contexto de loja partido**: o interceptor de `fetch` só
 > anexava `X-Loja-Ativa` às rotas `/api/`, então `/projetos/<nome>` e `/orcamentos/...` abriam no

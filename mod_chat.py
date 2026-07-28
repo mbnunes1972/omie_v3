@@ -345,6 +345,41 @@ def remover_externo(db, conversa, externo_id):
     return True
 
 
+def _email_do_usuario(db, usuario_id):
+    """E-mail de um usuário: Usuario.email; fallback ao e-mail do Funcionário vinculado."""
+    u = db.get(Usuario, usuario_id) if usuario_id else None
+    if u is None:
+        return None
+    if (getattr(u, "email", None) or "").strip():
+        return u.email.strip()
+    fid = getattr(u, "funcionario_id", None)
+    f = db.get(Funcionario, fid) if fid else db.query(Funcionario).filter_by(usuario_id=usuario_id).first()
+    return f.email.strip() if (f and (f.email or "").strip()) else None
+
+
+def oficializar_por_email(db, conversa, mensagem, autor_nome=None):
+    """F3 (caixa de e-mail): ENCAMINHA a mensagem por e-mail a TODOS os integrantes — internos (pelo
+    e-mail cadastrado) e externos. Serve para oficializar informação e encaminhar documentos. CONFIG-
+    GATED (SMTP) via mod_chat_externo: sem credencial → 'pendente_config' (a rede não é tocada). Não
+    commita. Retorna {total, enviados, pendentes}."""
+    import mod_chat_externo
+    dests, vistos = [], set()
+    for p in db.query(ConversaParticipante).filter_by(conversa_id=conversa.id, removido=0).all():
+        email = _email_do_usuario(db, p.usuario_id)
+        if email and email.lower() not in vistos:
+            vistos.add(email.lower()); dests.append({"id": p.usuario_id, "email": email})
+    for e in db.query(ConversaParticipanteExterno).filter_by(conversa_id=conversa.id, removido=0).all():
+        email = (e.email or "").strip()
+        if email and email.lower() not in vistos:
+            vistos.add(email.lower()); dests.append({"id": None, "email": email})
+    corpo = "📢 Comunicação oficial — %s\n\n%s" % (
+        autor_nome or "Orizon Chat", (mensagem.corpo or "").strip() or "(documento/anexo na conversa)")
+    envs = mod_chat_externo.notificar_gerentes_email(db, mensagem, dests, corpo)
+    return {"total": len(envs),
+            "enviados": sum(1 for x in envs if x.status == "enviado"),
+            "pendentes": sum(1 for x in envs if x.status == "pendente_config")}
+
+
 def gerir_participante(db, conversa, usuario_id, acao):
     """Override manual do gerente: 'add' (entra/reativa como manual) | 'remove' (tombstone
     removido=1 — o sync não readiciona, mesmo sendo derivado). Não commita."""

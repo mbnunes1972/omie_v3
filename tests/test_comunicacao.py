@@ -144,6 +144,42 @@ def test_mensagem_dirigida_a_um_membro(http_client_factory, app_db, seed):
     assert msgs["geral"]["destinatario_usuario_id"] is None
 
 
+def test_oficializar_por_email(app_db, seed):
+    """F3: 'E-mail (oficializar)' encaminha a mensagem a TODOS os integrantes com e-mail (internos +
+    externos). Config-gated: sem SMTP → 'pendente_config' (a rede não é tocada)."""
+    import mod_chat
+    from database import EnvioExterno
+    db = app_db.get_session()
+    try:
+        u1 = db.query(app_db.Usuario).filter_by(login="dir_l1").first(); u1.email = "dir@x.com"
+        u2 = db.query(app_db.Usuario).filter_by(login="cons_l1").first(); u2.email = "cons@x.com"
+        db.flush()
+        conv = mod_chat.criar_grupo(db, seed["loja1_id"], u1.id, "G ofic", [u2.id]); db.flush()
+        mod_chat.adicionar_externo(db, conv, "Arq", email="arq@x.com", meio="email"); db.flush()
+        msg = mod_chat.enviar_mensagem(db, conv, u1.id, "comunicado oficial"); db.flush()
+        r = mod_chat.oficializar_por_email(db, conv, msg, autor_nome="Diretor"); db.commit()
+        assert r == {"total": 3, "enviados": 0, "pendentes": 3}   # 2 internos + 1 externo, sem SMTP
+        envs = db.query(EnvioExterno).filter_by(mensagem_id=msg.id, meio="email").all()
+        assert len(envs) == 3 and all(e.status == "pendente_config" for e in envs)
+    finally:
+        db.close()
+
+
+def test_endpoint_oficializar_email(http_client_factory, app_db, seed):
+    db = app_db.get_session()
+    try:
+        db.query(app_db.Usuario).filter_by(login="dir_l1").first().email = "dir@x.com"
+        db.query(app_db.Usuario).filter_by(login="cons_l1").first().email = "cons@x.com"
+        db.commit()
+    finally:
+        db.close()
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    cid = c.post("/api/comunicacao/conversas", {"tipo": "grupo", "titulo": "G3", "participante_ids": [alvo]})[1]["conversa"]["id"]
+    st, b = c.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "oficial", "oficializar_email": True})
+    assert st == 201 and b["email"] == {"total": 2, "enviados": 0, "pendentes": 2}
+
+
 def test_endpoint_individual_externo_vira_grupo(http_client_factory, app_db, seed):
     """Individual só com contato externo → cria conversa (grupo) com o criador + o externo."""
     c = _login(http_client_factory, "dir_l1")

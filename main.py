@@ -5380,6 +5380,9 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                resumo_email = None
+                if dd.get("oficializar_email"):
+                    resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 db.commit()
                 try:
                     import mod_chat_externo as _mce
@@ -5388,7 +5391,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     db.rollback()   # ponte WhatsApp best-effort — nunca quebra a mensagem
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
-                self.send_json({"ok": True,
+                self.send_json({"ok": True, "email": resumo_email,
                                 "mensagem": mod_chat.serializar_mensagem(msg, autor_nome=nome)},
                                code=201)
             finally:
@@ -5471,13 +5474,16 @@ class Handler(BaseHTTPRequestHandler):
                     # A restrição por Função do painel NÃO se aplica aqui de propósito:
                     # transferir ENTRE faixas é a razão de existir da transferência.
                     etapa_alvo.responsavel_funcionario_id = transferido.id
+                resumo_email = None
+                if dd.get("oficializar_email"):
+                    resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 try:
                     import mod_chat_externo as _mce
                     _mce.espelhar_para_externos(db, conv, msg, autor_nome=usuario.get("nome"))
                 except Exception:
                     pass   # best-effort: espelho externo nunca quebra a mensagem interna
                 db.commit()
-                self.send_json({"ok": True,
+                self.send_json({"ok": True, "email": resumo_email,
                                 "mensagem": mod_chat.serializar_mensagem(
                                     msg, usuario.get("nome"),
                                     transferido.nome if transferido else None,

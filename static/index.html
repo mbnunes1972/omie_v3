@@ -12788,7 +12788,7 @@ function aplicarBloqueioNegociacao(travar) {
     // Painéis de COMUNICAÇÃO ficam aninhados no #page-02 mas NÃO são controles de negociação:
     // travá-los deixava o chat/grupo de acompanhamento com o textarea readonly (não dava pra
     // digitar mensagem) em projeto assinado. A comunicação vale em qualquer status do contrato.
-    if (el.closest('#modal-conversa-proj') || el.closest('#modal-contatos-conf')) return;
+    if (el.closest('#modal-contatos-conf')) return;   // #modal-conversa-proj foi aposentado (unificação)
     if (travar) {
       if (el.tagName === 'SELECT') el.disabled = true;
       else el.readOnly = true;

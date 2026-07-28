@@ -180,6 +180,20 @@ def test_endpoint_oficializar_email(http_client_factory, app_db, seed):
     assert st == 201 and b["email"] == {"total": 2, "enviados": 0, "pendentes": 2}
 
 
+def test_destinatario_deve_ser_participante(http_client_factory, app_db, seed):
+    """Achado da Vera 🟠: destinatário dirigido só vale se for PARTICIPANTE; id de outra loja/não-membro
+    é ignorado (vira 'todos'), não vaza '→ para <nome>'."""
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    outro = _uid(app_db, "dir_l2")   # usuário de OUTRA loja, não participante
+    cid = c.post("/api/comunicacao/conversas", {"tipo": "grupo", "titulo": "G val", "participante_ids": [alvo]})[1]["conversa"]["id"]
+    c.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "x", "destinatario_usuario_id": outro})
+    c.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "y", "destinatario_usuario_id": alvo})
+    msgs = {m["corpo"]: m for m in c.get("/api/comunicacao/conversas/%d/mensagens" % cid)[1]["mensagens"]}
+    assert msgs["x"]["destinatario_usuario_id"] is None and msgs["x"]["destinatario_nome"] == ""  # não-membro ignorado
+    assert msgs["y"]["destinatario_usuario_id"] == alvo                                            # membro aceito
+
+
 def test_endpoint_individual_externo_vira_grupo(http_client_factory, app_db, seed):
     """Individual só com contato externo → cria conversa (grupo) com o criador + o externo."""
     c = _login(http_client_factory, "dir_l1")

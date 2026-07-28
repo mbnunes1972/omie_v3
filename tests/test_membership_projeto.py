@@ -155,6 +155,28 @@ def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 
 
+def test_conversa_projeto_respeita_escopo_projetista(http_client_factory, app_db, seed):
+    """Achado da Vera 🔴: os endpoints da conversa do projeto aplicam o escopo por projetista
+    (Consultor só vê os que criou), não só a loja — leitura E escrita barram fora do escopo (404).
+    Usa projeto PRÓPRIO (não muta o Proj_L1 compartilhado do seed)."""
+    db = app_db.get_session()
+    try:
+        u = app_db.Usuario(nome="Consultor B", login="cons_l1_b", nivel="operador",
+                           loja_id=seed["loja1_id"], ativo=1)
+        u.set_senha("senha123"); db.add(u)
+        dono = db.query(app_db.Usuario).filter_by(login="cons_l1").first().id
+        db.add(app_db.Projeto(nome_safe="Proj_Esc", loja_id=seed["loja1_id"],
+                              status="fechado", criado_por_id=dono))
+        db.commit()
+    finally:
+        db.close()
+    intruso = http_client_factory(); intruso.login("cons_l1_b", "senha123")
+    assert intruso.get("/api/projetos/Proj_Esc/conversa")[0] == 404          # não lê a conversa
+    assert intruso.post("/api/projetos/Proj_Esc/conversa/mensagens", {"corpo": "intruso"})[0] == 404
+    dono_c = http_client_factory(); dono_c.login("cons_l1", "senha123")      # o criador acessa
+    assert dono_c.get("/api/projetos/Proj_Esc/conversa")[0] == 200
+
+
 def test_assunto_projeto_abre_conversa_do_projeto(http_client_factory, seed):
     c = _login(http_client_factory, "dir_l1")
     st, b = c.post("/api/comunicacao/conversas",

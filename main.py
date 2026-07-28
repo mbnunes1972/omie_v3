@@ -2685,7 +2685,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403)
                         return
-                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                    if _projeto_visivel_da_loja(db, nome_safe, loja_id, usuario) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
                         return
                     import mod_chat, mod_equipe
@@ -4939,7 +4939,7 @@ class Handler(BaseHTTPRequestHandler):
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
                     self.send_json({"ok": False, "erro": _err}, code=403); return
-                if _projeto_da_loja(db, nome, loja_id) is None:
+                if _projeto_visivel_da_loja(db, nome, loja_id, usuario) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 import mod_chat, mod_chat_externo as _ext
                 dd = json.loads(body or b'{}')
@@ -5008,7 +5008,7 @@ class Handler(BaseHTTPRequestHandler):
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
                     self.send_json({"ok": False, "erro": _err}, code=403); return
-                if _projeto_da_loja(db, nome, loja_id) is None:
+                if _projeto_visivel_da_loja(db, nome, loja_id, usuario) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 import mod_chat
                 from database import ConversaMensagem as _CM, Conversa as _CV
@@ -5411,7 +5411,7 @@ class Handler(BaseHTTPRequestHandler):
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
                     self.send_json({"ok": False, "erro": _err}, code=403); return
-                if _projeto_da_loja(db, nome, loja_id) is None:
+                if _projeto_visivel_da_loja(db, nome, loja_id, usuario) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 import mod_chat
                 dd = json.loads(body or b'{}')
@@ -12214,6 +12214,16 @@ def _projeto_da_loja(db, nome_safe, loja_id):
     Ponto de escopo das entidades 'por projeto' (pool/medição/ciclo/contrato).
     Delega em _obj_da_loja para manter uma única fonte da regra de escopo."""
     return _obj_da_loja(db, Projeto, nome_safe, loja_id)
+
+
+def _projeto_visivel_da_loja(db, nome_safe, loja_id, usuario):
+    """Como `_projeto_da_loja`, MAS também aplica o escopo por projetista (Consultor só vê os que
+    criou; gerência/atribuído/demais conforme `_projeto_visivel_ao_ator`). Devolve o meta ou None.
+    Usado nos endpoints da CONVERSA do projeto (achado da Vera 2026-07-28): loja sozinha não basta."""
+    meta = _projeto_da_loja(db, nome_safe, loja_id)
+    if meta is None or not _projeto_visivel_ao_ator(meta, usuario, db):
+        return None
+    return meta
 
 
 # ── Mapa de Atribuições (Regras_Funcoes_Perfis_Atribuicoes §4/§5) — helpers de I/O; a REGRA pura

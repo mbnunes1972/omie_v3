@@ -152,6 +152,16 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
     else:
         if transferido_para_funcionario_id or etapa_codigo or documento_ref_id or bloqueador:
             raise ValueError("Campos de transferência só valem em natureza=transferencia.")
+    # Destinatário dirigido (F2): só vale se for PARTICIPANTE da conversa — senão vira "todos" (None).
+    # (achado da Vera: sem isso, um id de outra loja/não-membro vazaria como "→ para <nome>").
+    _dest = None
+    if destinatario_usuario_id:
+        try:
+            _d = int(destinatario_usuario_id)
+        except (TypeError, ValueError):
+            _d = None
+        if _d and eh_participante(db, conversa.id, _d):
+            _dest = _d
     m = ConversaMensagem(conversa_id=conversa.id, autor_usuario_id=autor_usuario_id,
                          corpo=corpo, canal=canal, natureza=natureza,
                          etapa_codigo=etapa_codigo,
@@ -159,8 +169,7 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                          documento_ref_id=documento_ref_id,
                          bloqueador=1 if bloqueador else 0,
                          canal_segmento=canal_segmento,
-                         destinatario_usuario_id=(int(destinatario_usuario_id)
-                                                  if destinatario_usuario_id else None))
+                         destinatario_usuario_id=_dest)
     db.add(m)
     db.flush()
     return m

@@ -776,14 +776,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <i class="ti ti-paperclip"></i><span id="cc-anexo-nome"></span>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ccRemoverAnexo()">×</button>
           </div>
-          <div id="cc-compositor" style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
+          <div id="cc-compositor" style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
             <input type="file" id="cc-file" style="display:none" onchange="ccArquivoSelecionado(this)">
-            <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('cc-file').click()"><i class="ti ti-paperclip"></i></button>
-            <select id="cc-dest" title="Destinatário da mensagem" style="display:none;max-width:150px;padding:7px 8px;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text)"></select>
-            <textarea id="cc-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia)"
-                      style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
+            <textarea id="cc-texto" rows="3" placeholder="Escreva uma mensagem…  (Enter envia · Shift+Enter quebra linha)"
+                      style="width:100%;box-sizing:border-box;min-height:78px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:.9rem;line-height:1.4;font-family:inherit;resize:vertical"
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
-            <button class="btn btn-primary btn-sm" id="cc-enviar-btn" onclick="ccEnviar()">Enviar</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('cc-file').click()"><i class="ti ti-paperclip"></i> Anexar</button>
+              <button class="btn btn-primary btn-sm" id="cc-enviar-btn" style="margin-left:auto" onclick="ccEnviar()"><i class="ti ti-send"></i> Enviar</button>
+            </div>
           </div>
           <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
           <label id="cc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
@@ -11965,18 +11966,30 @@ async function ccCarregarInbox(){
   _ccInbox = d.conversas || [];
   ccAtualizarBadgeTotal(_ccInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
   if(!_ccInbox.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa ainda.</div>'; return; }
+  const _CC_ICON = {publico:'ti-speakerphone', mural:'ti-speakerphone', projeto:'ti-folder',
+                    grupo:'ti-users', direct:'ti-user', forum_loja:'ti-building-store', forum_orizon:'ti-world'};
+  const _CC_TIPO = {publico:'Mural', mural:'Mural', projeto:'Projeto', grupo:'Grupo', direct:'Individual',
+                    forum_loja:'Fórum da loja', forum_orizon:'Fórum Orizon'};
   box.innerHTML = _ccInbox.map((c,i)=>{
-    const icon = c.tipo === 'publico' ? 'ti-speakerphone' : (c.tipo === 'projeto' ? 'ti-folder' : (c.tipo === 'grupo' ? 'ti-users' : 'ti-user'));
+    const icon = _CC_ICON[c.tipo] || 'ti-message';
     const ativo = (c.id === _ccConvAtiva);
-    const seg = (c.assunto && c.assunto.tipo !== 'livre' && c.assunto.label) ? c.assunto.label : '';
     const nl = c.nao_lidas || 0;
-    const badge = nl > 0 ? '<span style="float:right;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center">'+(nl>99?'99+':nl)+'</span>' : '';
-    return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px;'
+    // título limpo (sem o emoji, que já vira ícone) e sem duplicar o assunto
+    const titulo = (_ccTituloComAssunto(c) || 'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '');
+    // subtítulo = TIPO (+ assunto custom, se houver)
+    const segCustom = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? (' · ' + c.assunto.label) : '';
+    const sub = (_CC_TIPO[c.tipo] || 'Conversa') + segCustom;
+    const badge = nl > 0 ? '<span style="background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center">'+(nl>99?'99+':nl)+'</span>' : '';
+    return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px 9px;border-radius:8px;cursor:pointer;margin-bottom:3px;border:1px solid '+(ativo?'var(--border)':'transparent')+';'
       + (ativo ? 'background:var(--surface-2)' : '') + '"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\''+(ativo?'var(--surface-2)':'')+'\'">'
-      + '<div style="font-weight:'+(nl>0?'800':'700')+';font-size:13px">'+badge+'<i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')
-      + (seg ? ' <span style="font-weight:400;color:var(--accent);font-size:11px">· '+esc(seg)+'</span>' : '') + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
+      + '<div style="display:flex;align-items:center;gap:7px">'
+      +   '<i class="ti '+icon+'" style="color:var(--accent);font-size:15px;flex:none"></i>'
+      +   '<span style="font-weight:'+(nl>0?'800':'700')+';font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(titulo)+'</span>'
+      +   badge
+      + '</div>'
+      + '<div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin:2px 0 0 22px">'+esc(sub)+'</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-left:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
       + '</div>';
   }).join('');
 }
@@ -12021,24 +12034,14 @@ async function ccAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   ccCarregarDestinatarios();
   await ccCarregarMsgs();
 }
-async function ccCarregarDestinatarios(){
-  // Seletor "Para" (F2) + caixa "E-mail (oficializar)" (F3): só em grupo/projeto.
+function ccCarregarDestinatarios(){
+  // Caixa "E-mail (oficializar)" (F3): só gerência, em grupo/projeto. (O seletor "Para" por mensagem
+  // foi REMOVIDO — em grupo todos veem; para privacidade, use a conversa Individual.)
   const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
   const ofic = document.getElementById('cc-oficializar-wrap');
   if(ofic) ofic.style.display = (grupoOuProj && _podeAutorizarFront()) ? '' : 'none';   // só gerência
   const ofc = document.getElementById('cc-oficializar'); if(ofc) ofc.checked = false;
-  const sel = document.getElementById('cc-dest');
-  if(!sel) return;
-  sel.style.display = grupoOuProj ? '' : 'none';
-  if(!grupoOuProj){ sel.innerHTML=''; return; }
-  sel.innerHTML = '<option value="">Para: todos</option>';
-  try{
-    const d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/participantes',{credentials:'same-origin'}).then(r=>r.json());
-    const membros = (d.ok ? (d.participantes||[]) : []).filter(p=>!p.externo && p.usuario_id);
-    sel.innerHTML += membros.map(p=>'<option value="'+p.usuario_id+'">Para: '+esc(p.nome)+'</option>').join('');
-  }catch(e){}
 }
-function _ccDestSel(){ const s=document.getElementById('cc-dest'); const v=s&&s.value; return v?parseInt(v,10):null; }
 function _ccOficializar(){ const c=document.getElementById('cc-oficializar'); return !!(c&&c.checked); }
 function _ccToastEmail(e){
   if(!e) return;
@@ -12139,7 +12142,9 @@ function ccMembroAdd(){
 
 function _ccTituloComAssunto(c){
   const t = c.titulo || 'Conversa';
-  const a = c.assunto && c.assunto.label ? c.assunto.label : null;
+  // Projeto: o título já é "📁 <projeto>"; NÃO repetir o assunto (era a duplicação "Norberto · Norberto").
+  if(c.tipo === 'projeto') return t;
+  const a = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? c.assunto.label : null;
   return a ? (t + '  ·  ' + a) : t;
 }
 
@@ -12167,8 +12172,7 @@ function _ccAnexosHtml(m){
 }
 function _ccMsgCabecalho(m){
   const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
-  const para = m.destinatario_nome ? ' <span style="color:var(--accent)">→ para '+esc(m.destinatario_nome)+'</span>' : '';
-  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+para+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
+  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
 }
 function _ccRenderMsg(m){
   return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
@@ -12230,7 +12234,7 @@ async function ccEnviar(){
         {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
     } else if(_ccConvProjeto){
       // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
-      const payload = {corpo, destinatario_usuario_id: _ccDestSel(), oficializar_email: _ccOficializar()};
+      const payload = {corpo, oficializar_email: _ccOficializar()};
       const tchk = document.getElementById('conv-transf-chk');
       const ehTransf = tchk && tchk.checked;
       if(ehTransf){
@@ -12252,12 +12256,11 @@ async function ccEnviar(){
     } else {
       d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({corpo, destinatario_usuario_id: _ccDestSel(), oficializar_email: _ccOficializar()})}).then(r=>r.json());
+         body: JSON.stringify({corpo, oficializar_email: _ccOficializar()})}).then(r=>r.json());
     }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
     _ccToastEmail(d.email);
     ta.value = ''; ccRemoverAnexo();
-    const _cd = document.getElementById('cc-dest'); if(_cd) _cd.value = '';   // volta a "Para: todos"
     const _of = document.getElementById('cc-oficializar'); if(_of) _of.checked = false;
     await ccCarregarMsgs();
     ccCarregarInbox();

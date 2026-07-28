@@ -687,29 +687,41 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div id="cc-nova" style="display:none;border:1px solid var(--border);border-radius:10px;padding:14px">
           <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
           <div id="cc-tipo-wrap" style="display:flex;gap:16px;margin-bottom:10px">
-            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Individual (1:1)</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Individual</label>
             <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="grupo" onchange="ccTipoToggle()"> Grupo</label>
           </div>
-          <div id="cc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
-            <label class="field-label">Nome do grupo</label>
-            <input id="cc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
+          <!-- GRUPO: navega os grupos/projetos existentes (filtro por nome); "Novo Grupo" cria -->
+          <div id="cc-grupos-bloco" style="display:none">
+            <input id="cc-grupos-busca" type="search" placeholder="buscar grupo por nome…" oninput="ccGruposRender()" style="width:100%;margin-bottom:6px">
+            <div id="cc-grupos-lista" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn-primary btn-sm" onclick="ccNovoGrupoAbrir()"><i class="ti ti-plus"></i> Novo Grupo</button>
+              <button class="btn btn-ghost btn-sm" onclick="ccNovaFechar()">Cancelar</button>
+            </div>
           </div>
-          <label class="field-label">Assunto</label>
-          <div style="display:flex;gap:8px;margin-bottom:10px">
-            <select id="cc-assunto" onchange="ccAssuntoChange()" style="flex:1;padding:6px 8px"></select>
-            <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto()" title="Criar novo assunto"><i class="ti ti-plus"></i> Criar assunto</button>
-          </div>
-          <div id="cc-projeto-nota" style="display:none;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px">
-            <i class="ti ti-folder"></i> A conversa do projeto já inclui automaticamente a equipe. Clique em <b>Abrir conversa do projeto</b>.
-          </div>
-          <div id="cc-para-bloco">
-          <label class="field-label">Para <span id="cc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
-          <input id="cc-busca-user" type="search" placeholder="buscar por nome…" oninput="ccFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
-          <div id="cc-users" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary btn-sm" id="cc-iniciar-btn" onclick="ccCriar()">Iniciar conversa</button>
-            <button class="btn btn-ghost btn-sm" onclick="ccNovaFechar()">Cancelar</button>
+          <!-- INDIVIDUAL / CRIAR GRUPO: assunto + (nome do grupo) + seletor de usuários -->
+          <div id="cc-form-bloco">
+            <div id="cc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
+              <label class="field-label">Nome do grupo</label>
+              <input id="cc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
+            </div>
+            <label class="field-label">Assunto</label>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <select id="cc-assunto" onchange="ccAssuntoChange()" style="flex:1;padding:6px 8px"></select>
+              <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto()" title="Criar novo assunto"><i class="ti ti-plus"></i> Criar assunto</button>
+            </div>
+            <div id="cc-projeto-nota" style="display:none;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+              <i class="ti ti-folder"></i> A conversa do projeto já inclui automaticamente a equipe. Clique em <b>Abrir conversa do projeto</b>.
+            </div>
+            <div id="cc-para-bloco">
+            <label class="field-label">Para <span id="cc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
+            <input id="cc-busca-user" type="search" placeholder="buscar por nome…" oninput="ccFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
+            <div id="cc-users" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn-primary btn-sm" id="cc-iniciar-btn" onclick="ccCriar()">Iniciar conversa</button>
+              <button class="btn btn-ghost btn-sm" onclick="ccFormVoltar()">Cancelar</button>
+            </div>
           </div>
           <div id="cc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
         </div>
@@ -12190,11 +12202,11 @@ function ccNovaAbrir(){
   document.getElementById('cc-grupo-nome').value = '';
   document.getElementById('cc-busca-user').value = '';
   _ccSel = new Set();
-  // reset do "modo projeto" (a "Nova mensagem" abre sempre em direct/grupo)
+  // começa em Individual (a "Nova mensagem" abre sempre em direct/grupo, nunca projeto)
+  const rDirect = document.querySelector('input[name=cc-tipo][value=direct]'); if(rDirect) rDirect.checked = true;
   document.getElementById('cc-projeto-nota').style.display = 'none';
   document.getElementById('cc-para-bloco').style.display = 'block';
   document.getElementById('cc-tipo-wrap').style.display = 'flex';
-  document.getElementById('cc-iniciar-btn').textContent = 'Iniciar conversa';
   ccTipoToggle();
   ccCarregarUsuarios();
   ccCarregarAssuntos();
@@ -12251,10 +12263,48 @@ function ccNovaFechar(){
 function _ccTipo(){ return document.querySelector('input[name=cc-tipo]:checked').value; }
 function ccTipoToggle(){
   const grupo = (_ccTipo() === 'grupo');
-  document.getElementById('cc-grupo-nome-wrap').style.display = grupo ? 'block' : 'none';
-  document.getElementById('cc-para-hint').textContent = grupo ? '(selecione um ou mais)' : '(selecione um)';
+  // Grupo → navega grupos/projetos existentes (Novo Grupo cria). Individual → form direto de usuário.
+  document.getElementById('cc-grupos-bloco').style.display = grupo ? 'block' : 'none';
+  document.getElementById('cc-form-bloco').style.display   = grupo ? 'none' : 'block';
+  document.getElementById('cc-grupo-nome-wrap').style.display = 'none';
+  document.getElementById('cc-para-hint').textContent = '(selecione um)';
+  document.getElementById('cc-iniciar-btn').textContent = 'Iniciar conversa';
+  _ccSel = new Set();
+  if(grupo){ const b=document.getElementById('cc-grupos-busca'); if(b) b.value=''; ccGruposRender(); }
+  else ccRenderUsuarios();
+}
+function ccGruposRender(){
+  const box = document.getElementById('cc-grupos-lista');
+  const q = (document.getElementById('cc-grupos-busca').value||'').trim().toLowerCase();
+  const grupos = (_ccInbox||[]).filter(c => (c.tipo==='grupo'||c.tipo==='projeto')
+                                            && (!q || (c.titulo||'').toLowerCase().includes(q)));
+  if(!grupos.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum grupo'
+    + (q?' com esse nome':'') + '. Crie um em <b>Novo Grupo</b>.</div>'; return; }
+  box.innerHTML = grupos.map(c=>{
+    const idx = _ccInbox.indexOf(c);
+    const icon = c.tipo==='projeto' ? 'ti-folder' : 'ti-users';
+    return '<div onclick="ccAbrirConversa('+idx+')" style="padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px"'
+      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
+      + '<i class="ti '+icon+'" style="color:var(--muted)"></i><span style="font-size:13px">'+esc(c.titulo||'Grupo')+'</span></div>';
+  }).join('');
+}
+function ccNovoGrupoAbrir(){
+  // Form de CRIAÇÃO de grupo (nome + seletor de usuários). O radio segue em 'grupo' (multi-seleção).
+  document.getElementById('cc-grupos-bloco').style.display = 'none';
+  document.getElementById('cc-form-bloco').style.display   = 'block';
+  document.getElementById('cc-grupo-nome-wrap').style.display = 'block';
+  document.getElementById('cc-grupo-nome').value = '';
+  document.getElementById('cc-busca-user').value = '';
+  document.getElementById('cc-para-hint').textContent = '(selecione um ou mais)';
+  document.getElementById('cc-iniciar-btn').textContent = 'Criar grupo';
+  document.getElementById('cc-assunto').value = 'livre'; ccAssuntoChange();
   _ccSel = new Set();
   ccRenderUsuarios();
+}
+function ccFormVoltar(){
+  // Cancelar no form: criando grupo → volta ao browse; individual → fecha a nova conversa.
+  if(_ccTipo() === 'grupo') ccTipoToggle();
+  else ccNovaFechar();
 }
 async function ccCarregarUsuarios(){
   const box = document.getElementById('cc-users');
@@ -12317,13 +12367,17 @@ async function ccCriar(){
   const tipo = _ccTipo();
   const ids = [..._ccSel];
   if(!ids.length){ aviso.textContent = 'Selecione ao menos um usuário.'; return; }
-  const payload = {tipo, participante_ids: ids};
-  Object.assign(payload, _ccParseAssunto(document.getElementById('cc-assunto').value));
-  if(tipo === 'grupo'){
-    const nome = document.getElementById('cc-grupo-nome').value.trim();
-    if(!nome){ aviso.textContent = 'Dê um nome ao grupo.'; return; }
-    payload.titulo = nome;
+  if(tipo === 'grupo' && !document.getElementById('cc-grupo-nome').value.trim()){
+    aviso.textContent = 'Dê um nome ao grupo.'; return;
   }
+  // Lembrete de assunto: conversa sem assunto (Conversa Livre) pede confirmação.
+  if((assVal || 'livre') === 'livre'){
+    if(!(await confirmarPopup('Conversas sem assunto. Deseja continuar?',
+        {titulo:'Nova conversa', okLabel:'Continuar', cancelLabel:'Voltar'}))) return;
+  }
+  const payload = {tipo, participante_ids: ids};
+  Object.assign(payload, _ccParseAssunto(assVal));
+  if(tipo === 'grupo') payload.titulo = document.getElementById('cc-grupo-nome').value.trim();
   try{
     const d = await fetch('/api/comunicacao/conversas',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},

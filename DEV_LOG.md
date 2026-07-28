@@ -1355,6 +1355,21 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > **Frente CHAT → Central de Comunicação / "Orizon Chat" (omnichannel).** Código na `main` e na VPS A
 > (deploy acima); VPS B/produção pendentes.
 >
+> **🔧 Refino do Orizon Chat no PROJETO (2026-07-27, commit `579f2c1`, LOCAL — ainda não na VPS A):**
+> reporte do lojista no Projeto Norberto (logado como Diretor). (a) Renomeado **"Mensageria" →
+> "Orizon Chat"** no ambiente do projeto (`modal-conversa-proj`: botão + título + msg de erro).
+> (b) **Diretor/Gerente participam por PADRÃO de toda conversa de projeto** —
+> `mod_chat.sincronizar_participantes_projeto` passou a unir a **gerência da loja** (capacidade
+> `autorizar`/`aprovar_financeiro`) ao conjunto derivado da equipe; a auto-exclusão manual
+> (`removido=1`) é respeitada (não readiciona). (c) **Modal de membros virou TABELA** (Membro |
+> Função | Origem equipe/gerência/manual + ação): `mod_chat.listar_participantes` agora traz
+> `funcao_nome` (Funcionario→Funcao) e a flag `gerencia`; `ccMembrosAbrir(convId)` renderiza a tabela
+> e é reusado pela conversa do projeto (novo botão **"Membros"** no modal, via `_convProjId`) além do
+> inbox. Testes `test_membership_projeto.py` (+3). Suíte **1584** verde. **Pendência:** o "Diretor não
+> conseguiu enviar" NÃO tem trava de participante no backend do texto (`/conversa/mensagens` não
+> checa) — causa provável = página em cache (a correção do compositor readonly foi recém-publicada na
+> A); **hard-refresh (Ctrl+Shift+R)** deve resolver; investigar com o erro exato se persistir.
+>
 > **1) Correções de contexto de loja (commits `d08e6c1`, `abf38f0`, `8771877`).** O painel de
 > conversa recusava mensagens por **contexto de loja partido**: o interceptor de `fetch` só
 > anexava `X-Loja-Ativa` às rotas `/api/`, então `/projetos/<nome>` e `/orcamentos/...` abriam no

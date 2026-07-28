@@ -1341,14 +1341,16 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 
 ## ⏸️ ESTADO ATUAL (2026-07-27) — retomar aqui
 
-> **🚀 DEPLOY VPS A (2026-07-27):** `main` promovida à **VPS A** (`167.88.33.121`, `orizon-a` :8765)
-> no commit **`6e0a08e`** — inclui as DUAS frentes fechadas hoje (Desmembramento Operacional 1–5 +
-> gate de PE/montagem do Orizon Chat). A-only (stop/`git reset --hard origin/main`/restart `orizon-a`,
-> **sem `deploy_ab.sh`**). App responde 302; **migração verificada direto no Postgres do A** (`orizon`):
-> tabela `sinal_retido` ✓, colunas `parcela_ambiente.valor_ambiente` ✓ e `ciclo_etapas.responsavel_terceiro_id`
-> ✓. **VPS B intocada** na `Pre_Teste` (`9e13753`, `/root/orizon-homolog` :8766, 302). **Grafo MCP
-> reingerido** (fonte `all`: código 3148 nodes/2860 edges, banco 192/128, requisitos 31, domínio 19,
-> decisões 17). **VPS B → produção seguem pendentes de OK do usuário** (disciplina de versionamento).
+> **🚀 DEPLOY VPS A (2026-07-27, atualizado p/ `734ec69`):** `main` promovida à **VPS A**
+> (`167.88.33.121`, `orizon-a` :8765) no commit **`734ec69`** — as DUAS frentes fechadas hoje
+> (Desmembramento Operacional 1–5 + gate de PE/montagem do Orizon Chat) **+ a correção da auditoria da
+> Vera** (gate de montagem/assistência barra ambiente retido). A-only (stop/`git reset --hard
+> origin/main`/restart `orizon-a`, **sem `deploy_ab.sh`**). App responde 302; migração verificada no
+> Postgres do A (`sinal_retido` ✓, `parcela_ambiente.valor_ambiente` ✓, `ciclo_etapas.responsavel_terceiro_id`
+> ✓). **localhost** reiniciado na mesma versão (302, boot limpo). **VPS B intocada** na `Pre_Teste`
+> (`9e13753`, `/root/orizon-homolog` :8766, 302). **Grafo MCP reingerido** (fonte `all`: código 3152
+> nodes/2864 edges, banco 192/128, requisitos 31, domínio 19, decisões 17). **VPS B → produção seguem
+> pendentes de OK do usuário** (disciplina de versionamento).
 >
 > **Frente CHAT → Central de Comunicação / "Orizon Chat" (omnichannel).** Código na `main` e na VPS A
 > (deploy acima); VPS B/produção pendentes.
@@ -1477,8 +1479,9 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > Conciliação Final; NÃO era risco de razão — a 21 já protegia o contábil). +teste da montagem barrada
 > por retido; +teste de isolamento por loja (404 cross-loja em `/parcelas` e `/retido/*`). Achados 🟡
 > restantes (labels `em_aprovacao`/`liquidada` no front sem wiring ainda; restart local aplica
-> migração) = informativos, não bloqueiam. **Deploy:** VPS A em `6e0a08e` (a correção é POSTERIOR —
-> repromover A antes de liberar B); **VPS B intocada** na `Pre_Teste`; produção pendente.
+> migração) = informativos, não bloqueiam. **Deploy:** ✅ VPS A em `734ec69` (repromovida com a
+> correção; ver nota de deploy no topo) + localhost + MCP reingerido; **VPS B intocada** na
+> `Pre_Teste`; produção pendente.
 >
 > **11) Frente "Desmembramento OPERACIONAL por ambiente desde a medição" (spec
 > `2026-07-27-desmembramento-operacional-desde-medicao-design.md`).** Dor: a obra do cliente segura

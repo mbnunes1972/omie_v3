@@ -88,6 +88,54 @@ def test_adicao_manual_fica(app_db, seed):
     assert _parts(app_db, cid) == {(a, "auto", 0), (b, "manual", 0)}
 
 
+def test_gerencia_participa_por_padrao(app_db, seed):
+    """Diretor/Gerente participam de TODA conversa de projeto por padrão, mesmo fora da equipe
+    derivada (decisão do lojista 2026-07-27)."""
+    (ger,) = _users(app_db, "dir_l1")                  # master = gerência
+    (op,) = _users(app_db, "cons_l1")                  # operador (não gerência)
+    cid = _conv_proj(app_db, seed, "MP_ger")
+    res = _sync(app_db, cid, [op])                     # sincroniza só com o operador
+    assert ger in res and op in res                    # gerência entra sozinha
+    db = app_db.get_session()
+    try:
+        assert mod_chat.eh_participante(db, cid, ger) is True
+    finally:
+        db.close()
+
+
+def test_gerencia_pode_se_autoexcluir(app_db, seed):
+    """A gerência é auto, mas a remoção manual (tombstone) prevalece — o sync não readiciona."""
+    (ger,) = _users(app_db, "dir_l1")
+    cid = _conv_proj(app_db, seed, "MP_gerrem")
+    _sync(app_db, cid, [])                             # gerência entra
+    db = app_db.get_session()
+    try:
+        p = db.query(ConversaParticipante).filter_by(conversa_id=cid, usuario_id=ger).first()
+        p.removido = 1; db.commit()
+    finally:
+        db.close()
+    _sync(app_db, cid, [])                             # não readiciona
+    db = app_db.get_session()
+    try:
+        assert mod_chat.eh_participante(db, cid, ger) is False
+    finally:
+        db.close()
+
+
+def test_listar_participantes_traz_funcao_e_gerencia(app_db, seed):
+    """A lista de membros identifica a FUNÇÃO (cargo) e sinaliza a gerência (p/ a tabela do modal)."""
+    (ger,) = _users(app_db, "dir_l1")
+    cid = _conv_proj(app_db, seed, "MP_lp")
+    _sync(app_db, cid, [])
+    db = app_db.get_session()
+    try:
+        parts = mod_chat.listar_participantes(db, db.get(Conversa, cid))
+    finally:
+        db.close()
+    row = [p for p in parts if p["usuario_id"] == ger][0]
+    assert row["gerencia"] is True and "funcao_nome" in row
+
+
 def test_inbox_inclui_conversa_projeto(app_db, seed):
     (a,) = _users(app_db, "dir_l1")
     cid = _conv_proj(app_db, seed, "MP_inbox")

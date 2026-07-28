@@ -1037,7 +1037,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         </div>
         <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
         <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
-        <button id="btn-conversa-proj" class="btn btn-ghost btn-sm" onclick="abrirConversaProjeto()" title="Mensageria do projeto (chat interno)"><i class="ti ti-messages"></i> Mensageria</button>
+        <button id="btn-conversa-proj" class="btn btn-ghost btn-sm" onclick="abrirConversaProjeto()" title="Orizon Chat do projeto (chat interno)"><i class="ti ti-messages"></i> Orizon Chat</button>
         <button id="btn-recon-proj" class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Reconciliação de provisões deste projeto">Reconciliação</button>
       </div>
     </div>
@@ -1046,8 +1046,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="modal-conversa-proj" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
       <div class="modal-box" style="max-width:640px;width:94%;max-height:88vh;display:flex;flex-direction:column">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Mensageria — <span id="conv-proj-nome"></span></div>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-conversa-proj').style.display='none'">Fechar</button>
+          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Orizon Chat — <span id="conv-proj-nome"></span></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="conv-membros-btn" onclick="if(_convProjId)ccMembrosAbrir(_convProjId)" title="Membros da conversa do projeto"><i class="ti ti-users"></i> Membros</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-conversa-proj').style.display='none'">Fechar</button>
+          </div>
         </div>
         <div id="conv-msgs" style="flex:1;overflow-y:auto;min-height:200px;max-height:52vh;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
@@ -11905,7 +11908,8 @@ async function convCarregar(){
     d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa`,
                     {credentials:'same-origin'}).then(r=>r.json());
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
-  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar a mensageria.')+'</em>'; return; }
+  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar a conversa.')+'</em>'; return; }
+  _convProjId = d.conversa && d.conversa.id;
   if(!(d.mensagens||[]).length){
     box.innerHTML='<em style="color:var(--muted);font-size:12px">Nenhuma mensagem ainda — comece a conversa.</em>';
     return;
@@ -12183,25 +12187,42 @@ async function ccAbrirConversa(idx){
 }
 
 // ── membros da conversa do projeto (override manual do gerente) ────────────────
-async function ccMembrosAbrir(){
-  if(!_ccConvAtiva) return;
+let _ccMembrosOv = null, _convProjId = null, _membrosConvId = null;
+// convId opcional: do inbox do Orizon Chat (_ccConvAtiva) OU da conversa do projeto (_convProjId).
+async function ccMembrosAbrir(convId){
+  _membrosConvId = convId || _ccConvAtiva;
+  if(!_membrosConvId) return;
   let d;
-  try{ d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/participantes',{credentials:'same-origin'}).then(r=>r.json()); }
+  try{ d = await fetch('/api/comunicacao/conversas/'+_membrosConvId+'/participantes',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ showToast('Erro de rede.', true); return; }
   if(!d.ok){ showToast(d.erro||'Falha.', true); return; }
+  const ORIG = (p)=> p.origem==='manual' ? '<span style="color:var(--accent)">manual</span>'
+                   : p.gerencia ? '<span style="color:var(--warn)">gerência</span>'
+                   : '<span style="color:var(--muted)">equipe</span>';
+  const th = 'text-align:left;font-size:11px;color:var(--muted);font-weight:700;padding:4px 6px;border-bottom:1px solid var(--border)';
+  const td = 'font-size:13px;color:var(--text);padding:5px 6px;border-bottom:1px solid var(--border)';
   const linhas = (d.participantes||[]).map(p=>{
-    const badge = p.origem === 'manual' ? '<span style="color:var(--accent);font-size:10px">manual</span>' : '<span style="color:var(--muted);font-size:10px">auto</span>';
-    const rem = d.pode_gerir ? '<button onclick="ccMembroGerir('+p.usuario_id+',\'remove\')" style="margin-left:auto;background:none;border:1px solid var(--err);color:var(--err);border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer">remover</button>' : '';
-    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:13px"><i class="ti ti-user"></i> '+esc(p.nome)+' '+badge+rem+'</div>';
-  }).join('') || '<div style="color:var(--muted);font-size:12px">Sem membros ainda.</div>';
+    const func = p.funcao_nome ? esc(p.funcao_nome) : (p.gerencia ? 'Gerência' : '—');
+    const rem = d.pode_gerir ? '<button onclick="ccMembroGerir('+p.usuario_id+',\'remove\')" style="background:none;border:1px solid var(--err);color:var(--err);border-radius:5px;padding:1px 8px;font-size:11px;cursor:pointer">remover</button>' : '';
+    return '<tr><td style="'+td+'"><i class="ti ti-user"></i> '+esc(p.nome)+'</td>'
+         + '<td style="'+td+'">'+func+'</td>'
+         + '<td style="'+td+'">'+ORIG(p)+'</td>'
+         + (d.pode_gerir ? '<td style="'+td+';text-align:right">'+rem+'</td>' : '')+'</tr>';
+  }).join('');
+  const tabela = (d.participantes||[]).length
+    ? '<table style="width:100%;border-collapse:collapse"><thead><tr>'
+      + '<th style="'+th+'">Membro</th><th style="'+th+'">Função</th><th style="'+th+'">Origem</th>'
+      + (d.pode_gerir ? '<th style="'+th+'"></th>' : '') + '</tr></thead><tbody>'+linhas+'</tbody></table>'
+    : '<div style="color:var(--muted);font-size:12px">Sem membros ainda.</div>';
   const addBloco = d.pode_gerir
     ? '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'
       + '<label class="field-label">Adicionar membro</label>'
       + '<div style="display:flex;gap:8px"><select id="cc-membro-add" style="flex:1;padding:6px 8px"></select>'
       + '<button class="btn btn-primary btn-sm" onclick="ccMembroAdd()">Adicionar</button></div></div>'
     : '';
-  _ccMembrosOv = _popupOverlay('<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Membros do projeto</h4>'
-    + '<div style="max-height:40vh;overflow-y:auto">'+linhas+'</div>'+addBloco
+  _ccMembrosOv = _popupOverlay('<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Membros da conversa</h4>'
+    + '<div style="max-height:44vh;overflow-y:auto">'+tabela+'</div>'+addBloco
+    + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Diretor e Gerentes participam por padrão de toda conversa de projeto; podem incluir ou excluir membros.</div>'
     + '<div style="display:flex;justify-content:flex-end;margin-top:12px"><button data-act="fechar" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Fechar</button></div>');
   _ccMembrosOv.querySelector('[data-act="fechar"]').onclick = ()=>{ _ccMembrosOv.remove(); _ccMembrosOv=null; };
   if(d.pode_gerir){
@@ -12212,15 +12233,15 @@ async function ccMembrosAbrir(){
     }catch(e){}
   }
 }
-let _ccMembrosOv = null;
 async function ccMembroGerir(usuario_id, acao){
   try{
-    const d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/participantes',
+    const d = await fetch('/api/comunicacao/conversas/'+_membrosConvId+'/participantes',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify({usuario_id, acao})}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha.', true); return; }
+    const cid = _membrosConvId;
     if(_ccMembrosOv){ _ccMembrosOv.remove(); _ccMembrosOv=null; }
-    ccMembrosAbrir();   // reabre com a lista atualizada
+    ccMembrosAbrir(cid);   // reabre com a lista atualizada
   }catch(e){ showToast('Erro de rede.', true); }
 }
 function ccMembroAdd(){

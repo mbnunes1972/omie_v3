@@ -252,15 +252,38 @@ def eh_participante(db, conversa_id, usuario_id):
               .first() is not None)
 
 
+def _funcao_nome_do_usuario(db, usuario_id):
+    """Função (cargo) do usuário via Funcionario→Funcao (`Usuario.funcionario_id` ou o vínculo
+    reverso). None se não houver vínculo/função."""
+    u = db.get(Usuario, usuario_id) if usuario_id else None
+    fid = getattr(u, "funcionario_id", None) if u else None
+    func = db.get(Funcionario, fid) if fid else None
+    if func is None and usuario_id:
+        func = db.query(Funcionario).filter_by(usuario_id=usuario_id).first()
+    if func is None or not func.funcao_id:
+        return None
+    fu = db.get(Funcao, func.funcao_id)
+    return fu.nome if fu else None
+
+
 def listar_participantes(db, conversa):
-    """Participantes ATIVOS (não removidos) da conversa, com nome e origem (auto|manual)."""
-    rows = (db.query(ConversaParticipante, Usuario.nome)
+    """Participantes ATIVOS (não removidos), com nome, FUNÇÃO (cargo), origem (auto|manual) e flag
+    `gerencia` (Diretor/Gerente — participa por padrão)."""
+    from auth import perfis
+    rows = (db.query(ConversaParticipante, Usuario)
               .outerjoin(Usuario, ConversaParticipante.usuario_id == Usuario.id)
               .filter(ConversaParticipante.conversa_id == conversa.id,
                       ConversaParticipante.removido == 0)
               .order_by(Usuario.nome.asc()).all())
-    return [{"usuario_id": p.usuario_id, "nome": nome or "—",
-             "origem": p.origem, "papel": p.papel} for p, nome in rows]
+    out = []
+    for p, u in rows:
+        nivel = getattr(u, "nivel", None) if u else None
+        eh_ger = bool(nivel and (perfis.pode(nivel, "autorizar") or perfis.pode(nivel, "aprovar_financeiro")))
+        out.append({"usuario_id": p.usuario_id, "nome": (u.nome if u else "—"),
+                    "origem": p.origem, "papel": p.papel,
+                    "funcao_nome": _funcao_nome_do_usuario(db, p.usuario_id),
+                    "gerencia": eh_ger})
+    return out
 
 
 def gerir_participante(db, conversa, usuario_id, acao):
@@ -286,12 +309,27 @@ def gerir_participante(db, conversa, usuario_id, acao):
     db.flush()
 
 
+def _usuarios_gerencia_loja(db, loja_id):
+    """Usuários ATIVOS da loja cujo perfil é GERÊNCIA (capacidade `autorizar` OU `aprovar_financeiro`
+    = Diretor/Gerentes). Participam POR PADRÃO de toda conversa de projeto (decisão do lojista
+    2026-07-27); podem se auto-excluir via override manual (`removido=1`), respeitado pelo sync."""
+    from auth import perfis
+    out = []
+    for u in db.query(Usuario).filter_by(loja_id=loja_id, ativo=1).all():
+        n = getattr(u, "nivel", None)
+        if n and (perfis.pode(n, "autorizar") or perfis.pode(n, "aprovar_financeiro")):
+            out.append(u.id)
+    return out
+
+
 def sincronizar_participantes_projeto(db, conversa, membros_usuarios):
-    """Sincroniza os participantes de uma CONVERSA DE PROJETO com o conjunto DERIVADO da equipe
-    (membros_usuarios). Regra 'override vence': adição manual (origem='manual') fica; remoção manual
-    de um auto (removido=1) é respeitada (não readiciona); auto que saiu do time é removido. Não
+    """Sincroniza os participantes de uma CONVERSA DE PROJETO com o conjunto DERIVADO = equipe
+    (membros_usuarios) ∪ GERÊNCIA da loja (Diretor/Gerentes, sempre). Regra 'override vence':
+    adição manual (origem='manual') fica; remoção manual de um auto (removido=1) é respeitada (não
+    readiciona — inclusive a auto-exclusão de um gerente); auto que saiu do time é removido. Não
     commita. Retorna a lista atual de usuarios participantes."""
     D = {int(u) for u in (membros_usuarios or []) if u}
+    D |= {int(u) for u in _usuarios_gerencia_loja(db, conversa.loja_id)}   # gerência por padrão
     rows = {p.usuario_id: p for p in db.query(ConversaParticipante)
             .filter_by(conversa_id=conversa.id).all()}
     for uid in D:

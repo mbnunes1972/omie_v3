@@ -14,11 +14,13 @@ import re
 from datetime import datetime, timedelta
 
 from database import (EnvioExterno, Conversa, ConversaMensagem, ConversaParticipante,
-                      ConversaParticipanteExterno, Cliente, Parceiro, Usuario, UsuarioPresenca)
+                      ConversaParticipanteExterno, Cliente, Parceiro, Fornecedor, Usuario,
+                      UsuarioPresenca)
 
 MEIOS = ("email", "whatsapp")
 # Canais externos (segmentos) — 'interno' NÃO é externo.
-CANAIS_EXTERNOS = ("comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
+CANAIS_EXTERNOS = ("comercial", "financeiro", "logistica", "suporte_tecnico", "sac",
+                   "compras", "parceiros")
 
 _ENV_POR_MEIO = {
     "email":    ("ORIZON_SMTP_HOST", "ORIZON_SMTP_PORT", "ORIZON_SMTP_USER",
@@ -60,6 +62,8 @@ def resolver_destino(db, meio, destinatario_tipo, destinatario_id, avulso):
         obj = db.get(Cliente, destinatario_id)
     elif destinatario_tipo == "parceiro":
         obj = db.get(Parceiro, destinatario_id)
+    elif destinatario_tipo == "fornecedor":
+        obj = db.get(Fornecedor, destinatario_id)   # RF-03: Compras fala com Fornecedor
     elif destinatario_tipo == "interno":
         obj = db.get(Usuario, destinatario_id)
     else:
@@ -132,9 +136,26 @@ def _enviar_email(env, corpo):
     return True, msgid, None
 
 
+def _erro_meta(he):
+    """Extrai a mensagem REAL da Meta de um HTTPError (`error.message`/`error.code`) em vez do genérico
+    'HTTP Error 400' — ex.: código 131047 = janela de 24h fechada, exige template (G5/RF-06)."""
+    import json as _json
+    try:
+        d = _json.loads(he.read() or b"{}")
+        err = d.get("error") or {}
+        msg = (err.get("message") or "").strip()
+        if msg:
+            code = err.get("code")
+            return "Meta %s: %s" % (code if code is not None else getattr(he, "code", "?"), msg)
+    except Exception:
+        pass
+    return "Meta HTTP %s" % getattr(he, "code", "?")
+
+
 def _enviar_whatsapp(env, corpo):
     import json as _json
     import urllib.request as _u
+    import urllib.error as _ue
     token = (os.environ.get("ORIZON_WA_TOKEN") or "").strip()
     phone = _env_por_canal("ORIZON_WA_PHONE_ID", env.canal)
     url = "https://graph.facebook.com/v20.0/%s/messages" % phone
@@ -143,8 +164,11 @@ def _enviar_whatsapp(env, corpo):
     req = _u.Request(url, data=_json.dumps(payload).encode("utf-8"), method="POST",
                      headers={"Authorization": "Bearer " + token,
                               "Content-Type": "application/json"})
-    with _u.urlopen(req, timeout=15) as resp:
-        data = _json.loads(resp.read() or b"{}")
+    try:
+        with _u.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read() or b"{}")
+    except _ue.HTTPError as he:
+        raise RuntimeError(_erro_meta(he))   # despachar captura e grava em EnvioExterno.erro
     wamid = ((data.get("messages") or [{}])[0]).get("id")
     return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
 
@@ -279,6 +303,53 @@ def dentro_da_janela_24h(db, usuario_id):
         if _digitos(env.destino)[-8:] == tail:
             return True
     return False
+
+
+JANELA_SEG = JANELA_HORAS * 3600
+
+
+def _numeros_da_conversa(db, conversa):
+    """Números de WhatsApp externos associados à conversa: participantes externos (whatsapp) +
+    Cliente vinculado. Base do cálculo de janela (RF-04)."""
+    nums = []
+    for e in (db.query(ConversaParticipanteExterno)
+                .filter_by(conversa_id=conversa.id, removido=0).all()):
+        if e.meio == "whatsapp" and (e.telefone or "").strip():
+            nums.append(e.telefone)
+    cid = getattr(conversa, "cliente_id", None)
+    if cid:
+        c = db.get(Cliente, cid)
+        if c is not None:
+            v = (getattr(c, "whatsapp", "") or getattr(c, "telefone", "") or "").strip()
+            if v:
+                nums.append(v)
+    return nums
+
+
+def janela_da_conversa(db, conversa):
+    """RF-04: estado da janela de atendimento de 24h da conversa, a partir da última mensagem de
+    ENTRADA de um dos números externos dela. Retorna {aberta, ultima_entrada(ISO|None),
+    restante_seg, excedido_seg(None|int)}. Sem número/sem entrada → fechada."""
+    tails = {_digitos(n)[-8:] for n in _numeros_da_conversa(db, conversa)
+             if len(_digitos(n)) >= 8}
+    fechada = {"aberta": False, "ultima_entrada": None, "restante_seg": 0, "excedido_seg": None}
+    if not tails:
+        return fechada
+    ult = None
+    for env in (db.query(EnvioExterno)
+                  .filter(EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada")
+                  .order_by(EnvioExterno.criado_em.desc()).all()):
+        if _digitos(env.destino or "")[-8:] in tails:
+            ult = env.criado_em
+            break
+    if ult is None:
+        return fechada
+    decorrido = (datetime.utcnow() - ult).total_seconds()
+    if decorrido < JANELA_SEG:
+        return {"aberta": True, "ultima_entrada": ult.isoformat(),
+                "restante_seg": int(JANELA_SEG - decorrido), "excedido_seg": None}
+    return {"aberta": False, "ultima_entrada": ult.isoformat(),
+            "restante_seg": 0, "excedido_seg": int(decorrido - JANELA_SEG)}
 
 
 def deve_notificar_usuario(db, usuario):

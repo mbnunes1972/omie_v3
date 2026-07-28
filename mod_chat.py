@@ -23,7 +23,8 @@ from database import (Conversa, ConversaParticipante, ConversaParticipanteExtern
 # ficam no schema como legado (sem migração destrutiva).
 MASCARA_PRIVADA = "🔒 (mensagem privada — recurso descontinuado)"
 
-CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac")
+CANAIS = ("interno", "comercial", "financeiro", "logistica", "suporte_tecnico", "sac",
+          "compras", "parceiros")
 _CANAIS_FATIA_1 = ("interno",)
 
 # ── Central de Comunicação (spec 2026-07-27, Fatia 1) ─────────────────────────
@@ -172,7 +173,41 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                          destinatario_usuario_id=_dest)
     db.add(m)
     db.flush()
+    # RF-11 / §7 (carteira aditiva): a transferência de responsabilidade ADICIONA o novo responsável
+    # como integrante do grupo — NUNCA remove ninguém. O Consultor original permanece.
+    if natureza == "transferencia" and transferido_para_funcionario_id:
+        _adicionar_responsavel_ao_grupo(db, conversa, transferido_para_funcionario_id)
     return m
+
+
+def _usuario_do_funcionario(db, funcionario_id):
+    """Usuario vinculado a um Funcionario (Funcionario.usuario_id ou o reverso). None se terceiro/sem
+    conta — nesse caso não há ConversaParticipante a adicionar."""
+    if not funcionario_id:
+        return None
+    f = db.get(Funcionario, funcionario_id)
+    if f is not None and getattr(f, "usuario_id", None):
+        return f.usuario_id
+    u = db.query(Usuario).filter_by(funcionario_id=funcionario_id).first()
+    return u.id if u else None
+
+
+def _adicionar_responsavel_ao_grupo(db, conversa, funcionario_id):
+    """Inclui (ou reativa) o responsável transferido como ConversaParticipante do grupo. Aditivo:
+    não remove ninguém; idempotente (não duplica). Sem usuario vinculado → no-op."""
+    uid = _usuario_do_funcionario(db, funcionario_id)
+    if not uid:
+        return None
+    p = (db.query(ConversaParticipante)
+           .filter_by(conversa_id=conversa.id, usuario_id=uid).first())
+    if p is None:
+        p = ConversaParticipante(conversa_id=conversa.id, usuario_id=uid,
+                                 papel="membro", origem="auto", removido=0)
+        db.add(p)
+    elif p.removido:
+        p.removido = 0   # transferido de volta → volta ao grupo
+    db.flush()
+    return uid
 
 
 def _corpo_visivel(m):

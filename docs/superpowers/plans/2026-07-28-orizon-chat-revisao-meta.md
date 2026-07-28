@@ -38,7 +38,7 @@ orientação `.../2026-07-28-ORIENTACAO-CODE-orizon-chat.md`; mockup acima.
 |---|---|---|---|
 | G1 | `resolver_destino()` não aceita `fornecedor` | `mod_chat_externo.py` — só cliente/parceiro/interno/avulso | F1 |
 | G2 | `CANAIS` e `CANAIS_EXTERNOS` sem `compras`/`parceiros` | `mod_chat.py:26` (`CANAIS`) + `mod_chat_externo.py:21` (`CANAIS_EXTERNOS`) — têm até `sac`, faltam os 2 | F1 |
-| G3 | `responsavel_sac()` existe mas **não é chamado** | `mod_chat.py:829` def; nenhuma chamada em `main.py` (≠ Financeiro/Logística via `_default_responsavel_faixa`) | F1 |
+| G3 | `responsavel_sac()` existe mas **não é chamado** | `mod_chat.py:829` def; nenhuma chamada em `main.py` (≠ Financeiro/Logística via `_default_responsavel_faixa`) | ~~F1~~ → **F6** (só há call-site no fluxo de triagem) |
 | G4 | Sem cálculo de janela 24h **por conversa** | só `dentro_da_janela_24h(usuario_id)` (chaveado no Usuario interno), não na conversa/contato externo | F1 |
 | G5 | Sem tratamento de `HTTPError` da Meta | `_enviar_whatsapp` faz `urlopen` sem capturar HTTPError → motivo real da Meta some | F1 |
 | G6 | Transferência **não adiciona** o novo responsável ao grupo | `mensagem_passagem_fase` só chama `enviar_mensagem(natureza="transferencia")`; nenhum `ConversaParticipante` novo. **Gap central da Carteira (§7/RF-11).** | F1 |
@@ -129,28 +129,28 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
 
 ---
 
-## Fatia 1 — Fundação de backend (sem UI nova)
+## Fatia 1 — Fundação de backend (sem UI nova) — ✅ FEITA 2026-07-28 (`tests/test_orizon_chat_meta.py`, 6)
 **Depende de:** — · **Sub-skill:** `superpowers:subagent-driven-development` (TDD, tasks paralelizáveis).
-**Pronto quando:** suíte verde; os 6 gaps G1–G6 fechados com teste; nada de UI.
+**Pronto quando:** suíte verde; os gaps de F1 fechados com teste; nada de UI.
 
-- [ ] **Fornecedor como destinatário (G1, RF-03):** branch `destinatario_tipo == "fornecedor"` em
+- [x] **Fornecedor como destinatário (G1, RF-03):** branch `destinatario_tipo == "fornecedor"` em
   `resolver_destino()` (usa `whatsapp` se existir, senão `telefone` — Fornecedor só tem `telefone`/`email`).
-  Testes: fornecedor com telefone → destino; sem telefone → erro claro; e-mail idem.
-- [ ] **Canais (G2, RF-02):** incluir `compras`, `parceiros` em `CANAIS` (`mod_chat.py`) e
+  Testes: fornecedor com telefone → destino; sem telefone → erro claro.
+- [x] **Canais (G2, RF-02):** incluir `compras`, `parceiros` em `CANAIS` (`mod_chat.py`) e
   `CANAIS_EXTERNOS` (`mod_chat_externo.py`). Teste anti-drift entre as duas listas.
-- [ ] **Roteamento SAC (G3):** conectar `responsavel_sac()` no caminho de entrada/roteamento em `main.py`
-  (mesmo ponto onde Financeiro/Logística resolvem responsável). Teste: entrada roteada a `sac` cai no
-  responsável de SAC; SAC **sem** vínculo obrigatório a Cliente (exceção RF-10).
-- [ ] **Janela por conversa (G4, RF-04):** `janela_da_conversa(db, conversa)` (ver Decisões). Testes:
+- [ ] ~~**Roteamento SAC (G3)**~~ → **movido para a F6** (ajuste 2026-07-28): o roteamento de segmento por
+  entrada só existe DENTRO do fluxo de triagem (`processar_entrada` retorna `{status:"triagem"}` quando
+  ambíguo) — que é construído na F6. Não há call-site limpo hoje em F1. `responsavel_sac()` já existe;
+  a chamada entra junto com o fluxo de triagem/roteamento.
+- [x] **Janela por conversa (G4, RF-04):** `janela_da_conversa(db, conversa)` (ver Decisões). Testes:
   entrada há 1h → aberta + restante; há 30h → fechada + excedido; sem entrada → fechada.
-- [ ] **HTTPError da Meta (G5):** capturar `HTTPError`, extrair `error.message`/`code` da resposta,
-  gravar em `EnvioExterno.erro`. Teste: mock de `urlopen` levantando HTTPError com corpo JSON → erro
-  específico persistido (não genérico).
-- [ ] **Transferência aditiva (G6, RF-11 mecanismo):** ao criar `natureza="transferencia"`, adicionar o
-  funcionário destino (via `Funcionario.usuario_id`) como `ConversaParticipante` (origem=auto), sem
-  remover ninguém. Testes: transferir → destino vira participante; Consultor original permanece;
-  reprocessar é idempotente (não duplica).
-- [ ] Suíte verde + `test_arquitetura_modulos` (se tocar tabela/arquivo).
+- [x] **HTTPError da Meta (G5):** `_enviar_whatsapp` captura `HTTPError`, `_erro_meta` extrai
+  `error.message`/`code` → `despachar` grava em `EnvioExterno.erro`. Testes: `_erro_meta` (131047) +
+  `_enviar_whatsapp` com `urlopen` mockado levantando HTTPError → `RuntimeError` com a mensagem real.
+- [x] **Transferência aditiva (G6, RF-11 mecanismo):** `enviar_mensagem` com `natureza="transferencia"`
+  chama `_adicionar_responsavel_ao_grupo` (via `Funcionario.usuario_id`) → `ConversaParticipante`
+  (origem=auto), sem remover ninguém. Testes: destino entra; criador permanece; idempotente.
+- [x] Suíte verde (F1 sem tabela/arquivo novo).
 
 ## Fatia 2 — Modelo e biblioteca de templates (RF-07)
 **Depende de:** F1 (canais). · **Sub-skill:** `superpowers:subagent-driven-development`.
@@ -213,6 +213,9 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
 - [ ] Fluxo de entrada (estende `rotear_entrada`/`processar_entrada`): identifica Cliente+Projeto ativo →
   pergunta de confirmação (RF-09); senão → triagem manual pelo formato configurado (RF-08); só depois
   expõe na fila do segmento. Testes: número de Cliente c/ projeto → pergunta; número novo → triagem.
+- [ ] **Roteamento SAC (G3, movido da F1):** ao rotear uma entrada para o segmento `sac`, resolver o
+  responsável via `responsavel_sac()` (já existe/testado) — fora da cadeia de etapa/ciclo; SAC **sem**
+  vínculo obrigatório a Cliente (exceção RF-10). Teste: entrada `sac` → responsável de SAC; sem Cliente ok.
 - [ ] Frontend: aba **Triagem** (toggle Lista/Texto livre + reordenar/rótulo/ativo + pré-visualização
   WhatsApp), como no mockup. `node --check` + manual.
 

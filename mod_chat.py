@@ -127,7 +127,8 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     natureza="interacao", etapa_codigo=None,
                     transferido_para_funcionario_id=None, documento_ref_id=None,
                     bloqueador=False, _permitir_externo=False,
-                    canal_segmento=None, permitir_vazio=False):
+                    canal_segmento=None, permitir_vazio=False,
+                    destinatario_usuario_id=None):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
@@ -157,7 +158,9 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                          transferido_para_funcionario_id=transferido_para_funcionario_id,
                          documento_ref_id=documento_ref_id,
                          bloqueador=1 if bloqueador else 0,
-                         canal_segmento=canal_segmento)
+                         canal_segmento=canal_segmento,
+                         destinatario_usuario_id=(int(destinatario_usuario_id)
+                                                  if destinatario_usuario_id else None))
     db.add(m)
     db.flush()
     return m
@@ -198,11 +201,13 @@ def criar_anexo(db, mensagem_id, nome, mime, tamanho, caminho):
 
 
 def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
-                        documento=None, anexos=None):
+                        documento=None, anexos=None, destinatario_nome=None):
     """`documento`: CicloDocumento já resolvido pelo chamador (ou None) — a mensagem devolve
-    nome/tipo prontos, não só o id cru (Fatia 5)."""
+    nome/tipo prontos, não só o id cru (Fatia 5). `destinatario_nome`: alvo dirigido (F2)."""
     return {"id": m.id, "autor_usuario_id": m.autor_usuario_id,
             "autor_nome": autor_nome or "—",
+            "destinatario_usuario_id": m.destinatario_usuario_id,
+            "destinatario_nome": destinatario_nome or "",
             "corpo": _corpo_visivel(m), "canal": m.canal,
             "canal_segmento": m.canal_segmento,
             "natureza": m.natureza or "interacao",
@@ -234,10 +239,14 @@ def listar_mensagens(db, conversa_id):
     ids_docs = {m.documento_ref_id for m, _ in rows if m.documento_ref_id}
     docs = ({d.id: d for d in db.query(CicloDocumento)
              .filter(CicloDocumento.id.in_(ids_docs)).all()} if ids_docs else {})
+    ids_dest = {m.destinatario_usuario_id for m, _ in rows if m.destinatario_usuario_id}
+    dest_nomes = ({u.id: u.nome for u in db.query(Usuario)
+                   .filter(Usuario.id.in_(ids_dest)).all()} if ids_dest else {})
     anexos = anexos_por_mensagem(db, [m.id for m, _ in rows])
     return [serializar_mensagem(m, nome, nomes.get(m.transferido_para_funcionario_id),
                                 documento=docs.get(m.documento_ref_id),
-                                anexos=anexos.get(m.id))
+                                anexos=anexos.get(m.id),
+                                destinatario_nome=dest_nomes.get(m.destinatario_usuario_id))
             for m, nome in rows]
 
 

@@ -779,6 +779,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <div id="cc-compositor" style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
             <input type="file" id="cc-file" style="display:none" onchange="ccArquivoSelecionado(this)">
             <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('cc-file').click()"><i class="ti ti-paperclip"></i></button>
+            <select id="cc-dest" title="Destinatário da mensagem" style="display:none;max-width:150px;padding:7px 8px;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text)"></select>
             <textarea id="cc-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia)"
                       style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
@@ -12014,8 +12015,24 @@ async function ccAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   if(tr) tr.style.display = _ccConvProjeto ? '' : 'none';
   const tchk = document.getElementById('conv-transf-chk');       // reseta a composição de transferência
   if(tchk){ tchk.checked = false; if(typeof convTransfToggle==='function') convTransfToggle(); }
+  ccCarregarDestinatarios();
   await ccCarregarMsgs();
 }
+async function ccCarregarDestinatarios(){
+  // Seletor "Para" (F2): dirige a mensagem a um membro (marcação visual). Só em grupo/projeto.
+  const sel = document.getElementById('cc-dest');
+  if(!sel) return;
+  const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
+  sel.style.display = grupoOuProj ? '' : 'none';
+  if(!grupoOuProj){ sel.innerHTML=''; return; }
+  sel.innerHTML = '<option value="">Para: todos</option>';
+  try{
+    const d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/participantes',{credentials:'same-origin'}).then(r=>r.json());
+    const membros = (d.ok ? (d.participantes||[]) : []).filter(p=>!p.externo && p.usuario_id);
+    sel.innerHTML += membros.map(p=>'<option value="'+p.usuario_id+'">Para: '+esc(p.nome)+'</option>').join('');
+  }catch(e){}
+}
+function _ccDestSel(){ const s=document.getElementById('cc-dest'); const v=s&&s.value; return v?parseInt(v,10):null; }
 async function ccAbrirConversa(idx){
   const c = _ccInbox[idx];
   if(!c) return;
@@ -12137,7 +12154,8 @@ function _ccAnexosHtml(m){
 }
 function _ccMsgCabecalho(m){
   const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
-  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
+  const para = m.destinatario_nome ? ' <span style="color:var(--accent)">→ para '+esc(m.destinatario_nome)+'</span>' : '';
+  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+para+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
 }
 function _ccRenderMsg(m){
   return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
@@ -12199,7 +12217,7 @@ async function ccEnviar(){
         {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
     } else if(_ccConvProjeto){
       // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
-      const payload = {corpo};
+      const payload = {corpo, destinatario_usuario_id: _ccDestSel()};
       const tchk = document.getElementById('conv-transf-chk');
       const ehTransf = tchk && tchk.checked;
       if(ehTransf){
@@ -12221,10 +12239,11 @@ async function ccEnviar(){
     } else {
       d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({corpo})}).then(r=>r.json());
+         body: JSON.stringify({corpo, destinatario_usuario_id: _ccDestSel()})}).then(r=>r.json());
     }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
     ta.value = ''; ccRemoverAnexo();
+    const _cd = document.getElementById('cc-dest'); if(_cd) _cd.value = '';   // volta a "Para: todos"
     await ccCarregarMsgs();
     ccCarregarInbox();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }

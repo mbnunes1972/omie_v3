@@ -124,6 +124,26 @@ def test_endpoint_criar_grupo_com_externo(http_client_factory, app_db, seed):
     assert st == 200 and sum(1 for p in b["participantes"] if p.get("externo")) == 2
 
 
+def test_mensagem_dirigida_a_um_membro(http_client_factory, app_db, seed):
+    """F2: mensagem 'para um membro' grava/serializa o destinatário (marcação visual — todos leem);
+    sem destinatário = todos (None)."""
+    c = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    cid = c.post("/api/comunicacao/conversas",
+                 {"tipo": "grupo", "titulo": "G dest", "participante_ids": [alvo]})[1]["conversa"]["id"]
+    # dirigida ao alvo
+    st, _ = c.post("/api/comunicacao/conversas/%d/mensagens" % cid,
+                   {"corpo": "confirma?", "destinatario_usuario_id": alvo})
+    assert st == 201
+    # sem destinatário = todos
+    c.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "geral"})
+    st, b = c.get("/api/comunicacao/conversas/%d/mensagens" % cid)
+    msgs = {m["corpo"]: m for m in b["mensagens"]}
+    assert msgs["confirma?"]["destinatario_usuario_id"] == alvo
+    assert msgs["confirma?"]["destinatario_nome"]   # nome resolvido p/ o "→ para"
+    assert msgs["geral"]["destinatario_usuario_id"] is None
+
+
 def test_endpoint_individual_externo_vira_grupo(http_client_factory, app_db, seed):
     """Individual só com contato externo → cria conversa (grupo) com o criador + o externo."""
     c = _login(http_client_factory, "dir_l1")

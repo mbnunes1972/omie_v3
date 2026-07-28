@@ -1172,6 +1172,9 @@ class ConversaMensagem(Base):
     id               = Column(Integer,  primary_key=True, autoincrement=True)
     conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=False, index=True)
     autor_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    # Destinatário DIRIGIDO da mensagem (F2, 2026-07-28): um membro específico. NULL = todos.
+    # Marcação VISUAL — todos os membros leem; o render exibe "para <nome>".
+    destinatario_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     corpo            = Column(Text,     nullable=False)
     canal            = Column(String(20), nullable=False, default="interno")
     # Central de Comunicação (spec 2026-07-27): segmento derivado da FUNÇÃO do autor no envio
@@ -1708,6 +1711,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE parcela_ambiente ADD COLUMN IF NOT EXISTS valor_ambiente DOUBLE PRECISION DEFAULT 0.0",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
+        # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS destinatario_usuario_id INTEGER",
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

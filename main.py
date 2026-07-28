@@ -5375,7 +5375,8 @@ class Handler(BaseHTTPRequestHandler):
                 seg = mod_chat.canal_segmento_do_usuario(db, loja_id, usuario["id"])
                 try:
                     msg = mod_chat.enviar_mensagem(db, conv, usuario["id"], dd.get("corpo"),
-                                                   canal_segmento=seg)
+                                                   canal_segmento=seg,
+                                                   destinatario_usuario_id=dd.get("destinatario_usuario_id"))
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
@@ -5459,7 +5460,8 @@ class Handler(BaseHTTPRequestHandler):
                         db, conv, usuario.get("id"), dd.get("corpo"),
                         natureza=natureza, etapa_codigo=etapa_codigo,
                         transferido_para_funcionario_id=transf_id,
-                        documento_ref_id=doc_ref, bloqueador=bloqueador)
+                        documento_ref_id=doc_ref, bloqueador=bloqueador,
+                        destinatario_usuario_id=dd.get("destinatario_usuario_id"))
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return

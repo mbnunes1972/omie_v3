@@ -67,6 +67,26 @@ def test_grupo_sem_titulo_400(http_client_factory, app_db, seed):
     assert st == 400 and b["ok"] is False
 
 
+def test_gerir_membros_de_grupo(http_client_factory, app_db, seed):
+    """F1 (unificação): add/remover membro vale para GRUPO (antes só projeto). Gerência gere;
+    operador 403; loja 2 não enxerga (404)."""
+    ger = _login(http_client_factory, "dir_l1")
+    alvo = _uid(app_db, "cons_l1")
+    cid = ger.post("/api/comunicacao/conversas",
+                   {"tipo": "grupo", "titulo": "Grupo F1", "participante_ids": [alvo]})[1]["conversa"]["id"]
+    # gerência adiciona e remove membro no GRUPO
+    st, b = ger.post("/api/comunicacao/conversas/%d/participantes" % cid, {"usuario_id": alvo, "acao": "remove"})
+    assert st == 200 and alvo not in [p["usuario_id"] for p in b["participantes"]]
+    st, b = ger.post("/api/comunicacao/conversas/%d/participantes" % cid, {"usuario_id": alvo, "acao": "add"})
+    assert st == 200 and any(p["usuario_id"] == alvo for p in b["participantes"])
+    # operador não gere membros
+    op = _login(http_client_factory, "cons_l1")
+    assert op.post("/api/comunicacao/conversas/%d/participantes" % cid, {"usuario_id": alvo, "acao": "add"})[0] == 403
+    # loja 2 não enxerga o grupo da loja 1
+    outro = _login(http_client_factory, "dir_l2")
+    assert outro.post("/api/comunicacao/conversas/%d/participantes" % cid, {"usuario_id": alvo, "acao": "add"})[0] == 404
+
+
 # ── mensagens + auth por participante ──────────────────────────────────────────
 
 def test_enviar_e_listar(http_client_factory, app_db, seed):

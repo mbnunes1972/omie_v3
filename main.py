@@ -5301,7 +5301,7 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat
                 from database import Conversa as _CV_gp
                 conv = db.get(_CV_gp, conv_id)
-                if conv is None or conv.loja_id != loja_id or conv.tipo != "projeto":
+                if conv is None or conv.loja_id != loja_id or conv.tipo not in ("projeto", "grupo"):
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 dd = json.loads(body or b'{}')
                 alvo = dd.get("usuario_id")

@@ -687,7 +687,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div id="cc-nova" style="display:none;border:1px solid var(--border);border-radius:10px;padding:14px">
           <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
           <div id="cc-tipo-wrap" style="display:flex;gap:16px;margin-bottom:10px">
-            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Direct (1:1)</label>
+            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Individual (1:1)</label>
             <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="grupo" onchange="ccTipoToggle()"> Grupo</label>
           </div>
           <div id="cc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
@@ -769,6 +769,34 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
             <button class="btn btn-primary btn-sm" id="cc-enviar-btn" onclick="ccEnviar()">Enviar</button>
+          </div>
+          <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
+          <div id="cc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
+            <label style="font-size:12px;color:var(--text);cursor:pointer">
+              <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
+              Transferência de responsabilidade</label>
+            <div id="conv-transf-campos" style="display:none;margin-top:8px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <div style="flex:1;min-width:180px">
+                  <label class="field-label">Etapa do ciclo (opcional)</label>
+                  <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
+                </div>
+                <div style="flex:1;min-width:180px">
+                  <label class="field-label">Transferir para</label>
+                  <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
+                </div>
+                <div style="flex:1;min-width:180px">
+                  <label class="field-label">Anexar documento (opcional)</label>
+                  <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
+                </div>
+              </div>
+              <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
+                <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
+                Bloqueador</label>
+              <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
+                &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a transferência
+                (ou a gerência destravar em emergência). Sem etapa selecionada, trava o ciclo INTEIRO.</div>
+            </div>
           </div>
         </div>
         <!-- estado inicial -->
@@ -1043,79 +1071,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <!-- Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — histórico interno + nova mensagem -->
-    <div id="modal-conversa-proj" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-      <div class="modal-box" style="max-width:640px;width:94%;max-height:88vh;display:flex;flex-direction:column">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Orizon Chat — <span id="conv-proj-nome"></span></div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" id="conv-membros-btn" onclick="if(_convProjId)ccMembrosAbrir(_convProjId)" title="Membros da conversa do projeto"><i class="ti ti-users"></i> Membros</button>
-            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-conversa-proj').style.display='none'">Fechar</button>
-          </div>
-        </div>
-        <div id="conv-msgs" style="flex:1;overflow-y:auto;min-height:200px;max-height:52vh;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
-        <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end">
-          <textarea id="conv-texto" rows="2" placeholder="Escreva uma mensagem… (Enter envia, Shift+Enter quebra linha)"
-                    style="flex:1;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:.85rem;font-family:inherit;resize:vertical"
-                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();convEnviar();}"></textarea>
-          <button class="btn btn-primary btn-sm" id="conv-enviar-btn" onclick="convEnviar()">Enviar</button>
-        </div>
-        <!-- Fatia 3: composição de TRANSFERÊNCIA (o endpoint ficou pronto na Fatia 2) -->
-        <div style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
-          <label style="font-size:12px;color:var(--text);cursor:pointer;margin-right:16px">
-            <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
-            Transferência de responsabilidade</label>
-          <label style="font-size:12px;color:var(--text);cursor:pointer"
-                 title="Enviar por WhatsApp/e-mail ao cliente, arquiteto ou contato avulso (canal externo).">
-            <input type="checkbox" id="conv-externo-chk" onchange="convExternoToggle()">
-            Canal externo &#128231;</label>
-          <!-- Fatias 6-7: compositor do CANAL EXTERNO (seletor filtrado + avulso, decisão 19) -->
-          <div id="conv-externo-campos" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <div style="flex:1;min-width:120px"><label class="field-label">Meio</label>
-                <select id="conv-ext-meio" style="width:100%;padding:6px 8px"><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select></div>
-              <div style="flex:1;min-width:120px"><label class="field-label">Canal</label>
-                <select id="conv-ext-canal" style="width:100%;padding:6px 8px">
-                  <option value="comercial">Comercial</option><option value="financeiro">Financeiro</option>
-                  <option value="logistica">Logística</option><option value="suporte_tecnico">Suporte Técnico</option>
-                  <option value="sac">SAC</option></select></div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-              <div style="flex:1;min-width:120px"><label class="field-label">Destinatário</label>
-                <select id="conv-ext-dtipo" onchange="convExtDtipo()" style="width:100%;padding:6px 8px">
-                  <option value="cliente">Cliente</option><option value="parceiro">Arquiteto</option>
-                  <option value="interno">Interno (usuário)</option><option value="avulso">Avulso (digitar)</option></select></div>
-              <div style="flex:2;min-width:160px" id="conv-ext-quem-wrap"><label class="field-label" id="conv-ext-quem-lbl">Quem</label>
-                <select id="conv-ext-quem" style="width:100%;padding:6px 8px"></select>
-                <input id="conv-ext-avulso" style="display:none;width:100%;box-sizing:border-box;padding:6px 8px" placeholder="número ou e-mail"></div>
-            </div>
-            <div id="conv-ext-aviso" style="font-size:11px;color:var(--warn);margin-top:6px"></div>
-          </div>
-          <div id="conv-transf-campos" style="display:none;margin-top:8px">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <div style="flex:1;min-width:180px">
-                <label class="field-label">Etapa do ciclo (opcional)</label>
-                <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
-              </div>
-              <div style="flex:1;min-width:180px">
-                <label class="field-label">Transferir para</label>
-                <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
-              </div>
-              <div style="flex:1;min-width:180px">
-                <label class="field-label">Anexar documento (opcional)</label>
-                <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
-              </div>
-            </div>
-            <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
-              <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
-              Bloqueador</label>
-            <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
-              &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a
-              transferência (ou a gerência destravar em emergência). Sem etapa selecionada,
-              trava o ciclo INTEIRO.</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Orizon Chat do projeto UNIFICADO no modal canônico #modal-central-com (2026-07-27):
+         o botão do projeto abre a conversa (tipo=projeto) lá; a transferência/bloqueador vive
+         no #cc-transf. O antigo #modal-conversa-proj foi aposentado. -->
 
     <!-- Grupo de Acompanhamento — contatos de comunicação (decisão 13 da spec de chat).
          z-index acima do _popupOverlay (99999): como este painel é o gate que dispara DENTRO
@@ -11889,79 +11847,22 @@ const PE_SUBFASES = {
 // aqui sem a spec — esta é só a fundação.
 async function abrirConversaProjeto(){
   if(!projetoAtivo) return;
-  // Garante que a conversa (leitura E escrita) opere na loja do projeto aberto, não importa
-  // como o projeto foi aberto (lista, restauração, criação). Sem isso, um projeto aberto com a
-  // loja ativa em outra loja (ex.: seletor num PDV) dá 403/404 em TODA mensagem. Guarda
-  // anti-vazamento dentro de _alinharLojaAoProjeto (só alinha para loja acessível).
+  // UNIFICADO no Orizon Chat do painel lateral: abre o modal canônico posicionado na conversa do
+  // projeto (get-or-create + sincroniza equipe∪gerência). Mantém o alinhamento de loja (sem ele,
+  // projeto aberto com a loja ativa em outra loja dá 403/404 em TODA mensagem; guarda anti-vazamento
+  // dentro de _alinharLojaAoProjeto — só alinha para loja acessível).
   if(projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);
-  document.getElementById('conv-proj-nome').textContent = projetoAtivo.nome_safe;
-  document.getElementById('modal-conversa-proj').style.display='flex';
-  document.getElementById('conv-msgs').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  await convCarregar();
-  setTimeout(()=>document.getElementById('conv-texto').focus(), 60);
-}
-
-async function convCarregar(){
-  const box = document.getElementById('conv-msgs');
+  await abrirCentralComunicacao();
   let d;
-  try{
-    d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa`,
-                    {credentials:'same-origin'}).then(r=>r.json());
-  }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
-  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar a conversa.')+'</em>'; return; }
-  _convProjId = d.conversa && d.conversa.id;
-  if(!(d.mensagens||[]).length){
-    box.innerHTML='<em style="color:var(--muted);font-size:12px">Nenhuma mensagem ainda — comece a conversa.</em>';
-    return;
-  }
-  const minha = m => _usuarioAtual && m.autor_usuario_id === _usuarioAtual.id;
-  box.innerHTML = d.mensagens.map(m => {
-    const dt = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR',
-                 {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-    // Fatia 3: transferência ganha linha-meta; bloqueador não resolvido se DESTACA e traz
-    // as ações (Resolver = quem recebeu, backend valida; Destravar = master/gerencial).
-    let meta = '';
-    // Fatias 6-7: mensagem de canal externo — mostra o segmento (comercial/financeiro/…)
-    if (m.canal && m.canal !== 'interno') {
-      const CANAL_LBL = {comercial:'Comercial', financeiro:'Financeiro', logistica:'Logística', suporte_tecnico:'Suporte Técnico', sac:'SAC'};
-      meta += '<div style="font-size:10px;color:var(--muted);margin-top:3px"><i class="ti ti-external-link"></i> canal externo · '+esc(CANAL_LBL[m.canal]||m.canal)+'</div>';
-    }
-    if (m.natureza === 'transferencia') {
-      meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px">'
-        + '<i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
-        + esc(m.transferido_para_nome || '—') + '</strong>'
-        + (m.etapa_codigo ? ' · etapa ' + esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
-      if (m.documento_ref_id) {
-        // Fatia 5: chip do documento tramitado — download pelo endpoint que já existe
-        meta += '<div style="margin-top:4px"><a target="_blank" rel="noopener" '
-          + 'href="/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/ciclo/documento/'+m.documento_ref_id+'" '
-          + 'style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);'
-          + 'border-radius:6px;padding:3px 9px;font-size:10px;color:var(--text);text-decoration:none">'
-          + '<i class="ti ti-paperclip"></i> ' + esc(m.documento_nome || ('documento #'+m.documento_ref_id))
-          + '</a></div>';
-      }
-      if (m.bloqueador && !m.resolvido_em) {
-        meta += '<div style="margin-top:4px">'
-          + '<span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);'
-          + 'border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px">BLOQUEADOR ATIVO</span> '
-          + '<button class="btn-ciclo" style="font-size:10px;padding:2px 8px" onclick="convResolver('+m.id+')">Resolver</button>'
-          + (_podeAutorizarFront() ? ' <button class="btn-ciclo" style="font-size:10px;padding:2px 8px;color:var(--warn)" onclick="convDestravar('+m.id+')">Destravar (emergência)</button>' : '')
-          + '</div>';
-      } else if (m.bloqueador && m.resolvido_em) {
-        meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px">'
-          + '<i class="ti ti-lock-open"></i> bloqueador resolvido em '
-          + new Date(m.resolvido_em).toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + '</div>';
-      }
-    }
-    return '<div style="margin-bottom:10px;'+(minha(m)?'text-align:right':'')+'">'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">'+esc(m.autor_nome)+' · '+dt+'</div>'
-      +'<div style="display:inline-block;max-width:85%;text-align:left;background:'
-        +(minha(m)?'var(--accent-tint)':'var(--surface-2)')
-        +';border:1px solid '+(m.bloqueador && !m.resolvido_em ? 'var(--err-line)' : 'var(--border)')
-        +';border-radius:10px;padding:7px 10px;font-size:.85rem;'
-        +'white-space:pre-wrap;word-break:break-word">'+esc(m.corpo)+meta+'</div></div>';
-  }).join('');
-  box.scrollTop = box.scrollHeight;
+  try { d = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/conversa',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ showToast('Erro ao abrir a conversa do projeto.', true); return; }
+  if(!d.ok){ showToast(d.erro||'Erro ao abrir a conversa do projeto.', true); return; }
+  const tit = '📁 ' + ((projetoAtivo.nome_projeto || projetoAtivo.nome_safe) + '').replace(/_/g,' ');
+  await ccAbrirConversaProjeto(projetoAtivo.nome_safe, d.conversa.id, tit);
+}
+async function ccAbrirConversaProjeto(projetoNome, convId, titulo){
+  await ccAbrirConversaPorId(convId, titulo, true, 'projeto', projetoNome);
+  setTimeout(()=>{ const t=document.getElementById('cc-texto'); if(t) t.focus(); }, 60);
 }
 
 function convTransfToggle(){
@@ -11970,47 +11871,8 @@ function convTransfToggle(){
   if (on) _convCarregarSeletoresTransf();
 }
 
-// ── Fatias 6-7: canal externo (WhatsApp/e-mail) ──────────────────────────────
-let _convExtCand = null;   // {cliente, arquiteto, internos:[...]}
-async function convExternoToggle(){
-  const on = document.getElementById('conv-externo-chk').checked;
-  document.getElementById('conv-externo-campos').style.display = on ? '' : 'none';
-  if (on){
-    // transferência e externo são mutuamente exclusivos (um é interno, outro externo)
-    document.getElementById('conv-transf-chk').checked = false; convTransfToggle();
-    if (!_convExtCand){
-      const [eq] = await Promise.all([
-        fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/equipe`,{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
-      ]);
-      const internos = (eq && eq.ok && eq.equipe && eq.equipe.papeis || [])
-        .flatMap(p => (p.pessoas||[]).filter(x=>x.tipo==='funcionario').map(x=>({id:x.id, nome:x.nome})));
-      _convExtCand = { internos };
-    }
-    convExtDtipo();
-  }
-}
-function convExtDtipo(){
-  const t = document.getElementById('conv-ext-dtipo').value;
-  const sel = document.getElementById('conv-ext-quem');
-  const av  = document.getElementById('conv-ext-avulso');
-  const avulso = (t === 'avulso');
-  sel.style.display = avulso ? 'none' : '';
-  av.style.display  = avulso ? '' : 'none';
-  document.getElementById('conv-ext-quem-lbl').textContent = avulso ? 'Contato avulso' : 'Quem';
-  if (avulso) return;
-  if (t === 'cliente'){
-    sel.innerHTML = '<option value="'+(projetoAtivo.cliente_id||'')+'">'+esc(projetoAtivo.cliente_nome||'Cliente do projeto')+'</option>';
-  } else if (t === 'parceiro'){
-    // usa o parceiro (arquiteto) do projeto; backend resolve o contato do cadastro
-    sel.innerHTML = '<option value="'+(projetoAtivo.parceiro_id||'')+'">'+esc(projetoAtivo.parceiro_nome||'Arquiteto do projeto')+'</option>';
-    if (!projetoAtivo.parceiro_id) sel.innerHTML = '<option value="">— sem arquiteto associado —</option>';
-  } else { // interno
-    sel.innerHTML = ((_convExtCand&&_convExtCand.internos)||[]).map(x=>'<option value="'+x.id+'">'+esc(x.nome)+'</option>').join('')
-      || '<option value="">— nenhum interno —</option>';
-  }
-}
-
 async function _convCarregarSeletoresTransf(){
+  const projNome = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
   const selE = document.getElementById('conv-transf-etapa');
   const selF = document.getElementById('conv-transf-func');
   const selD = document.getElementById('conv-transf-doc');
@@ -12024,74 +11886,13 @@ async function _convCarregarSeletoresTransf(){
   }
   // Fatia 5: documentos do projeto — o GET /ciclo/pe já devolve TODOS os CicloDocumento
   // (com tenancy/auth), apesar do nome da rota.
-  const dp = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/pe`,
+  const dp = await fetch(`/api/projetos/${encodeURIComponent(projNome)}/ciclo/pe`,
                          {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
   selD.innerHTML = '<option value="">— sem documento —</option>'
     + (dp.documentos||[]).map(d => {
         const dt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
         return '<option value="'+d.id+'">'+esc(d.nome_original+' ('+d.tipo+' · et. '+d.etapa_codigo+(dt?' · '+dt:'')+')')+'</option>';
       }).join('');
-}
-
-async function convEnviar(){
-  if(!projetoAtivo) return;
-  if(projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);  // trava a loja do projeto antes de enviar
-  const ta = document.getElementById('conv-texto');
-  const corpo = ta.value.trim();
-  if(!corpo) return;
-  // Canal externo (Fatias 6-7): caminho de envio próprio (cria Mensagem + EnvioExterno).
-  if (document.getElementById('conv-externo-chk').checked){
-    const dtipo = document.getElementById('conv-ext-dtipo').value;
-    const p = {corpo, meio: document.getElementById('conv-ext-meio').value,
-               canal: document.getElementById('conv-ext-canal').value, destinatario_tipo: dtipo};
-    if (dtipo === 'avulso') p.destino_avulso = document.getElementById('conv-ext-avulso').value.trim();
-    else { const q = document.getElementById('conv-ext-quem').value; if(!q){ showToast('Escolha o destinatário.', true); return; } p.destinatario_id = parseInt(q,10); }
-    const btnE = document.getElementById('conv-enviar-btn'); btnE.disabled = true;
-    try{
-      const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/externo`,
-        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)}).then(r=>r.json());
-      if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
-      ta.value='';
-      showToast(d.envio.status === 'enviado' ? 'Enviado.' :
-                d.envio.status === 'pendente_config' ? 'Registrado — canal externo ainda não ativado neste ambiente.' :
-                'Registrado ('+d.envio.status+').');
-      document.getElementById('conv-externo-chk').checked = false; convExternoToggle();
-      await convCarregar();
-    }catch(e){ showToast('Erro de rede ao enviar.', true); }
-    finally{ btnE.disabled = false; ta.focus(); }
-    return;
-  }
-  const payload = {corpo};
-  const ehTransf = document.getElementById('conv-transf-chk').checked;
-  if (ehTransf) {
-    const fid = document.getElementById('conv-transf-func').value;
-    if (!fid) { showToast('Escolha quem recebe a transferência.', true); return; }
-    payload.natureza = 'transferencia';
-    payload.transferido_para_funcionario_id = parseInt(fid, 10);
-    const et = document.getElementById('conv-transf-etapa').value;
-    if (et) payload.etapa_codigo = et;
-    const docId = document.getElementById('conv-transf-doc').value;
-    if (docId) payload.documento_ref_id = parseInt(docId, 10);
-    payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
-  }
-  const btn = document.getElementById('conv-enviar-btn');
-  btn.disabled = true;
-  try{
-    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens`,
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify(payload)}).then(r=>r.json());
-    if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
-    ta.value='';
-    if (ehTransf) {
-      document.getElementById('conv-transf-chk').checked = false;
-      document.getElementById('conv-transf-bloq').checked = false;
-      document.getElementById('conv-bloq-aviso').style.display = 'none';
-      convTransfToggle();
-      carregarCiclo();   // tag "com a bola" / estado das etapas mudaram
-    }
-    await convCarregar();
-  }catch(e){ showToast('Erro de rede ao enviar.', true); }
-  finally{ btn.disabled = false; ta.focus(); }
 }
 
 // ═══ Central de Comunicação (spec 2026-07-27, Fatia 1) ════════════════════════
@@ -12170,11 +11971,17 @@ function _ccMostrarThread(titulo, podePostar){
   document.getElementById('cc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
 }
 let _ccConvTipo = null;
-async function ccAbrirConversaPorId(id, titulo, podePostar, tipo){
+let _ccConvProjeto = null;   // nome_safe do projeto quando a conversa aberta é tipo=projeto (ciclo-aware)
+async function ccAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   _ccConvAtiva = id; _ccAdminView = false; _ccConvTipo = tipo || null;
+  _ccConvProjeto = projetoNome || null;                          // conversa de PROJETO (ciclo-aware)
   _ccMostrarThread(titulo, podePostar);
   const mb = document.getElementById('cc-membros-btn');
-  if(mb) mb.style.display = (tipo === 'projeto') ? '' : 'none';   // membros só na conversa do projeto
+  if(mb) mb.style.display = (tipo === 'projeto' || tipo === 'grupo') ? '' : 'none';   // membros em projeto e grupo
+  const tr = document.getElementById('cc-transf');               // transferência/bloqueador só no projeto
+  if(tr) tr.style.display = _ccConvProjeto ? '' : 'none';
+  const tchk = document.getElementById('conv-transf-chk');       // reseta a composição de transferência
+  if(tchk){ tchk.checked = false; if(typeof convTransfToggle==='function') convTransfToggle(); }
   await ccCarregarMsgs();
 }
 async function ccAbrirConversa(idx){
@@ -12182,13 +11989,13 @@ async function ccAbrirConversa(idx){
   if(!c) return;
   let podePostar = true;
   if(c.tipo === 'mural') podePostar = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
-  await ccAbrirConversaPorId(c.id, _ccTituloComAssunto(c), podePostar, c.tipo);
+  await ccAbrirConversaPorId(c.id, _ccTituloComAssunto(c), podePostar, c.tipo, c.projeto_nome);
   ccCarregarInbox();  // reflete "ativo" na lista
 }
 
 // ── membros da conversa do projeto (override manual do gerente) ────────────────
-let _ccMembrosOv = null, _convProjId = null, _membrosConvId = null;
-// convId opcional: do inbox do Orizon Chat (_ccConvAtiva) OU da conversa do projeto (_convProjId).
+let _ccMembrosOv = null, _membrosConvId = null;
+// convId opcional: do inbox do Orizon Chat (_ccConvAtiva) OU da conversa do projeto (_ccConvProjeto).
 async function ccMembrosAbrir(convId){
   _membrosConvId = convId || _ccConvAtiva;
   if(!_membrosConvId) return;
@@ -12261,24 +12068,55 @@ async function ccCarregarMsgs(){
   const box = document.getElementById('cc-msgs');
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   let d;
-  try { d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',{credentials:'same-origin'}).then(r=>r.json()); }
+  // Conversa de PROJETO lê do endpoint do projeto (traz os campos do ciclo: transferência/bloqueador).
+  const url = _ccConvProjeto
+    ? '/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/conversa'
+    : '/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens';
+  try { d = await fetch(url,{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
   if(!(d.mensagens||[]).length){ box.innerHTML = '<em style="color:var(--muted);font-size:12px">Sem mensagens — comece a conversar.</em>'; return; }
-  box.innerHTML = d.mensagens.map(m=>{
-    const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
-    const anexos = (m.anexos||[]).map(a=>{
-      if(a.tipo === 'imagem')
-        return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener"><img src="'+a.url+'" alt="'+esc(a.nome)+'" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border)"></a></div>';
-      return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
-    }).join('');
-    return '<div style="margin-bottom:10px">'
-      + '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>'
-      + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-      + anexos
-      + '</div>';
-  }).join('');
+  box.innerHTML = d.mensagens.map(m => _ccConvProjeto ? _ccRenderMsgProjeto(m) : _ccRenderMsg(m)).join('');
   box.scrollTop = box.scrollHeight;
+}
+function _ccAnexosHtml(m){
+  return (m.anexos||[]).map(a=>{
+    if(a.tipo === 'imagem')
+      return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener"><img src="'+a.url+'" alt="'+esc(a.nome)+'" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border)"></a></div>';
+    return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
+  }).join('');
+}
+function _ccMsgCabecalho(m){
+  const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
+  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
+}
+function _ccRenderMsg(m){
+  return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
+    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
+    + _ccAnexosHtml(m) + '</div>';
+}
+function _ccRenderMsgProjeto(m){
+  let meta = '';
+  if (m.natureza === 'transferencia') {
+    meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px"><i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
+      + esc(m.transferido_para_nome||'—') + '</strong>'
+      + (m.etapa_codigo ? ' · etapa '+esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
+    if (m.documento_ref_id) {
+      meta += '<div style="margin-top:4px"><a target="_blank" rel="noopener" href="/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/ciclo/documento/'+m.documento_ref_id
+        + '" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:10px;color:var(--text);text-decoration:none">'
+        + '<i class="ti ti-paperclip"></i> ' + esc(m.documento_nome||('documento #'+m.documento_ref_id)) + '</a></div>';
+    }
+    if (m.bloqueador && !m.resolvido_em) {
+      meta += '<div style="margin-top:4px"><span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px">BLOQUEADOR ATIVO</span> '
+        + '<button class="btn-ciclo" style="font-size:10px;padding:2px 8px" onclick="convResolver('+m.id+')">Resolver</button>'
+        + (_podeAutorizarFront() ? ' <button class="btn-ciclo" style="font-size:10px;padding:2px 8px;color:var(--warn)" onclick="convDestravar('+m.id+')">Destravar (emergência)</button>' : '') + '</div>';
+    } else if (m.bloqueador && m.resolvido_em) {
+      meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px"><i class="ti ti-lock-open"></i> bloqueador resolvido</div>';
+    }
+  }
+  return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
+    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
+    + _ccAnexosHtml(m) + meta + '</div>';
 }
 
 let _ccArquivo = null;
@@ -12310,6 +12148,27 @@ async function ccEnviar(){
       if(corpo) fd.append('corpo', corpo);
       d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/anexos',
         {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
+    } else if(_ccConvProjeto){
+      // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
+      const payload = {corpo};
+      const tchk = document.getElementById('conv-transf-chk');
+      const ehTransf = tchk && tchk.checked;
+      if(ehTransf){
+        const fid = document.getElementById('conv-transf-func').value;
+        if(!fid){ showToast('Escolha quem recebe a transferência.', true); return; }
+        payload.natureza = 'transferencia';
+        payload.transferido_para_funcionario_id = parseInt(fid,10);
+        const et = document.getElementById('conv-transf-etapa').value; if(et) payload.etapa_codigo = et;
+        const doc = document.getElementById('conv-transf-doc').value; if(doc) payload.documento_ref_id = parseInt(doc,10);
+        payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
+      }
+      d = await fetch('/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/conversa/mensagens',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify(payload)}).then(r=>r.json());
+      if(d && d.ok && ehTransf){
+        if(tchk) tchk.checked = false; convTransfToggle();
+        if(typeof carregarCiclo === 'function') carregarCiclo();   // tag "com a bola" / estado do ciclo
+      }
     } else {
       d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
@@ -12451,7 +12310,7 @@ async function ccCriar(){
       await ccCarregarInbox();
       const idx = _ccInbox.findIndex(c => c.id === d.conversa.id);
       if(idx >= 0) ccAbrirConversa(idx);
-      else await ccAbrirConversaPorId(d.conversa.id, d.conversa.titulo, true, 'projeto');
+      else await ccAbrirConversaPorId(d.conversa.id, d.conversa.titulo, true, 'projeto', d.conversa.projeto_nome || assVal.slice(8));
     }catch(e){ aviso.textContent = 'Erro de rede.'; }
     return;
   }
@@ -12619,30 +12478,32 @@ function ccAbrirDebate(idx){
 }
 
 async function convResolver(mid){
-  if(!projetoAtivo) return;
+  const proj = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
+  if(!proj) return;
   try{
-    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/${mid}/resolver`,
+    const d = await fetch(`/api/projetos/${encodeURIComponent(proj)}/conversa/mensagens/${mid}/resolver`,
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
     if(!d.ok){ await avisoPopup(d.erro||'Falha ao resolver.', {titulo:'Resolver bloqueador'}); return; }
     showToast('Bloqueador resolvido.');
-    await convCarregar(); carregarCiclo();
+    await ccCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Resolver bloqueador'}); }
 }
 
 async function convDestravar(mid){
-  if(!projetoAtivo) return;
+  const proj = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
+  if(!proj) return;
   const motivo = (prompt('Motivo do destravamento de emergência (obrigatório):') || '').trim();
   if(!motivo) return;
   const cred = await pedirCredenciaisGerente({titulo:'Destravar bloqueador (emergência)',
     mensagem:'Login e senha de Gerente/Diretor. O destravamento fica registrado na auditoria.'});
   if(!cred) return;
   try{
-    const d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/conversa/mensagens/${mid}/destravar-emergencia`,
+    const d = await fetch(`/api/projetos/${encodeURIComponent(proj)}/conversa/mensagens/${mid}/destravar-emergencia`,
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify({motivo, login: cred.login || '', senha: cred.senha || ''})}).then(r=>r.json());
     if(!d.ok){ await avisoPopup(d.erro||'Falha ao destravar.', {titulo:'Destravar (emergência)'}); return; }
     showToast('Bloqueador destravado pela gerência (auditado).');
-    await convCarregar(); carregarCiclo();
+    await ccCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
 }
 

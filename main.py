@@ -5381,7 +5381,9 @@ class Handler(BaseHTTPRequestHandler):
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 resumo_email = None
-                if dd.get("oficializar_email"):
+                if dd.get("oficializar_email") and (perfis.pode(usuario.get("nivel"), "autorizar")
+                                                     or perfis.pode(usuario.get("nivel"), "aprovar_financeiro")):
+                    # "Oficializar por e-mail" é ato formal — só gerência/diretoria (decisão do lojista).
                     resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 db.commit()
                 try:
@@ -5475,7 +5477,9 @@ class Handler(BaseHTTPRequestHandler):
                     # transferir ENTRE faixas é a razão de existir da transferência.
                     etapa_alvo.responsavel_funcionario_id = transferido.id
                 resumo_email = None
-                if dd.get("oficializar_email"):
+                if dd.get("oficializar_email") and (perfis.pode(usuario.get("nivel"), "autorizar")
+                                                     or perfis.pode(usuario.get("nivel"), "aprovar_financeiro")):
+                    # "Oficializar por e-mail" é ato formal — só gerência/diretoria (decisão do lojista).
                     resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 try:
                     import mod_chat_externo as _mce

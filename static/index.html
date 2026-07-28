@@ -12025,7 +12025,7 @@ async function ccCarregarDestinatarios(){
   // Seletor "Para" (F2) + caixa "E-mail (oficializar)" (F3): só em grupo/projeto.
   const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
   const ofic = document.getElementById('cc-oficializar-wrap');
-  if(ofic) ofic.style.display = grupoOuProj ? '' : 'none';
+  if(ofic) ofic.style.display = (grupoOuProj && _podeAutorizarFront()) ? '' : 'none';   // só gerência
   const ofc = document.getElementById('cc-oficializar'); if(ofc) ofc.checked = false;
   const sel = document.getElementById('cc-dest');
   if(!sel) return;

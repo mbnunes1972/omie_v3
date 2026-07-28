@@ -178,6 +178,12 @@ def test_endpoint_oficializar_email(http_client_factory, app_db, seed):
     cid = c.post("/api/comunicacao/conversas", {"tipo": "grupo", "titulo": "G3", "participante_ids": [alvo]})[1]["conversa"]["id"]
     st, b = c.post("/api/comunicacao/conversas/%d/mensagens" % cid, {"corpo": "oficial", "oficializar_email": True})
     assert st == 201 and b["email"] == {"total": 2, "enviados": 0, "pendentes": 2}
+    # gate (decisão do lojista): operador NÃO oficializa — a mensagem posta, mas sem e-mail
+    op = _login(http_client_factory, "cons_l1")
+    cid2 = op.post("/api/comunicacao/conversas",
+                   {"tipo": "grupo", "titulo": "G op", "participante_ids": [_uid(app_db, "dir_l1")]})[1]["conversa"]["id"]
+    st, b2 = op.post("/api/comunicacao/conversas/%d/mensagens" % cid2, {"corpo": "x", "oficializar_email": True})
+    assert st == 201 and b2["email"] is None
 
 
 def test_destinatario_deve_ser_participante(http_client_factory, app_db, seed):

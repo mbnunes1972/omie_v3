@@ -1339,6 +1339,27 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
   ainda testa 409, agora com CPF válido). CPFs de teste válidos: `111.444.777-35`, `390.533.447-05`; CNPJ `11.222.333/0001-81`.
 - **Pendente:** merge desta branch na `main` + re-ingerir MCP.
 
+## ⏸️ ESTADO ATUAL (2026-07-29) — retomar aqui
+
+> **🚀 DEPLOY VPS A (2026-07-29, `90755c2`):** frente **Orizon Chat/Meta (UI-first)** promovida à **VPS A**
+> (`167.88.33.121`, `orizon-a` :8765) — ver **Sessão 129**. Entregue e auditado pela Vera: **Números
+> Conectados** (RF-01; número por loja + status do transporte Meta como booleanos, secrets só em env var),
+> **Consumo/Custos** (§10), **Atendimentos full-page** (F7/RF-12) e **Chat Interno full-page** (sai do modal
+> antigo). Correções da Vera aplicadas (janela por conversa; janela não infla pela resposta do funcionário
+> via ponte; template padrão só ativo). Suíte **1613 verde**; **MCP reingerido** (fonte `all`: código
+> 3224/2935, banco 207/138, requisitos 31, domínio 19, decisões 17). **VPS B intocada** na `Pre_Teste`
+> (`9e13753`, :8766). **VPS B → produção pendentes de OK do usuário.**
+>
+> **Pendentes da frente (backend, p/ a Vera/TDD):** F3 (envio por template + janela na composição — usar a
+> `janela_da_conversa` já corrigida), F4 (reengajamento RF-17 + trigger cron/systemd-timer), F6 (fluxo de
+> roteamento RF-08/09 + SAC via `responsavel_sac`). **Backburner:** perf de `_atendimento_meta`; aba
+> "Outros"/"Arquivados" e semântica plena de triagem/atribuição do RF-12 (exigem "dono do atendimento" e
+> inbox loja-wide). **Estudo do Hunt** recebido; rodada complementar da Vera aguarda **prints** (sem login).
+>
+> **Config do Chat completo** (as 5 sub-abas: Segmentos · Triagem · Modelos · Números · Consumo) + os dois
+> destinos de **Comunicação** (Atendimentos · Chat Interno) agora full-page no `#page-chat`. Plano fatiado
+> com o status por fatia: `docs/superpowers/plans/2026-07-28-orizon-chat-revisao-meta.md`.
+
 ## ⏸️ ESTADO ATUAL (2026-07-27) — retomar aqui
 
 > **🚀 DEPLOY VPS A (2026-07-27, atualizado p/ `734ec69`):** `main` promovida à **VPS A**
@@ -2601,6 +2622,48 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 129 — Orizon Chat/Meta (UI-first): Números, Consumo, Atendimentos (F7) e Chat Interno full-page
+Continuação da frente **Revisão do Orizon Chat — Meta/WhatsApp** (plano
+`docs/superpowers/plans/2026-07-28-orizon-chat-revisao-meta.md`), em modo **UI-first** (backend de envio
+fica para a Vera/TDD). Tudo promovido à **VPS A** ao longo da sessão, com auditoria da Vera antes de cada
+promoção. Entregas:
+
+- **Correções da 1ª auditoria da Vera (`22873ce`):** `mod_chat_externo.janela_da_conversa` reescrita para
+  escopar pela CONVERSA (join `EnvioExterno→ConversaMensagem→conversa_id`) — não vaza mais a janela de 24h
+  entre lojas da mesma rede com o mesmo número; `segmentos_config_salvar` só aceita template ATIVO como
+  padrão + `remover_template` limpa o `slot_obrigatorio`.
+- **Números Conectados (RF-01, `16de36e`):** tabela `numero_conectado` (1 por loja) + `mod_chat.
+  numero_conectado_get/salvar` + `_status_transporte_whatsapp` + `GET/POST /api/comunicacao/numeros`
+  (gerência, tenancy) + tela no `#page-chat`. Número exibível editável por loja; **status do transporte
+  Meta como booleanos** — os secrets (`ORIZON_WA_TOKEN`/`ORIZON_WA_PHONE_ID`) ficam em variável de
+  ambiente e **NUNCA** saem no JSON (teste prova o não-vazamento). Número real da loja: **+55 12 996049888**.
+- **Consumo / Custos (§10, `431bd1e`):** `mod_chat.consumo_por_segmento` (agrega `EnvioExterno` WhatsApp/
+  saída × status, escopado por `Conversa.loja_id`) + `GET /api/comunicacao/consumo` + tela. Sem R$ de
+  propósito (tarifa Meta varia por categoria/país, não cadastrada).
+- **Atendimentos full-page (F7/RF-12, `b7a4dc9`):** `listar_inbox` enriquece cada conversa não-mural com
+  `segmento` (canal do último externo) e `janela` (na/aberta/fechando/fechada) via `mod_chat._atendimento_
+  meta`. Tela full-page no `#page-chat` (sidebar Comunicação → Atendimentos sai do modal): abas Novos/Meus/
+  Grupos/Arquivados + filtro por segmento + selos (segmento, Janela aberta/fecha em Xh/fechada, Vinculado ao
+  Projeto); clique reusa a thread do modal. Limites honestos: aba Arquivados vazia (`Conversa` sem coluna de
+  arquivo) e aba "Outros" adiada (exige inbox loja-wide + atribuição de atendente).
+- **Correção da auditoria da Vera na F7 (`b6d98ad`):** 🟠 a resposta do FUNCIONÁRIO pela ponte
+  (`processar_entrada_usuario` grava entrada `canal='interno'`) inflava a janela como se o cliente tivesse
+  voltado; `janela_da_conversa` agora exclui `canal='interno'` (mantendo entrada do cliente com
+  segmento/NULL) + teste. 🟡 `atendAbrir` ganha `showToast` quando a conversa some do inbox.
+- **Chat Interno full-page (`90755c2`):** sidebar Comunicação → Chat Interno sai do modal antigo e vira
+  tela full-page espelhando Atendimentos — abas Todas/Individuais/Grupos/Mural (só tipos de equipe;
+  projeto fica em Atendimentos), barra de ações (Nova mensagem/Fórum da Loja/Fórum Orizon/Administração com
+  o mesmo gating do modal), clique reusa a thread do modal. Modal segue como motor de thread/nova/fórum/
+  admin até a aposentadoria final.
+- **Backburner registrado** (não bloqueia): perf de `_atendimento_meta` (~2 queries/item; gerência é
+  auto-participante de toda conversa de projeto fechado → medir/paginar antes de produção); semântica plena
+  de triagem/atribuição do RF-12 (abas Novos=não-lidas / Meus=não-grupo até existir "dono do atendimento").
+
+Suíte **1613 verde** (Postgres). `node --check` verde nas telas. **Vera** auditou cada leva (veredito "pode
+promover" nas três). **Estudo do Hunt** (avaliação ao vivo do usuário) recebido como insumo — Vera **não**
+tem login no app autenticado, então a rodada complementar aguarda prints do usuário. **VPS B / produção
+seguem pendentes de OK.**
 
 ## Sessão 128 — Fatias 6-7 CONCLUÍDAS (código): transportes ao vivo SMTP + Meta WhatsApp
 Implementado o `despachar()` real (a última peça): **e-mail via smtplib** (STARTTLS, login,

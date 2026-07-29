@@ -257,6 +257,9 @@ def test_numero_conectado_get_e_salvar(app_db, seed, monkeypatch):
         r = mod_chat.numero_conectado_salvar(db, lid, "+55 12 99604-9888", "Dalmóbile"); db.commit()
         assert r["numero"] == "+55 12 99604-9888" and r["rotulo"] == "Dalmóbile"
         assert mod_chat.numero_conectado_get(db, lid)["numero"] == "+55 12 99604-9888"
+        # achado da Vera 🟡: número longo é truncado p/ caber em String(24), não estoura o Postgres
+        r2 = mod_chat.numero_conectado_salvar(db, lid, "+" + "9" * 40, None); db.commit()
+        assert len(r2["numero"]) == 24
     finally:
         db.close()
 
@@ -281,7 +284,7 @@ def test_consumo_por_segmento(app_db, seed):
         m = mod_chat.enviar_mensagem(db, conv, None, "x", canal="comercial", _permitir_externo=True); db.flush()
         for st in ("enviado", "enviado", "pendente_config"):     # 2 enviados + 1 pendente (comercial)
             db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="saida", canal="comercial", status=st))
-        db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="saida", canal="financeiro", status="erro"))
+        db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="saida", canal="financeiro", status="falhou"))  # status real de produção → bucket 'erro'
         db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="entrada", canal="comercial", status="recebido"))  # entrada não conta
         db.add(EnvioExterno(mensagem_id=m.id, meio="email", direcao="saida", canal="comercial", status="enviado"))        # e-mail não conta
         db.flush()

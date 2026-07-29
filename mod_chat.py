@@ -639,7 +639,7 @@ def numero_conectado_salvar(db, loja_id, numero, rotulo):
     n = db.query(NumeroConectado).filter_by(loja_id=loja_id).first()
     if n is None:
         n = NumeroConectado(loja_id=loja_id); db.add(n)
-    n.numero = (numero or "").strip() or None
+    n.numero = ((numero or "").strip()[:24]) or None   # coluna é String(24) — trunca p/ não estourar (500)
     n.rotulo = (rotulo or "").strip() or None
     n.atualizado_em = datetime.utcnow()
     db.flush()

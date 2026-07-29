@@ -193,16 +193,23 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
   Runbook: systemd-timer/cron no VPS (documentar no DEV_RULES). Teste do endpoint (auth + idempotência).
 - [ ] Suíte verde.
 
-## Fatia 5 — Configurações → Modelos de Mensagem (RF-15, RF-16)
-**Depende de:** F2 (dados) + F9 (hub de Configurações do Chat, onde a tela vive). · **Sub-skill:** `superpowers:executing-plans` (UI; backend já em F2).
+> **Decisão do lojista (2026-07-29): UI-primeiro + reconstruir no mockup.** A UI atual está datada e,
+> sem tela, é difícil testar; o backend fica com a Vera (auditoria). Começar por **Modelos de Mensagem**.
+> O Orizon Chat vira **módulo de PÁGINA CHEIA** (`#page-chat`, casca do mockup: sub-sidebar Comunicação/
+> Configurações). Entrega incremental: as telas de Config nascem no `#page-chat`; **Atendimentos/Chat
+> Interno** por ora abrem o modal atual (migração da fila = fatia dedicada). Nav novo **"Config do Chat"**.
+
+## Fatia 5 — Configurações → Modelos de Mensagem (RF-15, RF-16) — ✅ UI FEITA 2026-07-29 (frontend)
+**Depende de:** F2 (dados, pronta). · **Sub-skill:** `superpowers:executing-plans` (UI).
 **Pronto quando:** a tela do mockup renderiza o checklist das 9 e o resumo, consumindo a F2.
 
-- [ ] `GET /api/comunicacao/templates/checklist` → por slot obrigatório: {configurado?, aprovado?}.
-  Teste de contagem (6/9 configurados, 4/9 aprovados, 3 pendentes como no mockup).
-- [ ] Frontend: aba **Modelos de Mensagem** em Configurações do Chat — 3 cards de resumo + lista numerada
-  1–9 (badge status + Editar), tokens reais. `node --check` + verificação manual (tema claro/escuro).
-- [ ] Bloqueio de "loja pronta p/ WhatsApp" enquanto houver slot sem template aprovado (RF-16) — flag
-  exposta, sem travar a operação interna.
+- [x] Frontend: `#page-chat` (casca full-page do mockup, tokens reais) + tela **Modelos de Mensagem** —
+  3 cards de resumo (Configurados/Aprovados/Pendentes) + checklist 1–9 (badge Aprovado/Em análise/
+  Pendente + Editar/Configurar) + modal de cadastro/edição/remoção (consome `GET`/`POST
+  /api/comunicacao/templates`). Segmentos/Triagem/Números/Consumo = placeholders navegáveis.
+  `node --check` verde. **Verificação visual: pendente (usuário).**
+- [ ] (Backburner) `checklist` endpoint dedicado + flag "loja pronta p/ WhatsApp" (RF-16) — hoje o
+  cálculo é no front a partir de `GET /templates`; formalizar no backend se necessário.
 
 ## Fatia 6 — Configurações → Triagem + fluxo real (RF-08, RF-09)
 **Depende de:** F1 + F9 (hub de Configurações do Chat, onde a tela vive). · **Sub-skill:** `superpowers:executing-plans` (UI) + backend do fluxo em TDD.

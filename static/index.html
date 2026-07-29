@@ -551,6 +551,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
       <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="cc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
+      <div class="nav-item" id="nav-chat-cfg" onclick="goPageChat()" title="Configurações do Orizon Chat"><i class="ti ti-message-cog"></i>Config do Chat</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -2071,6 +2072,99 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="orz-panel-redes"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="orz-panel-lojas" style="display:none"></div>
     <div id="orz-panel-gestores" style="display:none"></div>
+  </div>
+
+  <!-- ===== Orizon Chat — módulo de página cheia (mockup 2026-07-28) ===== -->
+  <style>
+    #page-chat{padding:0}
+    .ochat-shell{display:flex;height:calc(100vh - 0px);min-height:520px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface)}
+    .ochat-side{width:214px;min-width:214px;background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:10px 8px}
+    .ochat-side-title{font-size:9px;letter-spacing:1.4px;color:var(--text-3);text-transform:uppercase;padding:0 10px;margin:14px 0 6px}
+    .ochat-nav{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-2);margin-bottom:2px}
+    .ochat-nav .ti{font-size:16px;width:16px;text-align:center}
+    .ochat-nav:hover{background:var(--accent-soft);color:var(--accent)}
+    .ochat-nav.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+    .ochat-main{flex:1;display:flex;flex-direction:column;min-width:0}
+    .ochat-top{padding:14px 22px;border-bottom:1px solid var(--border)}
+    .ochat-top h2{font-family:var(--font-display);font-size:var(--fs-h1);font-weight:700;color:var(--text);margin:0}
+    .ochat-top p{font-size:var(--fs-sm);color:var(--text-2);margin:2px 0 0}
+    .ochat-body{flex:1;overflow-y:auto;padding:20px 22px}
+    .ochat-scr{display:none}
+    .ochat-scr.active{display:block}
+    .ochat-cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+    .ochat-card{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}
+    .ochat-card .lbl{font-size:var(--fs-xs);color:var(--text-3)}
+    .ochat-card .num{font-family:var(--font-display);font-size:1.7rem;font-weight:700;margin-top:2px}
+    .ochat-chk{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:11px 14px;margin-bottom:8px}
+    .ochat-chk-num{width:26px;height:26px;flex:none;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--text-2)}
+    .ochat-chk-tit{font-weight:600;font-size:13px;color:var(--text)}
+    .ochat-chk-mom{font-size:var(--fs-xs);color:var(--text-3);margin-top:1px}
+    .ochat-badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:999px;font-size:var(--fs-xs);font-weight:600}
+    .ochat-badge.ok{background:var(--ok-soft);color:var(--ok)}
+    .ochat-badge.warn{background:var(--warn-soft);color:var(--warn)}
+    .ochat-badge.err{background:var(--err-soft);color:var(--err)}
+    .ochat-ph{display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius);border:1px solid var(--info-line);background:var(--info-soft);font-size:var(--fs-sm);color:var(--text)}
+  </style>
+  <div class="page" id="page-chat">
+    <div class="ochat-shell">
+      <div class="ochat-side">
+        <div class="ochat-side-title">Comunicação</div>
+        <div class="ochat-nav" onclick="abrirCentralComunicacao()"><i class="ti ti-message-circle-2"></i> Atendimentos</div>
+        <div class="ochat-nav" onclick="abrirCentralComunicacao()"><i class="ti ti-users-group"></i> Chat Interno</div>
+        <div class="ochat-side-title">Configurações do Chat</div>
+        <div class="ochat-nav" data-scr="segmentos" onclick="ochatIr('segmentos')"><i class="ti ti-adjustments"></i> Segmentos</div>
+        <div class="ochat-nav" data-scr="triagem" onclick="ochatIr('triagem')"><i class="ti ti-signpost"></i> Triagem</div>
+        <div class="ochat-nav active" data-scr="modelos" onclick="ochatIr('modelos')"><i class="ti ti-template"></i> Modelos de Mensagem</div>
+        <div class="ochat-nav" data-scr="numeros" onclick="ochatIr('numeros')"><i class="ti ti-phone"></i> Números Conectados</div>
+        <div class="ochat-nav" data-scr="consumo" onclick="ochatIr('consumo')"><i class="ti ti-report-money"></i> Consumo / Custos</div>
+      </div>
+      <div class="ochat-main">
+        <div class="ochat-top" id="ochat-top"><h2>Modelos de Mensagem</h2><p>Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.</p></div>
+        <div class="ochat-body">
+          <!-- Modelos de Mensagem -->
+          <div class="ochat-scr active" id="ochat-scr-modelos">
+            <div class="ochat-cards" id="ochat-tpl-cards"></div>
+            <div id="ochat-tpl-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+          </div>
+          <!-- placeholders (mesma convenção do mockup) -->
+          <div class="ochat-scr" id="ochat-scr-segmentos"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Ativar/editar os segmentos internos (comercial, suporte técnico, financeiro, compras, logística, parceiros) e o template padrão de cada um. <b>Tela em construção.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-triagem"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Formato da pergunta de triagem (lista de opções × texto livre) + pré-visualização no WhatsApp. <b>Próxima fatia.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-numeros"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Número de WhatsApp da loja e status do transporte Meta (config-gated). <b>Tela em construção.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-consumo"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Mensagens de template enviadas e custo estimado por segmento. <b>Tela em construção.</b></div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: cadastro/edição de template (Modelos de Mensagem) -->
+  <div id="modal-tpl" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+    <div class="modal-box" style="max-width:520px;width:94%">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-family:var(--font-display);font-weight:900;font-size:16px" id="tpl-modal-tit">Template</div>
+        <span onclick="document.getElementById('modal-tpl').style.display='none'" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
+      </div>
+      <div id="tpl-modal-sub" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <label class="field-label">Nome do template na Meta
+          <input id="tpl-nome" type="text" placeholder="ex.: reengajamento_comercial" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
+        <div style="display:flex;gap:8px">
+          <label class="field-label" style="flex:1">Categoria
+            <select id="tpl-cat" style="width:100%;padding:7px 9px"><option value="utility">Utility</option><option value="marketing">Marketing</option></select></label>
+          <label class="field-label" style="flex:1">Idioma
+            <input id="tpl-idioma" type="text" value="pt_BR" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
+          <label class="field-label" style="flex:1">Status
+            <select id="tpl-status" style="width:100%;padding:7px 9px"><option value="rascunho">Rascunho</option><option value="em_analise">Em análise na Meta</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select></label>
+        </div>
+        <label class="field-label">Corpo (use {{1}}, {{2}}… para as variáveis)
+          <textarea id="tpl-corpo" rows="3" style="width:100%;box-sizing:border-box;padding:7px 9px;font-family:inherit"></textarea></label>
+      </div>
+      <div id="tpl-modal-erro" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-ghost btn-sm" id="tpl-remover-btn" style="margin-right:auto;color:var(--err);display:none" onclick="tplRemover()">Remover</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-tpl').style.display='none'">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="tplSalvar()">Salvar</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal: Cadastro/Edição de Loja (Painel Orizon) -->
@@ -9811,6 +9905,103 @@ function empresaTrocar(id){
   const p7 = document.getElementById('page-07'), p9 = document.getElementById('page-09');
   if (p7 && p7.classList.contains('active')) adminRender();
   if (p9 && p9.classList.contains('active') && typeof cfgRender === 'function') cfgRender();
+}
+
+// ── Orizon Chat — módulo de página cheia (mockup 2026-07-28) ──────────────────
+function goPageChat(){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg = document.getElementById('page-chat'); if(pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  const nav = document.getElementById('nav-chat-cfg'); if(nav) nav.classList.add('active');
+  const sbParams = document.getElementById('sb-params'); if(sbParams) sbParams.style.display='none';
+  ochatIr('modelos');
+}
+const _OCHAT_TOP = {
+  modelos:  ['Modelos de Mensagem', 'Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.'],
+  segmentos:['Segmentos', 'Ativar/editar os canais internos e o template padrão de cada segmento.'],
+  triagem:  ['Triagem', 'Como o sistema pergunta o departamento quando um contato novo escreve.'],
+  numeros:  ['Números Conectados', 'Número de WhatsApp da loja e status do transporte Meta.'],
+  consumo:  ['Consumo / Custos', 'Mensagens de template enviadas e custo estimado por segmento.'],
+};
+function ochatIr(scr){
+  document.getElementById('modal-central-com') && (document.getElementById('modal-central-com').style.display='none');
+  document.querySelectorAll('#page-chat .ochat-nav[data-scr]').forEach(n=>n.classList.toggle('active', n.getAttribute('data-scr')===scr));
+  document.querySelectorAll('#page-chat .ochat-scr').forEach(s=>s.classList.remove('active'));
+  const el = document.getElementById('ochat-scr-'+scr); if(el) el.classList.add('active');
+  const t = _OCHAT_TOP[scr]; const top = document.getElementById('ochat-top');
+  if(t && top) top.innerHTML = '<h2>'+esc(t[0])+'</h2><p>'+esc(t[1])+'</p>';
+  if(scr==='modelos') chatModelosCarregar();
+}
+
+// ── Modelos de Mensagem (RF-15/16) — checklist das 9 mensagens obrigatórias ────
+let _tplSlots = [], _tplPorSlot = {};
+const _TPL_STATUS = {aprovado:['ok','Aprovado'], em_analise:['warn','Em análise na Meta'],
+                     rejeitado:['err','Rejeitado'], rascunho:['err','Pendente']};
+async function chatModelosCarregar(){
+  const lista = document.getElementById('ochat-tpl-lista');
+  const cards = document.getElementById('ochat-tpl-cards');
+  let d;
+  try{ d = await fetch('/api/comunicacao/templates',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ lista.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ cards.innerHTML=''; lista.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Sem permissão para ver os modelos (gerência).')+'</div></div>'; return; }
+  _tplSlots = d.slots||[];
+  _tplPorSlot = {};
+  (d.templates||[]).forEach(t=>{ if(t.slot_obrigatorio) _tplPorSlot[t.slot_obrigatorio]=t; });
+  const config = Object.keys(_tplPorSlot).length;
+  const aprov = Object.values(_tplPorSlot).filter(t=>t.status==='aprovado').length;
+  cards.innerHTML =
+      '<div class="ochat-card"><div class="lbl">Configurados</div><div class="num">'+config+'<span style="font-size:1rem;color:var(--text-3)"> / 9</span></div></div>'
+    + '<div class="ochat-card"><div class="lbl">Aprovados pela Meta</div><div class="num" style="color:var(--ok)">'+aprov+'<span style="font-size:1rem;color:var(--text-3)"> / 9</span></div></div>'
+    + '<div class="ochat-card"><div class="lbl">Pendentes</div><div class="num" style="color:var(--err)">'+(9-aprov)+'</div></div>';
+  lista.innerHTML = _tplSlots.map(s=>{
+    const t = _tplPorSlot[s.num];
+    const st = t ? (_TPL_STATUS[t.status]||['err','Pendente']) : ['err','Pendente'];
+    const badge = '<span class="ochat-badge '+st[0]+'">'+esc(st[1])+'</span>';
+    const btn = t ? '<button class="btn btn-ghost btn-sm" onclick="tplAbrir('+s.num+')">Editar</button>'
+                  : '<button class="btn btn-secondary btn-sm" onclick="tplAbrir('+s.num+')">Configurar</button>';
+    return '<div class="ochat-chk"><div class="ochat-chk-num">'+s.num+'</div>'
+      + '<div style="flex:1"><div class="ochat-chk-tit">'+esc(s.titulo)+'</div><div class="ochat-chk-mom">'+esc(s.momento)+'</div></div>'
+      + badge + btn + '</div>';
+  }).join('');
+}
+let _tplSlotAtual = null;
+function tplAbrir(slotNum){
+  _tplSlotAtual = slotNum;
+  const s = _tplSlots.find(x=>x.num===slotNum) || {};
+  const t = _tplPorSlot[slotNum] || null;
+  document.getElementById('tpl-modal-tit').textContent = (t?'Editar':'Configurar')+' — '+(s.titulo||'Template');
+  document.getElementById('tpl-modal-sub').textContent = (s.momento||'') + ' · categoria sugerida: ' + (s.categoria||'utility');
+  document.getElementById('tpl-nome').value = t ? (t.nome_meta||'') : '';
+  document.getElementById('tpl-cat').value = t ? (t.categoria||'utility') : (s.categoria||'utility');
+  document.getElementById('tpl-idioma').value = t ? (t.idioma||'pt_BR') : 'pt_BR';
+  document.getElementById('tpl-status').value = t ? (t.status||'rascunho') : 'rascunho';
+  document.getElementById('tpl-corpo').value = t ? (t.corpo||'') : '';
+  document.getElementById('tpl-remover-btn').style.display = t ? '' : 'none';
+  document.getElementById('tpl-modal-erro').textContent = '';
+  document.getElementById('modal-tpl').style.display = 'flex';
+}
+async function tplSalvar(){
+  const s = _tplSlots.find(x=>x.num===_tplSlotAtual) || {};
+  const t = _tplPorSlot[_tplSlotAtual] || null;
+  const payload = {nome_meta: document.getElementById('tpl-nome').value.trim(),
+                   categoria: document.getElementById('tpl-cat').value,
+                   idioma: document.getElementById('tpl-idioma').value.trim() || 'pt_BR',
+                   status: document.getElementById('tpl-status').value,
+                   corpo: document.getElementById('tpl-corpo').value,
+                   slot_obrigatorio: _tplSlotAtual, segmento: s.segmento || null};
+  const url = t ? '/api/comunicacao/templates/'+t.id : '/api/comunicacao/templates';
+  const d = await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ document.getElementById('tpl-modal-erro').textContent = d.erro||'Falha ao salvar.'; return; }
+  document.getElementById('modal-tpl').style.display='none';
+  showToast('Modelo salvo.'); chatModelosCarregar();
+}
+async function tplRemover(){
+  const t = _tplPorSlot[_tplSlotAtual]; if(!t) return;
+  if(!(await confirmarPopup('Remover este modelo? O slot volta a ficar pendente.', {titulo:'Modelos de Mensagem', okLabel:'Remover', cancelLabel:'Cancelar', perigo:true}))) return;
+  const d = await fetch('/api/comunicacao/templates/'+t.id+'/remover',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ document.getElementById('tpl-modal-erro').textContent = d.erro||'Falha.'; return; }
+  document.getElementById('modal-tpl').style.display='none';
+  showToast('Modelo removido.'); chatModelosCarregar();
 }
 
 // ── Painel Orizon (administração do sistema — só super_admin) ─────────────────

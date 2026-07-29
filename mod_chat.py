@@ -506,7 +506,9 @@ def remover_template(db, loja_id, template_id):
     t = db.query(TemplateMensagem).filter_by(id=int(template_id), loja_id=loja_id).first()
     if t is None:
         return False
-    t.ativo = 0; db.flush()
+    t.ativo = 0
+    t.slot_obrigatorio = None   # libera o slot de vez (achado da Vera): não deixa slot preso num inativo
+    db.flush()
     return True
 
 
@@ -595,8 +597,8 @@ def segmentos_config_salvar(db, loja_id, itens):
         c.ativo = 1 if it.get("ativo", True) else 0
         c.rotulo = (it.get("rotulo") or "").strip() or None
         tpid = it.get("template_padrao_id")
-        if tpid:                                            # valida: template da loja E do segmento
-            t = db.query(TemplateMensagem).filter_by(id=int(tpid), loja_id=loja_id).first()
+        if tpid:                                            # valida: template ATIVO da loja E do segmento
+            t = db.query(TemplateMensagem).filter_by(id=int(tpid), loja_id=loja_id, ativo=1).first()
             c.template_padrao_id = t.id if (t and t.segmento == seg) else None
         else:
             c.template_padrao_id = None

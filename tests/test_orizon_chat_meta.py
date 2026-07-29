@@ -64,6 +64,24 @@ def test_janela_da_conversa(app_db, seed):
         db.close()
 
 
+def test_janela_escopada_por_conversa(app_db, seed):
+    """Achado da Vera 🟠: a janela é da CONVERSA — não vaza entre conversas/lojas com o mesmo número."""
+    db = app_db.get_session()
+    try:
+        cr1 = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        cr2 = db.query(app_db.Usuario).filter_by(login="dir_l2").first().id
+        convA = mod_chat.criar_grupo(db, seed["loja1_id"], cr1, "JA", [], exige_dois=False)
+        convB = mod_chat.criar_grupo(db, seed["loja2_id"], cr2, "JB", [], exige_dois=False); db.flush()
+        msg = mod_chat.enviar_mensagem(db, convB, None, "oi", canal="comercial", _permitir_externo=True); db.flush()
+        db.add(EnvioExterno(mensagem_id=msg.id, meio="whatsapp", direcao="entrada",
+                            destino="5511912345678", status="recebido",
+                            criado_em=datetime.utcnow() - timedelta(hours=1))); db.flush()
+        assert mce.janela_da_conversa(db, convB)["aberta"] is True
+        assert mce.janela_da_conversa(db, convA)["aberta"] is False        # entrada de B não vaza p/ A
+    finally:
+        db.close()
+
+
 # ── G5 — HTTPError da Meta vira o erro real (não "HTTP 400") ────────────────────
 def test_erro_meta_extrai_mensagem_real():
     he = urllib.error.HTTPError("u", 400, "Bad Request", {}, io.BytesIO(
@@ -199,6 +217,10 @@ def test_segmentos_config_get_e_salvar(app_db, seed):
         assert by["compras"]["ativo"] is False
         cfg2 = mod_chat.segmentos_config_salvar(db, lid, [{"segmento": "financeiro", "template_padrao_id": t.id}])
         assert {s["segmento"]: s for s in cfg2}["financeiro"]["template_padrao_id"] is None  # template de outro segmento
+        # achado da Vera: template INATIVO (soft-deletado) não vira padrão
+        mod_chat.remover_template(db, lid, t.id); db.commit()
+        cfg3 = mod_chat.segmentos_config_salvar(db, lid, [{"segmento": "comercial", "template_padrao_id": t.id}])
+        assert {s["segmento"]: s for s in cfg3}["comercial"]["template_padrao_id"] is None
     finally:
         db.close()
 

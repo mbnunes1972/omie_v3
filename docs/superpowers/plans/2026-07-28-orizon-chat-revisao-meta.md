@@ -129,6 +129,14 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
 
 ---
 
+> **Auditoria da Vera (2026-07-29, `99a018e`→`59cda0c`): pode promover; 2 correções aplicadas.**
+> (🟠) `janela_da_conversa` varria o histórico global casando só por telefone → vazava a janela entre
+> lojas da mesma rede com o mesmo número; **reescrita para escopar pela CONVERSA** (join
+> `EnvioExterno→ConversaMensagem→conversa_id`) — mais preciso e resolve o perf (#3). (🟡) Segmentos
+> aceitava template **inativo** como padrão → filtro `ativo=1` + `remover_template` agora **limpa o
+> slot**. Testes +2 (janela por conversa; padrão não aceita inativo). _Backburner (Vera):_ #4
+> `UniqueConstraint(loja,slot)` no template (hoje só app-level) e #5 guardrail de categoria por slot.
+
 ## Fatia 1 — Fundação de backend (sem UI nova) — ✅ FEITA 2026-07-28 (`tests/test_orizon_chat_meta.py`, 6)
 **Depende de:** — · **Sub-skill:** `superpowers:subagent-driven-development` (TDD, tasks paralelizáveis).
 **Pronto quando:** suíte verde; os gaps de F1 fechados com teste; nada de UI.

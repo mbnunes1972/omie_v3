@@ -308,42 +308,20 @@ def dentro_da_janela_24h(db, usuario_id):
 JANELA_SEG = JANELA_HORAS * 3600
 
 
-def _numeros_da_conversa(db, conversa):
-    """Números de WhatsApp externos associados à conversa: participantes externos (whatsapp) +
-    Cliente vinculado. Base do cálculo de janela (RF-04)."""
-    nums = []
-    for e in (db.query(ConversaParticipanteExterno)
-                .filter_by(conversa_id=conversa.id, removido=0).all()):
-        if e.meio == "whatsapp" and (e.telefone or "").strip():
-            nums.append(e.telefone)
-    cid = getattr(conversa, "cliente_id", None)
-    if cid:
-        c = db.get(Cliente, cid)
-        if c is not None:
-            v = (getattr(c, "whatsapp", "") or getattr(c, "telefone", "") or "").strip()
-            if v:
-                nums.append(v)
-    return nums
-
-
 def janela_da_conversa(db, conversa):
-    """RF-04: estado da janela de atendimento de 24h da conversa, a partir da última mensagem de
-    ENTRADA de um dos números externos dela. Retorna {aberta, ultima_entrada(ISO|None),
-    restante_seg, excedido_seg(None|int)}. Sem número/sem entrada → fechada."""
-    tails = {_digitos(n)[-8:] for n in _numeros_da_conversa(db, conversa)
-             if len(_digitos(n)) >= 8}
+    """RF-04: estado da janela de atendimento de 24h DESTA conversa, a partir da última mensagem de
+    ENTRADA persistida NELA. Escopado pela conversa (join EnvioExterno→ConversaMensagem→conversa_id) —
+    achado da Vera: NÃO varrer o histórico global casando só por telefone (vazava entre lojas da mesma
+    rede com o mesmo número). Retorna {aberta, ultima_entrada(ISO|None), restante_seg, excedido_seg}."""
     fechada = {"aberta": False, "ultima_entrada": None, "restante_seg": 0, "excedido_seg": None}
-    if not tails:
+    row = (db.query(EnvioExterno.criado_em)
+             .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+             .filter(ConversaMensagem.conversa_id == conversa.id,
+                     EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada")
+             .order_by(EnvioExterno.criado_em.desc()).first())
+    if row is None or row[0] is None:
         return fechada
-    ult = None
-    for env in (db.query(EnvioExterno)
-                  .filter(EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada")
-                  .order_by(EnvioExterno.criado_em.desc()).all()):
-        if _digitos(env.destino or "")[-8:] in tails:
-            ult = env.criado_em
-            break
-    if ult is None:
-        return fechada
+    ult = row[0]
     decorrido = (datetime.utcnow() - ult).total_seconds()
     if decorrido < JANELA_SEG:
         return {"aberta": True, "ultima_entrada": ult.isoformat(),

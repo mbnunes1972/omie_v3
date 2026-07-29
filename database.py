@@ -1217,6 +1217,19 @@ class SegmentoConfig(Base):
     atualizado_em     = Column(DateTime, default=datetime.utcnow)
 
 
+class NumeroConectado(Base):
+    """Número de WhatsApp Business conectado por LOJA (RF-01, Orizon Chat/Meta): UM número cobre
+    toda a comunicação externa da loja. Guarda só o número EXIBÍVEL (E.164) + rótulo — o transporte
+    real (token/Phone Number ID) vive em variável de ambiente (config-gated), NUNCA no banco."""
+    __tablename__ = "numero_conectado"
+
+    id            = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id       = Column(Integer,  ForeignKey("lojas.id"), nullable=False, unique=True, index=True)
+    numero        = Column(String(24), nullable=True)   # E.164 exibível, ex.: +55 12 99604-9888
+    rotulo        = Column(Text,     nullable=True)
+    atualizado_em = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaMensagem(Base):
     """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
     modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
@@ -1771,6 +1784,7 @@ def _migrar_colunas_pg():
         # Orizon Chat/Meta Fatia 2: biblioteca de templates (RF-07) — tabela nova via create_all (marcador).
         # Orizon Chat/Meta Fatia 6: config de triagem (RF-08) — tabela nova via create_all (marcador).
         # Orizon Chat/Meta: config de segmentos (RF-02) — tabela nova via create_all (marcador).
+        # Orizon Chat/Meta: número conectado por loja (RF-01) — tabela nova via create_all (marcador).
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

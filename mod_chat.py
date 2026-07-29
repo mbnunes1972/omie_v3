@@ -10,13 +10,14 @@ externos (comercial/financeiro/logistica/suporte_tecnico/sac) entram nas fatias 
 e natureza/transferência/bloqueador/privada nas fatias 2-4.
 """
 import json
+from datetime import datetime
 
 from sqlalchemy import func
 
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
                       Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem,
-                      TriagemConfig, SegmentoConfig)
+                      TriagemConfig, SegmentoConfig, NumeroConectado)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -604,6 +605,45 @@ def segmentos_config_salvar(db, loja_id, itens):
             c.template_padrao_id = None
     db.flush()
     return segmentos_config_get(db, loja_id)
+
+
+def _status_transporte_whatsapp():
+    """Status do transporte Meta como BOOLEANOS — nunca os valores (os secrets ficam em variável de
+    ambiente, RF-01). `conectado` = token E Phone Number ID presentes → o envio ao vivo é possível;
+    senão o transporte fica 'pendente_config' (a rede não é tocada). `overrides_por_canal` lista só
+    os segmentos com Phone Number ID próprio (ORIZON_WA_PHONE_ID_<CANAL>), pelo nome — sem valor."""
+    import os
+    import mod_chat_externo
+    token_ok = bool((os.environ.get("ORIZON_WA_TOKEN") or "").strip())
+    phone_ok = bool((os.environ.get("ORIZON_WA_PHONE_ID") or "").strip())
+    overrides = [c for c in mod_chat_externo.CANAIS_EXTERNOS
+                 if (os.environ.get("ORIZON_WA_PHONE_ID_%s" % c.upper()) or "").strip()]
+    return {"conectado": bool(mod_chat_externo.meio_configurado("whatsapp")),
+            "token_presente": token_ok, "phone_id_presente": phone_ok,
+            "estado": "conectado" if (token_ok and phone_ok) else "pendente_config",
+            "overrides_por_canal": overrides}
+
+
+def numero_conectado_get(db, loja_id):
+    """RF-01: o número de WhatsApp exibível da loja + rótulo + status do transporte (booleanos).
+    Sem linha salva → número/rótulo vazios (mas o status do transporte ainda é informado)."""
+    n = db.query(NumeroConectado).filter_by(loja_id=loja_id).first()
+    return {"numero": (n.numero if n else "") or "",
+            "rotulo": (n.rotulo if n else "") or "",
+            "transporte": _status_transporte_whatsapp()}
+
+
+def numero_conectado_salvar(db, loja_id, numero, rotulo):
+    """Grava/atualiza o número exibível da loja (E.164). Só o número visível ao cliente — o Phone
+    Number ID e o token do transporte NÃO passam por aqui (variável de ambiente). Não commita."""
+    n = db.query(NumeroConectado).filter_by(loja_id=loja_id).first()
+    if n is None:
+        n = NumeroConectado(loja_id=loja_id); db.add(n)
+    n.numero = (numero or "").strip() or None
+    n.rotulo = (rotulo or "").strip() or None
+    n.atualizado_em = datetime.utcnow()
+    db.flush()
+    return numero_conectado_get(db, loja_id)
 
 
 def _email_do_usuario(db, usuario_id):

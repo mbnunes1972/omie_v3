@@ -2185,7 +2185,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               </div>
             </div>
           </div>
-          <div class="ochat-scr" id="ochat-scr-numeros"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Número de WhatsApp da loja e status do transporte Meta (config-gated). <b>Tela em construção.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-numeros">
+            <div class="ochat-panel" style="max-width:720px">
+              <div id="num-status" style="margin-bottom:16px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+              <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:14px">Um único número de WhatsApp Business cobre toda a comunicação externa da loja (RF-01). Aqui você registra o número que o cliente vê — as credenciais do transporte (token e Phone Number ID da Meta) ficam em <b>variável de ambiente</b> no servidor, nunca neste formulário.</div>
+              <label class="field-label">Número (formato internacional)</label>
+              <input type="text" id="num-numero" placeholder="+55 12 99604-9888" style="width:100%;box-sizing:border-box;padding:9px;font-family:inherit;margin-bottom:12px">
+              <label class="field-label">Rótulo (opcional)</label>
+              <input type="text" id="num-rotulo" placeholder="Ex.: Dalmóbile — Atendimento" style="width:100%;box-sizing:border-box;padding:9px;font-family:inherit">
+              <div style="display:flex;gap:8px;margin-top:16px">
+                <button class="btn btn-primary btn-sm" onclick="numSalvar()">Salvar</button>
+                <span id="num-aviso" style="font-size:12px;color:var(--ok);align-self:center"></span>
+              </div>
+            </div>
+          </div>
           <div class="ochat-scr" id="ochat-scr-consumo"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Mensagens de template enviadas e custo estimado por segmento. <b>Tela em construção.</b></div></div></div>
         </div>
       </div>
@@ -9989,6 +10002,42 @@ function ochatIr(scr){
   if(scr==='modelos') chatModelosCarregar();
   if(scr==='triagem') chatTriagemCarregar();
   if(scr==='segmentos') chatSegmentosCarregar();
+  if(scr==='numeros') chatNumerosCarregar();
+}
+
+// ── Números Conectados (RF-01) — número exibível da loja + status do transporte Meta ──
+async function chatNumerosCarregar(){
+  const box = document.getElementById('num-status');
+  let d;
+  try{ d = await fetch('/api/comunicacao/numeros',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Sem permissão (gerência).')+'</div></div>'; return; }
+  const n = d.numero||{}, tr = n.transporte||{};
+  document.getElementById('num-numero').value = n.numero||'';
+  document.getElementById('num-rotulo').value = n.rotulo||'';
+  const conectado = !!tr.conectado;
+  const cor = conectado ? 'var(--accent)' : 'var(--text)';
+  const bg  = conectado ? 'var(--accent-tint)' : 'var(--warn-tint)';
+  const ico = conectado ? 'ti-circle-check' : 'ti-alert-triangle';
+  const txt = conectado ? 'Transporte Meta conectado' : 'Transporte pendente de configuração';
+  const linhas = [
+    'Token de acesso: ' + (tr.token_presente ? 'presente' : 'ausente'),
+    'Phone Number ID: ' + (tr.phone_id_presente ? 'presente' : 'ausente')
+  ];
+  if((tr.overrides_por_canal||[]).length) linhas.push('IDs por canal: ' + tr.overrides_por_canal.join(', '));
+  box.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:'+bg+';color:'+cor
+    +';padding:7px 12px;border-radius:8px;font-weight:600;font-size:13px"><i class="ti '+ico+'"></i>'+esc(txt)+'</div>'
+    + '<div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-top:8px">'+linhas.map(esc).join(' · ')+'</div>'
+    + (conectado ? '' : '<div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-top:4px">Sem as variáveis <code>ORIZON_WA_TOKEN</code> e <code>ORIZON_WA_PHONE_ID</code> no servidor, as mensagens externas ficam <b>pendentes</b> (nada é enviado ao WhatsApp).</div>');
+}
+async function numSalvar(){
+  const av = document.getElementById('num-aviso');
+  const payload = {numero: document.getElementById('num-numero').value, rotulo: document.getElementById('num-rotulo').value};
+  let d;
+  try{ d = await fetch('/api/comunicacao/numeros',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()); }
+  catch(e){ av.style.color='var(--err)'; av.textContent='Erro de rede.'; return; }
+  if(!d.ok){ av.style.color='var(--err)'; av.textContent=d.erro||'Falha ao salvar.'; return; }
+  av.style.color='var(--ok)'; av.textContent='Salvo ✓'; setTimeout(()=>av.textContent='', 2500);
 }
 
 // ── Segmentos (RF-02) — ativar/editar + template padrão por segmento ────────────

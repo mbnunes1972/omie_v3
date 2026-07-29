@@ -2962,6 +2962,25 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/numeros — número WhatsApp da loja + status do transporte (RF-01). Gerência.
+            if path == "/api/comunicacao/numeros":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                    self.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    self.send_json({"ok": True, "numero": mod_chat.numero_conectado_get(db, loja_id)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/conversas/<id>/mensagens — histórico de uma conversa
             # direct/grupo (só participante lê).
             m_cm = _re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
@@ -5478,6 +5497,28 @@ class Handler(BaseHTTPRequestHandler):
                 dd = json.loads(body or b'{}')
                 segs = mod_chat.segmentos_config_salvar(db, loja_id, dd.get("itens") or []); db.commit()
                 self.send_json({"ok": True, "segmentos": segs})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/numeros — salva o número WhatsApp exibível da loja (RF-01). Gerência.
+        # Só o número visível ao cliente — token/Phone Number ID NÃO passam por aqui (variável de ambiente).
+        if path == "/api/comunicacao/numeros":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                self.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                num = mod_chat.numero_conectado_salvar(db, loja_id, dd.get("numero"), dd.get("rotulo")); db.commit()
+                self.send_json({"ok": True, "numero": num})
             finally:
                 db.close()
             return

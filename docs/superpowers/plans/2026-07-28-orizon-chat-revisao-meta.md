@@ -270,8 +270,12 @@ do Chat; os 3 placeholders são destinos navegáveis (stub).
   **template padrão** por segmento (consome F2). Tabela `segmento_config` + `mod_chat.segmentos_config_get/
   salvar` + `GET/POST /api/comunicacao/segmentos` (gerência, tenancy) + tela no `#page-chat`.
   Testes `test_orizon_chat_meta.py` (+2). (Correção: a Triagem incluiu o 7º segmento **SAC**.)
-- [ ] **Números Conectados (stub, RF-01):** exibir o número/phone-id da loja e o status do transporte
-  (config-gated: `pendente_config` sem credencial Meta) — leitura, sem detalhamento novo do mockup.
+- [x] **Números Conectados (RF-01)** — ✅ FEITA 2026-07-29: número exibível **editável por loja** (E.164
+  + rótulo) + **status do transporte Meta** (chip conectado/pendente + token/Phone Number ID presente,
+  IDs por canal) — tudo como **booleanos**, os secrets ficam em variável de ambiente e NUNCA saem no
+  JSON (teste prova isso). Tabela `numero_conectado` + `mod_chat.numero_conectado_get/salvar` +
+  `_status_transporte_whatsapp` + `GET/POST /api/comunicacao/numeros` (gerência, tenancy) + tela no
+  `#page-chat`. Testes `test_orizon_chat_meta.py` (+2, config-gated e não-vazamento de secret).
 - [ ] **Consumo / Custos (stub, §10):** contagem de `EnvioExterno` do tipo template por segmento (base
   para custo estimado) — leitura simples.
 - [ ] `node --check` + verificação manual (tema claro/escuro); tokens reais.

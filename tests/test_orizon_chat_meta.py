@@ -5,6 +5,7 @@ Plan: docs/superpowers/plans/2026-07-28-orizon-chat-revisao-meta.md.
 Cobre G1 (fornecedor em resolver_destino), G2 (canais compras/parceiros + anti-drift), G4 (janela por
 conversa RF-04), G5 (HTTPError da Meta → erro real), G6 (transferência ADICIONA responsável ao grupo)."""
 import io
+import json
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -231,3 +232,41 @@ def test_segmentos_endpoint_e_tenancy(http_client_factory, app_db, seed):
     op = _login(http_client_factory, "cons_l1")
     assert op.get("/api/comunicacao/segmentos")[0] == 403
     assert op.post("/api/comunicacao/segmentos", {"itens": []})[0] == 403
+
+
+def test_numero_conectado_get_e_salvar(app_db, seed, monkeypatch):
+    db = app_db.get_session()
+    try:
+        lid = seed["loja1_id"]
+        # sem linha salva → número/rótulo vazios, mas o status do transporte é informado
+        d = mod_chat.numero_conectado_get(db, lid)
+        assert d["numero"] == "" and d["rotulo"] == ""
+        assert set(("conectado", "estado", "token_presente", "phone_id_presente")).issubset(d["transporte"])
+        # sem credencial de ambiente → pendente_config (a rede não é tocada)
+        monkeypatch.delenv("ORIZON_WA_TOKEN", raising=False)
+        monkeypatch.delenv("ORIZON_WA_PHONE_ID", raising=False)
+        d0 = mod_chat.numero_conectado_get(db, lid)
+        assert d0["transporte"]["conectado"] is False and d0["transporte"]["estado"] == "pendente_config"
+        # com as duas variáveis → conectado (mas NUNCA devolve os valores)
+        monkeypatch.setenv("ORIZON_WA_TOKEN", "tok-secreto")
+        monkeypatch.setenv("ORIZON_WA_PHONE_ID", "123456")
+        d1 = mod_chat.numero_conectado_get(db, lid)
+        assert d1["transporte"]["conectado"] is True and d1["transporte"]["estado"] == "conectado"
+        assert "tok-secreto" not in json.dumps(d1) and "123456" not in json.dumps(d1)
+        # salvar o número exibível da loja (RF-01)
+        r = mod_chat.numero_conectado_salvar(db, lid, "+55 12 99604-9888", "Dalmóbile"); db.commit()
+        assert r["numero"] == "+55 12 99604-9888" and r["rotulo"] == "Dalmóbile"
+        assert mod_chat.numero_conectado_get(db, lid)["numero"] == "+55 12 99604-9888"
+    finally:
+        db.close()
+
+
+def test_numero_endpoint_e_tenancy(http_client_factory, app_db, seed):
+    ger = _login(http_client_factory, "dir_l1")
+    st, bd = ger.get("/api/comunicacao/numeros")
+    assert st == 200 and "transporte" in bd["numero"]
+    assert ger.post("/api/comunicacao/numeros", {"numero": "+55 12 99604-9888", "rotulo": "Loja"})[0] == 200
+    assert ger.get("/api/comunicacao/numeros")[1]["numero"]["numero"] == "+55 12 99604-9888"
+    op = _login(http_client_factory, "cons_l1")
+    assert op.get("/api/comunicacao/numeros")[0] == 403
+    assert op.post("/api/comunicacao/numeros", {"numero": "x"})[0] == 403

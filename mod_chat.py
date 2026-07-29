@@ -518,10 +518,12 @@ _TRIAGEM_ROTULOS = {
     "financeiro":      "Financeiro — pagamentos e cobrança",
     "logistica":       "Logística — entrega e montagem",
     "parceiros":       "Parceiros — indicações e comissões",
-    "compras":         "Compras",
+    "sac":             "SAC / Ouvidoria — reclamações e atendimento institucional",
+    "compras":         "Compras — fornecedores",
 }
-# ordem do cliente (compras entra desativado — é só fornecedor; sac fica fora da triagem de cliente).
-_TRIAGEM_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "compras")
+# Os 7 segmentos aparecem na config. No cliente: comercial/suporte/financeiro/logística/parceiros/SAC
+# ativos; COMPRAS entra desativado (é só fornecedor, não é triagem de cliente). A loja pode ligar/desligar.
+_TRIAGEM_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "sac", "compras")
 _TRIAGEM_MSG_PADRAO = ("Olá! Em que podemos ajudar? Nossa equipe vai direcionar seu atendimento para o "
                        "setor certo.")
 

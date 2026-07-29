@@ -152,8 +152,11 @@ def test_triagem_config_default_e_salvar(app_db, seed):
     db = app_db.get_session()
     try:
         d = mod_chat.triagem_config_get(db, seed["loja1_id"])                # default
-        assert d["formato"] == "lista" and any(i["segmento"] == "comercial" for i in d["itens"])
-        assert any(i["segmento"] == "compras" and i["ativo"] is False for i in d["itens"])
+        assert d["formato"] == "lista"
+        segs = {i["segmento"] for i in d["itens"]}
+        assert segs == set(mod_chat.SEGMENTOS) and len(d["itens"]) == 7      # os 7 segmentos, incl. SAC
+        porseg = {i["segmento"]: i for i in d["itens"]}
+        assert porseg["sac"]["ativo"] is True and porseg["compras"]["ativo"] is False
         cfg = mod_chat.triagem_config_salvar(db, seed["loja1_id"], {
             "formato": "livre", "mensagem_livre": "Oi!",
             "itens": [{"segmento": "comercial", "rotulo": "Vendas", "ativo": True},

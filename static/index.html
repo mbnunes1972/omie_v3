@@ -2144,7 +2144,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="ochat-side">
         <div class="ochat-side-title">Comunicação</div>
         <div class="ochat-nav" data-scr="atend" onclick="ochatIr('atend')"><i class="ti ti-message-circle-2"></i> Atendimentos</div>
-        <div class="ochat-nav" onclick="abrirCentralComunicacao()"><i class="ti ti-users-group"></i> Chat Interno</div>
+        <div class="ochat-nav" data-scr="interno" onclick="ochatIr('interno')"><i class="ti ti-users-group"></i> Chat Interno</div>
         <div class="ochat-side-title">Configurações do Chat</div>
         <div class="ochat-nav" data-scr="segmentos" onclick="ochatIr('segmentos')"><i class="ti ti-adjustments"></i> Segmentos</div>
         <div class="ochat-nav" data-scr="triagem" onclick="ochatIr('triagem')"><i class="ti ti-signpost"></i> Triagem</div>
@@ -2163,6 +2163,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
             </div>
             <div id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+          </div>
+          <!-- Chat Interno (equipe) — full-page, espelha Atendimentos -->
+          <div class="ochat-scr" id="ochat-scr-interno">
+            <div class="atd-filtro" style="margin-bottom:14px">
+              <button class="btn btn-primary btn-sm" onclick="intNova()"><i class="ti ti-plus"></i> Nova mensagem</button>
+              <button class="btn btn-ghost btn-sm" onclick="intForum('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
+              <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="intForum('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
+              <button class="btn btn-ghost btn-sm" id="int-admin" style="display:none" onclick="intAdmin()"><i class="ti ti-shield-cog"></i> Administração</button>
+            </div>
+            <div class="atd-tabs" id="int-tabs"></div>
+            <div id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
           </div>
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
@@ -10022,6 +10033,7 @@ function goPageChat(){
 }
 const _OCHAT_TOP = {
   atend:    ['Atendimentos', 'Fila única por número — o segmento é uma etiqueta interna de roteamento, não muda o número que o cliente vê.'],
+  interno:  ['Chat Interno', 'Conversas da equipe — individuais, grupos e o mural da loja. Sem canal externo.'],
   modelos:  ['Modelos de Mensagem', 'Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.'],
   segmentos:['Segmentos', 'Ativar/editar os canais internos e o template padrão de cada segmento.'],
   triagem:  ['Triagem', 'Como o sistema pergunta o departamento quando um contato novo escreve.'],
@@ -10041,7 +10053,67 @@ function ochatIr(scr){
   if(scr==='numeros') chatNumerosCarregar();
   if(scr==='consumo') chatConsumoCarregar();
   if(scr==='atend') chatAtendCarregar();
+  if(scr==='interno') chatInternoCarregar();
 }
+
+// ── Chat Interno (equipe) — full-page espelhando Atendimentos; thread reusa o modal ──
+let _intInbox = [];
+let _intTab = 'todos';
+const _INT_TABS = [
+  {key:'todos', rot:'Todas'},
+  {key:'individuais', rot:'Individuais', icon:'ti-user'},
+  {key:'grupos', rot:'Grupos', icon:'ti-users'},
+  {key:'mural', rot:'Mural', icon:'ti-speakerphone'},
+];
+const _INT_TIPOROT = {direct:'Individual', grupo:'Grupo', mural:'Mural', publico:'Mural'};
+const _INT_TIPOS = ['direct','grupo','mural','publico'];   // "interno" = equipe (projeto vai em Atendimentos)
+
+async function chatInternoCarregar(){
+  // gating dos botões de ação (mesma regra do modal)
+  const rede = ((_usuarioAtual && _usuarioAtual.lojas)||[]).find(l=>l.id===(_lojaAtiva||(_usuarioAtual&&(_usuarioAtual.loja_ativa_id||_usuarioAtual.loja_id))));
+  const bO = document.getElementById('int-forum-orizon'); if(bO) bO.style.display = (rede && rede.rede_id) ? '' : 'none';
+  const bA = document.getElementById('int-admin'); if(bA) bA.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas) ? '' : 'none';
+  const box = document.getElementById('int-lista');
+  let d;
+  try{ d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
+  _intInbox = (d.conversas||[]).filter(c=>_INT_TIPOS.includes(c.tipo));
+  intRender();
+}
+function _intDaTab(c, tab){
+  if(tab==='todos') return true;
+  if(tab==='individuais') return c.tipo==='direct';
+  if(tab==='grupos') return c.tipo==='grupo';
+  if(tab==='mural') return c.tipo==='mural' || c.tipo==='publico';
+  return true;
+}
+function intTab(k){ _intTab=k; intRender(); }
+function intRender(){
+  const tabsEl = document.getElementById('int-tabs');
+  tabsEl.innerHTML = _INT_TABS.map(t=>{
+    const n = _intInbox.filter(c=>_intDaTab(c,t.key)).length;
+    const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
+    const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
+    return '<div class="atd-tab'+(t.key===_intTab?' active':'')+'" onclick="intTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
+  }).join('');
+  const box = document.getElementById('int-lista');
+  const itens = _intInbox.filter(c=>_intDaTab(c,_intTab));
+  if(!itens.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta aba.</div>'; return; }
+  box.innerHTML = itens.map(_intItemHTML).join('');
+}
+function _intItemHTML(c){
+  const tipoBadge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
+  const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
+  const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
+  return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+    + '<div class="atd-top"><span class="atd-nome">'+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
+    + '<div class="atd-tags">'+tipoBadge+'</div></div>';
+}
+async function intNova(){ await abrirCentralComunicacao(); if(typeof ccNovaAbrir==='function') ccNovaAbrir(); }
+async function intForum(escopo){ await abrirCentralComunicacao(); if(typeof ccForumAbrir==='function') ccForumAbrir(escopo); }
+async function intAdmin(){ await abrirCentralComunicacao(); if(typeof ccAdminAbrir==='function') ccAdminAbrir(); }
 
 // ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];

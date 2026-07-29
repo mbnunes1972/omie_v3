@@ -280,8 +280,12 @@ do Chat; os 3 placeholders são destinos navegáveis (stub).
 - [ ] **Hub "Configurações do Chat"** com as 5 sub-abas do mockup (Segmentos · Triagem · Modelos de
   Mensagem · Números Conectados · Consumo/Custos), gated a gerência. As telas de **Triagem (F6)** e
   **Modelos (F5)** entram aqui como conteúdo real; as outras 3 como stub.
-- [ ] **Comunicação:** separar os destinos **Atendimentos** (fila, F7) e **Chat Interno** (equipe — o
-  modal/aba que já existe), sem duplicar função.
+- [x] **Comunicação:** separar os destinos **Atendimentos** (fila, F7) e **Chat Interno** (equipe) — ✅
+  FEITA 2026-07-29: **Chat Interno** deixou de abrir o modal e virou tela full-page no `#page-chat`,
+  espelhando Atendimentos (abas **Todas/Individuais/Grupos/Mural** — só tipos de equipe; projeto vai em
+  Atendimentos), barra de ações (Nova mensagem/Fórum da Loja/Fórum Orizon/Administração, com o mesmo
+  gating do modal) e clique reusando a thread do modal (`atendAbrir`). Modal segue como motor de
+  thread/nova/fórum/admin até a aposentadoria final. Tokens reais, `esc()` no render, `node --check` verde.
 - [x] **Segmentos** — ✅ FEITA 2026-07-29: os **7 segmentos** com ativar/desativar, rótulo editável e
   **template padrão** por segmento (consome F2). Tabela `segmento_config` + `mod_chat.segmentos_config_get/
   salvar` + `GET/POST /api/comunicacao/segmentos` (gerência, tenancy) + tela no `#page-chat`.

@@ -2117,12 +2117,33 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-wa-head{display:flex;align-items:center;gap:8px;padding:2px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:10px}
     .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
     .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
+    /* Fila de Atendimentos (F7/RF-12) */
+    .atd-tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap}
+    .atd-tab{padding:7px 2px 10px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;user-select:none}
+    .atd-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+    .atd-tab .cnt{background:var(--surface-2);color:var(--text);font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;min-width:16px;text-align:center}
+    .atd-tab.active .cnt{background:var(--accent);color:var(--btn-primary-text)}
+    .atd-filtro{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+    .atd-item{padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
+    .atd-item:hover{background:var(--surface-2)}
+    .atd-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+    .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .atd-tempo{font-size:11px;color:var(--muted);flex:none}
+    .atd-prev{font-size:12px;color:var(--muted);margin:3px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .atd-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .atd-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent}
+    .atd-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+    .atd-b-seg{background:var(--surface-2);color:var(--muted);border-color:var(--border)}
+    .atd-b-ok{background:var(--accent-tint);color:var(--accent)}
+    .atd-b-warn{background:var(--warn-tint);color:var(--text)}
+    .atd-b-err{background:transparent;color:var(--err);border-color:var(--err)}
+    .atd-nl{background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center;margin-left:6px}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
       <div class="ochat-side">
         <div class="ochat-side-title">Comunicação</div>
-        <div class="ochat-nav" onclick="abrirCentralComunicacao()"><i class="ti ti-message-circle-2"></i> Atendimentos</div>
+        <div class="ochat-nav" data-scr="atend" onclick="ochatIr('atend')"><i class="ti ti-message-circle-2"></i> Atendimentos</div>
         <div class="ochat-nav" onclick="abrirCentralComunicacao()"><i class="ti ti-users-group"></i> Chat Interno</div>
         <div class="ochat-side-title">Configurações do Chat</div>
         <div class="ochat-nav" data-scr="segmentos" onclick="ochatIr('segmentos')"><i class="ti ti-adjustments"></i> Segmentos</div>
@@ -2134,6 +2155,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="ochat-main">
         <div class="ochat-top" id="ochat-top"><h2>Modelos de Mensagem</h2><p>Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.</p></div>
         <div class="ochat-body">
+          <!-- Atendimentos (fila, F7/RF-12) -->
+          <div class="ochat-scr" id="ochat-scr-atend">
+            <div class="atd-tabs" id="atd-tabs"></div>
+            <div class="atd-filtro">
+              <span class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Segmento:</span>
+              <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
+            </div>
+            <div id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+          </div>
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
             <div class="ochat-cards" id="ochat-tpl-cards"></div>
@@ -9991,6 +10021,7 @@ function goPageChat(){
   ochatIr('modelos');
 }
 const _OCHAT_TOP = {
+  atend:    ['Atendimentos', 'Fila única por número — o segmento é uma etiqueta interna de roteamento, não muda o número que o cliente vê.'],
   modelos:  ['Modelos de Mensagem', 'Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.'],
   segmentos:['Segmentos', 'Ativar/editar os canais internos e o template padrão de cada segmento.'],
   triagem:  ['Triagem', 'Como o sistema pergunta o departamento quando um contato novo escreve.'],
@@ -10009,6 +10040,91 @@ function ochatIr(scr){
   if(scr==='segmentos') chatSegmentosCarregar();
   if(scr==='numeros') chatNumerosCarregar();
   if(scr==='consumo') chatConsumoCarregar();
+  if(scr==='atend') chatAtendCarregar();
+}
+
+// ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
+let _atdInbox = [];
+let _atdTab = 'novos';
+const _ATD_TABS = [
+  {key:'novos', rot:'Novos'},
+  {key:'meus', rot:'Meus'},
+  {key:'grupos', rot:'Grupos', icon:'ti-users-group'},
+  {key:'arquivados', rot:'Arquivados', icon:'ti-archive'},
+];
+const _ATD_SEGROT = {comercial:'Comercial', suporte_tecnico:'Suporte Técnico', financeiro:'Financeiro',
+                     logistica:'Logística', parceiros:'Parceiros', compras:'Compras', sac:'SAC'};
+
+async function chatAtendCarregar(){
+  const box = document.getElementById('atd-lista');
+  let d;
+  try{ d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
+  _atdInbox = (d.conversas||[]).filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
+  const segs = [...new Set(_atdInbox.map(c=>c.segmento).filter(Boolean))];
+  const sel = document.getElementById('atd-seg-filtro'), atual = sel.value;
+  sel.innerHTML = '<option value="">Todos</option>' + segs.map(s=>'<option value="'+esc(s)+'">'+esc(_ATD_SEGROT[s]||s)+'</option>').join('');
+  sel.value = atual;
+  atendRender();
+}
+function _atdDaTab(c, tab){
+  if(tab==='grupos') return c.tipo==='grupo';
+  if(tab==='arquivados') return false;                 // sem modelo de arquivo ainda
+  if(tab==='novos') return (c.nao_lidas||0) > 0;
+  if(tab==='meus') return c.tipo!=='grupo';            // inbox já é escopado ao usuário
+  return true;
+}
+function atendTab(k){ _atdTab=k; atendRender(); }
+function atendRender(){
+  const tabsEl = document.getElementById('atd-tabs');
+  const filtroSeg = document.getElementById('atd-seg-filtro').value;
+  tabsEl.innerHTML = _ATD_TABS.map(t=>{
+    const n = _atdInbox.filter(c=>_atdDaTab(c,t.key)).length;
+    const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
+    const cnt = (t.key!=='arquivados' && n>0) ? '<span class="cnt">'+n+'</span>' : '';
+    return '<div class="atd-tab'+(t.key===_atdTab?' active':'')+'" onclick="atendTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
+  }).join('');
+  const box = document.getElementById('atd-lista');
+  if(_atdTab==='arquivados'){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-archive"></i><div>Arquivamento de atendimentos ainda não disponível.</div></div>'; return; }
+  let itens = _atdInbox.filter(c=>_atdDaTab(c,_atdTab));
+  if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
+  if(!itens.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>'; return; }
+  box.innerHTML = itens.map(_atdItemHTML).join('');
+}
+function _atdHoras(seg){ seg=seg||0; const h=Math.floor(seg/3600), m=Math.floor((seg%3600)/60); return h>0?(h+'h'+(m>0?(' '+m+'min'):'')):(m+'min'); }
+function _atdJanelaBadge(j){
+  if(!j || j.estado==='na') return '';
+  if(j.estado==='aberta')   return '<span class="atd-badge atd-b-ok">Janela aberta</span>';
+  if(j.estado==='fechando') return '<span class="atd-badge atd-b-warn">Janela fecha em '+_atdHoras(j.restante_seg)+'</span>';
+  if(j.estado==='fechada')  return '<span class="atd-badge atd-b-err">Janela fechada</span>';
+  return '';
+}
+function _atdQuando(iso){
+  if(!iso) return '';
+  const s = Math.floor((new Date() - new Date(iso))/1000);
+  if(s<60) return 'agora';
+  if(s<3600) return 'há '+Math.floor(s/60)+'min';
+  if(s<86400) return 'há '+Math.floor(s/3600)+'h';
+  const dias = Math.floor(s/86400);
+  if(dias<30) return 'há '+dias+(dias===1?' dia':' dias');
+  const meses = Math.floor(dias/30); return 'há '+meses+(meses===1?' mês':' meses');
+}
+function _atdItemHTML(c){
+  const seg = c.segmento ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ATD_SEGROT[c.segmento]||c.segmento)+'</span>' : '';
+  const jan = _atdJanelaBadge(c.janela);
+  const proj = c.projeto_nome ? '<span class="atd-badge atd-b-ok"><i class="ti ti-folder"></i> '+esc(c.projeto_nome.replace(/_/g,' '))+'</span>' : '';
+  const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
+  const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
+  return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+    + '<div class="atd-top"><span class="atd-nome">'+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
+    + '<div class="atd-tags">'+seg+jan+proj+'</div></div>';
+}
+async function atendAbrir(convId){
+  await abrirCentralComunicacao();                     // abre o modal + carrega _ccInbox
+  const idx = (_ccInbox||[]).findIndex(c=>c.id===convId);
+  if(idx>=0) ccAbrirConversa(idx);
 }
 
 // ── Consumo / Custos (§10) — envios de WhatsApp por segmento (leitura) ────────────

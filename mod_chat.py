@@ -1104,6 +1104,28 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
     }
 
 
+def _atendimento_meta(db, conversa):
+    """Fila de Atendimentos (RF-12): o `segmento` da conversa (canal do último externo) + o estado
+    da `janela` de 24h. `segmento` None quando não há tráfego externo. `janela.estado`:
+    'na' (nunca houve entrada externa — não se aplica), 'aberta', 'fechando' (< 2h p/ fechar),
+    'fechada'. Reusa a janela escopada por conversa de mod_chat_externo."""
+    import mod_chat_externo as _ext
+    row = (db.query(ConversaMensagem.canal)
+             .filter(ConversaMensagem.conversa_id == conversa.id,
+                     ConversaMensagem.canal.isnot(None), ConversaMensagem.canal != "interno")
+             .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
+    segmento = row[0] if row else None
+    j = _ext.janela_da_conversa(db, conversa)
+    if j["ultima_entrada"] is None:
+        janela = {"estado": "na"}
+    elif j["aberta"]:
+        estado = "fechando" if (j["restante_seg"] is not None and j["restante_seg"] <= 2 * 3600) else "aberta"
+        janela = {"estado": estado, "restante_seg": j["restante_seg"]}
+    else:
+        janela = {"estado": "fechada", "excedido_seg": j["excedido_seg"]}
+    return segmento, janela
+
+
 def listar_inbox(db, loja_id, usuario_id):
     """Inbox: o mural PÚBLICO da loja + conversas direct/grupo do usuário, mais recentes primeiro,
     cada uma com contagem de não-lidas. O público é sempre incluído (audiência = a loja)."""
@@ -1118,9 +1140,13 @@ def listar_inbox(db, loja_id, usuario_id):
                        Conversa.tipo.in_(("direct", "grupo", "projeto"))).all()) if conv_ids else []
     mural = get_or_create_mural(db, loja_id)
     convs = [mural] + [c for c in convs if c.id != mural.id]
-    itens = [serializar_conversa(db, c, usuario_id,
+    itens = []
+    for c in convs:
+        it = serializar_conversa(db, c, usuario_id,
                                  nao_lidas=_conta_nao_lidas(db, c.id, usuario_id, lido.get(c.id, 0)))
-             for c in convs]
+        if c.tipo not in ("mural", "publico"):        # atendimento: segmento + estado da janela (RF-12)
+            it["segmento"], it["janela"] = _atendimento_meta(db, c)
+        itens.append(it)
     # mural sempre no topo; o resto por recência (desc)
     tops = [x for x in itens if x["tipo"] in ("mural", "publico")]
     resto = sorted([x for x in itens if x["tipo"] not in ("mural", "publico")],

@@ -311,3 +311,33 @@ def test_consumo_endpoint_e_tenancy(http_client_factory, app_db, seed):
     assert st == 200 and len(bd["consumo"]["segmentos"]) == 7 and "totais" in bd["consumo"]
     op = _login(http_client_factory, "cons_l1")
     assert op.get("/api/comunicacao/consumo")[0] == 403
+
+
+def test_inbox_atendimento_segmento_e_janela(app_db, seed):
+    """F7/RF-12: o inbox expõe segmento (canal do último externo) + estado da janela por conversa."""
+    db = app_db.get_session()
+    try:
+        lid = seed["loja1_id"]
+        cr = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        conv = mod_chat.criar_grupo(db, lid, cr, "Atend", [], exige_dois=False); db.flush()
+        mod_chat.adicionar_externo(db, conv, "Cli", telefone="11912345678", meio="whatsapp"); db.flush()
+        # sem entrada externa ainda → janela 'na'; segmento = canal da mensagem externa
+        m = mod_chat.enviar_mensagem(db, conv, None, "olá", canal="comercial", _permitir_externo=True); db.flush()
+        inbox = {c["id"]: c for c in mod_chat.listar_inbox(db, lid, cr)}
+        it = inbox[conv.id]
+        assert it["segmento"] == "comercial" and it["janela"]["estado"] == "na"
+        # entrada recente → aberta; entrada há 23h → fechando (< 2h p/ fechar); há 30h → fechada
+        env = EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="entrada",
+                           destino="5511912345678", status="recebido",
+                           criado_em=datetime.utcnow() - timedelta(hours=1)); db.add(env); db.flush()
+        assert mod_chat.listar_inbox(db, lid, cr)[-1]["janela"]["estado"] in ("aberta", "fechando")
+        env.criado_em = datetime.utcnow() - timedelta(hours=23); db.flush()
+        assert _janela_de(mod_chat.listar_inbox(db, lid, cr), conv.id)["estado"] == "fechando"
+        env.criado_em = datetime.utcnow() - timedelta(hours=30); db.flush()
+        assert _janela_de(mod_chat.listar_inbox(db, lid, cr), conv.id)["estado"] == "fechada"
+    finally:
+        db.close()
+
+
+def _janela_de(inbox, conv_id):
+    return {c["id"]: c for c in inbox}[conv_id]["janela"]

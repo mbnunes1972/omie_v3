@@ -242,10 +242,17 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
 **Depende de:** F1 (janela/segmento). · **Sub-skill:** `superpowers:executing-plans`.
 **Pronto quando:** o inbox do Orizon Chat ganha abas + selos do mockup (adaptação, não do zero).
 
-- [ ] Backend: inbox expõe por conversa o `segmento`, o estado de `janela` (aberta/fechando/fechada) e o
-  vínculo a Projeto; visões **Novos/Meus/Outros/Grupos/Arquivados** + filtro por segmento. Testes.
-- [ ] Frontend: abas + selos (`badge-ok`/`badge-warn`/`badge-err` — "Janela aberta/fechando/fechada",
-  "Sem resposta", "Vinculado ao Projeto #"). Reusa a lista atual. `node --check` + manual.
+- [x] Backend — ✅ FEITA 2026-07-29: `listar_inbox` enriquece cada conversa (não-mural) com `segmento`
+  (canal do último externo) e `janela` (`estado` na/aberta/fechando/fechada + restante/excedido),
+  via `mod_chat._atendimento_meta` (reusa a janela escopada por conversa). Teste `test_inbox_atendimento_
+  segmento_e_janela` (aberta→fechando→fechada). **`Conversa` não tem `arquivado`** → aba Arquivados fica
+  como estado vazio (feature futura); **Outros** exigiria inbox loja-wide + modelo de atribuição de
+  atendente (o inbox atual é escopado ao usuário) → adiado.
+- [x] Frontend — ✅ FEITA 2026-07-29: tela **Atendimentos** full-page no `#page-chat` (sidebar Comunicação →
+  Atendimentos deixa de abrir o modal). Abas **Novos/Meus/Grupos/Arquivados** + filtro por segmento +
+  selos (segmento; **Janela aberta/fecha em Xh/fechada**; **Vinculado ao Projeto**). Clicar numa linha
+  reusa a thread do modal (`abrirCentralComunicacao`+`ccAbrirConversa`) — modal só será aposentado depois.
+  Tokens reais, `esc()` no render (XSS-safe), `node --check` verde.
 
 ## Fatia 8 — Carteira aditiva na navegação (RF-11) — adiável
 **Depende de:** F1/G6 (mecanismo já pronto). · **Sub-skill:** `superpowers:executing-plans`.

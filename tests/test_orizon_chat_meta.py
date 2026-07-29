@@ -65,6 +65,29 @@ def test_janela_da_conversa(app_db, seed):
         db.close()
 
 
+def test_janela_ignora_entrada_do_funcionario(app_db, seed):
+    """Achado da Vera 🟠: a resposta do funcionário pela ponte (EnvioExterno entrada canal='interno')
+    NÃO reabre a janela do cliente — só a entrada do cliente (canal=segmento ou NULL) conta."""
+    db = app_db.get_session()
+    try:
+        crid = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        conv = mod_chat.criar_grupo(db, seed["loja1_id"], crid, "G jf", [], exige_dois=False)
+        mod_chat.adicionar_externo(db, conv, "Cli", telefone="11912345678", meio="whatsapp")
+        msg = mod_chat.enviar_mensagem(db, conv, None, "oi", canal="comercial", _permitir_externo=True); db.flush()
+        # cliente escreveu há 30h → janela fechada
+        db.add(EnvioExterno(mensagem_id=msg.id, meio="whatsapp", direcao="entrada", canal="comercial",
+                            destino="5511912345678", status="recebido",
+                            criado_em=datetime.utcnow() - timedelta(hours=30))); db.flush()
+        assert mce.janela_da_conversa(db, conv)["aberta"] is False
+        # funcionário respondeu pela ponte agora (canal='interno') → NÃO deve reabrir
+        db.add(EnvioExterno(mensagem_id=msg.id, meio="whatsapp", direcao="entrada", canal="interno",
+                            destino="5511912345678", status="recebido",
+                            criado_em=datetime.utcnow())); db.flush()
+        assert mce.janela_da_conversa(db, conv)["aberta"] is False   # ainda fechada
+    finally:
+        db.close()
+
+
 def test_janela_escopada_por_conversa(app_db, seed):
     """Achado da Vera 🟠: a janela é da CONVERSA — não vaza entre conversas/lojas com o mesmo número."""
     db = app_db.get_session()

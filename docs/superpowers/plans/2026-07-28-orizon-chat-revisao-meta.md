@@ -253,6 +253,15 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
   selos (segmento; **Janela aberta/fecha em Xh/fechada**; **Vinculado ao Projeto**). Clicar numa linha
   reusa a thread do modal (`abrirCentralComunicacao`+`ccAbrirConversa`) — modal só será aposentado depois.
   Tokens reais, `esc()` no render (XSS-safe), `node --check` verde.
+  > **Auditoria da Vera na F7 (2026-07-29): pode promover à VPS A.** Corrigido 🟠 janela inflada pela
+  > resposta do FUNCIONÁRIO via ponte (`processar_entrada_usuario` grava entrada `canal='interno'`;
+  > `janela_da_conversa` agora exclui `canal='interno'`, mantendo entrada do cliente com segmento/NULL) +
+  > teste. Corrigido 🟡 `atendAbrir` sem feedback quando a conversa sai do inbox (agora `showToast`).
+  > **Reinterpretação honesta (🟡, ainda sem modelo de dono de atendimento):** as abas **Novos** = conversas
+  > com **não-lidas** (não "sem dono/triagem" do RF-12) e **Meus** = tudo que **não é grupo** (o inbox já é
+  > escopado ao usuário) — a semântica plena de triagem/atribuição do RF-12 depende de um campo "dono do
+  > atendimento" que não existe. _Backburner (🟠 perf):_ `_atendimento_meta` soma ~2 queries/item ao inbox,
+  > e gerência é auto-participante de toda conversa de projeto fechado → medir/paginar antes de produção.
 
 ## Fatia 8 — Carteira aditiva na navegação (RF-11) — adiável
 **Depende de:** F1/G6 (mecanismo já pronto). · **Sub-skill:** `superpowers:executing-plans`.

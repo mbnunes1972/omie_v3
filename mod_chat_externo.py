@@ -310,14 +310,18 @@ JANELA_SEG = JANELA_HORAS * 3600
 
 def janela_da_conversa(db, conversa):
     """RF-04: estado da janela de atendimento de 24h DESTA conversa, a partir da última mensagem de
-    ENTRADA persistida NELA. Escopado pela conversa (join EnvioExterno→ConversaMensagem→conversa_id) —
-    achado da Vera: NÃO varrer o histórico global casando só por telefone (vazava entre lojas da mesma
-    rede com o mesmo número). Retorna {aberta, ultima_entrada(ISO|None), restante_seg, excedido_seg}."""
+    ENTRADA DO CLIENTE persistida NELA. Escopado pela conversa (join EnvioExterno→ConversaMensagem→
+    conversa_id) — achado da Vera: NÃO varrer o histórico global casando só por telefone (vazava entre
+    lojas da mesma rede com o mesmo número). 2º achado da Vera: a resposta do FUNCIONÁRIO pela ponte de
+    WhatsApp (`processar_entrada_usuario`) também grava uma EnvioExterno de entrada, mas com
+    `canal='interno'` — ela NÃO reabre a janela do cliente, então é excluída aqui (mantendo entradas do
+    cliente com canal=segmento ou NULL). Retorna {aberta, ultima_entrada(ISO|None), restante_seg, excedido_seg}."""
     fechada = {"aberta": False, "ultima_entrada": None, "restante_seg": 0, "excedido_seg": None}
     row = (db.query(EnvioExterno.criado_em)
              .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
              .filter(ConversaMensagem.conversa_id == conversa.id,
-                     EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada")
+                     EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada",
+                     (EnvioExterno.canal.is_(None)) | (EnvioExterno.canal != "interno"))
              .order_by(EnvioExterno.criado_em.desc()).first())
     if row is None or row[0] is None:
         return fechada

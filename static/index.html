@@ -10125,6 +10125,7 @@ async function atendAbrir(convId){
   await abrirCentralComunicacao();                     // abre o modal + carrega _ccInbox
   const idx = (_ccInbox||[]).findIndex(c=>c.id===convId);
   if(idx>=0) ccAbrirConversa(idx);
+  else if(typeof showToast === 'function') showToast('Conversa indisponível — atualize a fila.', true);
 }
 
 // ── Consumo / Custos (§10) — envios de WhatsApp por segmento (leitura) ────────────

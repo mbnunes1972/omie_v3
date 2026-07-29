@@ -15,7 +15,8 @@ from sqlalchemy import func
 
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
-                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem)
+                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem,
+                      TriagemConfig)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -507,6 +508,55 @@ def remover_template(db, loja_id, template_id):
         return False
     t.ativo = 0; db.flush()
     return True
+
+
+# ── Configuração de triagem (RF-08, Fatia 6) ────────────────────────────────────────────────────
+
+_TRIAGEM_ROTULOS = {
+    "comercial":       "Comercial — vendas e orçamentos",
+    "suporte_tecnico": "Suporte Técnico — assistência pós-venda",
+    "financeiro":      "Financeiro — pagamentos e cobrança",
+    "logistica":       "Logística — entrega e montagem",
+    "parceiros":       "Parceiros — indicações e comissões",
+    "compras":         "Compras",
+}
+# ordem do cliente (compras entra desativado — é só fornecedor; sac fica fora da triagem de cliente).
+_TRIAGEM_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "compras")
+_TRIAGEM_MSG_PADRAO = ("Olá! Em que podemos ajudar? Nossa equipe vai direcionar seu atendimento para o "
+                       "setor certo.")
+
+
+def _triagem_default():
+    return {"formato": "lista", "mensagem_livre": _TRIAGEM_MSG_PADRAO,
+            "itens": [{"segmento": s, "rotulo": _TRIAGEM_ROTULOS[s], "ativo": (s != "compras")}
+                      for s in _TRIAGEM_ORDEM]}
+
+
+def triagem_config_get(db, loja_id):
+    c = db.query(TriagemConfig).filter_by(loja_id=loja_id).first()
+    if c is None:
+        return _triagem_default()
+    itens = json.loads(c.itens_json) if c.itens_json else _triagem_default()["itens"]
+    return {"formato": c.formato, "mensagem_livre": c.mensagem_livre or _TRIAGEM_MSG_PADRAO,
+            "itens": itens}
+
+
+def triagem_config_salvar(db, loja_id, dados):
+    formato = dados.get("formato") if dados.get("formato") in ("lista", "livre") else "lista"
+    itens = []
+    for it in (dados.get("itens") or []):
+        seg = it.get("segmento")
+        if seg in SEGMENTOS:
+            itens.append({"segmento": seg, "rotulo": (it.get("rotulo") or "").strip() or seg,
+                          "ativo": bool(it.get("ativo"))})
+    c = db.query(TriagemConfig).filter_by(loja_id=loja_id).first()
+    if c is None:
+        c = TriagemConfig(loja_id=loja_id); db.add(c)
+    c.formato = formato
+    c.mensagem_livre = (dados.get("mensagem_livre") or "").strip() or _TRIAGEM_MSG_PADRAO
+    c.itens_json = json.dumps(itens) if itens else None
+    db.flush()
+    return triagem_config_get(db, loja_id)
 
 
 def _email_do_usuario(db, usuario_id):

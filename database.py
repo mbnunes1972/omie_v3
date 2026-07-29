@@ -1187,6 +1187,20 @@ class TemplateMensagem(Base):
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
+class TriagemConfig(Base):
+    """Configuração da pergunta de triagem por LOJA (RF-08, Orizon Chat/Meta). Uma linha por loja.
+    `formato` = lista (opções numeradas) | livre (texto, atendente roteia). `itens_json` = lista
+    ordenada de {segmento, rotulo, ativo} da lista de opções mostrada ao cliente."""
+    __tablename__ = "triagem_config"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    loja_id        = Column(Integer, ForeignKey("lojas.id"), nullable=False, unique=True, index=True)
+    formato        = Column(String(8), nullable=False, default="lista")   # lista | livre
+    mensagem_livre = Column(Text, nullable=True)
+    itens_json     = Column(Text, nullable=True)   # [{segmento, rotulo, ativo}] ordenado
+    atualizado_em  = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaMensagem(Base):
     """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
     modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
@@ -1739,6 +1753,7 @@ def _migrar_colunas_pg():
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS destinatario_usuario_id INTEGER",
         # Orizon Chat/Meta Fatia 2: biblioteca de templates (RF-07) — tabela nova via create_all (marcador).
+        # Orizon Chat/Meta Fatia 6: config de triagem (RF-08) — tabela nova via create_all (marcador).
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

@@ -211,13 +211,17 @@ detalhada") — entram como **stubs navegáveis** na F9, para detalhar depois; n
 - [ ] (Backburner) `checklist` endpoint dedicado + flag "loja pronta p/ WhatsApp" (RF-16) — hoje o
   cálculo é no front a partir de `GET /templates`; formalizar no backend se necessário.
 
-## Fatia 6 — Configurações → Triagem + fluxo real (RF-08, RF-09)
-**Depende de:** F1 + F9 (hub de Configurações do Chat, onde a tela vive). · **Sub-skill:** `superpowers:executing-plans` (UI) + backend do fluxo em TDD.
+## Fatia 6 — Configurações → Triagem + fluxo real (RF-08, RF-09) — 🟡 TELA+CONFIG FEITAS 2026-07-29
+**Depende de:** F1. · **Sub-skill:** `superpowers:executing-plans` (UI) + backend do fluxo em TDD.
 **Pronto quando:** config lista/livre salva e o webhook roteia via triagem.
 
-- [ ] Config de triagem por loja (`formato` lista|livre; rótulos/ordem/ativo por segmento; `compras`
-  nunca na lista de cliente). Endpoints + testes de tenancy.
-- [ ] Fluxo de entrada (estende `rotear_entrada`/`processar_entrada`): identifica Cliente+Projeto ativo →
+- [x] Config de triagem por loja (tabela `triagem_config`; `formato` lista|livre; rótulos/ordem/ativo por
+  segmento; `compras` nunca na lista de cliente). `mod_chat.triagem_config_get/salvar` + endpoints
+  `GET/POST /api/comunicacao/triagem` (gerência, tenancy). Testes: default, salvar, tenancy 403 + loja
+  própria. (`test_orizon_chat_meta.py` +2)
+- [x] Frontend: tela **Triagem** no `#page-chat` — toggle Lista/Texto livre + rótulos/ativo/reordenar por
+  segmento + **pré-visualização** (bolha, tokens) atualizando ao vivo + Salvar. `node --check` verde.
+- [ ] **(Backend p/ a Vera)** Fluxo de entrada (estende `rotear_entrada`/`processar_entrada`): identifica Cliente+Projeto ativo →
   pergunta de confirmação (RF-09); senão → triagem manual pelo formato configurado (RF-08); só depois
   expõe na fila do segmento. Testes: número de Cliente c/ projeto → pergunta; número novo → triagem.
 - [ ] **Roteamento SAC (G3, movido da F1):** ao rotear uma entrada para o segmento `sac`, resolver o

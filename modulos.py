@@ -39,6 +39,7 @@ MODULOS = {
                                 "conversa_participantes", # Central de Comunicação (Fatia 1, 2026-07-27)
                                 "conversa_participantes_externos", # Orizon Chat externo (2026-07-28)
                                 "template_mensagem",      # Orizon Chat/Meta templates (RF-07, 2026-07-28)
+                                "triagem_config",         # Orizon Chat/Meta triagem (RF-08, 2026-07-28)
                                 "assuntos",               # Orizon Chat (Fatia 2, 2026-07-27)
                                 "mensagem_anexos",        # Orizon Chat anexos (Fatia 5, 2026-07-27)
                                 "usuario_presenca",       # Orizon Chat ponte WhatsApp (Fatia 6, 2026-07-27)

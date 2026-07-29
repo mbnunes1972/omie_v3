@@ -2104,6 +2104,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-badge.warn{background:var(--warn-soft);color:var(--warn)}
     .ochat-badge.err{background:var(--err-soft);color:var(--err)}
     .ochat-ph{display:flex;gap:12px;padding:14px 16px;border-radius:var(--radius);border:1px solid var(--info-line);background:var(--info-soft);font-size:var(--fs-sm);color:var(--text)}
+    .ochat-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px}
+    .ochat-seg{display:flex;align-items:center;gap:10px;padding:8px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--surface)}
+    .ochat-seg.off{opacity:.55}
+    .ochat-seg .grip{color:var(--text-3);cursor:grab}
+    .ochat-seg input[type=text]{flex:1;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:13px}
+    .ochat-seg-orig{font-size:10px;color:var(--text-3);white-space:nowrap}
+    .ochat-sel{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:3px;gap:2px}
+    .ochat-sel button{border:0;background:transparent;font:inherit;font-size:var(--fs-sm);font-weight:500;color:var(--text-2);padding:6px 14px;border-radius:999px;cursor:pointer}
+    .ochat-sel button.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+    .ochat-wa{width:270px;min-width:240px;background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:12px;align-self:flex-start}
+    .ochat-wa-head{display:flex;align-items:center;gap:8px;padding:2px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:10px}
+    .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+    .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
@@ -2128,7 +2141,41 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
           <!-- placeholders (mesma convenção do mockup) -->
           <div class="ochat-scr" id="ochat-scr-segmentos"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Ativar/editar os segmentos internos (comercial, suporte técnico, financeiro, compras, logística, parceiros) e o template padrão de cada um. <b>Tela em construção.</b></div></div></div>
-          <div class="ochat-scr" id="ochat-scr-triagem"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Formato da pergunta de triagem (lista de opções × texto livre) + pré-visualização no WhatsApp. <b>Próxima fatia.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-triagem">
+            <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+              <div style="flex:1;min-width:340px;display:flex;flex-direction:column;gap:14px">
+                <div class="ochat-panel">
+                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+                    <div><div style="font-weight:600;font-size:var(--fs-h3,.95rem)">Formato da pergunta de triagem</div>
+                      <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Como o sistema pergunta com qual departamento o contato quer falar.</div></div>
+                    <div class="ochat-sel" id="trg-fmt">
+                      <button data-fmt="lista" class="active" onclick="trgFormato('lista')">Lista de opções</button>
+                      <button data-fmt="livre" onclick="trgFormato('livre')">Texto livre</button>
+                    </div>
+                  </div>
+                  <div id="trg-bloco-lista">
+                    <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:10px">Segmentos que aparecem na triagem do cliente — edite o rótulo ou desative (o segmento continua existindo internamente, só não aparece nesta lista). <b>Compras</b> é só fornecedor, não entra na triagem do cliente.</div>
+                    <div id="trg-segs"></div>
+                  </div>
+                  <div id="trg-bloco-livre" style="display:none">
+                    <label class="field-label">Mensagem de triagem em texto livre</label>
+                    <textarea id="trg-livre" rows="3" oninput="trgPreview()" style="width:100%;box-sizing:border-box;padding:9px;font-family:inherit"></textarea>
+                    <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-top:6px">Nesse formato, um atendente lê a resposta e roteia manualmente — não há reconhecimento automático de número.</div>
+                  </div>
+                  <div style="display:flex;gap:8px;margin-top:16px">
+                    <button class="btn btn-primary btn-sm" onclick="trgSalvar()">Salvar configuração</button>
+                    <span id="trg-aviso" style="font-size:12px;color:var(--ok);align-self:center"></span>
+                  </div>
+                </div>
+                <div class="ochat-ph"><i class="ti ti-info-circle"></i><div><b>Antes disso:</b> se o número já é de um Cliente com Projeto ativo, o sistema pergunta direto se é sobre esse projeto (RF-09) — a triagem acima só entra se isso não for identificado ou for negado.</div></div>
+              </div>
+              <div class="ochat-wa">
+                <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);text-align:center;margin-bottom:8px">Pré-visualização</div>
+                <div class="ochat-wa-head"><div class="ochat-wa-av">DL</div><div><div style="font-weight:600;font-size:13px;color:var(--text)">Sua Loja</div><div style="font-size:10px;color:var(--text-3)">online</div></div></div>
+                <div class="ochat-wa-bubble" id="trg-preview"></div>
+              </div>
+            </div>
+          </div>
           <div class="ochat-scr" id="ochat-scr-numeros"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Número de WhatsApp da loja e status do transporte Meta (config-gated). <b>Tela em construção.</b></div></div></div>
           <div class="ochat-scr" id="ochat-scr-consumo"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Mensagens de template enviadas e custo estimado por segmento. <b>Tela em construção.</b></div></div></div>
         </div>
@@ -9931,6 +9978,67 @@ function ochatIr(scr){
   const t = _OCHAT_TOP[scr]; const top = document.getElementById('ochat-top');
   if(t && top) top.innerHTML = '<h2>'+esc(t[0])+'</h2><p>'+esc(t[1])+'</p>';
   if(scr==='modelos') chatModelosCarregar();
+  if(scr==='triagem') chatTriagemCarregar();
+}
+
+// ── Triagem (RF-08) — formato lista/livre + rótulos por segmento + preview ──────
+let _trgCfg = null;
+async function chatTriagemCarregar(){
+  let d;
+  try{ d = await fetch('/api/comunicacao/triagem',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ document.getElementById('trg-segs').innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ document.getElementById('trg-segs').innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Sem permissão (gerência).')+'</div></div>'; return; }
+  _trgCfg = d.triagem;
+  document.querySelectorAll('#trg-fmt button').forEach(b=>b.classList.toggle('active', b.getAttribute('data-fmt')===_trgCfg.formato));
+  document.getElementById('trg-bloco-lista').style.display = _trgCfg.formato==='lista' ? 'block' : 'none';
+  document.getElementById('trg-bloco-livre').style.display = _trgCfg.formato==='livre' ? 'block' : 'none';
+  document.getElementById('trg-livre').value = _trgCfg.mensagem_livre || '';
+  trgRenderSegs(); trgPreview();
+}
+function trgRenderSegs(){
+  const box = document.getElementById('trg-segs');
+  box.innerHTML = (_trgCfg.itens||[]).map((it,i)=>{
+    const off = (it.segmento==='compras');
+    return '<div class="ochat-seg'+(off||!it.ativo?' off':'')+'">'
+      + '<span style="display:flex;flex-direction:column;gap:1px"><i class="ti ti-chevron-up grip" onclick="trgMover('+i+',-1)"></i><i class="ti ti-chevron-down grip" onclick="trgMover('+i+',1)"></i></span>'
+      + '<input type="text" value="'+esc(it.rotulo)+'" '+(off?'disabled':'')+' oninput="_trgCfg.itens['+i+'].rotulo=this.value;trgPreview()">'
+      + '<span class="ochat-seg-orig">segmento: '+esc(it.segmento)+(off?' · só fornecedor':'')+'</span>'
+      + '<label class="hint" style="font-size:var(--fs-xs);color:var(--text-3)"><input type="checkbox" '+(it.ativo?'checked':'')+' onchange="_trgCfg.itens['+i+'].ativo=this.checked;trgRenderSegs();trgPreview()"> ativo</label>'
+      + '</div>';
+  }).join('');
+}
+function trgMover(i, dir){
+  const a = _trgCfg.itens, j = i+dir;
+  if(j<0 || j>=a.length) return;
+  [a[i], a[j]] = [a[j], a[i]];
+  trgRenderSegs(); trgPreview();
+}
+function trgFormato(f){
+  if(!_trgCfg) return;
+  _trgCfg.formato = f;
+  document.querySelectorAll('#trg-fmt button').forEach(b=>b.classList.toggle('active', b.getAttribute('data-fmt')===f));
+  document.getElementById('trg-bloco-lista').style.display = f==='lista' ? 'block' : 'none';
+  document.getElementById('trg-bloco-livre').style.display = f==='livre' ? 'block' : 'none';
+  trgPreview();
+}
+const _TRG_NUM = ['1⃣','2⃣','3⃣','4⃣','5⃣','6⃣','7⃣','8⃣','9⃣'];
+function trgPreview(){
+  const el = document.getElementById('trg-preview'); if(!el||!_trgCfg) return;
+  if(_trgCfg.formato==='livre'){ el.textContent = document.getElementById('trg-livre').value || _trgCfg.mensagem_livre || ''; return; }
+  const ativos = (_trgCfg.itens||[]).filter(it=>it.ativo && it.segmento!=='compras');
+  let txt = 'Olá! Para agilizar seu atendimento, escolha uma opção:\n\n';
+  ativos.forEach((it,i)=>{ txt += (_TRG_NUM[i]||(i+1)+'.')+' '+it.rotulo+'\n'; });
+  txt += '\nResponda com o número da opção.';
+  el.textContent = txt;
+}
+async function trgSalvar(){
+  if(!_trgCfg) return;
+  const payload = {formato:_trgCfg.formato, mensagem_livre:document.getElementById('trg-livre').value, itens:_trgCfg.itens};
+  const d = await fetch('/api/comunicacao/triagem',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>({}));
+  const aviso = document.getElementById('trg-aviso');
+  if(!d.ok){ aviso.style.color='var(--err)'; aviso.textContent = d.erro||'Falha ao salvar.'; return; }
+  _trgCfg = d.triagem; aviso.style.color='var(--ok)'; aviso.textContent='Configuração salva.';
+  setTimeout(()=>{ aviso.textContent=''; }, 2500);
 }
 
 // ── Modelos de Mensagem (RF-15/16) — checklist das 9 mensagens obrigatórias ────

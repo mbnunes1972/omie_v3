@@ -145,3 +145,35 @@ def test_template_endpoint_e_tenancy(http_client_factory, app_db, seed):
     st, b = outro.get("/api/comunicacao/templates")
     assert st == 200 and all(t["id"] != tid for t in b["templates"])
     assert outro.post("/api/comunicacao/templates/%d" % tid, {"status": "aprovado"})[0] == 404
+
+
+# ── Fatia 6 (backend) — config de triagem (RF-08) ──────────────────────────────
+def test_triagem_config_default_e_salvar(app_db, seed):
+    db = app_db.get_session()
+    try:
+        d = mod_chat.triagem_config_get(db, seed["loja1_id"])                # default
+        assert d["formato"] == "lista" and any(i["segmento"] == "comercial" for i in d["itens"])
+        assert any(i["segmento"] == "compras" and i["ativo"] is False for i in d["itens"])
+        cfg = mod_chat.triagem_config_salvar(db, seed["loja1_id"], {
+            "formato": "livre", "mensagem_livre": "Oi!",
+            "itens": [{"segmento": "comercial", "rotulo": "Vendas", "ativo": True},
+                      {"segmento": "xpto", "rotulo": "ignora", "ativo": True}]}); db.commit()
+        assert cfg["formato"] == "livre" and cfg["mensagem_livre"] == "Oi!"
+        itens = mod_chat.triagem_config_get(db, seed["loja1_id"])["itens"]
+        assert len(itens) == 1 and itens[0]["rotulo"] == "Vendas"           # segmento inválido descartado
+    finally:
+        db.close()
+
+
+def test_triagem_endpoint_e_tenancy(http_client_factory, app_db, seed):
+    ger = _login(http_client_factory, "dir_l1")
+    st, b = ger.get("/api/comunicacao/triagem")
+    assert st == 200 and b["triagem"]["formato"] in ("lista", "livre")
+    st, b = ger.post("/api/comunicacao/triagem",
+                     {"formato": "lista", "itens": [{"segmento": "financeiro", "rotulo": "Fin", "ativo": True}]})
+    assert st == 200 and b["triagem"]["itens"][0]["segmento"] == "financeiro"
+    outro = _login(http_client_factory, "dir_l2")                           # loja 2 = config própria (default)
+    assert any(i["segmento"] == "comercial" for i in outro.get("/api/comunicacao/triagem")[1]["triagem"]["itens"])
+    op = _login(http_client_factory, "cons_l1")                             # operador não gere
+    assert op.get("/api/comunicacao/triagem")[0] == 403
+    assert op.post("/api/comunicacao/triagem", {})[0] == 403

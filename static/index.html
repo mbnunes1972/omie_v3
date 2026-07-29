@@ -2199,7 +2199,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               </div>
             </div>
           </div>
-          <div class="ochat-scr" id="ochat-scr-consumo"><div class="ochat-ph"><i class="ti ti-info-circle"></i><div>Mensagens de template enviadas e custo estimado por segmento. <b>Tela em construção.</b></div></div></div>
+          <div class="ochat-scr" id="ochat-scr-consumo">
+            <div class="ochat-panel" style="max-width:820px">
+              <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:12px">Mensagens de WhatsApp de <b>saída</b> por segmento. <b>Enviadas</b> é a base faturável; <b>na fila</b> aguardam envio e <b>pendentes</b> estão sem transporte configurado. O valor em R$ depende da tarifa da Meta (varia por categoria/país) e não é calculado aqui.</div>
+              <div id="consumo-tabela"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -10003,6 +10008,32 @@ function ochatIr(scr){
   if(scr==='triagem') chatTriagemCarregar();
   if(scr==='segmentos') chatSegmentosCarregar();
   if(scr==='numeros') chatNumerosCarregar();
+  if(scr==='consumo') chatConsumoCarregar();
+}
+
+// ── Consumo / Custos (§10) — envios de WhatsApp por segmento (leitura) ────────────
+async function chatConsumoCarregar(){
+  const box = document.getElementById('consumo-tabela');
+  let d;
+  try{ d = await fetch('/api/comunicacao/consumo',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Sem permissão (gerência).')+'</div></div>'; return; }
+  const c = d.consumo||{}, segs = c.segmentos||[], tot = c.totais||{};
+  const th = 'padding:8px 10px;text-align:right;font-size:var(--fs-xs);color:var(--text-3);font-weight:600';
+  const td = 'padding:8px 10px;text-align:right;font-size:13px;color:var(--text)';
+  const linha = (s, forte) => '<tr'+(forte?' style="border-top:2px solid var(--border)"':'')+'>'
+    + '<td style="'+td+';text-align:left'+(forte?';font-weight:700':'')+'">'+esc(s.rotulo||s.segmento||'')+'</td>'
+    + '<td style="'+td+(forte?';font-weight:700':'')+'">'+(s.enviado||0)+'</td>'
+    + '<td style="'+td+'">'+(s.enfileirado||0)+'</td>'
+    + '<td style="'+td+'">'+(s.pendente_config||0)+'</td>'
+    + '<td style="'+td+'">'+(s.erro||0)+'</td>'
+    + '<td style="'+td+(forte?';font-weight:700':'')+'">'+(s.total||0)+'</td></tr>';
+  box.innerHTML = '<table style="width:100%;border-collapse:collapse">'
+    + '<thead><tr><th style="'+th+';text-align:left">Segmento</th><th style="'+th+'">Enviadas</th>'
+    + '<th style="'+th+'">Na fila</th><th style="'+th+'">Pendentes</th><th style="'+th+'">Erro</th><th style="'+th+'">Total</th></tr></thead>'
+    + '<tbody>' + segs.map(s=>linha(s,false)).join('')
+    + linha({rotulo:'Total', enviado:tot.enviado, enfileirado:tot.enfileirado, pendente_config:tot.pendente_config, erro:tot.erro, total:tot.total}, true)
+    + '</tbody></table>';
 }
 
 // ── Números Conectados (RF-01) — número exibível da loja + status do transporte Meta ──

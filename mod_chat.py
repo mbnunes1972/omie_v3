@@ -17,7 +17,7 @@ from sqlalchemy import func
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
                       Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem,
-                      TriagemConfig, SegmentoConfig, NumeroConectado)
+                      TriagemConfig, SegmentoConfig, NumeroConectado, EnvioExterno)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -644,6 +644,31 @@ def numero_conectado_salvar(db, loja_id, numero, rotulo):
     n.atualizado_em = datetime.utcnow()
     db.flush()
     return numero_conectado_get(db, loja_id)
+
+
+def consumo_por_segmento(db, loja_id):
+    """§10 (Consumo/Custos): agrega os EnvioExterno de WhatsApp de SAÍDA por segmento (canal),
+    escopado à loja via Conversa.loja_id. Quebra por status (enviado/enfileirado/pendente_config/
+    erro) — 'enviado' é a contagem faturável (base de custo). Leitura simples; sem custo em R$
+    (a tarifa Meta varia por categoria/país e não está cadastrada). Devolve os 7 segmentos + totais."""
+    _VAZIO = lambda: {"enviado": 0, "enfileirado": 0, "pendente_config": 0, "erro": 0, "total": 0}
+    base = {seg: _VAZIO() for seg in _SEGMENTO_ORDEM}
+    totais = _VAZIO()
+    rows = (db.query(EnvioExterno.canal, EnvioExterno.status, func.count(EnvioExterno.id))
+              .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+              .join(Conversa, ConversaMensagem.conversa_id == Conversa.id)
+              .filter(Conversa.loja_id == loja_id, EnvioExterno.meio == "whatsapp",
+                      EnvioExterno.direcao == "saida")
+              .group_by(EnvioExterno.canal, EnvioExterno.status).all())
+    for canal, status, n in rows:
+        chave = status if status in ("enviado", "enfileirado", "pendente_config") else "erro"
+        b = base.get(canal)               # canal desconhecido/None conta só no total
+        if b is not None:
+            b[chave] += n; b["total"] += n
+        totais[chave] += n; totais["total"] += n
+    segmentos = [dict(segmento=seg, rotulo=_SEGMENTO_ROTULOS.get(seg, seg), **base[seg])
+                 for seg in _SEGMENTO_ORDEM]
+    return {"segmentos": segmentos, "totais": totais}
 
 
 def _email_do_usuario(db, usuario_id):

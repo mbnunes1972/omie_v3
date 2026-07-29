@@ -270,3 +270,41 @@ def test_numero_endpoint_e_tenancy(http_client_factory, app_db, seed):
     op = _login(http_client_factory, "cons_l1")
     assert op.get("/api/comunicacao/numeros")[0] == 403
     assert op.post("/api/comunicacao/numeros", {"numero": "x"})[0] == 403
+
+
+def test_consumo_por_segmento(app_db, seed):
+    db = app_db.get_session()
+    try:
+        lid = seed["loja1_id"]
+        cr = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        conv = mod_chat.criar_grupo(db, lid, cr, "Consumo", [], exige_dois=False); db.flush()
+        m = mod_chat.enviar_mensagem(db, conv, None, "x", canal="comercial", _permitir_externo=True); db.flush()
+        for st in ("enviado", "enviado", "pendente_config"):     # 2 enviados + 1 pendente (comercial)
+            db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="saida", canal="comercial", status=st))
+        db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="saida", canal="financeiro", status="erro"))
+        db.add(EnvioExterno(mensagem_id=m.id, meio="whatsapp", direcao="entrada", canal="comercial", status="recebido"))  # entrada não conta
+        db.add(EnvioExterno(mensagem_id=m.id, meio="email", direcao="saida", canal="comercial", status="enviado"))        # e-mail não conta
+        db.flush()
+        d = mod_chat.consumo_por_segmento(db, lid)
+        by = {s["segmento"]: s for s in d["segmentos"]}
+        assert len(d["segmentos"]) == 7
+        assert by["comercial"]["enviado"] == 2 and by["comercial"]["pendente_config"] == 1
+        assert by["comercial"]["total"] == 3                    # só saída WhatsApp
+        assert by["financeiro"]["erro"] == 1 and by["financeiro"]["total"] == 1
+        assert d["totais"]["enviado"] == 2 and d["totais"]["total"] == 4
+        # tenancy: envio da loja 2 não entra no consumo da loja 1
+        cr2 = db.query(app_db.Usuario).filter_by(login="dir_l2").first().id
+        conv2 = mod_chat.criar_grupo(db, seed["loja2_id"], cr2, "C2", [], exige_dois=False)
+        m2 = mod_chat.enviar_mensagem(db, conv2, None, "y", canal="comercial", _permitir_externo=True); db.flush()
+        db.add(EnvioExterno(mensagem_id=m2.id, meio="whatsapp", direcao="saida", canal="comercial", status="enviado")); db.flush()
+        assert mod_chat.consumo_por_segmento(db, lid)["totais"]["total"] == 4   # inalterado
+    finally:
+        db.close()
+
+
+def test_consumo_endpoint_e_tenancy(http_client_factory, app_db, seed):
+    ger = _login(http_client_factory, "dir_l1")
+    st, bd = ger.get("/api/comunicacao/consumo")
+    assert st == 200 and len(bd["consumo"]["segmentos"]) == 7 and "totais" in bd["consumo"]
+    op = _login(http_client_factory, "cons_l1")
+    assert op.get("/api/comunicacao/consumo")[0] == 403

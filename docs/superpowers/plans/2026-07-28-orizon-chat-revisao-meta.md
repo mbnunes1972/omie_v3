@@ -276,8 +276,12 @@ do Chat; os 3 placeholders são destinos navegáveis (stub).
   JSON (teste prova isso). Tabela `numero_conectado` + `mod_chat.numero_conectado_get/salvar` +
   `_status_transporte_whatsapp` + `GET/POST /api/comunicacao/numeros` (gerência, tenancy) + tela no
   `#page-chat`. Testes `test_orizon_chat_meta.py` (+2, config-gated e não-vazamento de secret).
-- [ ] **Consumo / Custos (stub, §10):** contagem de `EnvioExterno` do tipo template por segmento (base
-  para custo estimado) — leitura simples.
+- [x] **Consumo / Custos (§10)** — ✅ FEITA 2026-07-29: tabela de envios de WhatsApp de **saída** por
+  segmento, com quebra enviadas/na fila/pendentes/erro + linha de totais (leitura). `EnvioExterno` ainda
+  não tem flag de template → a agregação é por `canal` (segmento) × `status`, escopada por
+  `Conversa.loja_id`; **sem R$** (tarifa Meta varia por categoria/país, não cadastrada).
+  `mod_chat.consumo_por_segmento` + `GET /api/comunicacao/consumo` (gerência, tenancy) + tela no
+  `#page-chat`. Testes `test_orizon_chat_meta.py` (+2, agregação e isolamento por loja).
 - [ ] `node --check` + verificação manual (tema claro/escuro); tokens reais.
 
 ---

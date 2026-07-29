@@ -16,7 +16,7 @@ from sqlalchemy import func
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
                       Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem,
-                      TriagemConfig)
+                      TriagemConfig, SegmentoConfig)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -559,6 +559,49 @@ def triagem_config_salvar(db, loja_id, dados):
     c.itens_json = json.dumps(itens) if itens else None
     db.flush()
     return triagem_config_get(db, loja_id)
+
+
+# ── Configuração de segmentos (RF-02) ───────────────────────────────────────────────────────────
+
+_SEGMENTO_ROTULOS = {"comercial": "Comercial", "suporte_tecnico": "Suporte Técnico",
+                     "financeiro": "Financeiro", "logistica": "Logística", "parceiros": "Parceiros",
+                     "compras": "Compras", "sac": "SAC"}
+_SEGMENTO_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "compras", "sac")
+
+
+def segmentos_config_get(db, loja_id):
+    """Os 7 segmentos com o config da loja (ativo/rótulo/template padrão) + os templates de cada um
+    (para o seletor). Sem linha salva → padrão (ativo, rótulo do catálogo)."""
+    salvos = {c.segmento: c for c in db.query(SegmentoConfig).filter_by(loja_id=loja_id).all()}
+    out = []
+    for seg in _SEGMENTO_ORDEM:
+        c = salvos.get(seg)
+        out.append({"segmento": seg,
+                    "rotulo": (c.rotulo if (c and c.rotulo) else _SEGMENTO_ROTULOS.get(seg, seg)),
+                    "ativo": (bool(c.ativo) if c else True),
+                    "template_padrao_id": (c.template_padrao_id if c else None),
+                    "templates": listar_templates(db, loja_id, segmento=seg)})
+    return out
+
+
+def segmentos_config_salvar(db, loja_id, itens):
+    for it in (itens or []):
+        seg = it.get("segmento")
+        if seg not in SEGMENTOS:
+            continue
+        c = db.query(SegmentoConfig).filter_by(loja_id=loja_id, segmento=seg).first()
+        if c is None:
+            c = SegmentoConfig(loja_id=loja_id, segmento=seg); db.add(c)
+        c.ativo = 1 if it.get("ativo", True) else 0
+        c.rotulo = (it.get("rotulo") or "").strip() or None
+        tpid = it.get("template_padrao_id")
+        if tpid:                                            # valida: template da loja E do segmento
+            t = db.query(TemplateMensagem).filter_by(id=int(tpid), loja_id=loja_id).first()
+            c.template_padrao_id = t.id if (t and t.segmento == seg) else None
+        else:
+            c.template_padrao_id = None
+    db.flush()
+    return segmentos_config_get(db, loja_id)
 
 
 def _email_do_usuario(db, usuario_id):

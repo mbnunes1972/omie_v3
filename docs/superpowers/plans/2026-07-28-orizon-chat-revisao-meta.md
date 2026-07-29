@@ -258,9 +258,10 @@ do Chat; os 3 placeholders são destinos navegáveis (stub).
   **Modelos (F5)** entram aqui como conteúdo real; as outras 3 como stub.
 - [ ] **Comunicação:** separar os destinos **Atendimentos** (fila, F7) e **Chat Interno** (equipe — o
   modal/aba que já existe), sem duplicar função.
-- [ ] **Segmentos (stub → 1ª versão leve):** listar os 7 segmentos (com `compras`/`parceiros` da F1),
-  ativar/desativar e definir template padrão por segmento (consome F2). Se ficar grande, mantém stub e
-  vira fatia própria.
+- [x] **Segmentos** — ✅ FEITA 2026-07-29: os **7 segmentos** com ativar/desativar, rótulo editável e
+  **template padrão** por segmento (consome F2). Tabela `segmento_config` + `mod_chat.segmentos_config_get/
+  salvar` + `GET/POST /api/comunicacao/segmentos` (gerência, tenancy) + tela no `#page-chat`.
+  Testes `test_orizon_chat_meta.py` (+2). (Correção: a Triagem incluiu o 7º segmento **SAC**.)
 - [ ] **Números Conectados (stub, RF-01):** exibir o número/phone-id da loja e o status do transporte
   (config-gated: `pendente_config` sem credencial Meta) — leitura, sem detalhamento novo do mockup.
 - [ ] **Consumo / Custos (stub, §10):** contagem de `EnvioExterno` do tipo template por segmento (base

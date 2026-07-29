@@ -2943,6 +2943,25 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/segmentos — config dos 7 segmentos (RF-02). Gerência.
+            if path == "/api/comunicacao/segmentos":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                    self.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    self.send_json({"ok": True, "segmentos": mod_chat.segmentos_config_get(db, loja_id)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/conversas/<id>/mensagens — histórico de uma conversa
             # direct/grupo (só participante lê).
             m_cm = _re.match(r'^/api/comunicacao/conversas/(\d+)/mensagens$', path)
@@ -5438,6 +5457,27 @@ class Handler(BaseHTTPRequestHandler):
                 dd = json.loads(body or b'{}')
                 cfg = mod_chat.triagem_config_salvar(db, loja_id, dd); db.commit()
                 self.send_json({"ok": True, "triagem": cfg})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/segmentos — salva a config dos segmentos (RF-02). Gerência.
+        if path == "/api/comunicacao/segmentos":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                self.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                segs = mod_chat.segmentos_config_salvar(db, loja_id, dd.get("itens") or []); db.commit()
+                self.send_json({"ok": True, "segmentos": segs})
             finally:
                 db.close()
             return

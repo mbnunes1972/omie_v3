@@ -1201,6 +1201,22 @@ class TriagemConfig(Base):
     atualizado_em  = Column(DateTime, default=datetime.utcnow)
 
 
+class SegmentoConfig(Base):
+    """Configuração de um segmento (canal) por LOJA (RF-02, Orizon Chat/Meta): ativar/desativar,
+    rótulo de exibição e template padrão. Uma linha por (loja, segmento) — o padrão (7 segmentos,
+    todos ativos) é derivado em código quando não há linha."""
+    __tablename__ = "segmento_config"
+    __table_args__ = (UniqueConstraint("loja_id", "segmento", name="uq_segmento_config"),)
+
+    id                = Column(Integer, primary_key=True, autoincrement=True)
+    loja_id           = Column(Integer, ForeignKey("lojas.id"), nullable=False, index=True)
+    segmento          = Column(String(20), nullable=False)
+    ativo             = Column(Integer, nullable=False, default=1)
+    rotulo            = Column(Text, nullable=True)
+    template_padrao_id = Column(Integer, ForeignKey("template_mensagem.id"), nullable=True)
+    atualizado_em     = Column(DateTime, default=datetime.utcnow)
+
+
 class ConversaMensagem(Base):
     """Mensagem da Conversa (Fatia 1: só interna). `canal` já nasce na coluna porque é do
     modelo consolidado da spec, mas na Fatia 1 apenas 'interno' circula (mod_chat valida).
@@ -1754,6 +1770,7 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS destinatario_usuario_id INTEGER",
         # Orizon Chat/Meta Fatia 2: biblioteca de templates (RF-07) — tabela nova via create_all (marcador).
         # Orizon Chat/Meta Fatia 6: config de triagem (RF-08) — tabela nova via create_all (marcador).
+        # Orizon Chat/Meta: config de segmentos (RF-02) — tabela nova via create_all (marcador).
         # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
         # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
         """DO $$ BEGIN

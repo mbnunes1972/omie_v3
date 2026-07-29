@@ -180,3 +180,32 @@ def test_triagem_endpoint_e_tenancy(http_client_factory, app_db, seed):
     op = _login(http_client_factory, "cons_l1")                             # operador não gere
     assert op.get("/api/comunicacao/triagem")[0] == 403
     assert op.post("/api/comunicacao/triagem", {})[0] == 403
+
+
+# ── Config de segmentos (RF-02) ────────────────────────────────────────────────
+def test_segmentos_config_get_e_salvar(app_db, seed):
+    db = app_db.get_session()
+    try:
+        lid = seed["loja1_id"]
+        d = mod_chat.segmentos_config_get(db, lid)
+        assert len(d) == 7 and all(s["ativo"] for s in d)                   # default: 7 ativos
+        t = mod_chat.criar_template(db, lid, {"nome_meta": "c1", "segmento": "comercial"}); db.commit()  # sem slot
+        mod_chat.segmentos_config_salvar(db, lid, [
+            {"segmento": "comercial", "rotulo": "Vendas", "ativo": True, "template_padrao_id": t.id},
+            {"segmento": "compras", "ativo": False},
+            {"segmento": "xpto", "ativo": True}]); db.commit()              # inválido ignorado
+        by = {s["segmento"]: s for s in mod_chat.segmentos_config_get(db, lid)}
+        assert by["comercial"]["rotulo"] == "Vendas" and by["comercial"]["template_padrao_id"] == t.id
+        assert by["compras"]["ativo"] is False
+        cfg2 = mod_chat.segmentos_config_salvar(db, lid, [{"segmento": "financeiro", "template_padrao_id": t.id}])
+        assert {s["segmento"]: s for s in cfg2}["financeiro"]["template_padrao_id"] is None  # template de outro segmento
+    finally:
+        db.close()
+
+
+def test_segmentos_endpoint_e_tenancy(http_client_factory, app_db, seed):
+    ger = _login(http_client_factory, "dir_l1")
+    assert len(ger.get("/api/comunicacao/segmentos")[1]["segmentos"]) == 7
+    op = _login(http_client_factory, "cons_l1")
+    assert op.get("/api/comunicacao/segmentos")[0] == 403
+    assert op.post("/api/comunicacao/segmentos", {"itens": []})[0] == 403

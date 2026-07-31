@@ -2156,6 +2156,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
                     <label id="oc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
                       <input type="checkbox" id="oc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
+                    <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
+                    <div id="oc-doc-enc" style="display:none;margin-top:6px">
+                      <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
+                    </div>
                     <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
                     <div id="oc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
                       <label style="font-size:12px;color:var(--text);cursor:pointer">
@@ -12655,6 +12659,8 @@ async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   const pm = document.getElementById('oc-membros'); if(pm) pm.style.display = 'none'; // fecha painel ao trocar
   const tr = document.getElementById('oc-transf');               // transferência/bloqueador só no projeto
   if(tr) tr.style.display = _ocConvProjeto ? '' : 'none';
+  const de = document.getElementById('oc-doc-enc');              // encaminhar documento só no projeto
+  if(de) de.style.display = _ocConvProjeto ? '' : 'none';
   const tchk = document.getElementById('conv-transf-chk');       // reseta a composição de transferência
   if(tchk){ tchk.checked = false; if(typeof convTransfToggle==='function') convTransfToggle(); }
   // Caixa "E-mail (oficializar)": só gerência, em grupo/projeto.
@@ -12723,7 +12729,11 @@ function _ocMsgCabecalho(m){
 }
 // Evento inline (spec 2026-07-31 módulo/portas): mensagem de sistema vira FAIXA na timeline.
 function _ocEventoFaixa(m){
-  return '<div class="oc-evento"><span><i class="ti ti-timeline-event"></i> '+esc(m.corpo||'')
+  const doc = (m.documento_ref_id && _ocConvProjeto)
+    ? ' <a target="_blank" rel="noopener" href="/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/ciclo/documento/'+m.documento_ref_id
+      + '" style="color:var(--accent);text-decoration:none"><i class="ti ti-paperclip"></i> '+esc(m.documento_nome||'abrir')+'</a>'
+    : '';
+  return '<div class="oc-evento"><span><i class="ti ti-timeline-event"></i> '+esc(m.corpo||'')+doc
     + ' <span style="opacity:.7">· '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</span></span></div>';
 }
 function _ocRenderMsg(m){
@@ -13278,6 +13288,40 @@ async function convDestravar(mid){
     await ocCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
 }
+// ── Encaminhar documento do ciclo ao cliente por WhatsApp (spec 2026-07-31, decisão 3) ──
+async function ocDocEncaminhar(){
+  if(!_ocConvProjeto) return;
+  const dp = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/ciclo/pe',
+                         {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  const docs = dp.documentos||[];
+  if(!docs.length){ showToast('O projeto ainda não tem documentos no ciclo.', true); return; }
+  const opts = docs.map(d=>{
+    const dt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
+    return '<option value="'+d.id+'">'+esc(d.nome_original+' ('+d.tipo+' · et. '+d.etapa_codigo+(dt?' · '+dt:'')+')')+'</option>';
+  }).join('');
+  const ov = _popupOverlay('<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Encaminhar documento ao cliente</h4>'
+    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">O arquivo segue por WhatsApp aos contatos externos da conversa. Só é permitido com a janela de 24h aberta (regra da Meta).</div>'
+    + '<select id="oc-doc-enc-sel" style="width:100%;padding:6px 8px">'+opts+'</select>'
+    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">'
+    + '<button data-act="cancelar" class="btn btn-ghost btn-sm">Cancelar</button>'
+    + '<button data-act="enviar" class="btn btn-primary btn-sm"><i class="ti ti-send"></i> Encaminhar</button></div>');
+  ov.querySelector('[data-act="cancelar"]').onclick = ()=>ov.remove();
+  ov.querySelector('[data-act="enviar"]').onclick = async ()=>{
+    const id = document.getElementById('oc-doc-enc-sel').value;
+    if(!id) return;
+    let d;
+    try{
+      d = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/conversa/documento/'+id+'/encaminhar',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
+    }catch(e){ showToast('Erro de rede.', true); return; }
+    if(!d.ok){ showToast(d.erro||'Falha ao encaminhar.', true); return; }
+    ov.remove();
+    const pend = (d.envios||[]).filter(e=>e.status==='pendente_config').length;
+    showToast(pend ? 'Encaminhamento registrado — '+pend+' pendente(s) de transporte.' : 'Documento encaminhado.');
+    await ocCarregarMsgs();
+  };
+}
+
 // ── Fila de triagem — resolução humana na F7 (spec 2026-07-31) ────────────────
 let _ocTrgAtiva = null;   // entrada da fila aberta no painel
 function ocTriagemAbrir(id){

@@ -391,6 +391,20 @@ def _aprovador_financeiro(db, login, senha, sessao=None):
     return _usuario_com_capacidade(db, login, senha, "aprovar_financeiro", sessao=sessao)
 
 
+def _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario_id):
+    """Gancho do host → chat (spec 2026-07-31, decisão 2): documento do ciclo vira evento inline
+    na conversa do projeto. BEST-EFFORT: nunca derruba o upload (efeito principal do endpoint).
+    Chamar ANTES do commit do chamador (entra na mesma transação); precisa do doc.id (flush)."""
+    try:
+        db.flush()
+        import mod_chat
+        mod_chat.registrar_documento_na_conversa(db, loja_id, nome_safe, doc,
+                                                 autor_usuario_id=usuario_id)
+    except Exception as _e:
+        logging.getLogger(__name__).warning(
+            "evento de documento na conversa falhou (%s/%s): %s", nome_safe, doc.tipo, _e)
+
+
 def _lojas_do_escopo(db, ator):
     """Unidades da VISÃO UNIFICADA financeira (PDV, spec 2026-07-22): para quem abre o
     painel Financeiro de uma loja-MÃE, devolve [mãe] + PDVs ativos dela; para os demais,
@@ -5668,6 +5682,46 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/projetos/<nome>/conversa/documento/<id>/encaminhar — spec 2026-07-31
+        # (decisão 3): encaminha um CicloDocumento pelo WhatsApp da conversa aos participantes
+        # EXTERNOS. Dentro da janela de 24h → mídia (config-gated); fora → 400 com instrução de
+        # template (F3 pendente).
+        m_enc = re.match(r'^/api/projetos/([^/]+)/conversa/documento/(\d+)/encaminhar$', path)
+        if m_enc:
+            nome = unquote(m_enc.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_visivel_da_loja(db, nome, loja_id, usuario) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_chat, mod_chat_externo as _ext
+                import mimetypes as _mt
+                doc = db.get(CicloDocumento, int(m_enc.group(2)))
+                if doc is None or doc.projeto_nome != nome:
+                    self.send_json({"ok": False, "erro": "Documento não encontrado."}, code=404); return
+                conv = mod_chat.get_or_create_conversa_projeto(db, loja_id, nome)
+                caminho = os.path.join(_projeto_path(nome), doc.arquivo_path)
+                mime = _mt.guess_type(doc.nome_original or "")[0]
+                try:
+                    msg, envios = _ext.encaminhar_documento_externo(
+                        db, conv, doc, usuario["id"], caminho, mime=mime)
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True,
+                                "envios": [{"id": e.id, "status": e.status, "destino": e.destino}
+                                           for e in envios]}, code=201)
+            finally:
+                db.close()
+            return
+
         # POST /api/projetos/<nome>/conversa/mensagens — chat Fatia 1: nova mensagem interna.
         m_conv = re.match(r'^/api/projetos/([^/]+)/conversa/mensagens$', path)
         if m_conv:
@@ -9716,6 +9770,7 @@ class Handler(BaseHTTPRequestHandler):
                     doc = CicloDocumento(projeto_nome=nome_safe, etapa_codigo=codigo, tipo=tipo_esperado,
                                          arquivo_path=rel, nome_original=base_nome, enviado_por_id=u.id)
                     db.add(doc)
+                    _chat_registrar_documento(db, nome_safe, loja_id, doc, u.id)
                     et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
                     if not et or et.status == "pendente":
                         _set_etapa_status(db, nome_safe, codigo, "em_andamento", u.id)
@@ -9764,6 +9819,7 @@ class Handler(BaseHTTPRequestHandler):
                     doc = CicloDocumento(projeto_nome=nome_safe, etapa_codigo=codigo, tipo=tipo_esperado,
                                          arquivo_path=rel, nome_original=base_nome, enviado_por_id=usuario["id"])
                     db.add(doc)
+                    _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario["id"])
                     et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
                     if not et or et.status == "pendente":
                         _set_etapa_status(db, nome_safe, codigo, "em_andamento", usuario["id"])
@@ -9806,6 +9862,7 @@ class Handler(BaseHTTPRequestHandler):
                     doc = CicloDocumento(projeto_nome=nome_safe, etapa_codigo="15", tipo="nfe_fabrica_xml",
                                          arquivo_path=rel, nome_original=base_nome, enviado_por_id=usuario["id"])
                     db.add(doc)
+                    _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario["id"])
                     et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo="15").first()
                     if not et or et.status == "pendente":
                         _set_etapa_status(db, nome_safe, "15", "em_andamento", usuario["id"])
@@ -9851,6 +9908,7 @@ class Handler(BaseHTTPRequestHandler):
                     doc = CicloDocumento(projeto_nome=nome_safe, etapa_codigo=codigo, tipo="pe_relatorio_complementar",
                                          arquivo_path=rel, nome_original=base_nome, enviado_por_id=u.id)
                     db.add(doc); db.flush()   # doc.id para a revisão
+                    _chat_registrar_documento(db, nome_safe, loja_id, doc, u.id)
                     todas = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()
                     codigos = [e.etapa_codigo for e in todas]
                     resetar = mod_ciclo.codigos_a_resetar(codigo, codigos)
@@ -11101,16 +11159,25 @@ class Handler(BaseHTTPRequestHandler):
                             prox = mod_ciclo.etapa_seguinte(etapa_cod)
                             prox_fid = (_responsavel_funcionario_etapa(db, nome_safe, loja_id, prox)
                                         if prox else None)
+                            import mod_chat as _mchat
+                            _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                            conv = _mchat.get_or_create_conversa_projeto(
+                                db, loja_id, nome_safe,
+                                cliente_id=(_pm.cliente_id if _pm else None))
                             if prox and prox_fid:
-                                import mod_chat as _mchat
-                                _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
-                                conv = _mchat.get_or_create_conversa_projeto(
-                                    db, loja_id, nome_safe,
-                                    cliente_id=(_pm.cliente_id if _pm else None))
                                 _mchat.mensagem_passagem_fase(
                                     db, conv, usuario.get("id"),
                                     mod_ciclo.ETAPA_NOME.get(etapa_cod, etapa_cod),
                                     prox, mod_ciclo.ETAPA_NOME.get(prox, prox), prox_fid)
+                            # Grupo de acompanhamento EVOLUTIVO (spec 2026-07-31, decisão 1):
+                            # a transição re-deriva equipe∪gerência e cada entrada/saída vira
+                            # evento inline na timeline da conversa do projeto.
+                            import mod_equipe as _meq_f
+                            _eqf = _meq_f.equipe_do_projeto(db, nome_safe, loja_id)
+                            _mchat.sincronizar_grupo_da_fase(
+                                db, conv, _eqf["membros_usuarios"],
+                                fase_nome=(mod_ciclo.ETAPA_NOME.get(prox, prox) if prox else None),
+                                autor_usuario_id=usuario.get("id"))
                         except Exception as _e:
                             logging.getLogger(__name__).warning(
                                 "passagem automática de fase falhou (%s/%s): %s",

@@ -171,7 +171,10 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
         if not transferido_para_funcionario_id:
             raise ValueError("Escolha quem recebe a transferência.")
     else:
-        if transferido_para_funcionario_id or etapa_codigo or documento_ref_id or bloqueador:
+        # Eventos inline (spec 2026-07-31) podem referenciar etapa/documento ("Contrato
+        # registrado na etapa 7") sem serem transferência; os demais campos seguem exclusivos.
+        if (transferido_para_funcionario_id or bloqueador
+                or (etapa_codigo and not evento) or (documento_ref_id and not evento)):
             raise ValueError("Campos de transferência só valem em natureza=transferencia.")
     # Destinatário dirigido (F2): só vale se for PARTICIPANTE da conversa — senão vira "todos" (None).
     # (achado da Vera: sem isso, um id de outra loja/não-membro vazaria como "→ para <nome>").
@@ -767,6 +770,46 @@ def sincronizar_participantes_projeto(db, conversa, membros_usuarios):
     return [p.usuario_id for p in db.query(ConversaParticipante)
             .filter(ConversaParticipante.conversa_id == conversa.id,
                     ConversaParticipante.removido == 0).all()]
+
+
+def sincronizar_grupo_da_fase(db, conversa, membros_usuarios, fase_nome=None,
+                              autor_usuario_id=None):
+    """Transição de fase (spec 2026-07-31 portas, decisão 1): a conversa do projeto é UMA só e o
+    grupo de acompanhamento EVOLUI com a fase — entra o montador na montagem, sai quem deixou o
+    time. Reusa sincronizar_participantes_projeto (override manual segue vencendo) e cada
+    entrada/saída vira EVENTO inline na timeline ("João (Montador) entrou no acompanhamento —
+    fase Montagem"). Não commita. Retorna a lista atual de participantes."""
+    antes = {p.usuario_id for p in db.query(ConversaParticipante)
+             .filter_by(conversa_id=conversa.id, removido=0).all()}
+    atuais = set(sincronizar_participantes_projeto(db, conversa, membros_usuarios))
+    sufixo = (" — fase %s" % fase_nome) if fase_nome else ""
+
+    def _rotulo(uid):
+        u = db.get(Usuario, uid)
+        fn = _funcao_nome_do_usuario(db, uid)
+        return "%s%s" % ((u.nome if u else "usuário %s" % uid), (" (%s)" % fn) if fn else "")
+
+    for uid in sorted(atuais - antes):
+        enviar_mensagem(db, conversa, autor_usuario_id,
+                        "%s entrou no acompanhamento%s" % (_rotulo(uid), sufixo),
+                        evento="membro_entrou")
+    for uid in sorted(antes - atuais):
+        enviar_mensagem(db, conversa, autor_usuario_id,
+                        "%s saiu do acompanhamento%s" % (_rotulo(uid), sufixo),
+                        evento="membro_saiu")
+    return sorted(atuais)
+
+
+def registrar_documento_na_conversa(db, loja_id, projeto_nome, documento, autor_usuario_id=None):
+    """Decisão 2 da spec 2026-07-31 (portas): documento anexado ao CICLO vira evento inline na
+    conversa do projeto ("Contrato assinado registrado na etapa 7 — [abrir]"). Best-effort no
+    chamador (nunca derruba o upload). Não commita."""
+    conv = get_or_create_conversa_projeto(db, loja_id, projeto_nome)
+    corpo = "Documento %s registrado na etapa %s" % (
+        documento.nome_original or documento.tipo, documento.etapa_codigo)
+    return enviar_mensagem(db, conv, autor_usuario_id, corpo,
+                           etapa_codigo=None, documento_ref_id=documento.id,
+                           evento="documento_registrado")
 
 
 # ── Assunto (Orizon Chat, Fatia 2) ────────────────────────────────────────────

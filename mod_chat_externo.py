@@ -174,6 +174,65 @@ def _enviar_whatsapp(env, corpo):
     return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
 
 
+def _enviar_whatsapp_documento(env, caminho_abs, nome, mime):
+    """Documento como MÍDIA pela Cloud API (2 passos): upload em /{phone}/media (multipart) →
+    mensagem type=document com o media id. Config-gated pelo chamador (despachar_documento)."""
+    import json as _json
+    import urllib.request as _u
+    import urllib.error as _ue
+    token = (os.environ.get("ORIZON_WA_TOKEN") or "").strip()
+    phone = _env_por_canal("ORIZON_WA_PHONE_ID", env.canal)
+    with open(caminho_abs, "rb") as f:
+        binario = f.read()
+    fronteira = "orizonwa%s" % abs(hash(nome))
+    corpo_mp = b""
+    def _campo(n, v):
+        return (("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n"
+                 % (fronteira, n, v)).encode("utf-8"))
+    corpo_mp += _campo("messaging_product", "whatsapp")
+    corpo_mp += _campo("type", mime or "application/octet-stream")
+    corpo_mp += (("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"%s\"\r\n"
+                  "Content-Type: %s\r\n\r\n" % (fronteira, nome, mime or "application/octet-stream"))
+                 .encode("utf-8")) + binario + b"\r\n"
+    corpo_mp += ("--%s--\r\n" % fronteira).encode("utf-8")
+    req = _u.Request("https://graph.facebook.com/v20.0/%s/media" % phone, data=corpo_mp,
+                     method="POST",
+                     headers={"Authorization": "Bearer " + token,
+                              "Content-Type": "multipart/form-data; boundary=%s" % fronteira})
+    try:
+        with _u.urlopen(req, timeout=30) as resp:
+            media = _json.loads(resp.read() or b"{}")
+    except _ue.HTTPError as he:
+        raise RuntimeError(_erro_meta(he))
+    media_id = media.get("id")
+    if not media_id:
+        return False, None, "upload de mídia sem id na resposta da Meta"
+    payload = {"messaging_product": "whatsapp", "to": _digitos(env.destino),
+               "type": "document", "document": {"id": media_id, "filename": nome}}
+    req2 = _u.Request("https://graph.facebook.com/v20.0/%s/messages" % phone,
+                      data=_json.dumps(payload).encode("utf-8"), method="POST",
+                      headers={"Authorization": "Bearer " + token,
+                               "Content-Type": "application/json"})
+    try:
+        with _u.urlopen(req2, timeout=30) as resp:
+            data = _json.loads(resp.read() or b"{}")
+    except _ue.HTTPError as he:
+        raise RuntimeError(_erro_meta(he))
+    wamid = ((data.get("messages") or [{}])[0]).get("id")
+    return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
+
+
+def despachar_documento(env, caminho_abs, nome, mime):
+    """Disparo REAL de um DOCUMENTO por WhatsApp — só quando meio_configurado. Mesmo contrato de
+    despachar: (ok, id_externo, erro); exceção vira (False, None, erro)."""
+    if not meio_configurado("whatsapp"):
+        return False, None, "Transporte não configurado neste ambiente."
+    try:
+        return _enviar_whatsapp_documento(env, caminho_abs, nome, mime)
+    except Exception as e:
+        return False, None, str(e)
+
+
 def despachar(env, corpo):
     """Disparo REAL do envio externo — só quando meio_configurado(env.meio). SMTP (e-mail) e Meta
     Cloud API (WhatsApp). A rede é a única parte não coberta por credencial nos testes (os testes
@@ -474,6 +533,44 @@ def espelhar_para_externos(db, conversa, mensagem, autor_nome=None):
         except Exception:
             pass   # best-effort
     return enviados
+
+
+def encaminhar_documento_externo(db, conversa, documento, usuario_id, caminho_abs, mime=None):
+    """Decisão 3 da spec 2026-07-31 (portas): encaminha um CicloDocumento pelo WhatsApp da
+    conversa aos participantes EXTERNOS. DENTRO da janela de 24h → mídia (despachar_documento,
+    config-gated: sem credencial nasce 'pendente_config'); FORA da janela a Meta exige TEMPLATE
+    aprovado → erro claro (o ramo por template é a F3, pendente). Gera EVENTO inline
+    'documento_encaminhado' + um EnvioExterno por externo. Não commita."""
+    import mod_chat as _mc
+    j = janela_da_conversa(db, conversa)
+    if not j["aberta"]:
+        raise ValueError("Janela de 24h fechada — o encaminhamento livre não é permitido pela "
+                         "Meta; use um template aprovado (envio por template ainda não "
+                         "disponível).")
+    externos = [e for e in db.query(ConversaParticipanteExterno)
+                  .filter_by(conversa_id=conversa.id, removido=0).all()
+                if e.meio == "whatsapp" and (e.telefone or "").strip()]
+    if not externos:
+        raise ValueError("A conversa não tem contato externo de WhatsApp — adicione o contato "
+                         "antes de encaminhar.")
+    corpo_ev = "Documento %s encaminhado ao cliente por WhatsApp" % (
+        documento.nome_original or documento.tipo)
+    msg = _mc.enviar_mensagem(db, conversa, usuario_id, corpo_ev,
+                              documento_ref_id=documento.id, evento="documento_encaminhado")
+    canal = _canal_do_thread(db, conversa.id, "whatsapp", externos[0].telefone)
+    envios = []
+    for e in externos:
+        env = registrar_envio(db, msg, "whatsapp", canal, "avulso", e.id, e.telefone.strip())
+        if env.status == "enfileirado":
+            ok, wamid, err = despachar_documento(env, caminho_abs,
+                                                 documento.nome_original or "documento", mime)
+            env.status = "enviado" if ok else "falhou"
+            env.id_externo = wamid if ok else None
+            if err:
+                env.erro = err
+            db.flush()
+        envios.append(env)
+    return msg, envios
 
 
 def notificar_gerentes_email(db, mensagem, destinatarios, corpo):

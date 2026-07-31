@@ -1,0 +1,107 @@
+# Orizon Chat full-page — unificação do thread e eliminação do modal legado (design)
+
+**Data:** 2026-07-31 · **Status:** aprovado para implementação (orientação 2026-07-31) ·
+**Evolui:** `_geral/2026-07-27-conversa-projeto-no-orizon-chat-design.md` e a F9 do plano
+`plans/2026-07-28-orizon-chat-revisao-meta.md` (o commit `90755c2` tirou a LISTA do modal;
+esta spec tira o THREAD — e então o modal morre).
+
+## Demanda (sintoma reproduzido ao vivo)
+
+A tela nova full-page "Chat Interno" lista as conversas, mas **clicar em qualquer item abre o
+modal antigo por cima** (`#modal-central-com`), com botões "Nova mensagem", "Fórum da Loja",
+"Administração" duplicados nas duas camadas. A tela nova é uma casca: lista sem lógica própria
+de thread. Resultado exigido pelo Marcelo: **um caminho só por ação** — nenhum botão duplicado,
+nenhuma tela que abre outra versão da mesma coisa.
+
+### As 3 portas de entrada que convergem no modal (linhas de `static/index.html` @ 80ff487)
+
+1. Menu lateral "Orizon Chat" (~553): `onclick="abrirCentralComunicacao()"` — direto no modal.
+2. Botão "Orizon Chat" na página do Projeto (~1088): `abrirConversaProjeto()` (~12475) →
+   `abrirCentralComunicacao()`.
+3. A própria tela nova: itens usam `atendAbrir(id)` (~10196) que faz
+   `await abrirCentralComunicacao()` + `ccAbrirConversa(idx)`; `intNova`/`intForum`/`intAdmin`
+   (~10114-16) idem.
+
+Toda a lógica funcional mora no bloco `cc*` (~12490-13250), que só renderiza dentro do modal;
+`ccMembrosAbrir` (~12672) ainda abre um TERCEIRO overlay (`_popupOverlay`).
+
+## Referência de UX/processo: HuntPilot (visto ao vivo — adaptar, não copiar)
+
+O que adotar no Orizon Chat:
+
+1. **Fila com abas** Novos/Meus/Grupos/Arquivados (F7 já tem) — a fila de triagem entra em
+   "Novos" (spec de triagem).
+2. **Ciclo de vida explícito** por atendimento (Pendente/Iniciado/Concluído + Transferir), cada
+   transição virando **evento inline na timeline**. (Fase 2 — exige "dono do atendimento";
+   registrado aqui como direção, fora do escopo desta fatia.)
+3. **Eventos inline na timeline** para o que hoje é invisível ou popup: transferência (já é
+   mensagem), distribuição, mudança de fase (já é `mensagem_passagem_fase`), entrada/saída de
+   membro, documento registrado/encaminhado (spec de ciclo/portas).
+4. **Painel lateral de contato/conversa** (não popup): membros, dados, notas. Substitui o
+   `_popupOverlay` de Membros.
+5. Iniciar conversa por número direto da fila. (Fase 2.)
+6. **Número/instância WhatsApp visível no header do thread** (a informação já existe em
+   "Números Conectados"; é trazê-la para dentro da conversa).
+
+## Decisões
+
+1. **A tela full-page (`#page-chat`) é a única canônica.** O thread e TODAS as ferramentas do
+   modal (nova conversa, fórum, administração, membros, transferência/bloqueador, anexo,
+   oficializar por e-mail) são portados para dentro dela.
+2. Layout do destino: **lista à esquerda · thread à direita** (padrão HuntPilot) dentro de
+   `ochat-scr-atend` e `ochat-scr-interno` — a lista atual encolhe para coluna e o thread abre
+   ao lado, sem navegar para fora.
+3. **Membros na faixa/cabeçalho da conversa** com painel lateral para gerenciar — elimina o
+   `_popupOverlay` de membros.
+4. As 3 portas redirecionam para o full-page:
+   - menu lateral "Orizon Chat" → `page-chat` na aba Atendimentos;
+   - botão do Projeto → `page-chat` posicionado na conversa do projeto, **preservando
+     `_alinharLojaAoProjeto`** (sem o alinhamento de loja dá 403/404 em toda mensagem — é
+     tenancy, não cosmética);
+   - itens das listas → thread na própria página.
+5. **Só depois** de tudo portado e testado: remover `#modal-central-com` (~666-829), a família
+   `cc*` e `abrirCentralComunicacao`, com busca exaustiva por `abrirCentralComunicacao`,
+   `modal-central-com` e cada função `cc*` — zero referências restantes.
+6. A migração é de CASCA, não de contrato: os endpoints e a semântica de permissão
+   (`pode_ler/escrever_conversa`, mural só gerência, admin read-only, oficializar só gerência)
+   não mudam.
+7. O bloco novo vive **contíguo e demarcado** no `index.html`
+   (`<!-- ═══ CHAT: início ═══ -->` … `<!-- ═══ CHAT: fim ═══ -->`, prefixo único `ochat`/`oc`)
+   — preparação para o destacamento físico do Motor 5.0 (spec de portas).
+
+## 1) Mapa de portagem (função legada → destino)
+
+| Legado (modal) | Destino (full-page) |
+|---|---|
+| `abrirCentralComunicacao` | morre; `goPageChat()`/`ochatIr('atend'\|'interno')` assume |
+| `ccCarregarInbox` | `chatAtendCarregar`/`chatInternoCarregar` (já existem) |
+| `ccAbrirConversa(idx)`/`ccAbrirConversaPorId` | `ocAbrirConversa(id, …)` — thread na página |
+| `ccCarregarMsgs`/`_ccRenderMsg(Projeto)` | `ocCarregarMsgs`/render com eventos inline |
+| `ccEnviar` (+anexo, oficializar, transferência) | `ocEnviar` — mesma lógica, ids `oc-*` |
+| `ccNovaAbrir`/`ccCriar`/`ccTipoToggle`/… | tela "Nova conversa" dentro do full-page (Chat Interno) |
+| `ccForumAbrir`/`ccForumCarregar`/… | aba/tela Fórum dentro do full-page |
+| `ccAdminAbrir`/`ccAdminCarregar`/… | tela Administração dentro do full-page (read-only mantido) |
+| `ccMembrosAbrir` (`_popupOverlay`) | painel lateral de membros (decisão 3) |
+| `abrirConversaProjeto` | mantém nome; passa a abrir o full-page (decisão 4) |
+| `atendAbrir`/`intNova`/`intForum`/`intAdmin` | deixam de tocar o modal |
+| `convTransfToggle`/`_convCarregarSeletoresTransf`/`convResolver`/`convDestravar` | mantidos, re-apontados aos ids `oc-*` |
+| `ccPollBadge`/`ccAtualizarBadgeTotal` | mantidos (badge do menu não depende do modal) |
+
+## 2) Sequência de execução (dentro da fatia)
+
+1. Construir o thread `oc-*` dentro de `#page-chat` (HTML + JS) reutilizando os endpoints.
+2. Re-apontar `atendAbrir` (e as listas) para o thread interno.
+3. Nova conversa / Fórum / Administração como telas do full-page; re-apontar `intNova`/etc.
+4. Painel de membros lateral; re-apontar botão.
+5. Redirecionar portas 1 e 2 (menu, projeto — com `_alinharLojaAoProjeto`).
+6. Busca exaustiva (`grep`) e REMOÇÃO do modal + `cc*` + `abrirCentralComunicacao`.
+7. `node --check` no `<script>`; Vera nas telas (3 caminhos antigos, tenancy/403, tema
+   claro/escuro, duplicidade de caminhos/botões).
+
+## Riscos e pontos de atenção
+
+- `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.
+- O `cc-badge` do menu e o heartbeat de presença (`ccPollBadge`) NÃO podem morrer com o modal.
+- Mural: postar continua só gerência (`pode_ver_todas_conversas` no front espelha o backend).
+- Admin view é read-only (`compositor` oculto) — preservar no thread novo.
+- `index.html` tem 17k linhas — mudanças cirúrgicas, bloco novo contíguo (decisão 7).

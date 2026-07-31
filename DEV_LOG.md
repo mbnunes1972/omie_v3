@@ -2673,6 +2673,14 @@ no topo de **Pessoais**, Mural via botão (`ocAbrirMural`) com badge de não-lid
 de tipo "Individual"→"Pessoal". `tests/test_chat_arquivar.py` (+4). Bateria de chat 88 verde;
 `node --check` ok.
 
+**Rodada 2 (mesmo dia):** trocar de aba abre a PRIMEIRA conversa da aba (nos dois canais, ida e
+volta); **"+ Nova mensagem" eliminado** — modelo WhatsApp: na aba Pessoais do Chat Interno os
+usuários da loja sem conversa aparecem sob a seção "Usuários" e o clique abre/cria a 1:1 na hora
+(`ocAbrirUsuario`, compositor já editável); grupo continua nascendo pelo botão **Novo Grupo** da
+camada de ações (formulário só-grupo, sem rádios Individual/Grupo); **busca padronizada** nos dois
+canais, cada um com seu público (Interno: conversas+usuários; Atendimentos: título/projeto/prévia
++ triagem por remetente/texto).
+
 ## Sessão 130 — Frente Orizon Chat 2026-07-31: triagem persistente, full-page canônico, eventos do ciclo e pacote destacável
 
 **Entrada:** orientação `.claude/orientacao-orizon-chat-v2.md` (Claude Cowork, com teste ao vivo no

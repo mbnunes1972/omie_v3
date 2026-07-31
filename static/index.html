@@ -1985,6 +1985,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
     .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .oc-busca{flex:1;min-width:140px;padding:6px 10px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px}
+    .oc-sec{font-size:10px;letter-spacing:1.2px;color:var(--text-3);text-transform:uppercase;font-weight:700;padding:10px 2px 6px}
+    .oc-user{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
+    .oc-user:hover{background:var(--surface-2)}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
@@ -2009,9 +2013,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               <div class="oc-list-col">
                 <div class="atd-tabs" id="atd-tabs"></div>
                 <div class="atd-filtro">
+                  <input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar atendimento…" oninput="atendRender()">
                   <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
-                  <span class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Segmento:</span>
-                  <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
+                  <select id="atd-seg-filtro" onchange="atendRender()" title="Segmento" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
                 </div>
                 <div class="oc-lista-scroll" id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
               </div>
@@ -2022,23 +2026,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                   <div id="oc-vazio" class="oc-view active" style="align-items:center;justify-content:center;color:var(--muted);font-size:13px">
                     <div>Selecione uma conversa na lista ao lado.</div>
                   </div>
-                  <!-- nova conversa (Chat Interno) -->
+                  <!-- novo GRUPO (Chat Interno) — a conversa 1:1 abre direto pelo clique no
+                       usuário da lista, modelo WhatsApp (revisão UX 2026-07-31 rodada 2) -->
                   <div id="oc-nova" class="oc-view" style="overflow-y:auto">
-                    <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
-                    <div id="oc-tipo-wrap" style="display:flex;gap:16px;margin-bottom:10px">
-                      <label style="font-size:13px;cursor:pointer"><input type="radio" name="oc-tipo" value="direct" checked onchange="ocTipoToggle()"> Individual</label>
-                      <label style="font-size:13px;cursor:pointer"><input type="radio" name="oc-tipo" value="grupo" onchange="ocTipoToggle()"> Grupo</label>
-                    </div>
-                    <div id="oc-grupos-bloco" style="display:none">
-                      <input id="oc-grupos-busca" type="search" placeholder="buscar grupo por nome…" oninput="ocGruposRender()" style="width:100%;margin-bottom:6px">
-                      <div id="oc-grupos-lista" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
-                      <div style="display:flex;gap:8px;margin-top:12px">
-                        <button class="btn btn-primary btn-sm" onclick="ocNovoGrupoAbrir()"><i class="ti ti-plus"></i> Novo Grupo</button>
-                        <button class="btn btn-ghost btn-sm" onclick="ocNovaFechar()">Cancelar</button>
-                      </div>
-                    </div>
+                    <div style="font-weight:800;margin-bottom:10px"><i class="ti ti-users-plus"></i> Novo grupo</div>
                     <div id="oc-form-bloco">
-                      <div id="oc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
+                      <div id="oc-grupo-nome-wrap" style="margin-bottom:10px">
                         <label class="field-label">Nome do grupo</label>
                         <input id="oc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
                       </div>
@@ -2058,8 +2051,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="ocAddExterno()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button>
                       </div>
                       <div style="display:flex;gap:8px;margin-top:12px">
-                        <button class="btn btn-primary btn-sm" id="oc-iniciar-btn" onclick="ocCriar()">Iniciar conversa</button>
-                        <button class="btn btn-ghost btn-sm" onclick="ocFormVoltar()">Cancelar</button>
+                        <button class="btn btn-primary btn-sm" id="oc-iniciar-btn" onclick="ocCriar()">Criar grupo</button>
+                        <button class="btn btn-ghost btn-sm" onclick="ocNovaFechar()">Cancelar</button>
                       </div>
                     </div>
                     <div id="oc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
@@ -2207,7 +2200,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
                      2026-07-31) — Mural e Fóruns são destinos, Administração só gerência -->
                 <div class="oc-acoes">
-                  <button class="btn btn-primary btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
+                  <button class="btn btn-ghost btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Novo Grupo</button>
                   <button class="btn btn-ghost btn-sm" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
                   <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
                   <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
@@ -2215,6 +2208,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 </div>
                 <div class="atd-tabs" id="int-tabs"></div>
                 <div class="atd-filtro">
+                  <input type="search" id="int-busca" class="oc-busca" placeholder="Buscar conversa ou usuário…" oninput="intRender()">
                   <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
                 </div>
                 <div class="oc-lista-scroll" id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -10155,11 +10149,25 @@ async function chatInternoCarregar(){
   const mb = document.getElementById('int-mural-nl');
   if(mb){ const n = mural ? (mural.nao_lidas||0) : 0;
           mb.textContent = n>99?'99+':n; mb.style.display = n>0?'':'none'; }
+  // usuários da loja (modelo WhatsApp: clicar num usuário abre a conversa 1:1 na hora)
+  if(!_ocUsuarios.length){
+    try{
+      const u = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
+      if(u && u.ok) _ocUsuarios = u.usuarios || [];
+    }catch(e){}
+  }
   intRender();
 }
-function intTab(k){ _intTab=k; intRender(); }
+// Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
+async function intTab(k){
+  _intTab=k; intRender();
+  if(_intVisiveis.length) await ocAbrirConversa(_intVisiveis[0].id);
+  else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
+}
+let _intVisiveis = [];   // conversas visíveis na aba atual (alvo do auto-abrir)
 function intRender(){
   const tabsEl = document.getElementById('int-tabs');
+  const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
   tabsEl.innerHTML = _OC_TABS.map(t=>{
     const n = _intInbox.filter(c=>_ocDaTab(c,t.key)).length;
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
@@ -10169,8 +10177,25 @@ function intRender(){
   const box = document.getElementById('int-lista');
   let itens = _intInbox.filter(c=>_ocDaTab(c,_intTab));
   if(_ocPend.int) itens = itens.filter(c=>c.pendente);
-  if(!itens.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta aba.</div>'; return; }
-  box.innerHTML = itens.map(_intItemHTML).join('');
+  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+  _intVisiveis = itens;
+  let html = itens.map(_intItemHTML).join('');
+  // Pessoais: usuários da loja SEM conversa aberta aparecem abaixo — clique abre a 1:1
+  if(_intTab==='pessoais'){
+    const meuId = _usuarioAtual && _usuarioAtual.id;
+    const jaTem = new Set(_intInbox.filter(c=>c.tipo==='direct').map(c=>c.outro_usuario_id).filter(Boolean));
+    const users = _ocUsuarios.filter(u=>u.id!==meuId && !jaTem.has(u.id)
+      && (!q || ((u.nome||'')+' '+(u.funcao_nome||'')).toLowerCase().includes(q)));
+    if(users.length){
+      html += '<div class="oc-sec">Usuários</div>' + users.map(u=>{
+        const fn = u.funcao_nome ? '<span style="color:var(--muted);font-size:11px"> · '+esc(u.funcao_nome)+'</span>' : '';
+        return '<div class="oc-user" onclick="ocAbrirUsuario('+u.id+')">'
+          + '<i class="ti ti-user-plus" style="color:var(--accent)"></i>'
+          + '<span style="font-size:13px">'+esc(u.nome)+fn+'</span></div>';
+      }).join('');
+    }
+  }
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta aba.</div>';
 }
 function _intItemHTML(c){
   const tipoBadge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
@@ -10210,12 +10235,20 @@ async function chatAtendCarregar(){
   sel.value = atual;
   atendRender();
 }
-function atendTab(k){ _atdTab=k; atendRender(); }
-let _atdTriagem = [];   // fila de triagem: recebida SEM DONO → topo de Pessoais (sempre pendente)
+// Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
+async function atendTab(k){
+  _atdTab=k; atendRender();
+  if(_atdVisiveis.length) await ocAbrirConversa(_atdVisiveis[0].id);
+  else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
+}
+let _atdTriagem = [];    // fila de triagem: recebida SEM DONO → topo de Pessoais (sempre pendente)
+let _atdVisiveis = [];   // conversas visíveis na aba atual (alvo do auto-abrir)
 function atendRender(){
   const tabsEl = document.getElementById('atd-tabs');
   const filtroSeg = document.getElementById('atd-seg-filtro').value;
-  const trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
+  const q = ((document.getElementById('atd-busca')||{}).value||'').trim().toLowerCase();
+  let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
+  if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
   tabsEl.innerHTML = _OC_TABS.map(t=>{
     const n = _atdInbox.filter(c=>_ocDaTab(c,t.key)).length + (t.key==='pessoais' ? _atdTriagem.length : 0);
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
@@ -10226,6 +10259,8 @@ function atendRender(){
   let itens = _atdInbox.filter(c=>_ocDaTab(c,_atdTab));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
   if(_ocPend.atd) itens = itens.filter(c=>c.pendente);
+  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.projeto_nome||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+  _atdVisiveis = itens;
   let html = (_atdTab==='pessoais') ? trg.map(_atdTriagemItemHTML).join('') : '';
   html += itens.map(_atdItemHTML).join('');
   box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>';
@@ -12973,24 +13008,36 @@ function ocMembroAdd(){
   ocMembroGerir(id, 'add');
 }
 
-// ── nova conversa ─────────────────────────────────────────────────────────────
+// ── novo GRUPO (a conversa 1:1 abre direto pelo clique no usuário — modelo WhatsApp) ──
 function ocNovaAbrir(){
   ocMontarPane('interno');
   ocMostrarView('oc-nova');
   document.getElementById('oc-nova-aviso').textContent = '';
   document.getElementById('oc-grupo-nome').value = '';
   document.getElementById('oc-busca-user').value = '';
-  _ocSel = new Set();
-  // começa em Individual (a "Nova mensagem" abre sempre em direct/grupo, nunca projeto)
-  const rDirect = document.querySelector('input[name=oc-tipo][value=direct]'); if(rDirect) rDirect.checked = true;
+  _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
   document.getElementById('oc-projeto-nota').style.display = 'none';
   document.getElementById('oc-para-bloco').style.display = 'block';
-  document.getElementById('oc-tipo-wrap').style.display = 'flex';
-  ocTipoToggle();
+  document.getElementById('oc-para-hint').textContent = '(selecione um ou mais)';
+  const sel = document.getElementById('oc-assunto'); if(sel) sel.value = 'livre';
   ocCarregarUsuarios();
   ocCarregarAssuntos();
 }
 function ocNovaFechar(){ ocPaneVoltar(); }
+
+// Clique num usuário da lista (Chat Interno → Pessoais): abre/cria a conversa 1:1 na hora,
+// com o compositor já editável — sem formulário intermediário.
+async function ocAbrirUsuario(uid){
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({tipo:'direct', participante_ids:[uid], assunto_tipo:'livre'})}).then(r=>r.json());
+  }catch(e){ showToast('Erro de rede.', true); return; }
+  if(!d.ok){ showToast(d.erro||'Falha ao abrir a conversa.', true); return; }
+  await _ocInboxAtualizar(); _ocRefrescar();
+  await ocAbrirConversa(d.conversa.id);
+}
 
 async function ocAddExterno(){
   const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'})) || '').trim();
@@ -13054,51 +13101,6 @@ function _ocParseAssunto(valor){
   if(valor.indexOf('custom:') === 0) return {assunto_tipo:'custom', assunto_id: parseInt(valor.slice(7),10)};
   return {assunto_tipo:'livre'};
 }
-function _ocTipo(){ return document.querySelector('input[name=oc-tipo]:checked').value; }
-function ocTipoToggle(){
-  const grupo = (_ocTipo() === 'grupo');
-  // Grupo → navega grupos/projetos existentes (Novo Grupo cria). Individual → form direto de usuário.
-  document.getElementById('oc-grupos-bloco').style.display = grupo ? 'block' : 'none';
-  document.getElementById('oc-form-bloco').style.display   = grupo ? 'none' : 'block';
-  document.getElementById('oc-grupo-nome-wrap').style.display = 'none';
-  document.getElementById('oc-para-hint').textContent = '(selecione um)';
-  document.getElementById('oc-iniciar-btn').textContent = 'Iniciar conversa';
-  _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
-  if(grupo){ const b=document.getElementById('oc-grupos-busca'); if(b) b.value=''; ocGruposRender(); }
-  else ocRenderUsuarios();
-}
-function ocGruposRender(){
-  const box = document.getElementById('oc-grupos-lista');
-  const q = (document.getElementById('oc-grupos-busca').value||'').trim().toLowerCase();
-  const grupos = (_ocInbox||[]).filter(c => (c.tipo==='grupo'||c.tipo==='projeto')
-                                            && (!q || (c.titulo||'').toLowerCase().includes(q)));
-  if(!grupos.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum grupo'
-    + (q?' com esse nome':'') + '. Crie um em <b>Novo Grupo</b>.</div>'; return; }
-  box.innerHTML = grupos.map(c=>{
-    const icon = c.tipo==='projeto' ? 'ti-folder' : 'ti-users';
-    return '<div onclick="ocAbrirConversa('+c.id+')" style="padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px"'
-      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
-      + '<i class="ti '+icon+'" style="color:var(--muted)"></i><span style="font-size:13px">'+esc(c.titulo||'Grupo')+'</span></div>';
-  }).join('');
-}
-function ocNovoGrupoAbrir(){
-  // Form de CRIAÇÃO de grupo (nome + seletor de usuários). O radio segue em 'grupo' (multi-seleção).
-  document.getElementById('oc-grupos-bloco').style.display = 'none';
-  document.getElementById('oc-form-bloco').style.display   = 'block';
-  document.getElementById('oc-grupo-nome-wrap').style.display = 'block';
-  document.getElementById('oc-grupo-nome').value = '';
-  document.getElementById('oc-busca-user').value = '';
-  document.getElementById('oc-para-hint').textContent = '(selecione um ou mais)';
-  document.getElementById('oc-iniciar-btn').textContent = 'Criar grupo';
-  document.getElementById('oc-assunto').value = 'livre'; ocAssuntoChange();
-  _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
-  ocRenderUsuarios();
-}
-function ocFormVoltar(){
-  // Cancelar no form: criando grupo → volta ao browse; individual → fecha a nova conversa.
-  if(_ocTipo() === 'grupo') ocTipoToggle();
-  else ocNovaFechar();
-}
 async function ocCarregarUsuarios(){
   const box = document.getElementById('oc-users');
   box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Carregando…</div>';
@@ -13125,8 +13127,7 @@ function ocRenderUsuarios(){
   }).join('');
 }
 function ocToggleUser(id){
-  if(_ocTipo() === 'direct'){ _ocSel = new Set([id]); }   // direct: só um
-  else { if(_ocSel.has(id)) _ocSel.delete(id); else _ocSel.add(id); }
+  if(_ocSel.has(id)) _ocSel.delete(id); else _ocSel.add(id);   // grupo: multi-seleção
   ocRenderUsuarios();
 }
 function ocAssuntoChange(){
@@ -13134,10 +13135,8 @@ function ocAssuntoChange(){
   const ehProj = v.indexOf('projeto:') === 0;
   document.getElementById('oc-projeto-nota').style.display = ehProj ? 'block' : 'none';
   document.getElementById('oc-para-bloco').style.display  = ehProj ? 'none' : 'block';
-  document.getElementById('oc-tipo-wrap').style.display   = ehProj ? 'none' : 'flex';
-  document.getElementById('oc-iniciar-btn').textContent   = ehProj ? 'Abrir conversa do projeto' : 'Iniciar conversa';
-  if(ehProj) document.getElementById('oc-grupo-nome-wrap').style.display = 'none';
-  else ocTipoToggle();   // restaura visibilidade dependente do tipo
+  document.getElementById('oc-grupo-nome-wrap').style.display = ehProj ? 'none' : 'block';
+  document.getElementById('oc-iniciar-btn').textContent   = ehProj ? 'Abrir conversa do projeto' : 'Criar grupo';
 }
 
 async function ocCriar(){
@@ -13156,31 +13155,25 @@ async function ocCriar(){
     }catch(e){ aviso.textContent = 'Erro de rede.'; }
     return;
   }
-  const tipo = _ocTipo();
   const ids = [..._ocSel];
   if(!ids.length && !_ocExternos.length){ aviso.textContent = 'Selecione ao menos um usuário ou contato externo.'; return; }
-  if(tipo === 'grupo' && !document.getElementById('oc-grupo-nome').value.trim()){
+  if(!document.getElementById('oc-grupo-nome').value.trim()){
     aviso.textContent = 'Dê um nome ao grupo.'; return;
   }
-  // Lembrete de assunto: conversa sem assunto (Conversa Livre) pede confirmação.
-  if((assVal || 'livre') === 'livre'){
-    if(!(await confirmarPopup('Conversas sem assunto. Deseja continuar?',
-        {titulo:'Nova conversa', okLabel:'Continuar', cancelLabel:'Voltar'}))) return;
-  }
-  const payload = {tipo, participante_ids: ids};
+  const payload = {tipo: 'grupo', participante_ids: ids,
+                   titulo: document.getElementById('oc-grupo-nome').value.trim()};
   if(_ocExternos.length) payload.externos = _ocExternos;
   Object.assign(payload, _ocParseAssunto(assVal));
-  if(tipo === 'grupo') payload.titulo = document.getElementById('oc-grupo-nome').value.trim();
   try{
     const d = await fetch('/api/comunicacao/conversas',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ aviso.textContent = d.erro || 'Falha ao criar.'; return; }
     await _ocInboxAtualizar(); _ocRefrescar();
-    // abre a conversa recém-criada
+    // abre o grupo recém-criado
     const c = _ocInbox.find(x => x.id === d.conversa.id);
     if(c) await ocAbrirConversa(c.id);
-    else await ocAbrirConversaPorId(d.conversa.id, d.conversa.titulo || 'Conversa', true, tipo);
+    else await ocAbrirConversaPorId(d.conversa.id, d.conversa.titulo || 'Conversa', true, 'grupo');
   }catch(e){ aviso.textContent = 'Erro de rede.'; }
 }
 

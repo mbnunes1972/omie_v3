@@ -117,6 +117,18 @@ O que adotar no Orizon Chat:
    Fórum da Loja · Fórum Orizon · Administração (gerência).
 6. Fila de triagem: entra no topo de **Pessoais** (recebida sem dono é pendente por definição).
 
+**Rodada 2 (mesmo dia):**
+
+7. **Trocar de aba abre a primeira conversa da aba** (Pessoais↔Grupos↔Arquivadas, nos dois
+   canais) — a lista nunca fica com o painel vazio se houver conversa.
+8. **"+ Nova mensagem" eliminado** — modelo WhatsApp: na aba Pessoais do Chat Interno, os
+   usuários da loja SEM conversa aberta aparecem listados abaixo das conversas; **clicar no
+   usuário abre/cria a 1:1 na hora** com o compositor editável (sem formulário). A criação de
+   GRUPO continua, via botão "Novo Grupo" na camada de ações (formulário só-grupo).
+9. **Busca padronizada nos dois canais, cada um com seu público**: Chat Interno busca conversas
+   E usuários (nome/função); Atendimentos busca a fila (título, projeto, prévia e as entradas
+   de triagem por remetente/texto).
+
 ## Riscos e pontos de atenção
 
 - `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.

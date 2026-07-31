@@ -9,13 +9,14 @@ FUNDAÇÃO construída e testada agora: modelo EnvioExterno, resolução de dest
 por credencial de ambiente — sem elas, o envio nasce 'pendente_config' e a rede não é tocada.
 Ativar é ação de deploy do usuário (variáveis por ambiente), fora deste código.
 """
+import json
 import os
 import re
 from datetime import datetime, timedelta
 
 from database import (EnvioExterno, Conversa, ConversaMensagem, ConversaParticipante,
                       ConversaParticipanteExterno, Cliente, Parceiro, Fornecedor, Usuario,
-                      UsuarioPresenca)
+                      UsuarioPresenca, TriagemEntrada, Loja, Projeto)
 
 MEIOS = ("email", "whatsapp")
 # Canais externos (segmentos) — 'interno' NÃO é externo.
@@ -208,15 +209,61 @@ def _canal_do_thread(db, conversa_id, meio, remetente):
     return "comercial"
 
 
+def _loja_da_entrada(db, remetente=None, meio="whatsapp"):
+    """Loja da entrada externa: (1) o remetente é um Cliente cadastrado → a loja dele (mais
+    específico); (2) NumeroConectado ÚNICO na instalação → a loja do número; (3) primeira loja.
+    Multi-número por loja fica p/ quando o webhook repassar o phone_number_id do payload."""
+    if remetente and meio == "whatsapp":
+        tail = _digitos(remetente)[-8:]
+        if len(tail) == 8:
+            for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
+                for campo in (c.whatsapp, c.telefone):
+                    d = _digitos(campo)
+                    if len(d) >= 8 and d[-8:] == tail:
+                        return c.loja_id
+    elif remetente and meio == "email":
+        alvo = remetente.strip().lower()
+        if alvo:
+            for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
+                if (c.email or "").strip().lower() == alvo:
+                    return c.loja_id
+    from database import NumeroConectado
+    nums = db.query(NumeroConectado).all()
+    if len(nums) == 1:
+        return nums[0].loja_id
+    l = db.query(Loja).order_by(Loja.id.asc()).first()
+    return l.id if l else None
+
+
 def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_externo=None):
     """Recebe uma resposta EXTERNA já normalizada (o webhook faz o parse específico do provedor)
-    e a persiste na conversa certa. Roteia por rotear_entrada (decisão 14). Retorna
-    {status: 'roteado'|'triagem', conversa_id}. Autor NULL = veio de fora. Ambíguo → triagem
-    (não cria mensagem; um humano roteia depois). NÃO commita (o chamador decide)."""
+    e a persiste na conversa certa — ou na FILA DE TRIAGEM (spec 2026-07-31: mensagem nenhuma é
+    descartada em silêncio). Idempotente por `id_externo` (a Meta reentrega o mesmo webhook até
+    o 200): reentrega de mensagem já roteada OU já enfileirada é no-op que devolve o mesmo
+    resultado. Retorna {status: 'roteado'|'triagem', conversa_id, [triagem_id]}. Autor NULL =
+    veio de fora. NÃO commita (o chamador decide)."""
     import mod_chat as _mc
-    conv = rotear_entrada(db, meio, id_externo_ref=id_externo_ref, remetente=remetente)
+    if id_externo:
+        ja = (db.query(EnvioExterno)
+                .filter_by(id_externo=id_externo, direcao="entrada").first())
+        if ja is not None:                        # reentrega de mensagem já ROTEADA
+            m0 = db.get(ConversaMensagem, ja.mensagem_id)
+            return {"status": "roteado", "conversa_id": m0.conversa_id if m0 else None}
+        ent_ja = db.query(TriagemEntrada).filter_by(id_externo=id_externo).first()
+        if ent_ja is not None:                    # reentrega de entrada já na FILA
+            return {"status": "triagem", "conversa_id": ent_ja.conversa_id,
+                    "triagem_id": ent_ja.id}
+    conv, candidatos = _rotear_com_candidatos(db, meio, id_externo_ref=id_externo_ref,
+                                              remetente=remetente)
     if conv is None:
-        return {"status": "triagem", "conversa_id": None}
+        ent = TriagemEntrada(
+            loja_id=_loja_da_entrada(db, remetente=remetente, meio=meio), meio=meio,
+            remetente=(_digitos(remetente) if meio == "whatsapp"
+                       else (remetente or "").strip().lower()),
+            texto=texto, id_externo=id_externo, id_externo_ref=id_externo_ref,
+            candidatos_json=(json.dumps(sorted(candidatos)) if candidatos else None))
+        db.add(ent); db.flush()
+        return {"status": "triagem", "conversa_id": None, "triagem_id": ent.id}
     canal = _canal_do_thread(db, conv.id, meio, remetente)
     msg = _mc.enviar_mensagem(db, conv, None, texto or "(sem texto)", canal=canal,
                               _permitir_externo=True)
@@ -476,26 +523,139 @@ def processar_entrada_usuario(db, remetente, texto):
     return {"status": "roteado", "conversa_id": conv.id, "usuario_id": u.id}
 
 
-def rotear_entrada(db, meio, id_externo_ref=None, remetente=None):
-    """Conversa-alvo de uma resposta EXTERNA, ou None quando é ambíguo (→ fila de triagem
-    humana). Ordem: (1) reply CITANDO um envio nosso (id_externo) → determinístico; (2) sem
-    citação, número/e-mail com UMA única conversa ativa → vai direto; (3) várias → None."""
+def _rotear_com_candidatos(db, meio, id_externo_ref=None, remetente=None):
+    """Roteamento da entrada externa com os CANDIDATOS preservados (spec 2026-07-31): retorna
+    (conversa, candidatos). Ordem: (1) reply CITANDO um envio nosso (id_externo) → determinístico
+    (vence inclusive projeto concluído); (2) sem citação, número/e-mail com UMA única conversa
+    ATIVA → vai direto — conversa de projeto CONCLUÍDO não é reaberta sozinha, vira candidata;
+    (3) várias/nenhuma ativa → (None, candidatos) e a lista NÃO se perde (vai à fila)."""
     if id_externo_ref:
         env = (db.query(EnvioExterno)
                  .filter(EnvioExterno.id_externo == id_externo_ref).first())
         if env is not None:
             msg = db.get(ConversaMensagem, env.mensagem_id)
-            return db.get(Conversa, msg.conversa_id) if msg else None
-    if remetente:
-        alvo_norm = _digitos(remetente) if meio == "whatsapp" else remetente.strip().lower()
-        conv_ids = set()
-        q = (db.query(EnvioExterno, ConversaMensagem.conversa_id)
-               .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
-               .filter(EnvioExterno.meio == meio))
-        for env, conv_id in q.all():
-            dnorm = _digitos(env.destino) if meio == "whatsapp" else (env.destino or "").strip().lower()
-            if dnorm and dnorm == alvo_norm:
-                conv_ids.add(conv_id)
-        if len(conv_ids) == 1:
-            return db.get(Conversa, conv_ids.pop())
-    return None   # ambíguo ou desconhecido → triagem humana
+            conv = db.get(Conversa, msg.conversa_id) if msg else None
+            if conv is not None:
+                return conv, [conv.id]
+    if not remetente:
+        return None, []
+    alvo_norm = _digitos(remetente) if meio == "whatsapp" else remetente.strip().lower()
+    conv_ids = set()
+    q = (db.query(EnvioExterno, ConversaMensagem.conversa_id)
+           .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+           .filter(EnvioExterno.meio == meio))
+    for env, conv_id in q.all():
+        dnorm = _digitos(env.destino) if meio == "whatsapp" else (env.destino or "").strip().lower()
+        if dnorm and dnorm == alvo_norm:
+            conv_ids.add(conv_id)
+    if not conv_ids:
+        return None, []
+    ativas = []
+    for cid in conv_ids:
+        c = db.get(Conversa, cid)
+        if c is not None and c.projeto_nome:
+            p = db.query(Projeto).filter_by(nome_safe=c.projeto_nome).first()
+            if p is not None and p.status == "concluido":
+                continue                     # projeto encerrado → decisão humana, não reabertura
+        ativas.append(cid)
+    if len(ativas) == 1:
+        return db.get(Conversa, ativas[0]), ativas
+    return None, sorted(conv_ids)
+
+
+def rotear_entrada(db, meio, id_externo_ref=None, remetente=None):
+    """Conversa-alvo de uma resposta EXTERNA, ou None quando é ambíguo/desconhecido (→ fila de
+    triagem persistida — processar_entrada guarda os candidatos)."""
+    conv, _cand = _rotear_com_candidatos(db, meio, id_externo_ref=id_externo_ref,
+                                         remetente=remetente)
+    return conv
+
+
+# ═══ Fila de triagem — resolução humana (spec 2026-07-31) ════════════════════
+# v1 vive aqui; move para chat/triagem.py no empacotamento do módulo (spec de portas).
+
+def serializar_triagem(e):
+    return {"id": e.id, "meio": e.meio, "remetente": e.remetente, "texto": e.texto,
+            "status": e.status,
+            "candidatos": (json.loads(e.candidatos_json) if e.candidatos_json else []),
+            "segmento_sugerido": e.segmento_sugerido,
+            "conversa_id": e.conversa_id,
+            "criado_em": e.criado_em.isoformat() if e.criado_em else None}
+
+
+def triagem_listar(db, loja_id, status="pendente"):
+    """Entradas da fila da LOJA (tenancy), mais antigas primeiro (ordem de chegada)."""
+    q = db.query(TriagemEntrada).filter_by(loja_id=loja_id)
+    if status:
+        q = q.filter(TriagemEntrada.status == status)
+    return [serializar_triagem(e) for e in q.order_by(TriagemEntrada.id.asc()).all()]
+
+
+def _triagem_marcar(db, entrada, status, usuario_id, conversa_id=None):
+    entrada.status = status
+    entrada.resolvido_por_id = usuario_id
+    entrada.resolvido_em = datetime.utcnow()
+    entrada.conversa_id = conversa_id
+    db.flush()
+
+
+def _triagem_postar_na_conversa(db, entrada, conversa, usuario_id):
+    """Entrega a mensagem original na conversa (autor NULL = externa) + EnvioExterno de entrada
+    com o wamid (mantém idempotência e janela) + EVENTO inline do vínculo (decisão 5)."""
+    import mod_chat as _mc
+    canal = _canal_do_thread(db, conversa.id, entrada.meio, entrada.remetente)
+    msg = _mc.enviar_mensagem(db, conversa, None, entrada.texto or "(sem texto)", canal=canal,
+                              _permitir_externo=True)
+    db.add(EnvioExterno(mensagem_id=msg.id, meio=entrada.meio, direcao="entrada", canal=canal,
+                        destino=entrada.remetente, status="recebido",
+                        id_externo=entrada.id_externo, id_externo_ref=entrada.id_externo_ref))
+    u = db.get(Usuario, usuario_id) if usuario_id else None
+    corpo_ev = "Contato %s vinculado por %s via triagem" % (
+        entrada.remetente, (u.nome if u else "—"))
+    _mc.enviar_mensagem(db, conversa, usuario_id, corpo_ev, evento="triagem_vinculo")
+    db.flush()
+    return msg
+
+
+def triagem_resolver_vincular(db, entrada, conversa, usuario_id):
+    """Vincula a entrada a uma conversa EXISTENTE (candidata ou escolhida). Não commita."""
+    if entrada.status != "pendente":
+        raise ValueError("Esta entrada já foi resolvida.")
+    if conversa is None or conversa.loja_id != entrada.loja_id:
+        raise ValueError("Conversa inexistente nesta loja.")
+    msg = _triagem_postar_na_conversa(db, entrada, conversa, usuario_id)
+    _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conversa.id)
+    return msg
+
+
+def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente):
+    """Lead NOVO por WhatsApp: cria o Cliente (contato no cadastro — decisão 12) + uma conversa
+    de GRUPO com o resolvedor dentro e o contato como participante EXTERNO (as respostas da
+    equipe espelham pelo transporte). A mensagem original entra na conversa. Não commita."""
+    import mod_chat as _mc
+    if entrada.status != "pendente":
+        raise ValueError("Esta entrada já foi resolvida.")
+    nome_cliente = (nome_cliente or "").strip()
+    if not nome_cliente:
+        raise ValueError("Dê um nome ao novo cliente.")
+    cli = Cliente(nome=nome_cliente, loja_id=entrada.loja_id,
+                  whatsapp=(entrada.remetente if entrada.meio == "whatsapp" else None),
+                  email=(entrada.remetente if entrada.meio == "email" else None))
+    db.add(cli); db.flush()
+    conv = _mc.criar_grupo(db, entrada.loja_id, usuario_id, "Lead — %s" % nome_cliente,
+                           [usuario_id], exige_dois=False)
+    _mc.adicionar_externo(db, conv, nome_cliente,
+                          telefone=(entrada.remetente if entrada.meio == "whatsapp" else None),
+                          email=(entrada.remetente if entrada.meio == "email" else None),
+                          meio=entrada.meio, criado_por_id=usuario_id)
+    _triagem_postar_na_conversa(db, entrada, conv, usuario_id)
+    _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conv.id)
+    return conv
+
+
+def triagem_descartar(db, entrada, usuario_id):
+    """Descarta (spam/engano) — é REGISTRO, não delete: a entrada fica auditável. Não commita."""
+    if entrada.status != "pendente":
+        raise ValueError("Esta entrada já foi resolvida.")
+    _triagem_marcar(db, entrada, "descartado", usuario_id)
+    return entrada

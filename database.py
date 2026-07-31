@@ -1265,6 +1265,10 @@ class ConversaMensagem(Base):
     # continuam visíveis a todos; o texto só decripta p/ quem tem `ver_mensagem_privada`.
     privada          = Column(Integer,  nullable=False, default=0)
     corpo_cifrado    = Column(Text,     nullable=True)
+    # Evento inline na timeline (spec chat 2026-07-31): mensagem de SISTEMA que o render mostra
+    # como faixa, não balão — triagem_vinculo | membro_entrou | membro_saiu | fase_transicao |
+    # documento_registrado | documento_encaminhado. NULL = mensagem comum.
+    evento           = Column(String(24), nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1307,6 +1311,31 @@ class EnvioExterno(Base):
     id_externo_ref    = Column(Text,     nullable=True)      # id citado numa resposta (decisão 14)
     erro              = Column(Text,     nullable=True)
     criado_em         = Column(DateTime, default=datetime.utcnow)
+
+
+class TriagemEntrada(Base):
+    """Fila de TRIAGEM humana (spec _geral/2026-07-31-triagem-pipeline-entrada-design.md):
+    entrada externa que a automação NÃO roteou — primeiro contato de número desconhecido,
+    número ambíguo (2+ conversas candidatas) ou projeto concluído. Regra de ouro: mensagem
+    nenhuma é descartada em silêncio. Idempotente por `id_externo` (wamid — a Meta reentrega
+    o mesmo webhook 5-6x até o 200). Resolução humana na aba Novos da F7: vincular a conversa,
+    criar Cliente novo (lead por WhatsApp) ou descartar — descartar é registro, não delete."""
+    __tablename__ = "triagem_entradas"
+
+    id               = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
+    meio             = Column(String(16), nullable=False, default="whatsapp")   # whatsapp | email
+    remetente        = Column(Text,     nullable=False)    # número/e-mail normalizado
+    texto            = Column(Text,     nullable=True)
+    id_externo       = Column(Text,     nullable=True, unique=True, index=True)  # wamid (idempotência)
+    id_externo_ref   = Column(Text,     nullable=True)     # id citado (reply), se houver
+    status           = Column(String(12), nullable=False, default="pendente")   # pendente|resolvido|descartado
+    candidatos_json  = Column(Text,     nullable=True)     # [conversa_id, …] quando ambíguo
+    segmento_sugerido = Column(String(20), nullable=True)  # resposta do menu de triagem automática
+    conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=True)
+    resolvido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    resolvido_em     = Column(DateTime, nullable=True)
+    criado_em        = Column(DateTime, default=datetime.utcnow)
 
 
 class ContraparteFinanceira(Base):
@@ -1770,6 +1799,9 @@ def _migrar_colunas_pg():
         "UPDATE conversas SET tipo='forum_loja', titulo=COALESCE(titulo,'Geral') WHERE tipo='publico'",
         # Fatia 6: ponte WhatsApp — preferência de notificação do usuário (presença é tabela nova).
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS notificar_whatsapp VARCHAR(16) DEFAULT 'quando_offline'",
+        # — CHAT (frente 2026-07-31; tabela triagem_entradas nova nasce no create_all) —
+        # Evento inline na timeline (faixa de sistema): triagem_vinculo/membro_entrou/…
+        "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS evento VARCHAR(24)",
         # Unificação conversa-do-projeto (2026-07-27): origem/removido na membership.
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS origem VARCHAR(8) DEFAULT 'manual'",
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",

@@ -149,7 +149,7 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                     transferido_para_funcionario_id=None, documento_ref_id=None,
                     bloqueador=False, _permitir_externo=False,
                     canal_segmento=None, permitir_vazio=False,
-                    destinatario_usuario_id=None):
+                    destinatario_usuario_id=None, evento=None):
     """Grava uma mensagem na conversa. Levanta ValueError com mensagem de usuário.
     Canal externo segue recusado (fatias 6-7). Fatia 2: `transferencia` exige destinatário;
     campos de transferência em `interacao` são recusados (não silenciosamente ignorados —
@@ -190,7 +190,8 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
                          documento_ref_id=documento_ref_id,
                          bloqueador=1 if bloqueador else 0,
                          canal_segmento=canal_segmento,
-                         destinatario_usuario_id=_dest)
+                         destinatario_usuario_id=_dest,
+                         evento=evento)
     db.add(m)
     db.flush()
     # RF-11 / §7 (carteira aditiva): a transferência de responsabilidade ADICIONA o novo responsável
@@ -284,6 +285,7 @@ def serializar_mensagem(m, autor_nome=None, transferido_nome=None,
             "bloqueador": bool(m.bloqueador),
             "resolvido_em": m.resolvido_em.isoformat() if m.resolvido_em else None,
             "privada": bool(m.privada),
+            "evento": m.evento,
             "anexos": anexos or [],
             "criado_em": m.criado_em.isoformat() if m.criado_em else None}
 

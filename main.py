@@ -2924,6 +2924,25 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/triagem/fila — FILA de triagem humana da loja (spec
+            # 2026-07-31): entradas externas que a automação não roteou, aguardando decisão.
+            # Qualquer usuário autenticado da loja (atendente); a resolução registra quem foi.
+            if path == "/api/comunicacao/triagem/fila":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat_externo as _ext
+                    self.send_json({"ok": True, "fila": _ext.triagem_listar(db, loja_id)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/triagem — config da pergunta de triagem (RF-08). Gerência.
             if path == "/api/comunicacao/triagem":
                 usuario = get_usuario_sessao(self)
@@ -3926,9 +3945,16 @@ class Handler(BaseHTTPRequestHandler):
                     # rotear como ELE; se não for um usuário conhecido, cai no fluxo externo (cliente).
                     res_u = _ext.processar_entrada_usuario(db, msg["from"], msg["texto"])
                     if res_u is None:
-                        _ext.processar_entrada(db, "whatsapp", remetente=msg["from"],
-                                               texto=msg["texto"], id_externo_ref=msg.get("ref"),
-                                               id_externo=msg.get("id"))
+                        res = _ext.processar_entrada(db, "whatsapp", remetente=msg["from"],
+                                                     texto=msg["texto"],
+                                                     id_externo_ref=msg.get("ref"),
+                                                     id_externo=msg.get("id"))
+                        # Rastro do destino (spec triagem 2026-07-31): nem sucesso nem fila
+                        # passam mais em silêncio pelo webhook.
+                        logging.getLogger(__name__).info(
+                            "webhook whatsapp: %s → %s (conversa=%s triagem=%s)",
+                            msg.get("id"), res.get("status"),
+                            res.get("conversa_id"), res.get("triagem_id"))
                 db.commit()
             except Exception as _e:
                 db.rollback()
@@ -5474,6 +5500,48 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
                 self.send_json({"ok": True, "template": mod_chat._serializar_template(t)},
                                code=(200 if tpl_id else 201))
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/triagem/fila/<id>/resolver — resolve uma entrada da FILA de
+        # triagem (spec 2026-07-31): {acao: vincular|criar|descartar, conversa_id?, nome_cliente?}.
+        # Tenancy: a entrada tem de ser da loja do ator (senão 404). Quem resolveu fica registrado.
+        m_trg = re.match(r'^/api/comunicacao/triagem/fila/(\d+)/resolver$', path)
+        if m_trg:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat_externo as _ext
+                from database import TriagemEntrada as _TE, Conversa as _CV_trg
+                ent = db.get(_TE, int(m_trg.group(1)))
+                if ent is None or ent.loja_id != loja_id:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                dd = json.loads(body or b'{}')
+                acao = dd.get("acao")
+                try:
+                    if acao == "vincular":
+                        conv = db.get(_CV_trg, int(dd.get("conversa_id") or 0))
+                        _ext.triagem_resolver_vincular(db, ent, conv, usuario["id"])
+                    elif acao == "criar":
+                        _ext.triagem_resolver_criar(db, ent, usuario["id"],
+                                                    dd.get("nome_cliente"))
+                    elif acao == "descartar":
+                        _ext.triagem_descartar(db, ent, usuario["id"])
+                    else:
+                        self.send_json({"ok": False, "erro": "Ação inválida (vincular|criar|descartar)."},
+                                       code=400); return
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "entrada": _ext.serializar_triagem(ent)})
             finally:
                 db.close()
             return

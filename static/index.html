@@ -2100,6 +2100,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     </div>
                     <div id="oc-forum-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
                   </div>
+                  <!-- resolução de entrada da FILA DE TRIAGEM (spec 2026-07-31) -->
+                  <div id="oc-triagem" class="oc-view" style="overflow-y:auto">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                      <div style="font-weight:800"><i class="ti ti-signpost"></i> Triagem — <span id="oc-trg-remetente"></span></div>
+                      <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()">Voltar</button>
+                    </div>
+                    <div id="oc-trg-meta" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+                    <div id="oc-trg-texto" style="font-size:13px;white-space:pre-wrap;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface-2);margin-bottom:12px"></div>
+                    <div id="oc-trg-candidatos-wrap" style="margin-bottom:12px">
+                      <label class="field-label">Vincular a uma conversa</label>
+                      <div id="oc-trg-candidatos" style="max-height:34vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap">
+                      <button class="btn btn-primary btn-sm" id="oc-trg-vincular-btn" onclick="ocTriagemResolver('vincular')"><i class="ti ti-link"></i> Vincular à selecionada</button>
+                      <button class="btn btn-ghost btn-sm" onclick="ocTriagemResolver('criar')"><i class="ti ti-user-plus"></i> Criar novo cliente</button>
+                      <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="ocTriagemResolver('descartar')"><i class="ti ti-trash"></i> Descartar</button>
+                    </div>
+                    <div id="oc-trg-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+                  </div>
                   <!-- thread -->
                   <div id="oc-thread" class="oc-view">
                     <div style="display:flex;justify-content:space-between;align-items:center;padding:0 2px 8px;gap:8px;flex-wrap:wrap">
@@ -10148,6 +10167,11 @@ async function chatAtendCarregar(){
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
   ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
   _atdInbox = _ocInbox.filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
+  // Fila de TRIAGEM humana (spec 2026-07-31) — entra na aba "Novos", antes dos não-lidos.
+  try{
+    const f = await fetch('/api/comunicacao/triagem/fila',{credentials:'same-origin'}).then(r=>r.json());
+    _atdTriagem = (f && f.ok) ? (f.fila||[]) : [];
+  }catch(e){ _atdTriagem = []; }
   const segs = [...new Set(_atdInbox.map(c=>c.segmento).filter(Boolean))];
   const sel = document.getElementById('atd-seg-filtro'), atual = sel.value;
   sel.innerHTML = '<option value="">Todos</option>' + segs.map(s=>'<option value="'+esc(s)+'">'+esc(_ATD_SEGROT[s]||s)+'</option>').join('');
@@ -10162,11 +10186,13 @@ function _atdDaTab(c, tab){
   return true;
 }
 function atendTab(k){ _atdTab=k; atendRender(); }
+let _atdTriagem = [];   // entradas pendentes da fila de triagem (aba Novos)
 function atendRender(){
   const tabsEl = document.getElementById('atd-tabs');
   const filtroSeg = document.getElementById('atd-seg-filtro').value;
+  const trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   tabsEl.innerHTML = _ATD_TABS.map(t=>{
-    const n = _atdInbox.filter(c=>_atdDaTab(c,t.key)).length;
+    const n = _atdInbox.filter(c=>_atdDaTab(c,t.key)).length + (t.key==='novos' ? _atdTriagem.length : 0);
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
     const cnt = (t.key!=='arquivados' && n>0) ? '<span class="cnt">'+n+'</span>' : '';
     return '<div class="atd-tab'+(t.key===_atdTab?' active':'')+'" onclick="atendTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
@@ -10175,8 +10201,23 @@ function atendRender(){
   if(_atdTab==='arquivados'){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-archive"></i><div>Arquivamento de atendimentos ainda não disponível.</div></div>'; return; }
   let itens = _atdInbox.filter(c=>_atdDaTab(c,_atdTab));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
-  if(!itens.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>'; return; }
-  box.innerHTML = itens.map(_atdItemHTML).join('');
+  let html = (_atdTab==='novos') ? trg.map(_atdTriagemItemHTML).join('') : '';
+  html += itens.map(_atdItemHTML).join('');
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>';
+}
+function _atdTriagemItemHTML(e){
+  const badge = '<span class="atd-badge" style="border-color:var(--warn);color:var(--warn)"><i class="ti ti-signpost"></i> Triagem</span>';
+  const seg = e.segmento_sugerido ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ATD_SEGROT[e.segmento_sugerido]||e.segmento_sugerido)+'</span>' : '';
+  const cand = (e.candidatos||[]).length ? '<span class="atd-badge atd-b-warn">'+(e.candidatos.length)+' candidata(s)</span>' : '';
+  return '<div class="atd-item" onclick="ocTriagemAbrir('+e.id+')">'
+    + '<div class="atd-top"><span class="atd-nome"><i class="ti ti-brand-whatsapp"></i> '+esc(_ocFmtRemetente(e.remetente))+'</span><span class="atd-tempo">'+esc(_atdQuando(e.criado_em))+'</span></div>'
+    + '<div class="atd-prev">'+esc(e.texto||'—')+'</div>'
+    + '<div class="atd-tags">'+badge+seg+cand+'</div></div>';
+}
+function _ocFmtRemetente(r){
+  const d = (r||'').replace(/\D/g,'');
+  if(d.length>=10){ const dd=d.slice(-11); return '('+dd.slice(0,2)+') '+dd.slice(2,-4)+'-'+dd.slice(-4); }
+  return r||'—';
 }
 function _atdHoras(seg){ seg=seg||0; const h=Math.floor(seg/3600), m=Math.floor((seg%3600)/60); return h>0?(h+'h'+(m>0?(' '+m+'min'):'')):(m+'min'); }
 function _atdJanelaBadge(j){
@@ -12558,7 +12599,7 @@ function ocAbrirPagina(scr){
 }
 
 function ocMostrarView(view){
-  ['oc-vazio','oc-nova','oc-admin','oc-forum','oc-thread'].forEach(id=>{
+  ['oc-vazio','oc-nova','oc-admin','oc-forum','oc-thread','oc-triagem'].forEach(id=>{
     const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
   });
 }
@@ -13236,6 +13277,71 @@ async function convDestravar(mid){
     showToast('Bloqueador destravado pela gerência (auditado).');
     await ocCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
+}
+// ── Fila de triagem — resolução humana na F7 (spec 2026-07-31) ────────────────
+let _ocTrgAtiva = null;   // entrada da fila aberta no painel
+function ocTriagemAbrir(id){
+  const e = (_atdTriagem||[]).find(x=>x.id===id);
+  if(!e) return;
+  _ocTrgAtiva = e;
+  ocMontarPane('atend');
+  ocMostrarView('oc-triagem');
+  document.getElementById('oc-trg-remetente').textContent = _ocFmtRemetente(e.remetente);
+  document.getElementById('oc-trg-meta').textContent =
+    (e.meio==='whatsapp'?'WhatsApp':'E-mail') + ' · recebida ' + _atdQuando(e.criado_em)
+    + (e.segmento_sugerido ? (' · segmento sugerido: ' + (_ATD_SEGROT[e.segmento_sugerido]||e.segmento_sugerido)) : '');
+  document.getElementById('oc-trg-texto').textContent = e.texto || '(sem texto)';
+  document.getElementById('oc-trg-aviso').textContent = '';
+  // alvo do vínculo: candidatas primeiro (o que o roteador calculou), depois as demais
+  // conversas de grupo/projeto da inbox — rádio único.
+  const cand = new Set(e.candidatos||[]);
+  const outras = (_ocInbox||[]).filter(c=>(c.tipo==='grupo'||c.tipo==='projeto') && !cand.has(c.id));
+  const linha = (id2, rotulo, ehCand, checked)=>
+    '<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer">'
+    + '<input type="radio" name="oc-trg-alvo" value="'+id2+'"'+(checked?' checked':'')+'>'
+    + '<span style="font-size:13px">'+rotulo+'</span>'
+    + (ehCand?'<span class="atd-badge atd-b-warn" style="margin-left:auto">candidata</span>':'')
+    + '</label>';
+  const tituloDe = (cid)=>{
+    const c = (_ocInbox||[]).find(x=>x.id===cid);
+    return esc(c ? _ocTituloComAssunto(c) : ('Conversa #'+cid));
+  };
+  let html = [...cand].map((cid,i)=>linha(cid, tituloDe(cid), true, i===0)).join('');
+  html += outras.map(c=>linha(c.id, esc(_ocTituloComAssunto(c)), false, false)).join('');
+  document.getElementById('oc-trg-candidatos').innerHTML =
+    html || '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhuma conversa na inbox — use "Criar novo cliente".</div>';
+}
+async function ocTriagemResolver(acao){
+  if(!_ocTrgAtiva) return;
+  const aviso = document.getElementById('oc-trg-aviso'); aviso.textContent = '';
+  const payload = {acao};
+  if(acao === 'vincular'){
+    const sel = document.querySelector('input[name=oc-trg-alvo]:checked');
+    if(!sel){ aviso.textContent = 'Escolha a conversa de destino.'; return; }
+    payload.conversa_id = parseInt(sel.value,10);
+  }
+  if(acao === 'criar'){
+    const nome = ((await promptPopup('Nome do novo cliente:', {titulo:'Lead novo por WhatsApp', okLabel:'Criar'}))||'').trim();
+    if(!nome) return;
+    payload.nome_cliente = nome;
+  }
+  if(acao === 'descartar'){
+    if(!(await confirmarPopup('Descartar esta entrada (spam/engano)? O registro fica auditável.',
+        {titulo:'Descartar entrada', okLabel:'Descartar', cancelLabel:'Voltar'}))) return;
+  }
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/triagem/fila/'+_ocTrgAtiva.id+'/resolver',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(payload)}).then(r=>r.json());
+  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
+  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao resolver.'; return; }
+  const convId = d.entrada && d.entrada.conversa_id;
+  _ocTrgAtiva = null;
+  showToast(acao==='descartar' ? 'Entrada descartada.' : 'Entrada vinculada.');
+  await _ocInboxAtualizar(); _ocRefrescar();
+  if(convId) await ocAbrirConversa(convId);
+  else ocMostrarView('oc-vazio');
 }
 // ═══ CHAT: fim do bloco JS do painel de conversa ═══
 

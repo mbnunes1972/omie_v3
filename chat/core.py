@@ -1081,6 +1081,22 @@ def _ultimo_id_mensagem(db, conversa_id):
     return r[0] if r else 0
 
 
+def arquivar_conversa(db, conversa, usuario_id, arquivar=True):
+    """Arquiva/desarquiva a conversa PARA O USUÁRIO (revisão UX 2026-07-31: 'Concluir' um
+    atendimento hoje = arquivar — sai das abas ativas, reversível; o status formal com dono do
+    atendimento segue no backburner do RF-12). Flag no ConversaParticipante (coluna `arquivada`
+    já existia no schema). Mural e fóruns têm audiência pública — não arquivam. Não commita."""
+    if conversa.tipo in ("mural", "publico", "forum_loja", "forum_orizon"):
+        raise ValueError("Mural e fóruns não podem ser arquivados.")
+    p = (db.query(ConversaParticipante)
+           .filter_by(conversa_id=conversa.id, usuario_id=usuario_id).first())
+    if p is None or p.removido:
+        raise ValueError("Você não participa desta conversa.")
+    p.arquivada = 1 if arquivar else 0
+    db.flush()
+    return bool(p.arquivada)
+
+
 def marcar_lido(db, conversa, usuario_id):
     """Marca a conversa como lida até a última mensagem para o usuário. Para público (sem linha de
     participante) cria a linha SÓ para guardar o marcador de leitura — não muda a audiência."""
@@ -1110,9 +1126,13 @@ def _conta_nao_lidas(db, conversa_id, usuario_id, lido_ate):
               .count())
 
 
-def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_lidas=0):
+def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_lidas=0,
+                        arquivada=False):
     """Item da inbox: id/tipo/título de exibição + prévia da última mensagem. Para direct, o
-    'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`)."""
+    'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`).
+    `pendente` (revisão UX 2026-07-31): última mensagem NÃO é do viewer → recebida sem
+    resposta — é FILTRO na fila, não estado do atendimento. `arquivada` é POR USUÁRIO
+    (flag no ConversaParticipante)."""
     titulo = c.titulo
     outro_id = None
     if c.tipo in ("mural", "publico"):
@@ -1143,6 +1163,8 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
         "projeto_nome": c.projeto_nome, "outro_usuario_id": outro_id,
         "assunto": _assunto_do(db, c),
         "nao_lidas": nao_lidas,
+        "arquivada": bool(arquivada),
+        "pendente": bool(ultima is not None and ultima.autor_usuario_id != viewer_id),
         "ultima_previa": previa[:120],
         "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
         "criado_em": c.criado_em.isoformat() if c.criado_em else None,
@@ -1174,11 +1196,13 @@ def _atendimento_meta(db, conversa):
 def listar_inbox(db, loja_id, usuario_id):
     """Inbox: o mural PÚBLICO da loja + conversas direct/grupo do usuário, mais recentes primeiro,
     cada uma com contagem de não-lidas. O público é sempre incluído (audiência = a loja)."""
-    # marcador de leitura por conversa (linhas de participante do usuário, exceto removidos)
-    lido = {p.conversa_id: (p.lido_ate_mensagem_id or 0)
-            for p in db.query(ConversaParticipante)
-            .filter(ConversaParticipante.usuario_id == usuario_id,
-                    ConversaParticipante.removido == 0).all()}
+    # marcador de leitura + flag de arquivamento por conversa (linhas de participante do
+    # usuário, exceto removidos)
+    parts = {p.conversa_id: p
+             for p in db.query(ConversaParticipante)
+             .filter(ConversaParticipante.usuario_id == usuario_id,
+                     ConversaParticipante.removido == 0).all()}
+    lido = {cid: (p.lido_ate_mensagem_id or 0) for cid, p in parts.items()}
     conv_ids = list(lido.keys())
     convs = (db.query(Conversa)
                .filter(Conversa.id.in_(conv_ids or [-1]), Conversa.loja_id == loja_id,
@@ -1187,7 +1211,9 @@ def listar_inbox(db, loja_id, usuario_id):
     convs = [mural] + [c for c in convs if c.id != mural.id]
     itens = []
     for c in convs:
-        it = serializar_conversa(db, c, usuario_id,
+        p = parts.get(c.id)
+        arq = bool(p.arquivada) if (p is not None and c.tipo not in ("mural", "publico")) else False
+        it = serializar_conversa(db, c, usuario_id, arquivada=arq,
                                  nao_lidas=_conta_nao_lidas(db, c.id, usuario_id, lido.get(c.id, 0)))
         if c.tipo not in ("mural", "publico"):        # atendimento: segmento + estado da janela (RF-12)
             it["segmento"], it["janela"] = _atendimento_meta(db, c)

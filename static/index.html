@@ -1982,6 +1982,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-evento{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px}
     .oc-evento::before,.oc-evento::after{content:"";flex:1;border-top:1px dashed var(--border)}
     #oc-membros{display:none;width:320px;min-width:280px;border-left:1px solid var(--border);padding-left:10px;overflow-y:auto}
+    .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+    .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
+    .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
@@ -2006,6 +2009,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               <div class="oc-list-col">
                 <div class="atd-tabs" id="atd-tabs"></div>
                 <div class="atd-filtro">
+                  <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
                   <span class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Segmento:</span>
                   <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
                 </div>
@@ -2126,7 +2130,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <div id="oc-thread-titulo" style="font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
                         <span id="oc-num-chip" style="display:none;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;white-space:nowrap"></span>
                       </div>
-                      <button class="btn btn-ghost btn-sm" id="oc-membros-btn" style="display:none;white-space:nowrap" onclick="ocMembrosToggle()"><i class="ti ti-users"></i> Membros</button>
+                      <div style="display:flex;gap:8px">
+                        <button class="btn btn-ghost btn-sm" id="oc-arq-btn" style="display:none;white-space:nowrap" onclick="ocArquivarToggle()" title="Concluir/retirar da fila (reversível)"><i class="ti ti-archive"></i> <span id="oc-arq-rot">Arquivar</span></button>
+                        <button class="btn btn-ghost btn-sm" id="oc-membros-btn" style="display:none;white-space:nowrap" onclick="ocMembrosToggle()"><i class="ti ti-users"></i> Membros</button>
+                      </div>
                     </div>
                     <div style="flex:1;display:flex;gap:10px;min-height:0">
                       <div id="oc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
@@ -2197,13 +2204,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <div class="ochat-scr" id="ochat-scr-interno">
             <div class="oc-cols">
               <div class="oc-list-col">
-                <div class="atd-filtro" style="margin-bottom:14px;flex-wrap:wrap">
+                <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
+                     2026-07-31) — Mural e Fóruns são destinos, Administração só gerência -->
+                <div class="oc-acoes">
                   <button class="btn btn-primary btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
+                  <button class="btn btn-ghost btn-sm" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
                   <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
                   <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
                   <button class="btn btn-ghost btn-sm" id="int-admin" style="display:none" onclick="ocAdminAbrir()"><i class="ti ti-shield-cog"></i> Administração</button>
                 </div>
                 <div class="atd-tabs" id="int-tabs"></div>
+                <div class="atd-filtro">
+                  <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
+                </div>
                 <div class="oc-lista-scroll" id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
               </div>
               <div class="oc-pane-col" id="oc-slot-interno"></div>
@@ -10067,8 +10080,8 @@ function goPageChat(){
   ochatIr('modelos');
 }
 const _OCHAT_TOP = {
-  atend:    ['Atendimentos', 'Fila única por número — o segmento é uma etiqueta interna de roteamento, não muda o número que o cliente vê.'],
-  interno:  ['Chat Interno', 'Conversas da equipe — individuais, grupos e o mural da loja. Sem canal externo.'],
+  atend:    ['Atendimentos', 'Pessoais · Grupos · Arquivadas — "Pendentes" filtra o recebido sem resposta; o segmento é etiqueta interna de roteamento, não muda o número que o cliente vê.'],
+  interno:  ['Chat Interno', 'Conversas da equipe nas mesmas abas dos Atendimentos — Mural, Fóruns e Administração ficam na barra de ações. Sem canal externo.'],
   modelos:  ['Modelos de Mensagem', 'Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.'],
   segmentos:['Segmentos', 'Ativar/editar os canais internos e o template padrão de cada segmento.'],
   triagem:  ['Triagem', 'Como o sistema pergunta o departamento quando um contato novo escreve.'],
@@ -10093,15 +10106,37 @@ function ochatIr(scr){
 
 // ── Chat Interno (equipe) — full-page espelhando Atendimentos; thread reusa o modal ──
 let _intInbox = [];
-let _intTab = 'todos';
-const _INT_TABS = [
-  {key:'todos', rot:'Todas'},
-  {key:'individuais', rot:'Individuais', icon:'ti-user'},
+let _intTab = 'pessoais';
+// Abas PADRONIZADAS nos dois canais (revisão UX 2026-07-31): Pessoais (1:1) · Grupos ·
+// Arquivadas. "Pendente" (recebida sem resposta) é FILTRO, não aba nem estado — as AÇÕES do
+// funcionário (responder, transferir, arquivar/concluir) vivem no thread. Mural virou botão na
+// camada de ações do Chat Interno (com badge de não-lidos).
+const _OC_TABS = [
+  {key:'pessoais', rot:'Pessoais', icon:'ti-user'},
   {key:'grupos', rot:'Grupos', icon:'ti-users'},
-  {key:'mural', rot:'Mural', icon:'ti-speakerphone'},
+  {key:'arquivadas', rot:'Arquivadas', icon:'ti-archive'},
 ];
-const _INT_TIPOROT = {direct:'Individual', grupo:'Grupo', mural:'Mural', publico:'Mural'};
-const _INT_TIPOS = ['direct','grupo','mural','publico'];   // "interno" = equipe (projeto vai em Atendimentos)
+const _INT_TIPOROT = {direct:'Pessoal', grupo:'Grupo', mural:'Mural', publico:'Mural'};
+const _INT_TIPOS = ['direct','grupo'];   // equipe; Mural via botão; projeto vai em Atendimentos
+const _ocPend = {atd:false, int:false};  // filtro "Pendentes" por tela
+function _ocDaTab(c, tab){
+  if(tab==='arquivadas') return !!c.arquivada;
+  if(c.arquivada) return false;                      // arquivada só aparece na própria aba
+  if(tab==='pessoais') return c.tipo==='direct';
+  if(tab==='grupos') return c.tipo==='grupo' || c.tipo==='projeto';
+  return true;
+}
+function ocTogglePend(qual){
+  _ocPend[qual] = !_ocPend[qual];
+  const b = document.getElementById(qual+'-pend');
+  if(b) b.classList.toggle('active', _ocPend[qual]);
+  if(qual==='atd') atendRender(); else intRender();
+}
+function ocAbrirMural(){
+  const m = (_ocInbox||[]).find(c=>c.tipo==='mural'||c.tipo==='publico');
+  if(m) ocAbrirConversa(m.id);
+  else if(typeof showToast==='function') showToast('Mural indisponível — atualize a lista.', true);
+}
 
 async function chatInternoCarregar(){
   // gating dos botões de ação (mesma regra do modal)
@@ -10116,26 +10151,24 @@ async function chatInternoCarregar(){
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
   ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
   _intInbox = _ocInbox.filter(c=>_INT_TIPOS.includes(c.tipo));
+  const mural = _ocInbox.find(c=>c.tipo==='mural'||c.tipo==='publico');
+  const mb = document.getElementById('int-mural-nl');
+  if(mb){ const n = mural ? (mural.nao_lidas||0) : 0;
+          mb.textContent = n>99?'99+':n; mb.style.display = n>0?'':'none'; }
   intRender();
-}
-function _intDaTab(c, tab){
-  if(tab==='todos') return true;
-  if(tab==='individuais') return c.tipo==='direct';
-  if(tab==='grupos') return c.tipo==='grupo';
-  if(tab==='mural') return c.tipo==='mural' || c.tipo==='publico';
-  return true;
 }
 function intTab(k){ _intTab=k; intRender(); }
 function intRender(){
   const tabsEl = document.getElementById('int-tabs');
-  tabsEl.innerHTML = _INT_TABS.map(t=>{
-    const n = _intInbox.filter(c=>_intDaTab(c,t.key)).length;
+  tabsEl.innerHTML = _OC_TABS.map(t=>{
+    const n = _intInbox.filter(c=>_ocDaTab(c,t.key)).length;
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
     const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
     return '<div class="atd-tab'+(t.key===_intTab?' active':'')+'" onclick="intTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
   }).join('');
   const box = document.getElementById('int-lista');
-  const itens = _intInbox.filter(c=>_intDaTab(c,_intTab));
+  let itens = _intInbox.filter(c=>_ocDaTab(c,_intTab));
+  if(_ocPend.int) itens = itens.filter(c=>c.pendente);
   if(!itens.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta aba.</div>'; return; }
   box.innerHTML = itens.map(_intItemHTML).join('');
 }
@@ -10152,13 +10185,7 @@ function _intItemHTML(c){
 
 // ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];
-let _atdTab = 'novos';
-const _ATD_TABS = [
-  {key:'novos', rot:'Novos'},
-  {key:'meus', rot:'Meus'},
-  {key:'grupos', rot:'Grupos', icon:'ti-users-group'},
-  {key:'arquivados', rot:'Arquivados', icon:'ti-archive'},
-];
+let _atdTab = 'pessoais';   // abas padronizadas com o Chat Interno (_OC_TABS)
 const _ATD_SEGROT = {comercial:'Comercial', suporte_tecnico:'Suporte Técnico', financeiro:'Financeiro',
                      logistica:'Logística', parceiros:'Parceiros', compras:'Compras', sac:'SAC'};
 
@@ -10176,36 +10203,30 @@ async function chatAtendCarregar(){
     const f = await fetch('/api/comunicacao/triagem/fila',{credentials:'same-origin'}).then(r=>r.json());
     _atdTriagem = (f && f.ok) ? (f.fila||[]) : [];
   }catch(e){ _atdTriagem = []; }
-  const segs = [...new Set(_atdInbox.map(c=>c.segmento).filter(Boolean))];
+  // Os 7 segmentos SEMPRE no seletor (revisão UX 2026-07-31) — não só os presentes na fila.
   const sel = document.getElementById('atd-seg-filtro'), atual = sel.value;
-  sel.innerHTML = '<option value="">Todos</option>' + segs.map(s=>'<option value="'+esc(s)+'">'+esc(_ATD_SEGROT[s]||s)+'</option>').join('');
+  sel.innerHTML = '<option value="">Todos</option>' + Object.keys(_ATD_SEGROT)
+      .map(s=>'<option value="'+s+'">'+esc(_ATD_SEGROT[s])+'</option>').join('');
   sel.value = atual;
   atendRender();
 }
-function _atdDaTab(c, tab){
-  if(tab==='grupos') return c.tipo==='grupo';
-  if(tab==='arquivados') return false;                 // sem modelo de arquivo ainda
-  if(tab==='novos') return (c.nao_lidas||0) > 0;
-  if(tab==='meus') return c.tipo!=='grupo';            // inbox já é escopado ao usuário
-  return true;
-}
 function atendTab(k){ _atdTab=k; atendRender(); }
-let _atdTriagem = [];   // entradas pendentes da fila de triagem (aba Novos)
+let _atdTriagem = [];   // fila de triagem: recebida SEM DONO → topo de Pessoais (sempre pendente)
 function atendRender(){
   const tabsEl = document.getElementById('atd-tabs');
   const filtroSeg = document.getElementById('atd-seg-filtro').value;
   const trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
-  tabsEl.innerHTML = _ATD_TABS.map(t=>{
-    const n = _atdInbox.filter(c=>_atdDaTab(c,t.key)).length + (t.key==='novos' ? _atdTriagem.length : 0);
+  tabsEl.innerHTML = _OC_TABS.map(t=>{
+    const n = _atdInbox.filter(c=>_ocDaTab(c,t.key)).length + (t.key==='pessoais' ? _atdTriagem.length : 0);
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
-    const cnt = (t.key!=='arquivados' && n>0) ? '<span class="cnt">'+n+'</span>' : '';
+    const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
     return '<div class="atd-tab'+(t.key===_atdTab?' active':'')+'" onclick="atendTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
   }).join('');
   const box = document.getElementById('atd-lista');
-  if(_atdTab==='arquivados'){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-archive"></i><div>Arquivamento de atendimentos ainda não disponível.</div></div>'; return; }
-  let itens = _atdInbox.filter(c=>_atdDaTab(c,_atdTab));
+  let itens = _atdInbox.filter(c=>_ocDaTab(c,_atdTab));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
-  let html = (_atdTab==='novos') ? trg.map(_atdTriagemItemHTML).join('') : '';
+  if(_ocPend.atd) itens = itens.filter(c=>c.pendente);
+  let html = (_atdTab==='pessoais') ? trg.map(_atdTriagemItemHTML).join('') : '';
   html += itens.map(_atdItemHTML).join('');
   box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>';
 }
@@ -12541,6 +12562,8 @@ async function abrirConversaProjeto(){
   if(!d.ok){ showToast(d.erro||'Erro ao abrir a conversa do projeto.', true); return; }
   const tit = '📁 ' + ((projetoAtivo.nome_projeto || projetoAtivo.nome_safe) + '').replace(/_/g,' ');
   await ocAbrirConversaPorId(d.conversa.id, tit, true, 'projeto', projetoAtivo.nome_safe);
+  const it = (_ocInbox||[]).find(x=>x.id===d.conversa.id);
+  _ocSetArquivarBtn(it || {tipo:'projeto', arquivada:false});
 }
 
 function convTransfToggle(){
@@ -12656,6 +12679,7 @@ async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   document.getElementById('oc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
   const mb = document.getElementById('oc-membros-btn');
   if(mb) mb.style.display = (tipo === 'projeto' || tipo === 'grupo') ? '' : 'none';   // membros em projeto e grupo
+  const ab = document.getElementById('oc-arq-btn'); if(ab) ab.style.display = 'none'; // ligado por _ocSetArquivarBtn
   const pm = document.getElementById('oc-membros'); if(pm) pm.style.display = 'none'; // fecha painel ao trocar
   const tr = document.getElementById('oc-transf');               // transferência/bloqueador só no projeto
   if(tr) tr.style.display = _ocConvProjeto ? '' : 'none';
@@ -12681,8 +12705,37 @@ async function ocAbrirConversa(convId){
   let podePostar = true;
   if(c.tipo === 'mural' || c.tipo === 'publico') podePostar = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
   await ocAbrirConversaPorId(c.id, _ocTituloComAssunto(c), podePostar, c.tipo, c.projeto_nome);
+  _ocSetArquivarBtn(c);
 }
 const atendAbrir = ocAbrirConversa;
+
+// ── arquivar/desarquivar (revisão UX 2026-07-31): "concluir" um atendimento hoje = arquivar —
+// sai das abas ativas, reversível; flag POR usuário. Mural/fóruns não arquivam.
+let _ocConvArquivada = false;
+function _ocSetArquivarBtn(c){
+  const ab = document.getElementById('oc-arq-btn');
+  if(!ab) return;
+  const ok = !!(c && ['direct','grupo','projeto'].includes(c.tipo));
+  _ocConvArquivada = !!(c && c.arquivada);
+  ab.style.display = ok ? '' : 'none';
+  const r = document.getElementById('oc-arq-rot');
+  if(r) r.textContent = _ocConvArquivada ? 'Desarquivar' : 'Arquivar';
+}
+async function ocArquivarToggle(){
+  if(!_ocConvAtiva) return;
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/arquivar',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({arquivar: !_ocConvArquivada})}).then(r=>r.json());
+  }catch(e){ showToast('Erro de rede.', true); return; }
+  if(!d.ok){ showToast(d.erro||'Falha ao arquivar.', true); return; }
+  _ocConvArquivada = !!d.arquivada;
+  const r = document.getElementById('oc-arq-rot');
+  if(r) r.textContent = _ocConvArquivada ? 'Desarquivar' : 'Arquivar';
+  showToast(_ocConvArquivada ? 'Conversa arquivada — disponível na aba Arquivadas.' : 'Conversa desarquivada.');
+  await _ocInboxAtualizar(); _ocRefrescar();
+}
 
 // Número/instância de WhatsApp da loja no header do thread (RF-01 → dentro da conversa).
 // Best-effort: o GET /numeros é de gerência — sem permissão, o chip simplesmente não aparece.

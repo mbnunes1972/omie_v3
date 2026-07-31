@@ -5437,6 +5437,37 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/conversas/<id>/arquivar — arquiva/desarquiva PARA O USUÁRIO
+        # (revisão UX 2026-07-31; aba Arquivadas da F7/Chat Interno). Body: {arquivar: bool}.
+        m_arq = re.match(r'^/api/comunicacao/conversas/(\d+)/arquivar$', path)
+        if m_arq:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                from database import Conversa as _CV_arq
+                conv = db.get(_CV_arq, int(m_arq.group(1)))
+                if conv is None or conv.loja_id != loja_id:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                dd = json.loads(body or b'{}')
+                try:
+                    flag = mod_chat.arquivar_conversa(db, conv, usuario["id"],
+                                                      arquivar=bool(dd.get("arquivar", True)))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "arquivada": flag})
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/conversas/<id>/participantes — override manual da membership
         # (add|remove). Só Gerente/Diretor (ver_todas_conversas). Body: {usuario_id, acao}.
         m_cp = re.match(r'^/api/comunicacao/conversas/(\d+)/participantes$', path)

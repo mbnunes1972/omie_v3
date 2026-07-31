@@ -98,6 +98,25 @@ O que adotar no Orizon Chat:
 7. `node --check` no `<script>`; Vera nas telas (3 caminhos antigos, tenancy/403, tema
    claro/escuro, duplicidade de caminhos/botões).
 
+## Revisão do usuário (2026-07-31, pós-entrega — SUPERA a seção 1 no que conflitar)
+
+1. **Abas idênticas nos DOIS canais**: **Pessoais** (1:1 — o nome escolhido; nem "Individuais",
+   nem "Meus") · **Grupos** (grupo + projeto) · **Arquivadas**. O mesmo conceito vale para
+   Atendimentos e Chat Interno.
+2. **"Pendente" é FILTRO, não estado**: mensagem recebida sem resposta (última mensagem não é
+   do viewer — campo `pendente` na inbox). O ciclo de vida do HuntPilot
+   (Pendente→Iniciar→Concluir) misturava ideias: filtro é uma coisa; **responder, transferir e
+   concluir são AÇÕES do funcionário** no thread.
+3. **Arquivar existe de verdade**: flag `ConversaParticipante.arquivada` (por usuário,
+   reversível) + endpoint `POST /conversas/<id>/arquivar` + botão no thread. "Concluir" um
+   atendimento hoje = arquivar; o status formal com dono do atendimento segue no backburner
+   do RF-12. Mural/fóruns não arquivam.
+4. **Seletor de segmento sempre com os 7** (não só os presentes na fila).
+5. **Camada destacada de botões** (acima das abas) concentra os componentes exclusivos do
+   canal: no Chat Interno — Nova mensagem · **Mural** (saiu das abas; badge de não-lidos) ·
+   Fórum da Loja · Fórum Orizon · Administração (gerência).
+6. Fila de triagem: entra no topo de **Pessoais** (recebida sem dono é pendente por definição).
+
 ## Riscos e pontos de atenção
 
 - `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.

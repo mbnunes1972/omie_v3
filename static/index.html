@@ -550,7 +550,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="sb-secao">
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
-      <div class="nav-item" id="nav-central-com" onclick="abrirCentralComunicacao()" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="cc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
+      <div class="nav-item" id="nav-central-com" onclick="ocAbrirPagina('atend')" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="oc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
       <div class="nav-item" id="nav-chat-cfg" onclick="goPageChat()" title="Configurações do Orizon Chat"><i class="ti ti-message-cog"></i>Config do Chat</div>
     </div>
 
@@ -660,173 +660,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="seletor-loja-wrap" style="display:none;align-items:center;margin:8px 0"></div>
   </div>
 </aside>
-
-<!-- CENTRAL DE COMUNICAÇÃO (spec 2026-07-27, Fatia 1) — modal GLOBAL (top-level, fora do
-     #page-02 de propósito: não pode cair no lock de negociação). Inbox + thread + nova mensagem. -->
-<div id="modal-central-com" class="modal-overlay" style="display:none;z-index:9200" onclick="if(event.target===this)this.style.display='none'">
-  <div class="modal-box" style="max-width:900px;width:96%;height:86vh;display:flex;flex-direction:column">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-messages"></i> Orizon Chat</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" id="cc-admin-btn" style="display:none" onclick="ccAdminAbrir()"><i class="ti ti-shield-cog"></i> Administração</button>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-central-com').style.display='none'">Fechar</button>
-      </div>
-    </div>
-    <div style="flex:1;display:flex;gap:12px;min-height:0">
-      <!-- coluna esquerda: inbox -->
-      <div style="width:280px;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden">
-        <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px">
-          <button class="btn btn-primary btn-sm" style="width:100%" onclick="ccNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
-          <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start" onclick="ccForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
-          <button class="btn btn-ghost btn-sm" id="cc-forum-orizon-btn" style="width:100%;justify-content:flex-start;display:none" onclick="ccForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
-        </div>
-        <div id="cc-inbox" style="flex:1;overflow-y:auto;padding:6px"></div>
-      </div>
-      <!-- coluna direita: thread OU formulário de nova conversa -->
-      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
-        <!-- nova conversa -->
-        <div id="cc-nova" style="display:none;border:1px solid var(--border);border-radius:10px;padding:14px">
-          <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
-          <div id="cc-tipo-wrap" style="display:flex;gap:16px;margin-bottom:10px">
-            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="direct" checked onchange="ccTipoToggle()"> Individual</label>
-            <label style="font-size:13px;cursor:pointer"><input type="radio" name="cc-tipo" value="grupo" onchange="ccTipoToggle()"> Grupo</label>
-          </div>
-          <!-- GRUPO: navega os grupos/projetos existentes (filtro por nome); "Novo Grupo" cria -->
-          <div id="cc-grupos-bloco" style="display:none">
-            <input id="cc-grupos-busca" type="search" placeholder="buscar grupo por nome…" oninput="ccGruposRender()" style="width:100%;margin-bottom:6px">
-            <div id="cc-grupos-lista" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
-            <div style="display:flex;gap:8px;margin-top:12px">
-              <button class="btn btn-primary btn-sm" onclick="ccNovoGrupoAbrir()"><i class="ti ti-plus"></i> Novo Grupo</button>
-              <button class="btn btn-ghost btn-sm" onclick="ccNovaFechar()">Cancelar</button>
-            </div>
-          </div>
-          <!-- INDIVIDUAL / CRIAR GRUPO: assunto + (nome do grupo) + seletor de usuários -->
-          <div id="cc-form-bloco">
-            <div id="cc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
-              <label class="field-label">Nome do grupo</label>
-              <input id="cc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
-            </div>
-            <label class="field-label">Assunto</label>
-            <div style="display:flex;gap:8px;margin-bottom:10px">
-              <select id="cc-assunto" onchange="ccAssuntoChange()" style="flex:1;padding:6px 8px"></select>
-              <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto()" title="Criar novo assunto"><i class="ti ti-plus"></i> Criar assunto</button>
-            </div>
-            <div id="cc-projeto-nota" style="display:none;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px">
-              <i class="ti ti-folder"></i> A conversa do projeto já inclui automaticamente a equipe. Clique em <b>Abrir conversa do projeto</b>.
-            </div>
-            <div id="cc-para-bloco">
-            <label class="field-label">Para <span id="cc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
-            <input id="cc-busca-user" type="search" placeholder="buscar por nome…" oninput="ccFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
-            <div id="cc-users" style="max-height:32vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
-            <div id="cc-externos-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
-            <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="ccAddExterno()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button>
-            </div>
-            <div style="display:flex;gap:8px;margin-top:12px">
-              <button class="btn btn-primary btn-sm" id="cc-iniciar-btn" onclick="ccCriar()">Iniciar conversa</button>
-              <button class="btn btn-ghost btn-sm" onclick="ccFormVoltar()">Cancelar</button>
-            </div>
-          </div>
-          <div id="cc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
-        </div>
-        <!-- painel de administração (ver_todas_conversas) -->
-        <div id="cc-admin" style="display:none;flex:1;flex-direction:column;min-height:0">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:800"><i class="ti ti-shield-cog"></i> Todas as conversas</div>
-            <button class="btn btn-ghost btn-sm" onclick="ccAdminFechar()">Voltar</button>
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:8px">
-            <select id="cc-adm-assunto" onchange="ccAdminCarregar()" style="flex:1;padding:6px 8px"></select>
-            <select id="cc-adm-part" onchange="ccAdminCarregar()" style="flex:1;padding:6px 8px"></select>
-          </div>
-          <div id="cc-adm-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
-        </div>
-        <!-- fórum (Fatia 4): lista de debates + novo debate + busca -->
-        <div id="cc-forum" style="display:none;flex:1;flex-direction:column;min-height:0">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:800" id="cc-forum-titulo"><i class="ti ti-messages"></i> Fórum</div>
-            <button class="btn btn-primary btn-sm" onclick="ccNovoDebateAbrir()"><i class="ti ti-plus"></i> Novo debate</button>
-          </div>
-          <input id="cc-forum-busca" type="search" placeholder="buscar debate por título…" oninput="ccForumBuscarDebounce()" style="width:100%;padding:6px 8px;margin-bottom:8px">
-          <!-- form novo debate -->
-          <div id="cc-novo-debate" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
-            <label class="field-label">Título do debate</label>
-            <input id="cc-debate-titulo" type="text" placeholder="Ex.: Reforma da vitrine" style="width:100%;margin-bottom:8px">
-            <div id="cc-debate-assunto-wrap">
-              <label class="field-label">Assunto</label>
-              <div style="display:flex;gap:8px;margin-bottom:8px">
-                <select id="cc-debate-assunto" style="flex:1;padding:6px 8px"></select>
-                <button class="btn btn-ghost btn-sm" onclick="ccCriarAssunto('cc-debate-assunto')"><i class="ti ti-plus"></i> Criar</button>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary btn-sm" onclick="ccNovoDebateCriar()">Criar debate</button>
-              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('cc-novo-debate').style.display='none'">Cancelar</button>
-            </div>
-            <div id="cc-debate-aviso" style="font-size:12px;color:var(--err);margin-top:6px"></div>
-          </div>
-          <div id="cc-forum-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
-        </div>
-        <!-- thread -->
-        <div id="cc-thread" style="display:none;flex:1;flex-direction:column;min-height:0">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:0 2px 8px;gap:8px">
-            <div id="cc-thread-titulo" style="font-weight:800"></div>
-            <button class="btn btn-ghost btn-sm" id="cc-membros-btn" style="display:none;white-space:nowrap" onclick="ccMembrosAbrir()"><i class="ti ti-users"></i> Membros</button>
-          </div>
-          <div id="cc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
-          <div id="cc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
-            <i class="ti ti-paperclip"></i><span id="cc-anexo-nome"></span>
-            <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ccRemoverAnexo()">×</button>
-          </div>
-          <div id="cc-compositor" style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-            <input type="file" id="cc-file" style="display:none" onchange="ccArquivoSelecionado(this)">
-            <textarea id="cc-texto" rows="3" placeholder="Escreva uma mensagem…  (Enter envia · Shift+Enter quebra linha)"
-                      style="width:100%;box-sizing:border-box;min-height:78px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:.9rem;line-height:1.4;font-family:inherit;resize:vertical"
-                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ccEnviar();}"></textarea>
-            <div style="display:flex;gap:8px;align-items:center">
-              <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('cc-file').click()"><i class="ti ti-paperclip"></i> Anexar</button>
-              <button class="btn btn-primary btn-sm" id="cc-enviar-btn" style="margin-left:auto" onclick="ccEnviar()"><i class="ti ti-send"></i> Enviar</button>
-            </div>
-          </div>
-          <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
-          <label id="cc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
-            <input type="checkbox" id="cc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
-          <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
-          <div id="cc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
-            <label style="font-size:12px;color:var(--text);cursor:pointer">
-              <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
-              Transferência de responsabilidade</label>
-            <div id="conv-transf-campos" style="display:none;margin-top:8px">
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <div style="flex:1;min-width:180px">
-                  <label class="field-label">Etapa do ciclo (opcional)</label>
-                  <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
-                </div>
-                <div style="flex:1;min-width:180px">
-                  <label class="field-label">Transferir para</label>
-                  <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
-                </div>
-                <div style="flex:1;min-width:180px">
-                  <label class="field-label">Anexar documento (opcional)</label>
-                  <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
-                </div>
-              </div>
-              <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
-                <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
-                Bloqueador</label>
-              <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
-                &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a transferência
-                (ou a gerência destravar em emergência). Sem etapa selecionada, trava o ciclo INTEIRO.</div>
-            </div>
-          </div>
-        </div>
-        <!-- estado inicial -->
-        <div id="cc-vazio" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px">
-          Selecione uma conversa ou clique em <b style="margin:0 4px">Nova mensagem</b>.
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- MODAL PERFIL ─────────────────────────────────────────────── -->
 <div id="modal-perfil" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
@@ -1091,9 +924,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <!-- Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — histórico interno + nova mensagem -->
-    <!-- Orizon Chat do projeto UNIFICADO no modal canônico #modal-central-com (2026-07-27):
-         o botão do projeto abre a conversa (tipo=projeto) lá; a transferência/bloqueador vive
-         no #cc-transf. O antigo #modal-conversa-proj foi aposentado. -->
+    <!-- Orizon Chat do projeto no FULL-PAGE #page-chat (spec 2026-07-31): o botão do projeto
+         abre a conversa (tipo=projeto) no painel da página; a transferência/bloqueador vive
+         no #oc-transf. O modal legado #modal-central-com foi eliminado. -->
 
     <!-- Grupo de Acompanhamento — contatos de comunicação (decisão 13 da spec de chat).
          z-index acima do _popupOverlay (99999): como este painel é o gate que dispara DENTRO
@@ -2138,6 +1971,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .atd-b-warn{background:var(--warn-tint);color:var(--text)}
     .atd-b-err{background:transparent;color:var(--err);border-color:var(--err)}
     .atd-nl{background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center;margin-left:6px}
+    /* ═══ CHAT: thread full-page (spec 2026-07-31 — unificação, elimina o modal legado) ═══ */
+    .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px);min-height:420px}
+    .oc-list-col{width:340px;min-width:270px;display:flex;flex-direction:column;min-height:0}
+    .oc-list-col .oc-lista-scroll{flex:1;overflow-y:auto;min-height:0}
+    .oc-pane-col{flex:1;min-width:0;display:flex}
+    #oc-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:12px}
+    .oc-view{display:none;flex:1;flex-direction:column;min-height:0}
+    .oc-view.active{display:flex}
+    .oc-evento{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px}
+    .oc-evento::before,.oc-evento::after{content:"";flex:1;border-top:1px dashed var(--border)}
+    #oc-membros{display:none;width:320px;min-width:280px;border-left:1px solid var(--border);padding-left:10px;overflow-y:auto}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
@@ -2155,26 +1999,194 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="ochat-main">
         <div class="ochat-top" id="ochat-top"><h2>Modelos de Mensagem</h2><p>Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.</p></div>
         <div class="ochat-body">
-          <!-- Atendimentos (fila, F7/RF-12) -->
+          <!-- ═══ CHAT: início — Atendimentos + Chat Interno + painel de conversa (spec 2026-07-31) ═══ -->
+          <!-- Atendimentos (fila, F7/RF-12) — lista à esquerda, thread à direita (padrão HuntPilot) -->
           <div class="ochat-scr" id="ochat-scr-atend">
-            <div class="atd-tabs" id="atd-tabs"></div>
-            <div class="atd-filtro">
-              <span class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Segmento:</span>
-              <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
+            <div class="oc-cols">
+              <div class="oc-list-col">
+                <div class="atd-tabs" id="atd-tabs"></div>
+                <div class="atd-filtro">
+                  <span class="hint" style="font-size:var(--fs-xs);color:var(--text-3)">Segmento:</span>
+                  <select id="atd-seg-filtro" onchange="atendRender()" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
+                </div>
+                <div class="oc-lista-scroll" id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+              </div>
+              <div class="oc-pane-col" id="oc-slot-atend">
+                <!-- painel ÚNICO de conversa (movido entre Atendimentos/Chat Interno por ocMontarPane) -->
+                <div id="oc-pane">
+                  <!-- estado inicial -->
+                  <div id="oc-vazio" class="oc-view active" style="align-items:center;justify-content:center;color:var(--muted);font-size:13px">
+                    <div>Selecione uma conversa na lista ao lado.</div>
+                  </div>
+                  <!-- nova conversa (Chat Interno) -->
+                  <div id="oc-nova" class="oc-view" style="overflow-y:auto">
+                    <div style="font-weight:800;margin-bottom:10px">Nova conversa</div>
+                    <div id="oc-tipo-wrap" style="display:flex;gap:16px;margin-bottom:10px">
+                      <label style="font-size:13px;cursor:pointer"><input type="radio" name="oc-tipo" value="direct" checked onchange="ocTipoToggle()"> Individual</label>
+                      <label style="font-size:13px;cursor:pointer"><input type="radio" name="oc-tipo" value="grupo" onchange="ocTipoToggle()"> Grupo</label>
+                    </div>
+                    <div id="oc-grupos-bloco" style="display:none">
+                      <input id="oc-grupos-busca" type="search" placeholder="buscar grupo por nome…" oninput="ocGruposRender()" style="width:100%;margin-bottom:6px">
+                      <div id="oc-grupos-lista" style="max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+                      <div style="display:flex;gap:8px;margin-top:12px">
+                        <button class="btn btn-primary btn-sm" onclick="ocNovoGrupoAbrir()"><i class="ti ti-plus"></i> Novo Grupo</button>
+                        <button class="btn btn-ghost btn-sm" onclick="ocNovaFechar()">Cancelar</button>
+                      </div>
+                    </div>
+                    <div id="oc-form-bloco">
+                      <div id="oc-grupo-nome-wrap" style="display:none;margin-bottom:10px">
+                        <label class="field-label">Nome do grupo</label>
+                        <input id="oc-grupo-nome" type="text" placeholder="Ex.: Equipe da Obra X" style="width:100%">
+                      </div>
+                      <label class="field-label">Assunto</label>
+                      <div style="display:flex;gap:8px;margin-bottom:10px">
+                        <select id="oc-assunto" onchange="ocAssuntoChange()" style="flex:1;padding:6px 8px"></select>
+                        <button class="btn btn-ghost btn-sm" onclick="ocCriarAssunto()" title="Criar novo assunto"><i class="ti ti-plus"></i> Criar assunto</button>
+                      </div>
+                      <div id="oc-projeto-nota" style="display:none;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+                        <i class="ti ti-folder"></i> A conversa do projeto já inclui automaticamente a equipe. Clique em <b>Abrir conversa do projeto</b>.
+                      </div>
+                      <div id="oc-para-bloco">
+                        <label class="field-label">Para <span id="oc-para-hint" style="color:var(--muted);font-weight:400"></span></label>
+                        <input id="oc-busca-user" type="search" placeholder="buscar por nome…" oninput="ocFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
+                        <div id="oc-users" style="max-height:32vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+                        <div id="oc-externos-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+                        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="ocAddExterno()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button>
+                      </div>
+                      <div style="display:flex;gap:8px;margin-top:12px">
+                        <button class="btn btn-primary btn-sm" id="oc-iniciar-btn" onclick="ocCriar()">Iniciar conversa</button>
+                        <button class="btn btn-ghost btn-sm" onclick="ocFormVoltar()">Cancelar</button>
+                      </div>
+                    </div>
+                    <div id="oc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+                  </div>
+                  <!-- administração (ver_todas_conversas) -->
+                  <div id="oc-admin" class="oc-view">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                      <div style="font-weight:800"><i class="ti ti-shield-cog"></i> Todas as conversas</div>
+                      <button class="btn btn-ghost btn-sm" onclick="ocAdminFechar()">Voltar</button>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:8px">
+                      <select id="oc-adm-assunto" onchange="ocAdminCarregar()" style="flex:1;padding:6px 8px"></select>
+                      <select id="oc-adm-part" onchange="ocAdminCarregar()" style="flex:1;padding:6px 8px"></select>
+                    </div>
+                    <div id="oc-adm-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
+                  </div>
+                  <!-- fórum: debates + novo debate + busca -->
+                  <div id="oc-forum" class="oc-view">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
+                      <div style="font-weight:800" id="oc-forum-titulo"><i class="ti ti-messages"></i> Fórum</div>
+                      <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary btn-sm" onclick="ocNovoDebateAbrir()"><i class="ti ti-plus"></i> Novo debate</button>
+                        <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()">Voltar</button>
+                      </div>
+                    </div>
+                    <input id="oc-forum-busca" type="search" placeholder="buscar debate por título…" oninput="ocForumBuscarDebounce()" style="width:100%;padding:6px 8px;margin-bottom:8px">
+                    <div id="oc-novo-debate" style="display:none;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+                      <label class="field-label">Título do debate</label>
+                      <input id="oc-debate-titulo" type="text" placeholder="Ex.: Reforma da vitrine" style="width:100%;margin-bottom:8px">
+                      <div id="oc-debate-assunto-wrap">
+                        <label class="field-label">Assunto</label>
+                        <div style="display:flex;gap:8px;margin-bottom:8px">
+                          <select id="oc-debate-assunto" style="flex:1;padding:6px 8px"></select>
+                          <button class="btn btn-ghost btn-sm" onclick="ocCriarAssunto('oc-debate-assunto')"><i class="ti ti-plus"></i> Criar</button>
+                        </div>
+                      </div>
+                      <div style="display:flex;gap:8px">
+                        <button class="btn btn-primary btn-sm" onclick="ocNovoDebateCriar()">Criar debate</button>
+                        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('oc-novo-debate').style.display='none'">Cancelar</button>
+                      </div>
+                      <div id="oc-debate-aviso" style="font-size:12px;color:var(--err);margin-top:6px"></div>
+                    </div>
+                    <div id="oc-forum-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
+                  </div>
+                  <!-- thread -->
+                  <div id="oc-thread" class="oc-view">
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 2px 8px;gap:8px;flex-wrap:wrap">
+                      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                        <div id="oc-thread-titulo" style="font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+                        <span id="oc-num-chip" style="display:none;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;white-space:nowrap"></span>
+                      </div>
+                      <button class="btn btn-ghost btn-sm" id="oc-membros-btn" style="display:none;white-space:nowrap" onclick="ocMembrosToggle()"><i class="ti ti-users"></i> Membros</button>
+                    </div>
+                    <div style="flex:1;display:flex;gap:10px;min-height:0">
+                      <div id="oc-msgs" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface)"></div>
+                      <!-- painel lateral de membros (substitui o popup legado) -->
+                      <div id="oc-membros">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                          <div style="font-weight:800;font-size:13px;color:var(--accent)">Membros da conversa</div>
+                          <button class="btn btn-ghost btn-sm" style="padding:1px 8px" onclick="ocMembrosToggle()">×</button>
+                        </div>
+                        <div id="oc-membros-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+                      </div>
+                    </div>
+                    <div id="oc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
+                      <i class="ti ti-paperclip"></i><span id="oc-anexo-nome"></span>
+                      <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ocRemoverAnexo()">×</button>
+                    </div>
+                    <div id="oc-compositor" style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                      <input type="file" id="oc-file" style="display:none" onchange="ocArquivoSelecionado(this)">
+                      <textarea id="oc-texto" rows="3" placeholder="Escreva uma mensagem…  (Enter envia · Shift+Enter quebra linha)"
+                                style="width:100%;box-sizing:border-box;min-height:78px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:.9rem;line-height:1.4;font-family:inherit;resize:vertical"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ocEnviar();}"></textarea>
+                      <div style="display:flex;gap:8px;align-items:center">
+                        <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('oc-file').click()"><i class="ti ti-paperclip"></i> Anexar</button>
+                        <button class="btn btn-primary btn-sm" id="oc-enviar-btn" style="margin-left:auto" onclick="ocEnviar()"><i class="ti ti-send"></i> Enviar</button>
+                      </div>
+                    </div>
+                    <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
+                    <label id="oc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
+                      <input type="checkbox" id="oc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
+                    <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
+                    <div id="oc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
+                      <label style="font-size:12px;color:var(--text);cursor:pointer">
+                        <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
+                        Transferência de responsabilidade</label>
+                      <div id="conv-transf-campos" style="display:none;margin-top:8px">
+                        <div style="display:flex;gap:8px;flex-wrap:wrap">
+                          <div style="flex:1;min-width:180px">
+                            <label class="field-label">Etapa do ciclo (opcional)</label>
+                            <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
+                          </div>
+                          <div style="flex:1;min-width:180px">
+                            <label class="field-label">Transferir para</label>
+                            <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
+                          </div>
+                          <div style="flex:1;min-width:180px">
+                            <label class="field-label">Anexar documento (opcional)</label>
+                            <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
+                          </div>
+                        </div>
+                        <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
+                          <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
+                          Bloqueador</label>
+                        <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
+                          &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a transferência
+                          (ou a gerência destravar em emergência). Sem etapa selecionada, trava o ciclo INTEIRO.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
           </div>
-          <!-- Chat Interno (equipe) — full-page, espelha Atendimentos -->
+          <!-- Chat Interno (equipe) — full-page, mesma estrutura de duas colunas -->
           <div class="ochat-scr" id="ochat-scr-interno">
-            <div class="atd-filtro" style="margin-bottom:14px">
-              <button class="btn btn-primary btn-sm" onclick="intNova()"><i class="ti ti-plus"></i> Nova mensagem</button>
-              <button class="btn btn-ghost btn-sm" onclick="intForum('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
-              <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="intForum('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
-              <button class="btn btn-ghost btn-sm" id="int-admin" style="display:none" onclick="intAdmin()"><i class="ti ti-shield-cog"></i> Administração</button>
+            <div class="oc-cols">
+              <div class="oc-list-col">
+                <div class="atd-filtro" style="margin-bottom:14px;flex-wrap:wrap">
+                  <button class="btn btn-primary btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-plus"></i> Nova mensagem</button>
+                  <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
+                  <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
+                  <button class="btn btn-ghost btn-sm" id="int-admin" style="display:none" onclick="ocAdminAbrir()"><i class="ti ti-shield-cog"></i> Administração</button>
+                </div>
+                <div class="atd-tabs" id="int-tabs"></div>
+                <div class="oc-lista-scroll" id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+              </div>
+              <div class="oc-pane-col" id="oc-slot-interno"></div>
             </div>
-            <div class="atd-tabs" id="int-tabs"></div>
-            <div id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
           </div>
+          <!-- ═══ CHAT: fim do bloco Atendimentos/Chat Interno ═══ -->
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
             <div class="ochat-cards" id="ochat-tpl-cards"></div>
@@ -3165,7 +3177,7 @@ function _atualizarUIUsuario(){
   if(mpLim)   mpLim.textContent   = `Limite de desconto: ${(_usuarioAtual?.limite_desconto ?? 10)}%`;
   if(mpIni)   mpIni.textContent   = inicial;
   _renderSeletorLoja();
-  if(typeof ccPollBadge === 'function') ccPollBadge();   // badge de não-lidos do Orizon Chat
+  if(typeof ocPollBadge === 'function') ocPollBadge();   // badge de não-lidos do Orizon Chat
 }
 
 function _renderSeletorLoja(){
@@ -10041,7 +10053,7 @@ const _OCHAT_TOP = {
   consumo:  ['Consumo / Custos', 'Envios de WhatsApp por segmento — enviadas, na fila, pendentes e com erro.'],
 };
 function ochatIr(scr){
-  document.getElementById('modal-central-com') && (document.getElementById('modal-central-com').style.display='none');
+  if(scr==='atend' || scr==='interno') ocMontarPane(scr);   // painel de conversa único migra entre as telas
   document.querySelectorAll('#page-chat .ochat-nav[data-scr]').forEach(n=>n.classList.toggle('active', n.getAttribute('data-scr')===scr));
   document.querySelectorAll('#page-chat .ochat-scr').forEach(s=>s.classList.remove('active'));
   const el = document.getElementById('ochat-scr-'+scr); if(el) el.classList.add('active');
@@ -10078,7 +10090,9 @@ async function chatInternoCarregar(){
   try{ d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
-  _intInbox = (d.conversas||[]).filter(c=>_INT_TIPOS.includes(c.tipo));
+  _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
+  ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
+  _intInbox = _ocInbox.filter(c=>_INT_TIPOS.includes(c.tipo));
   intRender();
 }
 function _intDaTab(c, tab){
@@ -10111,9 +10125,7 @@ function _intItemHTML(c){
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
     + '<div class="atd-tags">'+tipoBadge+'</div></div>';
 }
-async function intNova(){ await abrirCentralComunicacao(); if(typeof ccNovaAbrir==='function') ccNovaAbrir(); }
-async function intForum(escopo){ await abrirCentralComunicacao(); if(typeof ccForumAbrir==='function') ccForumAbrir(escopo); }
-async function intAdmin(){ await abrirCentralComunicacao(); if(typeof ccAdminAbrir==='function') ccAdminAbrir(); }
+// (intNova/intForum/intAdmin legados removidos — os botões chamam ocNovaAbrir/ocForumAbrir/ocAdminAbrir.)
 
 // ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];
@@ -10133,7 +10145,9 @@ async function chatAtendCarregar(){
   try{ d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
-  _atdInbox = (d.conversas||[]).filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
+  _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
+  ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
+  _atdInbox = _ocInbox.filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
   const segs = [...new Set(_atdInbox.map(c=>c.segmento).filter(Boolean))];
   const sel = document.getElementById('atd-seg-filtro'), atual = sel.value;
   sel.innerHTML = '<option value="">Todos</option>' + segs.map(s=>'<option value="'+esc(s)+'">'+esc(_ATD_SEGROT[s]||s)+'</option>').join('');
@@ -10193,12 +10207,7 @@ function _atdItemHTML(c){
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
     + '<div class="atd-tags">'+seg+jan+proj+'</div></div>';
 }
-async function atendAbrir(convId){
-  await abrirCentralComunicacao();                     // abre o modal + carrega _ccInbox
-  const idx = (_ccInbox||[]).findIndex(c=>c.id===convId);
-  if(idx>=0) ccAbrirConversa(idx);
-  else if(typeof showToast === 'function') showToast('Conversa indisponível — atualize a fila.', true);
-}
+// (atendAbrir é definido no bloco do painel de conversa: alias de ocAbrirConversa — thread na própria página.)
 
 // ── Consumo / Custos (§10) — envios de WhatsApp por segmento (leitura) ────────────
 async function chatConsumoCarregar(){
@@ -12472,24 +12481,21 @@ const PE_SUBFASES = {
 // ── Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — interna, cronológica ────────────
 // Fatias futuras (natureza/transferência, bloqueador, privada, canais externos) NÃO entram
 // aqui sem a spec — esta é só a fundação.
+// ═══ CHAT: início do bloco JS do painel de conversa (spec 2026-07-31 — substitui o modal legado) ═══
 async function abrirConversaProjeto(){
   if(!projetoAtivo) return;
-  // UNIFICADO no Orizon Chat do painel lateral: abre o modal canônico posicionado na conversa do
-  // projeto (get-or-create + sincroniza equipe∪gerência). Mantém o alinhamento de loja (sem ele,
-  // projeto aberto com a loja ativa em outra loja dá 403/404 em TODA mensagem; guarda anti-vazamento
-  // dentro de _alinharLojaAoProjeto — só alinha para loja acessível).
+  // Abre o Orizon Chat FULL-PAGE posicionado na conversa do projeto (get-or-create + sincroniza
+  // equipe∪gerência). Mantém o alinhamento de loja (sem ele, projeto aberto com a loja ativa em
+  // outra loja dá 403/404 em TODA mensagem; guarda anti-vazamento dentro de _alinharLojaAoProjeto
+  // — só alinha para loja acessível).
   if(projetoAtivo.loja_id) _alinharLojaAoProjeto(projetoAtivo.loja_id);
-  await abrirCentralComunicacao();
+  ocAbrirPagina('atend');
   let d;
   try { d = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/conversa',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ showToast('Erro ao abrir a conversa do projeto.', true); return; }
   if(!d.ok){ showToast(d.erro||'Erro ao abrir a conversa do projeto.', true); return; }
   const tit = '📁 ' + ((projetoAtivo.nome_projeto || projetoAtivo.nome_safe) + '').replace(/_/g,' ');
-  await ccAbrirConversaProjeto(projetoAtivo.nome_safe, d.conversa.id, tit);
-}
-async function ccAbrirConversaProjeto(projetoNome, convId, titulo){
-  await ccAbrirConversaPorId(convId, titulo, true, 'projeto', projetoNome);
-  setTimeout(()=>{ const t=document.getElementById('cc-texto'); if(t) t.focus(); }, 60);
+  await ocAbrirConversaPorId(d.conversa.id, tit, true, 'projeto', projetoAtivo.nome_safe);
 }
 
 function convTransfToggle(){
@@ -12499,7 +12505,7 @@ function convTransfToggle(){
 }
 
 async function _convCarregarSeletoresTransf(){
-  const projNome = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
+  const projNome = _ocConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
   const selE = document.getElementById('conv-transf-etapa');
   const selF = document.getElementById('conv-transf-func');
   const selD = document.getElementById('conv-transf-doc');
@@ -12522,160 +12528,282 @@ async function _convCarregarSeletoresTransf(){
       }).join('');
 }
 
-// ═══ Central de Comunicação (spec 2026-07-27, Fatia 1) ════════════════════════
-let _ccInbox = [];        // conversas da inbox (índice usado nos onclick)
-let _ccUsuarios = [];     // usuários da loja (seletor "Para")
-let _ccSel = new Set();   // ids selecionados no seletor
-let _ccExternos = [];     // contatos EXTERNOS a incluir (WhatsApp/e-mail, sem Usuario) — destacados
-async function ccAddExterno(){
-  const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'})) || '').trim();
-  if(!nome) return;
-  const tel = ((await promptPopup('Telefone (WhatsApp) com DDD:', {titulo:'Contato externo — '+nome, placeholder:'ex.: 11 91234-5678', okLabel:'Adicionar'})) || '').trim();
-  if(!tel) return;
-  _ccExternos.push({nome, telefone: tel, meio:'whatsapp'});
-  ccRenderExternos();
-}
-function ccRemoverExternoSel(i){ _ccExternos.splice(i,1); ccRenderExternos(); }
-function ccRenderExternos(){
-  const box = document.getElementById('cc-externos-chips');
-  if(!box) return;
-  box.innerHTML = _ccExternos.map((e,i)=>
-    '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:14px;padding:2px 8px;font-size:12px">'
-    + '<i class="ti ti-brand-whatsapp"></i> '+esc(e.nome)+' · '+esc(e.telefone)
-    + ' <span onclick="ccRemoverExternoSel('+i+')" style="cursor:pointer;font-weight:800">×</span></span>').join('');
-}
-let _ccConvAtiva = null;  // id da conversa aberta
+// ── estado do painel de conversa ──────────────────────────────────────────────
+let _ocInbox = [];        // conversas da inbox (dados canônicos das listas/grupos/badge)
+let _ocUsuarios = [];     // usuários da loja (seletor "Para")
+let _ocSel = new Set();   // ids selecionados no seletor
+let _ocExternos = [];     // contatos EXTERNOS a incluir (WhatsApp/e-mail, sem Usuario)
+let _ocConvAtiva = null;  // id da conversa aberta
+let _ocConvTipo = null;
+let _ocConvProjeto = null;   // nome_safe do projeto quando a conversa aberta é tipo=projeto
+let _ocAdminView = false;    // thread aberta pelo painel admin (read-only)
+let _ocAssuntoCache = null;  // {assuntos:[], projetos:[]}
+let _ocNumChip = null;       // cache do número conectado (false = indisponível p/ este usuário)
 
-let _ccAssuntoCache = null;   // {assuntos:[], projetos:[]}
-let _ccAdminView = false;     // thread aberta pelo painel admin (read-only)
-
-async function abrirCentralComunicacao(){
-  document.getElementById('modal-central-com').style.display = 'flex';
-  ccNovaFechar();
-  ['cc-thread','cc-admin','cc-forum'].forEach(id=>document.getElementById(id).style.display='none');
-  document.getElementById('cc-vazio').style.display = 'flex';
-  const admBtn = document.getElementById('cc-admin-btn');
-  admBtn.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas) ? '' : 'none';
-  // Fórum Orizon só aparece se a loja ativa pertence a uma rede
-  const aId = _lojaAtiva || (_usuarioAtual && (_usuarioAtual.loja_ativa_id || _usuarioAtual.loja_id));
-  const lojaObj = ((_usuarioAtual && _usuarioAtual.lojas) || []).find(l=>l.id === aId);
-  document.getElementById('cc-forum-orizon-btn').style.display = (lojaObj && lojaObj.rede_id) ? '' : 'none';
-  _ccConvAtiva = null; _ccAdminView = false;
-  await ccCarregarInbox();
+// O painel é ÚNICO e migra entre as telas Atendimentos/Chat Interno (ids não duplicam).
+function ocMontarPane(scr){
+  const slot = document.getElementById(scr === 'interno' ? 'oc-slot-interno' : 'oc-slot-atend');
+  const pane = document.getElementById('oc-pane');
+  if(slot && pane && pane.parentElement !== slot) slot.appendChild(pane);
 }
 
-async function ccCarregarInbox(){
-  const box = document.getElementById('cc-inbox');
-  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
-  let d;
-  try { d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
-  if(!d.ok){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
-  _ccInbox = d.conversas || [];
-  ccAtualizarBadgeTotal(_ccInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
-  if(!_ccInbox.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa ainda.</div>'; return; }
-  const _CC_ICON = {publico:'ti-speakerphone', mural:'ti-speakerphone', projeto:'ti-folder',
-                    grupo:'ti-users', direct:'ti-user', forum_loja:'ti-building-store', forum_orizon:'ti-world'};
-  const _CC_TIPO = {publico:'Mural', mural:'Mural', projeto:'Projeto', grupo:'Grupo', direct:'Individual',
-                    forum_loja:'Fórum da loja', forum_orizon:'Fórum Orizon'};
-  box.innerHTML = _ccInbox.map((c,i)=>{
-    const icon = _CC_ICON[c.tipo] || 'ti-message';
-    const ativo = (c.id === _ccConvAtiva);
-    const nl = c.nao_lidas || 0;
-    // título limpo (sem o emoji, que já vira ícone) e sem duplicar o assunto
-    const titulo = (_ccTituloComAssunto(c) || 'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '');
-    // subtítulo = TIPO (+ assunto custom, se houver)
-    const segCustom = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? (' · ' + c.assunto.label) : '';
-    const sub = (_CC_TIPO[c.tipo] || 'Conversa') + segCustom;
-    const badge = nl > 0 ? '<span style="background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center">'+(nl>99?'99+':nl)+'</span>' : '';
-    return '<div onclick="ccAbrirConversa('+i+')" style="padding:8px 9px;border-radius:8px;cursor:pointer;margin-bottom:3px;border:1px solid '+(ativo?'var(--border)':'transparent')+';'
-      + (ativo ? 'background:var(--surface-2)' : '') + '"'
-      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\''+(ativo?'var(--surface-2)':'')+'\'">'
-      + '<div style="display:flex;align-items:center;gap:7px">'
-      +   '<i class="ti '+icon+'" style="color:var(--accent);font-size:15px;flex:none"></i>'
-      +   '<span style="font-weight:'+(nl>0?'800':'700')+';font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(titulo)+'</span>'
-      +   badge
-      + '</div>'
-      + '<div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin:2px 0 0 22px">'+esc(sub)+'</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-left:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
-      + '</div>';
-  }).join('');
+// Porta de entrada do menu lateral (e do botão do projeto): ativa o page-chat na aba pedida.
+function ocAbrirPagina(scr){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg = document.getElementById('page-chat'); if(pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  const nav = document.getElementById('nav-central-com'); if(nav) nav.classList.add('active');
+  const sbParams = document.getElementById('sb-params'); if(sbParams) sbParams.style.display='none';
+  ochatIr(scr || 'atend');
 }
 
-function ccAtualizarBadgeTotal(total){
-  const b = document.getElementById('cc-badge');
+function ocMostrarView(view){
+  ['oc-vazio','oc-nova','oc-admin','oc-forum','oc-thread'].forEach(id=>{
+    const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
+  });
+}
+function ocPaneVoltar(){ ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio'); }
+
+// Recarrega a(s) lista(s) da tela ativa (pós-envio/criação — reflete prévia e não-lidas).
+function _ocRefrescar(){
+  const a = document.getElementById('ochat-scr-atend'), i = document.getElementById('ochat-scr-interno');
+  if(a && a.classList.contains('active') && typeof chatAtendCarregar === 'function') chatAtendCarregar();
+  if(i && i.classList.contains('active') && typeof chatInternoCarregar === 'function') chatInternoCarregar();
+}
+
+async function _ocInboxAtualizar(){
+  try{
+    const d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json());
+    if(d && d.ok){ _ocInbox = d.conversas || []; ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0)); }
+  }catch(e){}
+  return _ocInbox;
+}
+
+function ocAtualizarBadgeTotal(total){
+  const b = document.getElementById('oc-badge');
   if(!b) return;
   if(total > 0){ b.textContent = total > 99 ? '99+' : total; b.style.display = 'inline-block'; }
   else b.style.display = 'none';
 }
-async function ccPollBadge(){
+async function ocPollBadge(){
   const nav = document.getElementById('nav-central-com');
   if(!_usuarioAtual || !nav || nav.style.display === 'none') return;
   try{ fetch('/api/comunicacao/presenca',{method:'POST',credentials:'same-origin'}); }catch(e){}  // heartbeat (ponte WhatsApp)
-  try{
-    const d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json());
-    if(d && d.ok) ccAtualizarBadgeTotal((d.conversas||[]).reduce((s,c)=>s+(c.nao_lidas||0),0));
-  }catch(e){}
+  await _ocInboxAtualizar();
 }
-setInterval(ccPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só com usuário/loja)
+setInterval(ocPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só com usuário/loja)
 
-function _ccMostrarThread(titulo, podePostar){
-  ccNovaFechar();
-  if(typeof ccRemoverAnexo === 'function') ccRemoverAnexo();   // limpa anexo pendente ao trocar
-  ['cc-admin','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
-  document.getElementById('cc-compositor').style.display = podePostar ? 'flex' : 'none';
-  document.getElementById('cc-thread').style.display = 'flex';
-  document.getElementById('cc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
+function _ocTituloComAssunto(c){
+  const t = c.titulo || 'Conversa';
+  // Projeto: o título já é "📁 <projeto>"; NÃO repetir o assunto (era a duplicação "Norberto · Norberto").
+  if(c.tipo === 'projeto') return t;
+  const a = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? c.assunto.label : null;
+  return a ? (t + '  ·  ' + a) : t;
 }
-let _ccConvTipo = null;
-let _ccConvProjeto = null;   // nome_safe do projeto quando a conversa aberta é tipo=projeto (ciclo-aware)
-async function ccAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
-  _ccConvAtiva = id; _ccAdminView = false; _ccConvTipo = tipo || null;
-  _ccConvProjeto = projetoNome || null;                          // conversa de PROJETO (ciclo-aware)
-  _ccMostrarThread(titulo, podePostar);
-  const mb = document.getElementById('cc-membros-btn');
+
+// ── thread ────────────────────────────────────────────────────────────────────
+async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
+  _ocConvAtiva = id; _ocAdminView = false; _ocConvTipo = tipo || null;
+  _ocConvProjeto = projetoNome || null;
+  ocMostrarView('oc-thread');
+  if(typeof ocRemoverAnexo === 'function') ocRemoverAnexo();   // limpa anexo pendente ao trocar
+  document.getElementById('oc-compositor').style.display = podePostar ? 'flex' : 'none';
+  document.getElementById('oc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
+  const mb = document.getElementById('oc-membros-btn');
   if(mb) mb.style.display = (tipo === 'projeto' || tipo === 'grupo') ? '' : 'none';   // membros em projeto e grupo
-  const tr = document.getElementById('cc-transf');               // transferência/bloqueador só no projeto
-  if(tr) tr.style.display = _ccConvProjeto ? '' : 'none';
+  const pm = document.getElementById('oc-membros'); if(pm) pm.style.display = 'none'; // fecha painel ao trocar
+  const tr = document.getElementById('oc-transf');               // transferência/bloqueador só no projeto
+  if(tr) tr.style.display = _ocConvProjeto ? '' : 'none';
   const tchk = document.getElementById('conv-transf-chk');       // reseta a composição de transferência
   if(tchk){ tchk.checked = false; if(typeof convTransfToggle==='function') convTransfToggle(); }
-  ccCarregarDestinatarios();
-  await ccCarregarMsgs();
+  // Caixa "E-mail (oficializar)": só gerência, em grupo/projeto.
+  const grupoOuProj = (_ocConvTipo === 'grupo' || _ocConvTipo === 'projeto');
+  const ofic = document.getElementById('oc-oficializar-wrap');
+  if(ofic) ofic.style.display = (grupoOuProj && _podeAutorizarFront()) ? '' : 'none';
+  const ofc = document.getElementById('oc-oficializar'); if(ofc) ofc.checked = false;
+  _ocNumeroChip();
+  await ocCarregarMsgs();
+  if(podePostar) setTimeout(()=>{ const t=document.getElementById('oc-texto'); if(t) t.focus(); }, 60);
 }
-function ccCarregarDestinatarios(){
-  // Caixa "E-mail (oficializar)" (F3): só gerência, em grupo/projeto. (O seletor "Para" por mensagem
-  // foi REMOVIDO — em grupo todos veem; para privacidade, use a conversa Individual.)
-  const grupoOuProj = (_ccConvTipo === 'grupo' || _ccConvTipo === 'projeto');
-  const ofic = document.getElementById('cc-oficializar-wrap');
-  if(ofic) ofic.style.display = (grupoOuProj && _podeAutorizarFront()) ? '' : 'none';   // só gerência
-  const ofc = document.getElementById('cc-oficializar'); if(ofc) ofc.checked = false;
+
+// Abre pela lista (Atendimentos/Chat Interno). `atendAbrir` é o nome usado nos renderers.
+async function ocAbrirConversa(convId){
+  let c = (_ocInbox||[]).find(x=>x.id===convId);
+  if(!c){ await _ocInboxAtualizar(); c = (_ocInbox||[]).find(x=>x.id===convId); }
+  if(!c){ if(typeof showToast==='function') showToast('Conversa indisponível — atualize a fila.', true); return; }
+  let podePostar = true;
+  if(c.tipo === 'mural' || c.tipo === 'publico') podePostar = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
+  await ocAbrirConversaPorId(c.id, _ocTituloComAssunto(c), podePostar, c.tipo, c.projeto_nome);
 }
-function _ccOficializar(){ const c=document.getElementById('cc-oficializar'); return !!(c&&c.checked); }
-function _ccToastEmail(e){
+const atendAbrir = ocAbrirConversa;
+
+// Número/instância de WhatsApp da loja no header do thread (RF-01 → dentro da conversa).
+// Best-effort: o GET /numeros é de gerência — sem permissão, o chip simplesmente não aparece.
+async function _ocNumeroChip(){
+  const chip = document.getElementById('oc-num-chip'); if(!chip) return;
+  if(_ocNumChip === null){
+    try{
+      const d = await fetch('/api/comunicacao/numeros',{credentials:'same-origin'}).then(r=>r.json());
+      _ocNumChip = (d && d.ok && d.numero && (d.numero.numero||'').trim()) ? d.numero : false;
+    }catch(e){ _ocNumChip = false; }
+  }
+  if(_ocNumChip && _ocNumChip.numero){
+    chip.innerHTML = '<i class="ti ti-brand-whatsapp"></i> ' + esc(_ocNumChip.numero)
+      + (_ocNumChip.rotulo ? ' · ' + esc(_ocNumChip.rotulo) : '');
+    chip.style.display = 'inline-flex';
+  } else chip.style.display = 'none';
+}
+
+async function ocCarregarMsgs(){
+  const box = document.getElementById('oc-msgs');
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  let d;
+  // Conversa de PROJETO lê do endpoint do projeto (traz os campos do ciclo: transferência/bloqueador).
+  const url = _ocConvProjeto
+    ? '/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/conversa'
+    : '/api/comunicacao/conversas/'+_ocConvAtiva+'/mensagens';
+  try { d = await fetch(url,{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
+  if(!(d.mensagens||[]).length){ box.innerHTML = '<em style="color:var(--muted);font-size:12px">Sem mensagens — comece a conversar.</em>'; return; }
+  box.innerHTML = d.mensagens.map(m => _ocConvProjeto ? _ocRenderMsgProjeto(m) : _ocRenderMsg(m)).join('');
+  box.scrollTop = box.scrollHeight;
+}
+function _ocAnexosHtml(m){
+  return (m.anexos||[]).map(a=>{
+    if(a.tipo === 'imagem')
+      return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener"><img src="'+a.url+'" alt="'+esc(a.nome)+'" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border)"></a></div>';
+    return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
+  }).join('');
+}
+function _ocMsgCabecalho(m){
+  const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
+  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
+}
+// Evento inline (spec 2026-07-31 módulo/portas): mensagem de sistema vira FAIXA na timeline.
+function _ocEventoFaixa(m){
+  return '<div class="oc-evento"><span><i class="ti ti-timeline-event"></i> '+esc(m.corpo||'')
+    + ' <span style="opacity:.7">· '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</span></span></div>';
+}
+function _ocRenderMsg(m){
+  if(m.evento) return _ocEventoFaixa(m);
+  return '<div style="margin-bottom:10px">' + _ocMsgCabecalho(m)
+    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
+    + _ocAnexosHtml(m) + '</div>';
+}
+function _ocRenderMsgProjeto(m){
+  if(m.evento) return _ocEventoFaixa(m);
+  let meta = '';
+  if (m.natureza === 'transferencia') {
+    meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px"><i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
+      + esc(m.transferido_para_nome||'—') + '</strong>'
+      + (m.etapa_codigo ? ' · etapa '+esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
+    if (m.documento_ref_id) {
+      meta += '<div style="margin-top:4px"><a target="_blank" rel="noopener" href="/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/ciclo/documento/'+m.documento_ref_id
+        + '" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:10px;color:var(--text);text-decoration:none">'
+        + '<i class="ti ti-paperclip"></i> ' + esc(m.documento_nome||('documento #'+m.documento_ref_id)) + '</a></div>';
+    }
+    if (m.bloqueador && !m.resolvido_em) {
+      meta += '<div style="margin-top:4px"><span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px">BLOQUEADOR ATIVO</span> '
+        + '<button class="btn-ciclo" style="font-size:10px;padding:2px 8px" onclick="convResolver('+m.id+')">Resolver</button>'
+        + (_podeAutorizarFront() ? ' <button class="btn-ciclo" style="font-size:10px;padding:2px 8px;color:var(--warn)" onclick="convDestravar('+m.id+')">Destravar (emergência)</button>' : '') + '</div>';
+    } else if (m.bloqueador && m.resolvido_em) {
+      meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px"><i class="ti ti-lock-open"></i> bloqueador resolvido</div>';
+    }
+  }
+  return '<div style="margin-bottom:10px">' + _ocMsgCabecalho(m)
+    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
+    + _ocAnexosHtml(m) + meta + '</div>';
+}
+
+let _ocArquivo = null;
+function ocArquivoSelecionado(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  _ocArquivo = f;
+  document.getElementById('oc-anexo-nome').textContent = f.name + ' (' + Math.ceil(f.size/1024) + ' KB)';
+  document.getElementById('oc-anexo-chip').style.display = 'flex';
+}
+function ocRemoverAnexo(){
+  _ocArquivo = null;
+  const fi = document.getElementById('oc-file'); if(fi) fi.value = '';
+  document.getElementById('oc-anexo-chip').style.display = 'none';
+}
+function _ocOficializar(){ const c=document.getElementById('oc-oficializar'); return !!(c&&c.checked); }
+function _ocToastEmail(e){
   if(!e) return;
   if(e.enviados) showToast('📧 E-mail oficial enviado a '+e.enviados+' integrante(s).');
   else if(e.total) showToast('📧 E-mail oficial registrado — '+e.pendentes+' pendente(s) (canal de e-mail não configurado).');
   else showToast('Nenhum integrante com e-mail cadastrado.', true);
 }
-async function ccAbrirConversa(idx){
-  const c = _ccInbox[idx];
-  if(!c) return;
-  let podePostar = true;
-  if(c.tipo === 'mural') podePostar = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
-  await ccAbrirConversaPorId(c.id, _ccTituloComAssunto(c), podePostar, c.tipo, c.projeto_nome);
-  ccCarregarInbox();  // reflete "ativo" na lista
+
+async function ocEnviar(){
+  if(!_ocConvAtiva) return;
+  const ta = document.getElementById('oc-texto');
+  const corpo = ta.value.trim();
+  if(!corpo && !_ocArquivo) return;   // precisa de texto OU anexo
+  const btn = document.getElementById('oc-enviar-btn');
+  btn.disabled = true;
+  try{
+    let d;
+    if(_ocArquivo){
+      const fd = new FormData();
+      fd.append('arquivo', _ocArquivo);
+      if(corpo) fd.append('corpo', corpo);
+      d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/anexos',
+        {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
+    } else if(_ocConvProjeto){
+      // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
+      const payload = {corpo, oficializar_email: _ocOficializar()};
+      const tchk = document.getElementById('conv-transf-chk');
+      const ehTransf = tchk && tchk.checked;
+      if(ehTransf){
+        const fid = document.getElementById('conv-transf-func').value;
+        if(!fid){ showToast('Escolha quem recebe a transferência.', true); return; }
+        payload.natureza = 'transferencia';
+        payload.transferido_para_funcionario_id = parseInt(fid,10);
+        const et = document.getElementById('conv-transf-etapa').value; if(et) payload.etapa_codigo = et;
+        const doc = document.getElementById('conv-transf-doc').value; if(doc) payload.documento_ref_id = parseInt(doc,10);
+        payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
+      }
+      d = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/conversa/mensagens',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify(payload)}).then(r=>r.json());
+      if(d && d.ok && ehTransf){
+        if(tchk) tchk.checked = false; convTransfToggle();
+        if(typeof carregarCiclo === 'function') carregarCiclo();   // tag "com a bola" / estado do ciclo
+      }
+    } else {
+      d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/mensagens',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify({corpo, oficializar_email: _ocOficializar()})}).then(r=>r.json());
+    }
+    if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
+    _ocToastEmail(d.email);
+    ta.value = ''; ocRemoverAnexo();
+    const _of = document.getElementById('oc-oficializar'); if(_of) _of.checked = false;
+    await ocCarregarMsgs();
+    _ocRefrescar();
+  }catch(e){ showToast('Erro de rede ao enviar.', true); }
+  finally{ btn.disabled = false; ta.focus(); }
 }
 
-// ── membros da conversa do projeto (override manual do gerente) ────────────────
-let _ccMembrosOv = null, _membrosConvId = null;
-// convId opcional: do inbox do Orizon Chat (_ccConvAtiva) OU da conversa do projeto (_ccConvProjeto).
-async function ccMembrosAbrir(convId){
-  _membrosConvId = convId || _ccConvAtiva;
-  if(!_membrosConvId) return;
+// ── membros da conversa (painel LATERAL — substitui o popup legado) ───────────
+async function ocMembrosToggle(){
+  const p = document.getElementById('oc-membros');
+  if(!p) return;
+  if(p.style.display !== 'none'){ p.style.display = 'none'; return; }
+  p.style.display = 'block';
+  await ocMembrosCarregar();
+}
+async function ocMembrosCarregar(){
+  const box = document.getElementById('oc-membros-body');
+  if(!box || !_ocConvAtiva) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   let d;
-  try{ d = await fetch('/api/comunicacao/conversas/'+_membrosConvId+'/participantes',{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ showToast('Erro de rede.', true); return; }
-  if(!d.ok){ showToast(d.erro||'Falha.', true); return; }
+  try{ d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/participantes',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
+  if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Falha.')+'</em>'; return; }
   const ORIG = (p)=> p.externo ? '<span style="color:var(--warn);font-weight:700"><i class="ti ti-brand-whatsapp"></i> externo</span>'
                    : p.origem==='manual' ? '<span style="color:var(--accent)">manual</span>'
                    : p.gerencia ? '<span style="color:var(--warn)">gerência</span>'
@@ -12689,236 +12817,120 @@ async function ccMembrosAbrir(convId){
       ? '<i class="ti ti-brand-whatsapp" style="color:var(--warn)"></i> '+esc(p.nome)+(p.contato?' <span style="color:var(--muted);font-size:11px">· '+esc(p.contato)+'</span>':'')
       : '<i class="ti ti-user"></i> '+esc(p.nome);
     const rem = !d.pode_gerir ? ''
-      : (p.externo ? rmBtn('ccMembroExternoRemover('+p.externo_id+')')
-                   : rmBtn('ccMembroGerir('+p.usuario_id+',\'remove\')'));
-    return '<tr><td style="'+td+'">'+nomeCell+'</td>'
-         + '<td style="'+td+'">'+func+'</td>'
-         + '<td style="'+td+'">'+ORIG(p)+'</td>'
-         + (d.pode_gerir ? '<td style="'+td+';text-align:right">'+rem+'</td>' : '')+'</tr>';
+      : (p.externo ? rmBtn('ocMembroExternoRemover('+p.externo_id+')')
+                   : rmBtn('ocMembroGerir('+p.usuario_id+',\'remove\')'));
+    return '<tr><td style="'+td+'">'+nomeCell+'<div style="font-size:11px;color:var(--muted)">'+func+' · '+ORIG(p)+'</div></td>'
+         + (d.pode_gerir ? '<td style="'+td+';text-align:right;vertical-align:top">'+rem+'</td>' : '')+'</tr>';
   }).join('');
   const tabela = (d.participantes||[]).length
     ? '<table style="width:100%;border-collapse:collapse"><thead><tr>'
-      + '<th style="'+th+'">Membro</th><th style="'+th+'">Função</th><th style="'+th+'">Origem</th>'
+      + '<th style="'+th+'">Membro</th>'
       + (d.pode_gerir ? '<th style="'+th+'"></th>' : '') + '</tr></thead><tbody>'+linhas+'</tbody></table>'
     : '<div style="color:var(--muted);font-size:12px">Sem membros ainda.</div>';
   const addBloco = d.pode_gerir
     ? '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">'
       + '<label class="field-label">Adicionar membro</label>'
-      + '<div style="display:flex;gap:8px"><select id="cc-membro-add" style="flex:1;padding:6px 8px"></select>'
-      + '<button class="btn btn-primary btn-sm" onclick="ccMembroAdd()">Adicionar</button></div>'
-      + '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="ccMembroExternoAdd()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button></div>'
+      + '<div style="display:flex;gap:8px"><select id="oc-membro-add" style="flex:1;padding:6px 8px;min-width:0"></select>'
+      + '<button class="btn btn-primary btn-sm" onclick="ocMembroAdd()">Adicionar</button></div>'
+      + '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="ocMembroExternoAdd()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button></div>'
     : '';
-  _ccMembrosOv = _popupOverlay('<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Membros da conversa</h4>'
-    + '<div style="max-height:44vh;overflow-y:auto">'+tabela+'</div>'+addBloco
-    + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Diretor e Gerentes participam por padrão de toda conversa de projeto; podem incluir/excluir membros. Contatos <b style="color:var(--warn)">externos</b> recebem as mensagens por WhatsApp/e-mail (quando o canal estiver configurado).</div>'
-    + '<div style="display:flex;justify-content:flex-end;margin-top:12px"><button data-act="fechar" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Fechar</button></div>');
-  _ccMembrosOv.querySelector('[data-act="fechar"]').onclick = ()=>{ _ccMembrosOv.remove(); _ccMembrosOv=null; };
+  box.innerHTML = tabela + addBloco
+    + '<div style="font-size:11px;color:var(--muted);margin-top:8px">Diretor e Gerentes participam por padrão de toda conversa de projeto; podem incluir/excluir membros. Contatos <b style="color:var(--warn)">externos</b> recebem as mensagens por WhatsApp/e-mail (quando o canal estiver configurado).</div>';
   if(d.pode_gerir){
     try{
       const us = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
-      const sel = document.getElementById('cc-membro-add');
+      const sel = document.getElementById('oc-membro-add');
       if(sel) sel.innerHTML = ((us.usuarios||[]).map(u=>'<option value="'+u.id+'">'+esc(u.nome)+'</option>').join('')) || '<option value="">—</option>';
     }catch(e){}
   }
 }
-async function _ccMembroPost(payload){
+async function _ocMembroPost(payload){
   try{
-    const d = await fetch('/api/comunicacao/conversas/'+_membrosConvId+'/participantes',
+    const d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/participantes',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha.', true); return; }
-    const cid = _membrosConvId;
-    if(_ccMembrosOv){ _ccMembrosOv.remove(); _ccMembrosOv=null; }
-    ccMembrosAbrir(cid);   // reabre com a lista atualizada
+    await ocMembrosCarregar();   // recarrega o painel com a lista atualizada
   }catch(e){ showToast('Erro de rede.', true); }
 }
-async function ccMembroGerir(usuario_id, acao){ await _ccMembroPost({usuario_id, acao}); }
-async function ccMembroExternoRemover(externo_id){ await _ccMembroPost({acao:'remove_externo', externo_id}); }
-async function ccMembroExternoAdd(){
+async function ocMembroGerir(usuario_id, acao){ await _ocMembroPost({usuario_id, acao}); }
+async function ocMembroExternoRemover(externo_id){ await _ocMembroPost({acao:'remove_externo', externo_id}); }
+async function ocMembroExternoAdd(){
   const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'}))||'').trim();
   if(!nome) return;
   const tel = ((await promptPopup('Telefone (WhatsApp) com DDD:', {titulo:'Contato externo — '+nome, placeholder:'ex.: 11 91234-5678', okLabel:'Adicionar'}))||'').trim();
   if(!tel) return;
-  await _ccMembroPost({acao:'add_externo', nome, telefone: tel, meio:'whatsapp'});
+  await _ocMembroPost({acao:'add_externo', nome, telefone: tel, meio:'whatsapp'});
 }
-function ccMembroAdd(){
-  const sel = document.getElementById('cc-membro-add');
+function ocMembroAdd(){
+  const sel = document.getElementById('oc-membro-add');
   const id = sel && sel.value ? parseInt(sel.value,10) : null;
   if(!id){ showToast('Escolha um usuário.', true); return; }
-  ccMembroGerir(id, 'add');
+  ocMembroGerir(id, 'add');
 }
 
-function _ccTituloComAssunto(c){
-  const t = c.titulo || 'Conversa';
-  // Projeto: o título já é "📁 <projeto>"; NÃO repetir o assunto (era a duplicação "Norberto · Norberto").
-  if(c.tipo === 'projeto') return t;
-  const a = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? c.assunto.label : null;
-  return a ? (t + '  ·  ' + a) : t;
-}
-
-async function ccCarregarMsgs(){
-  const box = document.getElementById('cc-msgs');
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  let d;
-  // Conversa de PROJETO lê do endpoint do projeto (traz os campos do ciclo: transferência/bloqueador).
-  const url = _ccConvProjeto
-    ? '/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/conversa'
-    : '/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens';
-  try { d = await fetch(url,{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
-  if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro.')+'</em>'; return; }
-  if(!(d.mensagens||[]).length){ box.innerHTML = '<em style="color:var(--muted);font-size:12px">Sem mensagens — comece a conversar.</em>'; return; }
-  box.innerHTML = d.mensagens.map(m => _ccConvProjeto ? _ccRenderMsgProjeto(m) : _ccRenderMsg(m)).join('');
-  box.scrollTop = box.scrollHeight;
-}
-function _ccAnexosHtml(m){
-  return (m.anexos||[]).map(a=>{
-    if(a.tipo === 'imagem')
-      return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener"><img src="'+a.url+'" alt="'+esc(a.nome)+'" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border)"></a></div>';
-    return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
-  }).join('');
-}
-function _ccMsgCabecalho(m){
-  const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
-  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
-}
-function _ccRenderMsg(m){
-  return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
-    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-    + _ccAnexosHtml(m) + '</div>';
-}
-function _ccRenderMsgProjeto(m){
-  let meta = '';
-  if (m.natureza === 'transferencia') {
-    meta = '<div style="font-size:10px;color:var(--accent);margin-top:3px"><i class="ti ti-arrow-forward-up"></i> transferido para <strong>'
-      + esc(m.transferido_para_nome||'—') + '</strong>'
-      + (m.etapa_codigo ? ' · etapa '+esc(m.etapa_codigo) : ' · sem etapa (geral)') + '</div>';
-    if (m.documento_ref_id) {
-      meta += '<div style="margin-top:4px"><a target="_blank" rel="noopener" href="/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/ciclo/documento/'+m.documento_ref_id
-        + '" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:3px 9px;font-size:10px;color:var(--text);text-decoration:none">'
-        + '<i class="ti ti-paperclip"></i> ' + esc(m.documento_nome||('documento #'+m.documento_ref_id)) + '</a></div>';
-    }
-    if (m.bloqueador && !m.resolvido_em) {
-      meta += '<div style="margin-top:4px"><span style="background:var(--err-soft);color:var(--err);border:1px solid var(--err-line);border-radius:5px;padding:2px 8px;font-size:10px;font-weight:800;letter-spacing:.5px">BLOQUEADOR ATIVO</span> '
-        + '<button class="btn-ciclo" style="font-size:10px;padding:2px 8px" onclick="convResolver('+m.id+')">Resolver</button>'
-        + (_podeAutorizarFront() ? ' <button class="btn-ciclo" style="font-size:10px;padding:2px 8px;color:var(--warn)" onclick="convDestravar('+m.id+')">Destravar (emergência)</button>' : '') + '</div>';
-    } else if (m.bloqueador && m.resolvido_em) {
-      meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px"><i class="ti ti-lock-open"></i> bloqueador resolvido</div>';
-    }
-  }
-  return '<div style="margin-bottom:10px">' + _ccMsgCabecalho(m)
-    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-    + _ccAnexosHtml(m) + meta + '</div>';
-}
-
-let _ccArquivo = null;
-function ccArquivoSelecionado(input){
-  const f = input.files && input.files[0];
-  if(!f) return;
-  _ccArquivo = f;
-  document.getElementById('cc-anexo-nome').textContent = f.name + ' (' + Math.ceil(f.size/1024) + ' KB)';
-  document.getElementById('cc-anexo-chip').style.display = 'flex';
-}
-function ccRemoverAnexo(){
-  _ccArquivo = null;
-  const fi = document.getElementById('cc-file'); if(fi) fi.value = '';
-  document.getElementById('cc-anexo-chip').style.display = 'none';
-}
-
-async function ccEnviar(){
-  if(!_ccConvAtiva) return;
-  const ta = document.getElementById('cc-texto');
-  const corpo = ta.value.trim();
-  if(!corpo && !_ccArquivo) return;   // precisa de texto OU anexo
-  const btn = document.getElementById('cc-enviar-btn');
-  btn.disabled = true;
-  try{
-    let d;
-    if(_ccArquivo){
-      const fd = new FormData();
-      fd.append('arquivo', _ccArquivo);
-      if(corpo) fd.append('corpo', corpo);
-      d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/anexos',
-        {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
-    } else if(_ccConvProjeto){
-      // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
-      const payload = {corpo, oficializar_email: _ccOficializar()};
-      const tchk = document.getElementById('conv-transf-chk');
-      const ehTransf = tchk && tchk.checked;
-      if(ehTransf){
-        const fid = document.getElementById('conv-transf-func').value;
-        if(!fid){ showToast('Escolha quem recebe a transferência.', true); return; }
-        payload.natureza = 'transferencia';
-        payload.transferido_para_funcionario_id = parseInt(fid,10);
-        const et = document.getElementById('conv-transf-etapa').value; if(et) payload.etapa_codigo = et;
-        const doc = document.getElementById('conv-transf-doc').value; if(doc) payload.documento_ref_id = parseInt(doc,10);
-        payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
-      }
-      d = await fetch('/api/projetos/'+encodeURIComponent(_ccConvProjeto)+'/conversa/mensagens',
-        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify(payload)}).then(r=>r.json());
-      if(d && d.ok && ehTransf){
-        if(tchk) tchk.checked = false; convTransfToggle();
-        if(typeof carregarCiclo === 'function') carregarCiclo();   // tag "com a bola" / estado do ciclo
-      }
-    } else {
-      d = await fetch('/api/comunicacao/conversas/'+_ccConvAtiva+'/mensagens',
-        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({corpo, oficializar_email: _ccOficializar()})}).then(r=>r.json());
-    }
-    if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
-    _ccToastEmail(d.email);
-    ta.value = ''; ccRemoverAnexo();
-    const _of = document.getElementById('cc-oficializar'); if(_of) _of.checked = false;
-    await ccCarregarMsgs();
-    ccCarregarInbox();
-  }catch(e){ showToast('Erro de rede ao enviar.', true); }
-  finally{ btn.disabled = false; ta.focus(); }
-}
-
-// ── nova conversa ──────────────────────────────────────────────────────────────
-function ccNovaAbrir(){
-  ['cc-thread','cc-admin','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
-  document.getElementById('cc-nova').style.display = 'block';
-  document.getElementById('cc-nova-aviso').textContent = '';
-  document.getElementById('cc-grupo-nome').value = '';
-  document.getElementById('cc-busca-user').value = '';
-  _ccSel = new Set();
+// ── nova conversa ─────────────────────────────────────────────────────────────
+function ocNovaAbrir(){
+  ocMontarPane('interno');
+  ocMostrarView('oc-nova');
+  document.getElementById('oc-nova-aviso').textContent = '';
+  document.getElementById('oc-grupo-nome').value = '';
+  document.getElementById('oc-busca-user').value = '';
+  _ocSel = new Set();
   // começa em Individual (a "Nova mensagem" abre sempre em direct/grupo, nunca projeto)
-  const rDirect = document.querySelector('input[name=cc-tipo][value=direct]'); if(rDirect) rDirect.checked = true;
-  document.getElementById('cc-projeto-nota').style.display = 'none';
-  document.getElementById('cc-para-bloco').style.display = 'block';
-  document.getElementById('cc-tipo-wrap').style.display = 'flex';
-  ccTipoToggle();
-  ccCarregarUsuarios();
-  ccCarregarAssuntos();
+  const rDirect = document.querySelector('input[name=oc-tipo][value=direct]'); if(rDirect) rDirect.checked = true;
+  document.getElementById('oc-projeto-nota').style.display = 'none';
+  document.getElementById('oc-para-bloco').style.display = 'block';
+  document.getElementById('oc-tipo-wrap').style.display = 'flex';
+  ocTipoToggle();
+  ocCarregarUsuarios();
+  ocCarregarAssuntos();
+}
+function ocNovaFechar(){ ocPaneVoltar(); }
+
+async function ocAddExterno(){
+  const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'})) || '').trim();
+  if(!nome) return;
+  const tel = ((await promptPopup('Telefone (WhatsApp) com DDD:', {titulo:'Contato externo — '+nome, placeholder:'ex.: 11 91234-5678', okLabel:'Adicionar'})) || '').trim();
+  if(!tel) return;
+  _ocExternos.push({nome, telefone: tel, meio:'whatsapp'});
+  ocRenderExternos();
+}
+function ocRemoverExternoSel(i){ _ocExternos.splice(i,1); ocRenderExternos(); }
+function ocRenderExternos(){
+  const box = document.getElementById('oc-externos-chips');
+  if(!box) return;
+  box.innerHTML = _ocExternos.map((e,i)=>
+    '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:14px;padding:2px 8px;font-size:12px">'
+    + '<i class="ti ti-brand-whatsapp"></i> '+esc(e.nome)+' · '+esc(e.telefone)
+    + ' <span onclick="ocRemoverExternoSel('+i+')" style="cursor:pointer;font-weight:800">×</span></span>').join('');
 }
 
-// ── Assuntos (Conversa Livre + projetos + custom) ────────────────────────────
-async function ccCarregarAssuntos(){
-  try { _ccAssuntoCache = await fetch('/api/comunicacao/assuntos',{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ _ccAssuntoCache = {ok:false}; }
-  ccPreencherSelectAssunto(document.getElementById('cc-assunto'), false);
-  ccPreencherSelectAssunto(document.getElementById('cc-debate-assunto'), false);
+// ── Assuntos (Conversa Livre + projetos + custom) ─────────────────────────────
+async function ocCarregarAssuntos(){
+  try { _ocAssuntoCache = await fetch('/api/comunicacao/assuntos',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ _ocAssuntoCache = {ok:false}; }
+  ocPreencherSelectAssunto(document.getElementById('oc-assunto'), false);
+  ocPreencherSelectAssunto(document.getElementById('oc-debate-assunto'), false);
 }
-function ccPreencherSelectAssunto(sel, comTodos){
-  if(!sel || !_ccAssuntoCache || !_ccAssuntoCache.ok){ if(sel) sel.innerHTML='<option value="livre">Conversa Livre</option>'; return; }
+function ocPreencherSelectAssunto(sel, comTodos){
+  if(!sel || !_ocAssuntoCache || !_ocAssuntoCache.ok){ if(sel) sel.innerHTML='<option value="livre">Conversa Livre</option>'; return; }
   const manter = sel.value;
   let html = comTodos ? '<option value="">— todos os assuntos —</option>' : '';
   html += '<option value="livre">Conversa Livre</option>';
-  const projs = _ccAssuntoCache.projetos || [];
+  const projs = _ocAssuntoCache.projetos || [];
   if(projs.length){
     html += '<optgroup label="Projetos">' + projs.map(p=>'<option value="projeto:'+esc(p.nome_safe)+'">'+esc(p.nome||p.nome_safe)+'</option>').join('') + '</optgroup>';
   }
-  const cst = _ccAssuntoCache.assuntos || [];
+  const cst = _ocAssuntoCache.assuntos || [];
   if(cst.length){
     html += '<optgroup label="Assuntos">' + cst.map(a=>'<option value="custom:'+a.id+'">'+esc(a.nome)+'</option>').join('') + '</optgroup>';
   }
   sel.innerHTML = html;
   if(manter) sel.value = manter;
 }
-async function ccCriarAssunto(targetId){
-  targetId = targetId || 'cc-assunto';
+async function ocCriarAssunto(targetId){
+  targetId = targetId || 'oc-assunto';
   const nome = await promptPopup('', {titulo:'Novo assunto', placeholder:'Ex.: Marketing, Pós-venda…', okLabel:'Criar'});
   if(!nome) return;
   try{
@@ -12926,130 +12938,124 @@ async function ccCriarAssunto(targetId){
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify({nome})}).then(r=>r.json());
     if(!d.ok){ showToast(d.erro||'Falha ao criar assunto.', true); return; }
-    await ccCarregarAssuntos();
+    await ocCarregarAssuntos();
     const sel = document.getElementById(targetId);
     if(sel) sel.value = 'custom:' + d.assunto.id;   // já seleciona no seletor de origem
   }catch(e){ showToast('Erro de rede.', true); }
 }
-function _ccParseAssunto(valor){
+function _ocParseAssunto(valor){
   // valor do <select> → campos do payload
   if(!valor || valor === 'livre') return {assunto_tipo:'livre'};
   if(valor.indexOf('projeto:') === 0) return {assunto_tipo:'projeto', projeto_nome: valor.slice(8)};
   if(valor.indexOf('custom:') === 0) return {assunto_tipo:'custom', assunto_id: parseInt(valor.slice(7),10)};
   return {assunto_tipo:'livre'};
 }
-function ccNovaFechar(){
-  document.getElementById('cc-nova').style.display = 'none';
-  if(!_ccConvAtiva){ document.getElementById('cc-vazio').style.display = 'flex'; }
-}
-function _ccTipo(){ return document.querySelector('input[name=cc-tipo]:checked').value; }
-function ccTipoToggle(){
-  const grupo = (_ccTipo() === 'grupo');
+function _ocTipo(){ return document.querySelector('input[name=oc-tipo]:checked').value; }
+function ocTipoToggle(){
+  const grupo = (_ocTipo() === 'grupo');
   // Grupo → navega grupos/projetos existentes (Novo Grupo cria). Individual → form direto de usuário.
-  document.getElementById('cc-grupos-bloco').style.display = grupo ? 'block' : 'none';
-  document.getElementById('cc-form-bloco').style.display   = grupo ? 'none' : 'block';
-  document.getElementById('cc-grupo-nome-wrap').style.display = 'none';
-  document.getElementById('cc-para-hint').textContent = '(selecione um)';
-  document.getElementById('cc-iniciar-btn').textContent = 'Iniciar conversa';
-  _ccSel = new Set(); _ccExternos = []; ccRenderExternos();
-  if(grupo){ const b=document.getElementById('cc-grupos-busca'); if(b) b.value=''; ccGruposRender(); }
-  else ccRenderUsuarios();
+  document.getElementById('oc-grupos-bloco').style.display = grupo ? 'block' : 'none';
+  document.getElementById('oc-form-bloco').style.display   = grupo ? 'none' : 'block';
+  document.getElementById('oc-grupo-nome-wrap').style.display = 'none';
+  document.getElementById('oc-para-hint').textContent = '(selecione um)';
+  document.getElementById('oc-iniciar-btn').textContent = 'Iniciar conversa';
+  _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
+  if(grupo){ const b=document.getElementById('oc-grupos-busca'); if(b) b.value=''; ocGruposRender(); }
+  else ocRenderUsuarios();
 }
-function ccGruposRender(){
-  const box = document.getElementById('cc-grupos-lista');
-  const q = (document.getElementById('cc-grupos-busca').value||'').trim().toLowerCase();
-  const grupos = (_ccInbox||[]).filter(c => (c.tipo==='grupo'||c.tipo==='projeto')
+function ocGruposRender(){
+  const box = document.getElementById('oc-grupos-lista');
+  const q = (document.getElementById('oc-grupos-busca').value||'').trim().toLowerCase();
+  const grupos = (_ocInbox||[]).filter(c => (c.tipo==='grupo'||c.tipo==='projeto')
                                             && (!q || (c.titulo||'').toLowerCase().includes(q)));
   if(!grupos.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum grupo'
     + (q?' com esse nome':'') + '. Crie um em <b>Novo Grupo</b>.</div>'; return; }
   box.innerHTML = grupos.map(c=>{
-    const idx = _ccInbox.indexOf(c);
     const icon = c.tipo==='projeto' ? 'ti-folder' : 'ti-users';
-    return '<div onclick="ccAbrirConversa('+idx+')" style="padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px"'
+    return '<div onclick="ocAbrirConversa('+c.id+')" style="padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
       + '<i class="ti '+icon+'" style="color:var(--muted)"></i><span style="font-size:13px">'+esc(c.titulo||'Grupo')+'</span></div>';
   }).join('');
 }
-function ccNovoGrupoAbrir(){
+function ocNovoGrupoAbrir(){
   // Form de CRIAÇÃO de grupo (nome + seletor de usuários). O radio segue em 'grupo' (multi-seleção).
-  document.getElementById('cc-grupos-bloco').style.display = 'none';
-  document.getElementById('cc-form-bloco').style.display   = 'block';
-  document.getElementById('cc-grupo-nome-wrap').style.display = 'block';
-  document.getElementById('cc-grupo-nome').value = '';
-  document.getElementById('cc-busca-user').value = '';
-  document.getElementById('cc-para-hint').textContent = '(selecione um ou mais)';
-  document.getElementById('cc-iniciar-btn').textContent = 'Criar grupo';
-  document.getElementById('cc-assunto').value = 'livre'; ccAssuntoChange();
-  _ccSel = new Set(); _ccExternos = []; ccRenderExternos();
-  ccRenderUsuarios();
+  document.getElementById('oc-grupos-bloco').style.display = 'none';
+  document.getElementById('oc-form-bloco').style.display   = 'block';
+  document.getElementById('oc-grupo-nome-wrap').style.display = 'block';
+  document.getElementById('oc-grupo-nome').value = '';
+  document.getElementById('oc-busca-user').value = '';
+  document.getElementById('oc-para-hint').textContent = '(selecione um ou mais)';
+  document.getElementById('oc-iniciar-btn').textContent = 'Criar grupo';
+  document.getElementById('oc-assunto').value = 'livre'; ocAssuntoChange();
+  _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
+  ocRenderUsuarios();
 }
-function ccFormVoltar(){
+function ocFormVoltar(){
   // Cancelar no form: criando grupo → volta ao browse; individual → fecha a nova conversa.
-  if(_ccTipo() === 'grupo') ccTipoToggle();
-  else ccNovaFechar();
+  if(_ocTipo() === 'grupo') ocTipoToggle();
+  else ocNovaFechar();
 }
-async function ccCarregarUsuarios(){
-  const box = document.getElementById('cc-users');
+async function ocCarregarUsuarios(){
+  const box = document.getElementById('oc-users');
   box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Carregando…</div>';
   let d;
   try { d = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px">Erro de rede.</div>'; return; }
   if(!d.ok){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px">'+esc(d.erro||'Erro.')+'</div>'; return; }
-  _ccUsuarios = d.usuarios || [];
-  ccRenderUsuarios();
+  _ocUsuarios = d.usuarios || [];
+  ocRenderUsuarios();
 }
-function ccFiltrarUsuarios(){ ccRenderUsuarios(); }
-function ccRenderUsuarios(){
-  const box = document.getElementById('cc-users');
-  const q = (document.getElementById('cc-busca-user').value || '').trim().toLowerCase();
-  const lista = _ccUsuarios.filter(u => !q || (u.nome||'').toLowerCase().includes(q));
+function ocFiltrarUsuarios(){ ocRenderUsuarios(); }
+function ocRenderUsuarios(){
+  const box = document.getElementById('oc-users');
+  const q = (document.getElementById('oc-busca-user').value || '').trim().toLowerCase();
+  const lista = _ocUsuarios.filter(u => !q || (u.nome||'').toLowerCase().includes(q));
   if(!lista.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum usuário.</div>'; return; }
   box.innerHTML = lista.map(u=>{
-    const sel = _ccSel.has(u.id);
+    const sel = _ocSel.has(u.id);
     const fn = u.funcao_nome ? ' <span style="color:var(--muted);font-size:11px">· '+esc(u.funcao_nome)+'</span>' : '';
-    return '<div onclick="ccToggleUser('+u.id+')" style="padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;'
+    return '<div onclick="ocToggleUser('+u.id+')" style="padding:6px 8px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;'
       + (sel ? 'background:var(--surface-2)' : '') + '">'
       + '<i class="ti '+(sel?'ti-circle-check':'ti-circle')+'" style="'+(sel?'color:var(--accent)':'color:var(--muted)')+'"></i>'
       + '<span style="font-size:13px">'+esc(u.nome)+fn+'</span></div>';
   }).join('');
 }
-function ccToggleUser(id){
-  if(_ccTipo() === 'direct'){ _ccSel = new Set([id]); }   // direct: só um
-  else { if(_ccSel.has(id)) _ccSel.delete(id); else _ccSel.add(id); }
-  ccRenderUsuarios();
+function ocToggleUser(id){
+  if(_ocTipo() === 'direct'){ _ocSel = new Set([id]); }   // direct: só um
+  else { if(_ocSel.has(id)) _ocSel.delete(id); else _ocSel.add(id); }
+  ocRenderUsuarios();
 }
-function ccAssuntoChange(){
-  const v = document.getElementById('cc-assunto').value || '';
+function ocAssuntoChange(){
+  const v = document.getElementById('oc-assunto').value || '';
   const ehProj = v.indexOf('projeto:') === 0;
-  document.getElementById('cc-projeto-nota').style.display = ehProj ? 'block' : 'none';
-  document.getElementById('cc-para-bloco').style.display  = ehProj ? 'none' : 'block';
-  document.getElementById('cc-tipo-wrap').style.display   = ehProj ? 'none' : 'flex';
-  document.getElementById('cc-iniciar-btn').textContent   = ehProj ? 'Abrir conversa do projeto' : 'Iniciar conversa';
-  if(ehProj) document.getElementById('cc-grupo-nome-wrap').style.display = 'none';
-  else ccTipoToggle();   // restaura visibilidade dependente do tipo
+  document.getElementById('oc-projeto-nota').style.display = ehProj ? 'block' : 'none';
+  document.getElementById('oc-para-bloco').style.display  = ehProj ? 'none' : 'block';
+  document.getElementById('oc-tipo-wrap').style.display   = ehProj ? 'none' : 'flex';
+  document.getElementById('oc-iniciar-btn').textContent   = ehProj ? 'Abrir conversa do projeto' : 'Iniciar conversa';
+  if(ehProj) document.getElementById('oc-grupo-nome-wrap').style.display = 'none';
+  else ocTipoToggle();   // restaura visibilidade dependente do tipo
 }
 
-async function ccCriar(){
-  const aviso = document.getElementById('cc-nova-aviso'); aviso.textContent = '';
-  const assVal = document.getElementById('cc-assunto').value || '';
+async function ocCriar(){
+  const aviso = document.getElementById('oc-nova-aviso'); aviso.textContent = '';
+  const assVal = document.getElementById('oc-assunto').value || '';
   if(assVal.indexOf('projeto:') === 0){         // assunto=projeto → abre a conversa do projeto
     try{
       const d = await fetch('/api/comunicacao/conversas',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
          body: JSON.stringify({assunto_tipo:'projeto', projeto_nome: assVal.slice(8)})}).then(r=>r.json());
       if(!d.ok){ aviso.textContent = d.erro || 'Falha ao abrir.'; return; }
-      document.getElementById('cc-nova').style.display = 'none';
-      await ccCarregarInbox();
-      const idx = _ccInbox.findIndex(c => c.id === d.conversa.id);
-      if(idx >= 0) ccAbrirConversa(idx);
-      else await ccAbrirConversaPorId(d.conversa.id, d.conversa.titulo, true, 'projeto', d.conversa.projeto_nome || assVal.slice(8));
+      await _ocInboxAtualizar(); _ocRefrescar();
+      const c = _ocInbox.find(x => x.id === d.conversa.id);
+      if(c) await ocAbrirConversa(c.id);
+      else await ocAbrirConversaPorId(d.conversa.id, d.conversa.titulo, true, 'projeto', d.conversa.projeto_nome || assVal.slice(8));
     }catch(e){ aviso.textContent = 'Erro de rede.'; }
     return;
   }
-  const tipo = _ccTipo();
-  const ids = [..._ccSel];
-  if(!ids.length && !_ccExternos.length){ aviso.textContent = 'Selecione ao menos um usuário ou contato externo.'; return; }
-  if(tipo === 'grupo' && !document.getElementById('cc-grupo-nome').value.trim()){
+  const tipo = _ocTipo();
+  const ids = [..._ocSel];
+  if(!ids.length && !_ocExternos.length){ aviso.textContent = 'Selecione ao menos um usuário ou contato externo.'; return; }
+  if(tipo === 'grupo' && !document.getElementById('oc-grupo-nome').value.trim()){
     aviso.textContent = 'Dê um nome ao grupo.'; return;
   }
   // Lembrete de assunto: conversa sem assunto (Conversa Livre) pede confirmação.
@@ -13058,35 +13064,31 @@ async function ccCriar(){
         {titulo:'Nova conversa', okLabel:'Continuar', cancelLabel:'Voltar'}))) return;
   }
   const payload = {tipo, participante_ids: ids};
-  if(_ccExternos.length) payload.externos = _ccExternos;
-  Object.assign(payload, _ccParseAssunto(assVal));
-  if(tipo === 'grupo') payload.titulo = document.getElementById('cc-grupo-nome').value.trim();
+  if(_ocExternos.length) payload.externos = _ocExternos;
+  Object.assign(payload, _ocParseAssunto(assVal));
+  if(tipo === 'grupo') payload.titulo = document.getElementById('oc-grupo-nome').value.trim();
   try{
     const d = await fetch('/api/comunicacao/conversas',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ aviso.textContent = d.erro || 'Falha ao criar.'; return; }
-    document.getElementById('cc-nova').style.display = 'none';
-    await ccCarregarInbox();
+    await _ocInboxAtualizar(); _ocRefrescar();
     // abre a conversa recém-criada
-    const idx = _ccInbox.findIndex(c => c.id === d.conversa.id);
-    if(idx >= 0) ccAbrirConversa(idx);
-    else { _ccConvAtiva = d.conversa.id; document.getElementById('cc-vazio').style.display='none';
-           document.getElementById('cc-thread').style.display='flex';
-           document.getElementById('cc-thread-titulo').textContent = d.conversa.titulo || 'Conversa';
-           await ccCarregarMsgs(); }
+    const c = _ocInbox.find(x => x.id === d.conversa.id);
+    if(c) await ocAbrirConversa(c.id);
+    else await ocAbrirConversaPorId(d.conversa.id, d.conversa.titulo || 'Conversa', true, tipo);
   }catch(e){ aviso.textContent = 'Erro de rede.'; }
 }
 
 // ── painel de administração (ver_todas_conversas) ─────────────────────────────
-let _ccAdminInbox = [];
-async function ccAdminAbrir(){
-  ['cc-nova','cc-thread','cc-forum','cc-vazio'].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display='none'; });
-  document.getElementById('cc-admin').style.display = 'flex';
+let _ocAdminInbox = [];
+async function ocAdminAbrir(){
+  ocMontarPane('interno');
+  ocMostrarView('oc-admin');
   // filtros: assunto (com "todos") + participante (com "todos")
-  if(!_ccAssuntoCache) await ccCarregarAssuntos();
-  ccPreencherSelectAssunto(document.getElementById('cc-adm-assunto'), true);
-  const selP = document.getElementById('cc-adm-part');
+  if(!_ocAssuntoCache) await ocCarregarAssuntos();
+  ocPreencherSelectAssunto(document.getElementById('oc-adm-assunto'), true);
+  const selP = document.getElementById('oc-adm-part');
   if(selP && selP.options.length <= 1){
     try{
       const d = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
@@ -13094,21 +13096,19 @@ async function ccAdminAbrir(){
         + ((d.usuarios||[]).map(u=>'<option value="'+u.id+'">'+esc(u.nome)+'</option>').join(''));
     }catch(e){ selP.innerHTML = '<option value="">— todos —</option>'; }
   }
-  await ccAdminCarregar();
+  await ocAdminCarregar();
 }
-function ccAdminFechar(){
-  document.getElementById('cc-admin').style.display = 'none';
-  document.getElementById('cc-thread').style.display = 'none';
-  document.getElementById('cc-vazio').style.display = 'flex';
-  _ccAdminView = false; _ccConvAtiva = null;
+function ocAdminFechar(){
+  _ocAdminView = false;
+  ocPaneVoltar();
 }
-async function ccAdminCarregar(){
-  const box = document.getElementById('cc-adm-lista');
+async function ocAdminCarregar(){
+  const box = document.getElementById('oc-adm-lista');
   box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
-  const a = _ccParseAssunto(document.getElementById('cc-adm-assunto').value);
-  const part = document.getElementById('cc-adm-part').value;
+  const a = _ocParseAssunto(document.getElementById('oc-adm-assunto').value);
+  const part = document.getElementById('oc-adm-part').value;
   const qp = [];
-  if(a.assunto_tipo && document.getElementById('cc-adm-assunto').value){ qp.push('assunto_tipo='+encodeURIComponent(a.assunto_tipo));
+  if(a.assunto_tipo && document.getElementById('oc-adm-assunto').value){ qp.push('assunto_tipo='+encodeURIComponent(a.assunto_tipo));
     const ref = a.projeto_nome || a.assunto_id;
     if(ref) qp.push('assunto_ref='+encodeURIComponent(ref)); }
   if(part) qp.push('participante='+encodeURIComponent(part));
@@ -13116,12 +13116,12 @@ async function ccAdminCarregar(){
   try{ d = await fetch('/api/comunicacao/admin/conversas'+(qp.length?('?'+qp.join('&')):''),{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
   if(!d.ok){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
-  _ccAdminInbox = d.conversas || [];
-  if(!_ccAdminInbox.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>'; return; }
-  box.innerHTML = _ccAdminInbox.map((c,i)=>{
+  _ocAdminInbox = d.conversas || [];
+  if(!_ocAdminInbox.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>'; return; }
+  box.innerHTML = _ocAdminInbox.map((c,i)=>{
     const icon = c.tipo==='grupo'?'ti-users':'ti-user';
     const seg = (c.assunto && c.assunto.label) ? c.assunto.label : 'Conversa Livre';
-    return '<div onclick="ccAdminAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
+    return '<div onclick="ocAdminAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
       + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')+'</div>'
       + '<div style="font-size:11px;color:var(--muted)">'+esc((c.participantes||[]).join(', '))+'  ·  <span style="color:var(--accent)">'+esc(seg)+'</span></div>'
@@ -13129,52 +13129,46 @@ async function ccAdminCarregar(){
       + '</div>';
   }).join('');
 }
-async function ccAdminAbrirConversa(idx){
-  const c = _ccAdminInbox[idx];
+async function ocAdminAbrirConversa(idx){
+  const c = _ocAdminInbox[idx];
   if(!c) return;
-  _ccConvAtiva = c.id; _ccAdminView = true;
-  document.getElementById('cc-admin').style.display = 'none';
-  document.getElementById('cc-vazio').style.display = 'none';
-  document.getElementById('cc-compositor').style.display = 'none';   // oversight: leitura apenas
-  document.getElementById('cc-thread').style.display = 'flex';
   const seg = (c.assunto && c.assunto.label) ? ('  ·  '+c.assunto.label) : '';
-  document.getElementById('cc-thread-titulo').textContent = (c.titulo||'Conversa') + seg + '  (somente leitura)';
-  await ccCarregarMsgs();
+  await ocAbrirConversaPorId(c.id, (c.titulo||'Conversa') + seg, false, c.tipo);   // oversight: leitura apenas
+  _ocAdminView = true;
 }
 
-// ── Fóruns (Fatia 4): debates com assunto + busca ─────────────────────────────
-let _ccForumEscopo = 'loja';
-let _ccForumDebates = [];
-let _ccForumTimer = null;
-async function ccForumAbrir(escopo){
-  _ccForumEscopo = escopo;
-  ccNovaFechar();
-  ['cc-thread','cc-admin','cc-vazio'].forEach(id=>document.getElementById(id).style.display='none');
-  document.getElementById('cc-forum').style.display = 'flex';
-  document.getElementById('cc-forum-titulo').innerHTML = escopo === 'orizon'
+// ── Fóruns: debates com assunto + busca ───────────────────────────────────────
+let _ocForumEscopo = 'loja';
+let _ocForumDebates = [];
+let _ocForumTimer = null;
+async function ocForumAbrir(escopo){
+  _ocForumEscopo = escopo;
+  ocMontarPane('interno');
+  ocMostrarView('oc-forum');
+  document.getElementById('oc-forum-titulo').innerHTML = escopo === 'orizon'
     ? '<i class="ti ti-world"></i> Fórum Orizon <span style="font-weight:400;color:var(--muted);font-size:12px">· entre lojas da rede</span>'
     : '<i class="ti ti-building-store"></i> Fórum da Loja';
-  document.getElementById('cc-novo-debate').style.display = 'none';
-  document.getElementById('cc-forum-busca').value = '';
+  document.getElementById('oc-novo-debate').style.display = 'none';
+  document.getElementById('oc-forum-busca').value = '';
   // assunto (projeto/custom) só no fórum da loja; no Orizon o título organiza
-  document.getElementById('cc-debate-assunto-wrap').style.display = (escopo === 'orizon') ? 'none' : 'block';
-  await ccForumCarregar();
+  document.getElementById('oc-debate-assunto-wrap').style.display = (escopo === 'orizon') ? 'none' : 'block';
+  await ocForumCarregar();
 }
-function ccForumBuscarDebounce(){ clearTimeout(_ccForumTimer); _ccForumTimer = setTimeout(ccForumCarregar, 300); }
-async function ccForumCarregar(){
-  const box = document.getElementById('cc-forum-lista');
+function ocForumBuscarDebounce(){ clearTimeout(_ocForumTimer); _ocForumTimer = setTimeout(ocForumCarregar, 300); }
+async function ocForumCarregar(){
+  const box = document.getElementById('oc-forum-lista');
   box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
-  const q = (document.getElementById('cc-forum-busca').value || '').trim();
+  const q = (document.getElementById('oc-forum-busca').value || '').trim();
   let d;
-  try{ d = await fetch('/api/comunicacao/forum?escopo='+_ccForumEscopo+(q?('&q='+encodeURIComponent(q)):''),{credentials:'same-origin'}).then(r=>r.json()); }
+  try{ d = await fetch('/api/comunicacao/forum?escopo='+_ocForumEscopo+(q?('&q='+encodeURIComponent(q)):''),{credentials:'same-origin'}).then(r=>r.json()); }
   catch(e){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
   if(!d.ok){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
-  _ccForumDebates = d.debates || [];
-  if(!_ccForumDebates.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum debate ainda — crie o primeiro.</div>'; return; }
-  box.innerHTML = _ccForumDebates.map((c,i)=>{
+  _ocForumDebates = d.debates || [];
+  if(!_ocForumDebates.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum debate ainda — crie o primeiro.</div>'; return; }
+  box.innerHTML = _ocForumDebates.map((c,i)=>{
     const seg = (c.assunto && c.assunto.label) ? c.assunto.label : '—';
     const loja = c.loja_nome ? ' · '+esc(c.loja_nome) : '';
-    return '<div onclick="ccAbrirDebate('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
+    return '<div onclick="ocAbrirDebate('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
       + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
       + '<div style="font-weight:700;font-size:13px"><i class="ti ti-message-circle"></i> '+esc(c.titulo||'Debate')
       + ' <span style="float:right;color:var(--muted);font-size:11px;font-weight:400">'+(c.n_mensagens||0)+' msg</span></div>'
@@ -13183,51 +13177,51 @@ async function ccForumCarregar(){
       + '</div>';
   }).join('');
 }
-function ccNovoDebateAbrir(){
-  const box = document.getElementById('cc-novo-debate');
+function ocNovoDebateAbrir(){
+  const box = document.getElementById('oc-novo-debate');
   box.style.display = box.style.display === 'none' ? 'block' : 'none';
-  document.getElementById('cc-debate-aviso').textContent = '';
-  document.getElementById('cc-debate-titulo').value = '';
-  if(_ccForumEscopo !== 'orizon' && !_ccAssuntoCache) ccCarregarAssuntos();
+  document.getElementById('oc-debate-aviso').textContent = '';
+  document.getElementById('oc-debate-titulo').value = '';
+  if(_ocForumEscopo !== 'orizon' && !_ocAssuntoCache) ocCarregarAssuntos();
 }
-async function ccNovoDebateCriar(){
-  const aviso = document.getElementById('cc-debate-aviso'); aviso.textContent = '';
-  const titulo = document.getElementById('cc-debate-titulo').value.trim();
+async function ocNovoDebateCriar(){
+  const aviso = document.getElementById('oc-debate-aviso'); aviso.textContent = '';
+  const titulo = document.getElementById('oc-debate-titulo').value.trim();
   if(!titulo){ aviso.textContent = 'Dê um título ao debate.'; return; }
-  const payload = {escopo:_ccForumEscopo, titulo};
-  if(_ccForumEscopo !== 'orizon'){
-    Object.assign(payload, _ccParseAssunto(document.getElementById('cc-debate-assunto').value));
+  const payload = {escopo:_ocForumEscopo, titulo};
+  if(_ocForumEscopo !== 'orizon'){
+    Object.assign(payload, _ocParseAssunto(document.getElementById('oc-debate-assunto').value));
   }
   try{
     const d = await fetch('/api/comunicacao/forum',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify(payload)}).then(r=>r.json());
     if(!d.ok){ aviso.textContent = d.erro || 'Falha ao criar.'; return; }
-    document.getElementById('cc-novo-debate').style.display = 'none';
-    await ccForumCarregar();
-    ccAbrirConversaPorId(d.debate.id, d.debate.titulo, true);   // abre o debate criado
+    document.getElementById('oc-novo-debate').style.display = 'none';
+    await ocForumCarregar();
+    ocAbrirConversaPorId(d.debate.id, d.debate.titulo, true);   // abre o debate criado
   }catch(e){ aviso.textContent = 'Erro de rede.'; }
 }
-function ccAbrirDebate(idx){
-  const c = _ccForumDebates[idx];
+function ocAbrirDebate(idx){
+  const c = _ocForumDebates[idx];
   if(!c) return;
-  ccAbrirConversaPorId(c.id, c.titulo, true);
+  ocAbrirConversaPorId(c.id, c.titulo, true);
 }
 
 async function convResolver(mid){
-  const proj = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
+  const proj = _ocConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
   if(!proj) return;
   try{
     const d = await fetch(`/api/projetos/${encodeURIComponent(proj)}/conversa/mensagens/${mid}/resolver`,
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
     if(!d.ok){ await avisoPopup(d.erro||'Falha ao resolver.', {titulo:'Resolver bloqueador'}); return; }
     showToast('Bloqueador resolvido.');
-    await ccCarregarMsgs(); carregarCiclo();
+    await ocCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Resolver bloqueador'}); }
 }
 
 async function convDestravar(mid){
-  const proj = _ccConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
+  const proj = _ocConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
   if(!proj) return;
   const motivo = (prompt('Motivo do destravamento de emergência (obrigatório):') || '').trim();
   if(!motivo) return;
@@ -13240,9 +13234,10 @@ async function convDestravar(mid){
        body: JSON.stringify({motivo, login: cred.login || '', senha: cred.senha || ''})}).then(r=>r.json());
     if(!d.ok){ await avisoPopup(d.erro||'Falha ao destravar.', {titulo:'Destravar (emergência)'}); return; }
     showToast('Bloqueador destravado pela gerência (auditado).');
-    await ccCarregarMsgs(); carregarCiclo();
+    await ocCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
 }
+// ═══ CHAT: fim do bloco JS do painel de conversa ═══
 
 // ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ─────
 let _contatosConfOnDone = null;

@@ -34,7 +34,12 @@ MODULOS = {
                     # Chat do Orizon, Fatia 1 (spec _geral/2026-07-25): comunicação transversal
                     # entre etapas/equipes — núcleo por ora (sempre ligado); se um dia virar
                     # desligável por loja, promove a domínio.
-                    "arquivos": ["mod_chat.py", "mod_chat_externo.py"],
+                    # PACOTE desde 2026-07-31 (spec módulo destacável): o código vive em chat/
+                    # (core/externo/triagem/ports); mod_chat.py e mod_chat_externo.py na raiz são
+                    # SHIMS de compatibilidade que fazem o bootstrap das portas (chat_host.py =
+                    # adaptadores do host; direção permitida host→chat, nunca o contrário —
+                    # ratchet test_chat_pacote_nao_importa_host).
+                    "arquivos": ["chat", "mod_chat.py", "mod_chat_externo.py", "chat_host.py"],
                     "tabelas": ["conversas", "conversa_mensagens",
                                 "conversa_participantes", # Central de Comunicação (Fatia 1, 2026-07-27)
                                 "conversa_participantes_externos", # Orizon Chat externo (2026-07-28)
@@ -46,7 +51,8 @@ MODULOS = {
                                 "mensagem_anexos",        # Orizon Chat anexos (Fatia 5, 2026-07-27)
                                 "usuario_presenca",       # Orizon Chat ponte WhatsApp (Fatia 6, 2026-07-27)
                                 "contato_confirmacoes",   # decisão 13 (mini-frente 2026-07-25)
-                                "envios_externos"],       # canais externos (Fatias 6-7, 2026-07-26)
+                                "envios_externos",        # canais externos (Fatias 6-7, 2026-07-26)
+                                "triagem_entradas"],      # fila de triagem humana (spec 2026-07-31)
                     "rotas": []},
     # ── DOMÍNIOS ───────────────────────────────────────────────────────────
     "captacao":    {"camada": "dominio", "depende_de": [], "rotulo": "Captação", "faixa": "vendas",

@@ -41,6 +41,15 @@ def _reset_etapas(app_db, proj, codigos):
     `app_db` são module-scoped → o estado vaza entre testes do mesmo arquivo."""
     db = app_db.get_session()
     for cod in codigos:
+        # As faixas de evento da conversa (spec chat 2026-07-31) referenciam o documento por FK
+        # (documento_ref_id) — desreferencia antes do delete (produção é append-only; o delete
+        # é só desta limpeza de teste).
+        ids = [d.id for d in db.query(app_db.CicloDocumento)
+               .filter_by(projeto_nome=proj, etapa_codigo=cod).all()]
+        if ids:
+            (db.query(app_db.ConversaMensagem)
+               .filter(app_db.ConversaMensagem.documento_ref_id.in_(ids))
+               .update({"documento_ref_id": None}, synchronize_session=False))
         db.query(app_db.CicloDocumento).filter_by(projeto_nome=proj, etapa_codigo=cod).delete()
         db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo=cod).delete()
     db.commit(); db.close()

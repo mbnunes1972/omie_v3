@@ -84,6 +84,14 @@ def _reset15(app_db, proj):
     # tem que apagar o FILHO (documento_fiscal) antes do PAI (ciclo_documentos), senão viola FK
     # (Postgres valida; SQLite não, por isso a ordem errada nunca deu erro até agora).
     db.query(app_db.DocumentoFiscal).filter_by(projeto_nome=proj).delete()
+    # Faixas de evento da conversa (spec chat 2026-07-31) também seguram o doc por FK
+    # (documento_ref_id) — desreferencia antes (delete é limpeza de teste; produção é append-only).
+    ids = [d.id for d in db.query(app_db.CicloDocumento)
+           .filter_by(projeto_nome=proj, etapa_codigo="15").all()]
+    if ids:
+        (db.query(app_db.ConversaMensagem)
+           .filter(app_db.ConversaMensagem.documento_ref_id.in_(ids))
+           .update({"documento_ref_id": None}, synchronize_session=False))
     db.query(app_db.CicloDocumento).filter_by(projeto_nome=proj, etapa_codigo="15").delete()
     db.commit(); db.close()
 

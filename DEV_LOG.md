@@ -1346,7 +1346,8 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > eliminação do modal legado (`2b3a41c`), fila de triagem persistente (`7f2d8ed`), eventos do
 > ciclo na timeline (`ae03a28`), pacote `chat/` com portas + ratchet (`0c86f9b`) + este docs.
 > Suíte completa **1632 verde** (era 1613). **Vera: APTA para promover à VPS** (zero bloqueante;
-> relatório na Sessão 130). **MCP re-ingerido.**
+> relatório na Sessão 130). **Re-ingestão MCP PENDENTE** — o container Neo4j (docker compose do
+> `../mcp-orizon`) não está de pé nesta máquina; ao subir, rodar `POST localhost:8767/ingest/all`.
 >
 > **Pendentes:** (a) promoção à **VPS B** — avisar o Claude (Cowork): tag `v2026.MM.DD-homolog` +
 > deploy validado (`orizon-b.service`) + E2E com WhatsApp real (número desconhecido → fila de

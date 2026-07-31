@@ -1339,6 +1339,30 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
   ainda testa 409, agora com CPF válido). CPFs de teste válidos: `111.444.777-35`, `390.533.447-05`; CNPJ `11.222.333/0001-81`.
 - **Pendente:** merge desta branch na `main` + re-ingerir MCP.
 
+## ⏸️ ESTADO ATUAL (2026-07-31) — retomar aqui
+
+> **✅ FRENTE ORIZON CHAT (orientação `.claude/orientacao-orizon-chat-v2.md`) FECHADA na `main`
+> local (2026-07-31)** — ver **Sessão 130**. Cinco commits: specs (`47444f9`), thread full-page +
+> eliminação do modal legado (`2b3a41c`), fila de triagem persistente (`7f2d8ed`), eventos do
+> ciclo na timeline (`ae03a28`), pacote `chat/` com portas + ratchet (`0c86f9b`) + este docs.
+> Suíte completa **1632 verde** (era 1613). **Vera: APTA para promover à VPS** (zero bloqueante;
+> relatório na Sessão 130). **MCP re-ingerido.**
+>
+> **Pendentes:** (a) promoção à **VPS B** — avisar o Claude (Cowork): tag `v2026.MM.DD-homolog` +
+> deploy validado (`orizon-b.service`) + E2E com WhatsApp real (número desconhecido → fila de
+> triagem → vínculo → transição de fase → grupo evoluindo → documento encaminhado); VPS B →
+> produção segue gated por OK do usuário. (b) **F3/F4/F6** do plano 2026-07-28 seguem pendentes
+> (envio por template — inclusive o ramo fora-da-janela do encaminhamento de documento —,
+> reengajamento RF-17, fluxo da triagem automática RF-08/09; o campo `segmento_sugerido` da fila
+> já espera a F6). (c) Shims `mod_chat.py`/`mod_chat_externo.py` na raiz: remoção é churn
+> mecânico de ~15 imports em `main.py` + testes; o ratchet `test_chat_pacote_nao_importa_host`
+> já protege a direção. (d) `datetime.utcnow()` deprecado (achado 🟡 da Vera): a modernização
+> tem de ser VARREDURA ÚNICA do codebase — trocar pontualmente para `now(UTC)` mistura datetime
+> aware com o schema naive e QUEBRA comparações; não corrigir aos poucos. (e) `.gitignore`
+> `COMUNICACAO/` sem âncora engole `docs/superpowers/specs/comunicacao/` (a spec
+> 2026-07-28-orizon-chat-revisao-design.md está FORA do git) — decidir trocar para
+> `/COMUNICACAO/`; as specs novas foram para `_geral/` por isso.
+
 ## ⏸️ ESTADO ATUAL (2026-07-29) — retomar aqui
 
 > **🚀 DEPLOY VPS A (2026-07-29, `90755c2`):** frente **Orizon Chat/Meta (UI-first)** promovida à **VPS A**
@@ -2622,6 +2646,70 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 130 — Frente Orizon Chat 2026-07-31: triagem persistente, full-page canônico, eventos do ciclo e pacote destacável
+
+**Entrada:** orientação `.claude/orientacao-orizon-chat-v2.md` (Claude Cowork, com teste ao vivo no
+sandbox e no HuntPilot real), executada na ordem da seção 6: leitura completa → 3 specs → Parte 5 →
+Parte 2 → Parte 3 → Parte 4 → fechamento. Specs novas (em `docs/superpowers/specs/_geral/`, porque o
+`.gitignore` engole `specs/comunicacao/` — ver ESTADO ATUAL): `2026-07-31-triagem-pipeline-entrada-design.md`,
+`2026-07-31-chat-fullpage-unificacao-eliminacao-legado-design.md`,
+`2026-07-31-chat-modulo-destacavel-portas-design.md`.
+
+**Parte 5 (`2b3a41c`) — o modal morreu; um caminho só por ação.** Atendimentos e Chat Interno
+viraram duas colunas (lista · thread, padrão HuntPilot) com painel de conversa ÚNICO (`#oc-pane`)
+que migra entre as telas (`ocMontarPane` — ids não duplicam). Thread, nova conversa, fórum,
+administração, membros (painel LATERAL — sai o `_popupOverlay`), transferência/bloqueador, anexo e
+oficializar portados do modal (família `cc*` → `oc*`). As 3 portas redirecionadas: menu lateral →
+`ocAbrirPagina('atend')`; botão do projeto → `abrirConversaProjeto` abre o full-page PRESERVANDO
+`_alinharLojaAoProjeto` (tenancy, não cosmética); itens das listas → thread na página. Número
+conectado da loja no header do thread (best-effort, gerência). Removidos `#modal-central-com`,
+família `cc*` e `abrirCentralComunicacao` — busca exaustiva, zero referências vivas (a família
+`cc*` do CARTÃO DE CRÉDITO da Negociação é homônima não relacionada — não confundir em greps).
+Badge/heartbeat viraram `ocPollBadge`/`ocAtualizarBadgeTotal`.
+
+**Parte 2 (`7f2d8ed`) — mensagem nenhuma é descartada em silêncio.** Tabela `triagem_entradas`
+(model `TriagemEntrada`): idempotente por `id_externo` (wamid — a Meta reentrega 5-6x, comprovado),
+candidatos em JSON, `segmento_sugerido` esperando a F6. `processar_entrada` PERSISTE o que não
+roteia (antes o status 'triagem' morria sem rastro) e deduplica reentrega de roteada E de
+enfileirada. `_rotear_com_candidatos`: a lista de candidatas não se perde; conversa de projeto
+CONCLUÍDO não reabre sozinha (vira candidata → decisão humana); reply citado segue determinístico.
+`_loja_da_entrada`: cliente cadastrado → loja dele; `NumeroConectado` único → loja do número;
+fallback primeira loja. Resolução na F7 (aba Novos, itens de triagem antes dos não-lidos): vincular
+(posta a mensagem original + `EnvioExterno` com o wamid + evento `triagem_vinculo`) · criar (lead
+novo: Cliente + grupo com externo — a próxima mensagem do número roteia sozinha) · descartar
+(registro auditável). Endpoints `GET /api/comunicacao/triagem/fila` e `POST .../fila/<id>/resolver`
+(404 cross-loja); webhook agora LOGA o destino de cada entrada. `tests/test_triagem_fila.py` (+12,
+os 7 casos obrigatórios da spec).
+
+**Parte 3 (`ae03a28`) — o diferencial é o ciclo.** Coluna `conversa_mensagens.evento` (faixa de
+sistema na timeline; render `oc-evento`). `sincronizar_grupo_da_fase`: transição re-deriva
+equipe∪gerência e cada entrada/saída vira evento ("Fulano (Montador) entrou no acompanhamento —
+fase Montagem"); override manual segue vencendo; gancho best-effort no PATCH da etapa.
+`registrar_documento_na_conversa`: upload no ciclo vira evento `documento_registrado` com
+`documento_ref_id` (gancho `_chat_registrar_documento` nos 4 pontos de criação).
+`encaminhar_documento_externo`: documento segue por WhatsApp aos externos DENTRO da janela como
+mídia (upload `/media` + `type=document`, config-gated); fora → erro claro pedindo template (ramo
+da F3); endpoint + botão no thread. Teste que TRAVA o roteamento pós-transição (responsável muda →
+mesma conversa; janela intocada). `tests/test_chat_ciclo_eventos.py` (+6).
+
+**Parte 4 (`0c86f9b`) — módulo destacável.** `mod_chat.py`→`chat/core.py`,
+`mod_chat_externo.py`→`chat/externo.py` (git mv), triagem → `chat/triagem.py`. `chat/ports.py` =
+contrato host↔chat (porta ativa `identity.pode`; tenancy/assunto/storage/notify reservadas;
+EventosPort pub/sub in-process best-effort). `auth.perfis` saiu do pacote (entra pela porta);
+`chat_host.py` (raiz) registra os adaptadores; shims na raiz fazem bootstrap + `sys.modules` (zero
+churn nos ~15 imports). RATCHET `test_chat_pacote_nao_importa_host`: dentro de `chat/` só
+stdlib/libs + `database` (schema compartilhado). `modulos.py` atualizado (pacote + tabela nova).
+Efeito colateral honesto: as limpezas dos e2e de ciclo/NF-e deletavam `ciclo_documentos` que os
+eventos novos agora seguram por FK — cleanups passaram a desreferenciar antes (produção é
+append-only; 23 falhas → 0).
+
+**Fechamento:** suíte completa **1632 passed** (era 1613; +19 da frente). **Vera** auditou
+(duplicidade, DOM, sintaxe `node --check`, tokens, app vivo com login seed, tenancy estática,
+suíte-alvo): **APTA para promover à VPS**, zero 🔴; 🟡 = este DEV_LOG + re-ingestão (quitados) e o
+`utcnow()` deprecado (deliberadamente NÃO corrigido pontualmente — varredura única, ver ESTADO
+ATUAL). Deploy: **avisar o Cowork** (tag homolog + deploy VPS B + E2E WhatsApp real); produção
+segue gated.
 
 ## Sessão 129 — Orizon Chat/Meta (UI-first): Números, Consumo, Atendimentos (F7) e Chat Interno full-page
 Continuação da frente **Revisão do Orizon Chat — Meta/WhatsApp** (plano

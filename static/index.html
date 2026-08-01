@@ -3052,6 +3052,8 @@ async function _verificarLimiteDescTotal(){
 // Persiste no servidor os descontos individuais (EP-07) do orçamento ativo
 async function _persistirDescontosOrc(){
   if(!_orcamentoAtivoId) return;
+  // Mesmo guard do salvarValorNegociado: orçamento contratado é travado — não bater na rede.
+  if (typeof _negSaveTravado === 'function' && _negSaveTravado()) return;
   const lote = {};
   Object.keys(_descIndividual).forEach(k => {
     if(k.startsWith('ep07_')) lote[k.slice(5)] = _descIndividual[k];
@@ -16836,8 +16838,18 @@ function _renderAssinaturas(lista) {
 
 // ── Aprovação de Orçamento (novo fluxo — contrato) ───────────────────────────
 
+// Guard do auto-save (achado da Vera na Sessão 132): abrir projeto com contrato assinado
+// disparava o auto-save do preview e o backend rejeitava com 403 recorrente (orçamento
+// contratado é travado). Decisão pela MESMA fonte do lock da negociação pós-assinatura:
+// _contratoAssinado, com a exceção do orçamento de COMPLEMENTO de PE (segue negociável).
+function _negSaveTravado() {
+  return (typeof _contratoAssinado !== 'undefined') && _contratoAssinado
+      && !(typeof _orcamentoComplementoAtivo === 'function' && _orcamentoComplementoAtivo());
+}
+
 async function salvarValorNegociado() {
   if (!_orcamentoAtivoId) return { ok: false, erro: 'Nenhum orçamento ativo' };
+  if (_negSaveTravado()) return { ok: false, erro: 'Orçamento travado pós-contrato — auto-save ignorado' };
   const elTotal   = document.getElementById('neg-total-final');
   const elAvista  = document.getElementById('neg-avista');
   const elPag     = document.getElementById('neg-pagamento');

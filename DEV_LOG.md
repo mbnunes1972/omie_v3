@@ -2681,6 +2681,17 @@ camada de ações (formulário só-grupo, sem rádios Individual/Grupo); **busca
 canais, cada um com seu público (Interno: conversas+usuários; Atendimentos: título/projeto/prévia
 + triagem por remetente/texto).
 
+**Rodada 3 (mesmo dia):** **segmento virou SELETOR** — coluna `Conversa.segmento` (manual vence o
+derivado; `_atendimento_meta` respeita), seletor no header do thread p/ GERÊNCIA (endpoint
+`POST /conversas/<id>/segmento`; vazio volta a derivar), seletor na resolução da triagem
+pré-preenchido pelo `segmento_sugerido` (o escolhido vence o indicado; sem nenhum, a gerência
+trata depois — pedido do usuário). **"Adicionar Contato"** na camada de ações dos Atendimentos:
+nome + WhatsApp/e-mail + **motivo obrigatório** (vira evento `contato_adicionado` na conversa) +
+projeto opcional + segmento — cria **Cliente no cadastro** (mais uma fonte de contatos) e o
+participante EXTERNO na conversa do projeto (ou grupo de lead); resposta do número roteia à
+conversa (`mod_chat.adicionar_contato`, `POST /api/comunicacao/contatos`).
+`tests/test_chat_contato_segmento.py` (+5). Suíte completa **1641 verde**.
+
 ## Sessão 130 — Frente Orizon Chat 2026-07-31: triagem persistente, full-page canônico, eventos do ciclo e pacote destacável
 
 **Entrada:** orientação `.claude/orientacao-orizon-chat-v2.md` (Claude Cowork, com teste ao vivo no

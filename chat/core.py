@@ -1081,6 +1081,53 @@ def _ultimo_id_mensagem(db, conversa_id):
     return r[0] if r else 0
 
 
+def definir_segmento(db, conversa, segmento):
+    """r3: define/troca o segmento MANUAL do atendimento (seletor no thread — a triagem indica,
+    e quem trata pode ajustar; entrada sem segmento é a gerência quem trata). `segmento` vazio/
+    None limpa o override (volta a derivar do tráfego). Não commita."""
+    seg = (segmento or "").strip() or None
+    if seg is not None and seg not in SEGMENTOS:
+        raise ValueError("Segmento inválido.")
+    conversa.segmento = seg
+    db.flush()
+    return seg
+
+
+def adicionar_contato(db, loja_id, usuario_id, nome, telefone=None, email=None, motivo=None,
+                      projeto_nome=None, segmento=None):
+    """r3 — "Adicionar Contato" dos Atendimentos: cadastra o contato como CLIENTE (mais uma
+    fonte de contatos) e o pendura como participante EXTERNO numa conversa — a do PROJETO
+    (quando associado) ou num grupo de lead novo. O MOTIVO vira evento inline na conversa.
+    Retorna (conversa, cliente). Não commita."""
+    nome = (nome or "").strip()
+    if not nome:
+        raise ValueError("Dê um nome ao contato.")
+    telefone = (telefone or "").strip() or None
+    email = (email or "").strip() or None
+    if not telefone and not email:
+        raise ValueError("Informe o WhatsApp ou o e-mail do contato.")
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValueError("Informe o motivo do contato.")
+    cli = Cliente(nome=nome, loja_id=loja_id, whatsapp=telefone, email=email)
+    db.add(cli); db.flush()
+    if projeto_nome:
+        conv = get_or_create_conversa_projeto(db, loja_id, projeto_nome)
+    else:
+        conv = criar_grupo(db, loja_id, usuario_id, "Lead — %s" % nome,
+                           [usuario_id], exige_dois=False)
+    adicionar_externo(db, conv, nome, telefone=telefone, email=email,
+                      meio=("whatsapp" if telefone else "email"), criado_por_id=usuario_id)
+    if segmento:
+        definir_segmento(db, conv, segmento)
+    u = db.get(Usuario, usuario_id) if usuario_id else None
+    enviar_mensagem(db, conv, usuario_id,
+                    "Contato %s adicionado por %s — motivo: %s"
+                    % (nome, (u.nome if u else "—"), motivo),
+                    evento="contato_adicionado")
+    return conv, cli
+
+
 def arquivar_conversa(db, conversa, usuario_id, arquivar=True):
     """Arquiva/desarquiva a conversa PARA O USUÁRIO (revisão UX 2026-07-31: 'Concluir' um
     atendimento hoje = arquivar — sai das abas ativas, reversível; o status formal com dono do
@@ -1175,13 +1222,17 @@ def _atendimento_meta(db, conversa):
     """Fila de Atendimentos (RF-12): o `segmento` da conversa (canal do último externo) + o estado
     da `janela` de 24h. `segmento` None quando não há tráfego externo. `janela.estado`:
     'na' (nunca houve entrada externa — não se aplica), 'aberta', 'fechando' (< 2h p/ fechar),
-    'fechada'. Reusa a janela escopada por conversa de mod_chat_externo."""
+    'fechada'. Reusa a janela escopada por conversa de mod_chat_externo.
+    r3 (2026-07-31): segmento MANUAL (Conversa.segmento — seletor da gerência; a triagem
+    indica) VENCE o derivado do tráfego."""
     from . import externo as _ext
-    row = (db.query(ConversaMensagem.canal)
-             .filter(ConversaMensagem.conversa_id == conversa.id,
-                     ConversaMensagem.canal.isnot(None), ConversaMensagem.canal != "interno")
-             .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
-    segmento = row[0] if row else None
+    segmento = conversa.segmento or None
+    if not segmento:
+        row = (db.query(ConversaMensagem.canal)
+                 .filter(ConversaMensagem.conversa_id == conversa.id,
+                         ConversaMensagem.canal.isnot(None), ConversaMensagem.canal != "interno")
+                 .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
+        segmento = row[0] if row else None
     j = _ext.janela_da_conversa(db, conversa)
     if j["ultima_entrada"] is None:
         janela = {"estado": "na"}

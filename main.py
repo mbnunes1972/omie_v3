@@ -5437,6 +5437,73 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/conversas/<id>/segmento — define/troca o segmento MANUAL do
+        # atendimento (r3: a triagem indica; entrada sem segmento é a GERÊNCIA quem trata).
+        # Body: {segmento: "comercial"|...|""} — vazio limpa (volta a derivar do tráfego).
+        m_seg = re.match(r'^/api/comunicacao/conversas/(\d+)/segmento$', path)
+        if m_seg:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                self.send_json({"ok": False, "erro": "Sem permissão (gerência)."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                from database import Conversa as _CV_seg
+                conv = db.get(_CV_seg, int(m_seg.group(1)))
+                if conv is None or conv.loja_id != loja_id:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                dd = json.loads(body or b'{}')
+                try:
+                    seg = mod_chat.definir_segmento(db, conv, dd.get("segmento"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "segmento": seg})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/contatos — "Adicionar Contato" (r3): cadastra o contato como
+        # CLIENTE (fonte de contatos) + participante EXTERNO na conversa do projeto associado
+        # (ou num grupo de lead novo); o MOTIVO vira evento inline.
+        if path == "/api/comunicacao/contatos":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                pnome = (dd.get("projeto_nome") or "").strip() or None
+                if pnome and _projeto_visivel_da_loja(db, pnome, loja_id, usuario) is None:
+                    self.send_json({"ok": False, "erro": "Projeto não encontrado."}, code=404); return
+                try:
+                    conv, cli = mod_chat.adicionar_contato(
+                        db, loja_id, usuario["id"], dd.get("nome"),
+                        telefone=dd.get("telefone"), email=dd.get("email"),
+                        motivo=dd.get("motivo"), projeto_nome=pnome,
+                        segmento=dd.get("segmento"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "conversa_id": conv.id, "cliente_id": cli.id},
+                               code=201)
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/conversas/<id>/arquivar — arquiva/desarquiva PARA O USUÁRIO
         # (revisão UX 2026-07-31; aba Arquivadas da F7/Chat Interno). Body: {arquivar: bool}.
         m_arq = re.match(r'^/api/comunicacao/conversas/(\d+)/arquivar$', path)
@@ -5573,10 +5640,12 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     if acao == "vincular":
                         conv = db.get(_CV_trg, int(dd.get("conversa_id") or 0))
-                        _ext.triagem_resolver_vincular(db, ent, conv, usuario["id"])
+                        _ext.triagem_resolver_vincular(db, ent, conv, usuario["id"],
+                                                       segmento=dd.get("segmento"))
                     elif acao == "criar":
                         _ext.triagem_resolver_criar(db, ent, usuario["id"],
-                                                    dd.get("nome_cliente"))
+                                                    dd.get("nome_cliente"),
+                                                    segmento=dd.get("segmento"))
                     elif acao == "descartar":
                         _ext.triagem_descartar(db, ent, usuario["id"])
                     else:

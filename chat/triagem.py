@@ -54,18 +54,29 @@ def _triagem_postar_na_conversa(db, entrada, conversa, usuario_id):
     return msg
 
 
-def triagem_resolver_vincular(db, entrada, conversa, usuario_id):
+def _aplicar_segmento(db, conversa, entrada, segmento):
+    """r3: o segmento escolhido na resolução (ou o indicado pela triagem automática —
+    `segmento_sugerido`) vira o segmento MANUAL da conversa. Sem nenhum dos dois, fica sem
+    segmento — a gerência trata depois pelo seletor do thread."""
+    from . import core as _mc
+    seg = (segmento or "").strip() or entrada.segmento_sugerido
+    if seg:
+        _mc.definir_segmento(db, conversa, seg)
+
+
+def triagem_resolver_vincular(db, entrada, conversa, usuario_id, segmento=None):
     """Vincula a entrada a uma conversa EXISTENTE (candidata ou escolhida). Não commita."""
     if entrada.status != "pendente":
         raise ValueError("Esta entrada já foi resolvida.")
     if conversa is None or conversa.loja_id != entrada.loja_id:
         raise ValueError("Conversa inexistente nesta loja.")
     msg = _triagem_postar_na_conversa(db, entrada, conversa, usuario_id)
+    _aplicar_segmento(db, conversa, entrada, segmento)
     _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conversa.id)
     return msg
 
 
-def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente):
+def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente, segmento=None):
     """Lead NOVO por WhatsApp: cria o Cliente (contato no cadastro — decisão 12) + uma conversa
     de GRUPO com o resolvedor dentro e o contato como participante EXTERNO (as respostas da
     equipe espelham pelo transporte). A mensagem original entra na conversa. Não commita."""
@@ -86,6 +97,7 @@ def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente):
                           email=(entrada.remetente if entrada.meio == "email" else None),
                           meio=entrada.meio, criado_por_id=usuario_id)
     _triagem_postar_na_conversa(db, entrada, conv, usuario_id)
+    _aplicar_segmento(db, conv, entrada, segmento)
     _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conv.id)
     return conv
 

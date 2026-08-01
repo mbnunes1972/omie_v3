@@ -1083,6 +1083,10 @@ class Conversa(Base):
     # sobre O QUE se fala. Registros antigos = 'livre' (mas os do projeto herdam via projeto_nome).
     assunto_tipo  = Column(String(12), nullable=False, default="livre")
     assunto_id    = Column(Integer,    ForeignKey("assuntos.id"), nullable=True)
+    # Segmento MANUAL do atendimento (revisão UX 2026-07-31 r3): a triagem INDICA
+    # (segmento_sugerido) e a gerência pode tratar/trocar pelo seletor do thread. NULL = derivar
+    # do tráfego externo (_atendimento_meta); preenchido = override que vence o derivado.
+    segmento      = Column(String(20), nullable=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1802,6 +1806,8 @@ def _migrar_colunas_pg():
         # — CHAT (frente 2026-07-31; tabela triagem_entradas nova nasce no create_all) —
         # Evento inline na timeline (faixa de sistema): triagem_vinculo/membro_entrou/…
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS evento VARCHAR(24)",
+        # Segmento manual do atendimento (r3): NULL = derivado do tráfego; preenchido vence.
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS segmento VARCHAR(20)",
         # Unificação conversa-do-projeto (2026-07-27): origem/removido na membership.
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS origem VARCHAR(8) DEFAULT 'manual'",
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",

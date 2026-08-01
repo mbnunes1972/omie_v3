@@ -129,6 +129,18 @@ O que adotar no Orizon Chat:
    E usuários (nome/função); Atendimentos busca a fila (título, projeto, prévia e as entradas
    de triagem por remetente/texto).
 
+**Rodada 3 (mesmo dia):**
+
+10. **Segmento é um SELETOR**, não só etiqueta: coluna `Conversa.segmento` (manual VENCE o
+    derivado do tráfego). A triagem INDICA (`segmento_sugerido`, seletor pré-preenchido na
+    resolução); entrada sem segmento é a **gerência** quem trata — seletor no header do thread
+    (só gerência; endpoint `POST /conversas/<id>/segmento`; vazio limpa e volta a derivar).
+11. **"Adicionar Contato"** na camada de ações dos Atendimentos: formulário com nome, WhatsApp/
+    e-mail, **motivo (obrigatório — vira evento inline na conversa)**, projeto (opcional) e
+    segmento. Cria o contato como **Cliente no cadastro (mais uma fonte de contatos)** e o
+    pendura como participante externo na conversa do projeto associado — ou num grupo de lead
+    novo. Endpoint `POST /api/comunicacao/contatos`.
+
 ## Riscos e pontos de atenção
 
 - `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.

@@ -1985,7 +1985,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
     .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-    .oc-busca{flex:1;min-width:140px;padding:6px 10px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px}
+    .oc-busca-wrap{position:relative;flex:1;min-width:140px;display:flex;align-items:center}
+    .oc-busca-wrap>i{position:absolute;left:10px;color:var(--muted);font-size:14px;pointer-events:none}
+    .oc-busca{width:100%;padding:7px 10px;padding-left:32px !important;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;appearance:none;-webkit-appearance:none}
+    .oc-busca::placeholder{color:var(--muted)}
+    .oc-busca:focus{border-color:var(--accent);outline:none}
     .oc-sec{font-size:10px;letter-spacing:1.2px;color:var(--text-3);text-transform:uppercase;font-weight:700;padding:10px 2px 6px}
     .oc-user{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
     .oc-user:hover{background:var(--surface-2)}
@@ -2017,7 +2021,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 </div>
                 <div class="atd-tabs" id="atd-tabs"></div>
                 <div class="atd-filtro">
-                  <input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar atendimento…" oninput="atendRender()">
+                  <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar atendimento…" oninput="atendRender()"></span>
                   <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
                   <select id="atd-seg-filtro" onchange="atendRender()" title="Segmento" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
                 </div>
@@ -2269,7 +2273,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 </div>
                 <div class="atd-tabs" id="int-tabs"></div>
                 <div class="atd-filtro">
-                  <input type="search" id="int-busca" class="oc-busca" placeholder="Buscar conversa ou usuário…" oninput="intRender()">
+                  <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="int-busca" class="oc-busca" placeholder="Buscar conversa ou usuário…" oninput="intRender()"></span>
                   <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
                 </div>
                 <div class="oc-lista-scroll" id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>

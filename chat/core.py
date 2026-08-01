@@ -557,7 +557,7 @@ def triagem_config_salvar(db, loja_id, dados):
     itens = []
     for it in (dados.get("itens") or []):
         seg = it.get("segmento")
-        if seg in SEGMENTOS:
+        if seg and _segmento_valido(db, loja_id, seg):     # base OU custom da loja (r4)
             itens.append({"segmento": seg, "rotulo": (it.get("rotulo") or "").strip() or seg,
                           "ativo": bool(it.get("ativo"))})
     c = db.query(TriagemConfig).filter_by(loja_id=loja_id).first()
@@ -578,17 +578,33 @@ _SEGMENTO_ROTULOS = {"comercial": "Comercial", "suporte_tecnico": "Suporte Técn
 _SEGMENTO_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "compras", "sac")
 
 
+def _nome_funcionario(db, fid):
+    f = db.get(Funcionario, fid) if fid else None
+    return f.nome if f else None
+
+
 def segmentos_config_get(db, loja_id):
-    """Os 7 segmentos com o config da loja (ativo/rótulo/template padrão) + os templates de cada um
-    (para o seletor). Sem linha salva → padrão (ativo, rótulo do catálogo)."""
+    """Os 7 segmentos do catálogo + os CUSTOM da loja (r4), com o config (ativo/rótulo/template
+    padrão/RESPONSÁVEL) + os templates de cada um (para o seletor). Sem linha salva → padrão
+    (ativo, rótulo do catálogo). `custom: True` marca os apagáveis."""
     salvos = {c.segmento: c for c in db.query(SegmentoConfig).filter_by(loja_id=loja_id).all()}
     out = []
     for seg in _SEGMENTO_ORDEM:
-        c = salvos.get(seg)
-        out.append({"segmento": seg,
+        c = salvos.pop(seg, None)
+        out.append({"segmento": seg, "custom": False,
                     "rotulo": (c.rotulo if (c and c.rotulo) else _SEGMENTO_ROTULOS.get(seg, seg)),
                     "ativo": (bool(c.ativo) if c else True),
                     "template_padrao_id": (c.template_padrao_id if c else None),
+                    "responsavel_funcionario_id": (c.responsavel_funcionario_id if c else None),
+                    "responsavel_nome": _nome_funcionario(db, c.responsavel_funcionario_id) if c else None,
+                    "templates": listar_templates(db, loja_id, segmento=seg)})
+    for seg, c in sorted(salvos.items()):          # customs da loja (apagáveis)
+        out.append({"segmento": seg, "custom": True,
+                    "rotulo": c.rotulo or seg,
+                    "ativo": bool(c.ativo),
+                    "template_padrao_id": c.template_padrao_id,
+                    "responsavel_funcionario_id": c.responsavel_funcionario_id,
+                    "responsavel_nome": _nome_funcionario(db, c.responsavel_funcionario_id),
                     "templates": listar_templates(db, loja_id, segmento=seg)})
     return out
 
@@ -596,13 +612,21 @@ def segmentos_config_get(db, loja_id):
 def segmentos_config_salvar(db, loja_id, itens):
     for it in (itens or []):
         seg = it.get("segmento")
-        if seg not in SEGMENTOS:
+        if not _segmento_valido(db, loja_id, seg):     # base OU custom já criado (r4)
             continue
         c = db.query(SegmentoConfig).filter_by(loja_id=loja_id, segmento=seg).first()
         if c is None:
             c = SegmentoConfig(loja_id=loja_id, segmento=seg); db.add(c)
         c.ativo = 1 if it.get("ativo", True) else 0
         c.rotulo = (it.get("rotulo") or "").strip() or None
+        # r4: RESPONSÁVEL do segmento (funcionário ATIVO da loja; inválido → limpa)
+        rid = it.get("responsavel_funcionario_id")
+        if rid:
+            f = db.get(Funcionario, int(rid))
+            c.responsavel_funcionario_id = (f.id if (f is not None and f.loja_id == loja_id)
+                                            else None)
+        else:
+            c.responsavel_funcionario_id = None
         tpid = it.get("template_padrao_id")
         if tpid:                                            # valida: template ATIVO da loja E do segmento
             t = db.query(TemplateMensagem).filter_by(id=int(tpid), loja_id=loja_id, ativo=1).first()
@@ -1082,16 +1106,98 @@ def _ultimo_id_mensagem(db, conversa_id):
     return r[0] if r else 0
 
 
+def _segmento_valido(db, loja_id, seg):
+    """Catálogo base (os 7) OU segmento CUSTOM da loja (linha em SegmentoConfig — r4)."""
+    if seg in SEGMENTOS:
+        return True
+    return (db.query(SegmentoConfig.id)
+              .filter_by(loja_id=loja_id, segmento=seg).first() is not None)
+
+
+def _tem_face_externa(db, conversa):
+    """r4: segmento é CANAL DE ENTRADA — só existe para conversa oriunda da triagem/atendimento
+    externo (participante externo, tráfego EnvioExterno ou segmento já definido). Grupo/direct
+    INTERNO não tem segmento."""
+    if conversa.segmento:
+        return True
+    if (db.query(ConversaParticipanteExterno.id)
+          .filter_by(conversa_id=conversa.id, removido=0).first() is not None):
+        return True
+    return (db.query(EnvioExterno.id)
+              .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+              .filter(ConversaMensagem.conversa_id == conversa.id).first() is not None)
+
+
 def definir_segmento(db, conversa, segmento):
-    """r3: define/troca o segmento MANUAL do atendimento (seletor no thread — a triagem indica,
-    e quem trata pode ajustar; entrada sem segmento é a gerência quem trata). `segmento` vazio/
-    None limpa o override (volta a derivar do tráfego). Não commita."""
+    """r3/r4: define/troca o segmento MANUAL do atendimento (a triagem indica; quem trata pode
+    ajustar; entrada sem segmento é a gerência quem trata). Vazio/None limpa (volta a derivar).
+    RECUSA conversa interna (sem face externa — r4: grupo/chat interno não tem segmento).
+    Aceita os 7 do catálogo E os segmentos custom da loja. Não commita."""
     seg = (segmento or "").strip() or None
-    if seg is not None and seg not in SEGMENTOS:
-        raise ValueError("Segmento inválido.")
+    if seg is not None:
+        if not _segmento_valido(db, conversa.loja_id, seg):
+            raise ValueError("Segmento inválido.")
+        if not _tem_face_externa(db, conversa):
+            raise ValueError("Conversa interna não tem segmento — o segmento identifica o "
+                             "canal de entrada de um atendimento externo.")
     conversa.segmento = seg
     db.flush()
     return seg
+
+
+def segmentos_ativos(db, loja_id):
+    """Lista LEVE dos segmentos ativos da loja (base + custom) para os seletores da F7/triagem —
+    aberta a qualquer usuário autenticado (o config completo segue gerência)."""
+    salvos = {c.segmento: c for c in db.query(SegmentoConfig).filter_by(loja_id=loja_id).all()}
+    out = []
+    for seg in _SEGMENTO_ORDEM:
+        c = salvos.pop(seg, None)
+        if c is None or c.ativo:
+            out.append({"segmento": seg,
+                        "rotulo": (c.rotulo if (c and c.rotulo) else _SEGMENTO_ROTULOS.get(seg, seg))})
+    for seg, c in sorted(salvos.items()):          # customs da loja
+        if c.ativo:
+            out.append({"segmento": seg, "rotulo": c.rotulo or seg})
+    return out
+
+
+def criar_segmento(db, loja_id, rotulo):
+    """r4: '+ novo segmento' da tela Segmentos — cria um canal de entrada CUSTOM da loja.
+    O slug nasce do rótulo (minúsculo, sem acento). Não commita."""
+    import re as _re
+    import unicodedata as _ud
+    rotulo = (rotulo or "").strip()
+    if not rotulo:
+        raise ValueError("Dê um nome ao segmento.")
+    slug = _ud.normalize("NFKD", rotulo).encode("ascii", "ignore").decode()
+    slug = _re.sub(r"[^a-z0-9]+", "_", slug.lower()).strip("_")[:20]
+    if not slug:
+        raise ValueError("Nome de segmento inválido.")
+    if slug in SEGMENTOS or (db.query(SegmentoConfig.id)
+                               .filter_by(loja_id=loja_id, segmento=slug).first() is not None):
+        raise ValueError("Já existe um segmento com esse nome.")
+    c = SegmentoConfig(loja_id=loja_id, segmento=slug, rotulo=rotulo, ativo=1)
+    db.add(c); db.flush()
+    return c
+
+
+def apagar_segmento(db, loja_id, segmento):
+    """r4: apaga um segmento CUSTOM da loja (os 7 do catálogo base sustentam templates/slots e
+    overrides de env da Meta — esses só DESATIVAM). Conversas que usavam o segmento voltam a
+    'sem segmento' (a gerência trata). Não commita."""
+    seg = (segmento or "").strip()
+    if seg in SEGMENTOS:
+        raise ValueError("Os segmentos do catálogo base não podem ser apagados — desative-o "
+                         "na lista (ele sai dos seletores).")
+    c = db.query(SegmentoConfig).filter_by(loja_id=loja_id, segmento=seg).first()
+    if c is None:
+        raise ValueError("Segmento não encontrado.")
+    (db.query(Conversa)
+       .filter_by(loja_id=loja_id, segmento=seg)
+       .update({"segmento": None}, synchronize_session=False))
+    db.delete(c)
+    db.flush()
+    return True
 
 
 CONTATO_TIPOS = ("cliente", "parceiro", "fornecedor", "convidado")

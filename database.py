@@ -1218,6 +1218,10 @@ class SegmentoConfig(Base):
     ativo             = Column(Integer, nullable=False, default=1)
     rotulo            = Column(Text, nullable=True)
     template_padrao_id = Column(Integer, ForeignKey("template_mensagem.id"), nullable=True)
+    # r4 (2026-07-31): segmento = CANAL DE ENTRADA da triagem, com RESPONSÁVEL (Funcionario —
+    # decisão 16: responsabilidade é por funcionário). Linhas com `segmento` fora do catálogo
+    # base são segmentos CUSTOM da loja (criados/apagados na tela Segmentos).
+    responsavel_funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
     atualizado_em     = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1808,6 +1812,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversa_mensagens ADD COLUMN IF NOT EXISTS evento VARCHAR(24)",
         # Segmento manual do atendimento (r3): NULL = derivado do tráfego; preenchido vence.
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS segmento VARCHAR(20)",
+        # r4: segmento tem RESPONSÁVEL (funcionário) — canal de entrada da triagem.
+        "ALTER TABLE segmento_config ADD COLUMN IF NOT EXISTS responsavel_funcionario_id INTEGER",
         # Unificação conversa-do-projeto (2026-07-27): origem/removido na membership.
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS origem VARCHAR(8) DEFAULT 'manual'",
         "ALTER TABLE conversa_participantes ADD COLUMN IF NOT EXISTS removido INTEGER DEFAULT 0",

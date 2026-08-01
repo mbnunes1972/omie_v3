@@ -2976,6 +2976,24 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/segmentos/ativos — lista LEVE dos segmentos ativos da loja
+            # (base + custom) para os seletores da F7/triagem. Qualquer usuário autenticado.
+            if path == "/api/comunicacao/segmentos/ativos":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    self.send_json({"ok": True, "segmentos": mod_chat.segmentos_ativos(db, loja_id)})
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/segmentos — config dos 7 segmentos (RF-02). Gerência.
             if path == "/api/comunicacao/segmentos":
                 usuario = get_usuario_sessao(self)
@@ -5680,6 +5698,37 @@ class Handler(BaseHTTPRequestHandler):
                 dd = json.loads(body or b'{}')
                 cfg = mod_chat.triagem_config_salvar(db, loja_id, dd); db.commit()
                 self.send_json({"ok": True, "triagem": cfg})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/segmentos/criar — '+ novo segmento' (r4): canal de entrada
+        # CUSTOM da loja. Gerência. Body: {rotulo}.
+        # POST /api/comunicacao/segmentos/apagar — apaga segmento CUSTOM (base só desativa).
+        if path in ("/api/comunicacao/segmentos/criar", "/api/comunicacao/segmentos/apagar"):
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                self.send_json({"ok": False, "erro": "Sem permissão (gerência)."}, code=403); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                try:
+                    if path.endswith("/criar"):
+                        mod_chat.criar_segmento(db, loja_id, dd.get("rotulo"))
+                    else:
+                        mod_chat.apagar_segmento(db, loja_id, dd.get("segmento"))
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "segmentos": mod_chat.segmentos_config_get(db, loja_id)})
             finally:
                 db.close()
             return

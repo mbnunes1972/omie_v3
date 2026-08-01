@@ -2692,6 +2692,17 @@ participante EXTERNO na conversa do projeto (ou grupo de lead); resposta do núm
 conversa (`mod_chat.adicionar_contato`, `POST /api/comunicacao/contatos`).
 `tests/test_chat_contato_segmento.py` (+5). Suíte completa **1641 verde**.
 
+**Rodada 4 (mesmo dia):** **segmento = CANAL DE ENTRADA** com gestão própria — (a) guard de face
+externa em `definir_segmento`: grupo/chat interno NÃO tem segmento (seletor do thread só com
+face externa + gerência); (b) `segmento_config.responsavel_funcionario_id` (RESPONSÁVEL por
+segmento, funcionário da loja; roteamento automático fica p/ F6); (c) tela Segmentos com
+"+ Novo segmento" (custom da loja, slug do rótulo) e apagar (só custom — conversas voltam a
+"sem segmento"; os 7 base sustentam templates/Meta e só desativam); (d) seletores da
+F7/triagem/contato dinâmicos via `GET /api/comunicacao/segmentos/ativos` (qualquer usuário);
+validações (triagem config, definir_segmento) aceitam customs da loja.
+`tests/test_chat_segmentos_crud.py` (+5). Suíte completa **1647 verde**; headless validado
+(seletor oculto em conversa interna; tela com responsável/novo/apagar).
+
 **Ajuste na sequência (pedido do usuário):** o "Adicionar Contato" ganhou o campo **Tipo** — o
 destino no cadastro é definido no formulário: **Cliente · Parceiro** (Parceiro + vínculo
 `ParceiroLoja` com a loja) **· Fornecedor** (telefone no campo `telefone` — o model não tem

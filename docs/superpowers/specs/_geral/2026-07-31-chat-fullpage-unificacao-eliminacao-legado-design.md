@@ -145,6 +145,19 @@ O que adotar no Orizon Chat:
     convidado NÃO entra em cadastro nenhum (só participa da conversa; não polui as fontes de
     contato). O evento inline nomeia o tipo.
 
+**Rodada 4 (mesmo dia):**
+
+12. **Segmento é CANAL DE ENTRADA** — existe só para conversa oriunda da triagem/atendimento
+    externo (guard de face externa em `definir_segmento`); **grupo/chat interno NÃO tem
+    segmento** (seletor do thread só aparece com face externa + gerência).
+13. **Segmento tem RESPONSÁVEL** (`segmento_config.responsavel_funcionario_id`, funcionário da
+    loja — decisão 16). Roteamento automático ao responsável entra com a F6.
+14. **Tela Segmentos gerencia o catálogo**: "+ Novo segmento" cria canais CUSTOM da loja
+    (slug do rótulo); apagar vale para os custom (conversas deles voltam a "sem segmento");
+    os 7 do catálogo base sustentam templates/slots da Meta e apenas DESATIVAM. Seletores da
+    F7/triagem/contato viram dinâmicos (`GET /api/comunicacao/segmentos/ativos`, aberto a
+    qualquer usuário autenticado).
+
 ## Riscos e pontos de atenção
 
 - `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.

@@ -84,6 +84,49 @@ def test_adicionar_contato_com_projeto_e_motivo(app_db, seed):
     db.close()
 
 
+def test_adicionar_contato_tipos_de_cadastro(app_db, seed):
+    """r3 (revisão): o formulário define o destino — cliente | parceiro | fornecedor |
+    convidado (convidado NÃO entra em cadastro nenhum, só participa da conversa)."""
+    import mod_chat
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
+    # parceiro → Parceiro + vínculo ParceiroLoja com a loja
+    conv, reg = mod_chat.adicionar_contato(
+        db, seed["loja1_id"], u.id, "Arquiteta Ana", telefone="(12) 96666-1001",
+        motivo="Parceria de indicação", tipo="parceiro")
+    db.commit()
+    assert isinstance(reg, app_db.Parceiro)
+    vinc = db.query(app_db.ParceiroLoja).filter_by(parceiro_id=reg.id,
+                                                   loja_id=seed["loja1_id"]).first()
+    assert vinc is not None
+    # fornecedor → Fornecedor (telefone no campo telefone — não há whatsapp no model)
+    _c2, reg2 = mod_chat.adicionar_contato(
+        db, seed["loja1_id"], u.id, "Transportadora XYZ", telefone="(12) 96666-1002",
+        motivo="Cotação de frete", tipo="fornecedor")
+    db.commit()
+    assert isinstance(reg2, app_db.Fornecedor) and reg2.telefone
+    # convidado → SEM cadastro; só o participante externo na conversa
+    antes = db.query(app_db.Cliente).count()
+    conv3, reg3 = mod_chat.adicionar_contato(
+        db, seed["loja1_id"], u.id, "Esposa do Cliente", telefone="(12) 96666-1003",
+        motivo="Acompanhar a obra", tipo="convidado")
+    db.commit()
+    assert reg3 is None
+    assert db.query(app_db.Cliente).count() == antes          # cadastro intocado
+    ext_p = db.query(app_db.ConversaParticipanteExterno).filter_by(conversa_id=conv3.id).first()
+    assert ext_p is not None and ext_p.nome == "Esposa do Cliente"
+    # o evento nomeia o tipo
+    from database import ConversaMensagem
+    ev = (db.query(ConversaMensagem)
+            .filter_by(conversa_id=conv.id, evento="contato_adicionado").first())
+    assert "(Parceiro)" in (ev.corpo or "")
+    with pytest.raises(ValueError, match="[Tt]ipo"):
+        mod_chat.adicionar_contato(db, seed["loja1_id"], u.id, "X",
+                                   telefone="(12) 96666-1004", motivo="m", tipo="inimigo")
+    db.rollback()
+    db.close()
+
+
 def test_adicionar_contato_sem_projeto_vira_lead(app_db, seed):
     import mod_chat
     db = app_db.get_session()

@@ -16,8 +16,9 @@ from sqlalchemy import func
 
 from database import (Conversa, ConversaParticipante, ConversaParticipanteExterno,
                       ConversaMensagem, MensagemAnexo, ContatoConfirmacao, Assunto, Usuario,
-                      Cliente, Parceiro, Funcionario, Funcao, CicloDocumento, TemplateMensagem,
-                      TriagemConfig, SegmentoConfig, NumeroConectado, EnvioExterno)
+                      Cliente, Parceiro, Fornecedor, Funcionario, Funcao, CicloDocumento,
+                      TemplateMensagem, TriagemConfig, SegmentoConfig, NumeroConectado,
+                      EnvioExterno)
 
 # ── Modo privado REMOVIDO (2026-07-27) ────────────────────────────────────────
 # Não se criam novas mensagens privadas. Mensagens privadas LEGADAS (privada=1, texto cifrado em
@@ -1093,15 +1094,46 @@ def definir_segmento(db, conversa, segmento):
     return seg
 
 
+CONTATO_TIPOS = ("cliente", "parceiro", "fornecedor", "convidado")
+_CONTATO_ROTULO = {"cliente": "Cliente", "parceiro": "Parceiro", "fornecedor": "Fornecedor",
+                   "convidado": "Convidado"}
+
+
+def _cadastrar_contato(db, loja_id, tipo, nome, telefone, email):
+    """r3 (revisão): o formulário DEFINE o destino no cadastro — cliente | parceiro |
+    fornecedor | convidado. Convidado NÃO entra em cadastro nenhum (só participa da conversa —
+    não polui as fontes de contato). Retorna o registro criado ou None (convidado)."""
+    from database import ParceiroLoja
+    if tipo == "cliente":
+        reg = Cliente(nome=nome, loja_id=loja_id, whatsapp=telefone, email=email)
+        db.add(reg); db.flush()
+        return reg
+    if tipo == "parceiro":
+        reg = Parceiro(nome=nome, whatsapp=telefone, email=email, abrangencia="loja")
+        db.add(reg); db.flush()
+        db.add(ParceiroLoja(parceiro_id=reg.id, loja_id=loja_id))   # vínculo M:N com a loja
+        db.flush()
+        return reg
+    if tipo == "fornecedor":
+        reg = Fornecedor(nome=nome, loja_id=loja_id, telefone=telefone, email=email)
+        db.add(reg); db.flush()
+        return reg
+    return None   # convidado: sem cadastro
+
+
 def adicionar_contato(db, loja_id, usuario_id, nome, telefone=None, email=None, motivo=None,
-                      projeto_nome=None, segmento=None):
-    """r3 — "Adicionar Contato" dos Atendimentos: cadastra o contato como CLIENTE (mais uma
-    fonte de contatos) e o pendura como participante EXTERNO numa conversa — a do PROJETO
-    (quando associado) ou num grupo de lead novo. O MOTIVO vira evento inline na conversa.
-    Retorna (conversa, cliente). Não commita."""
+                      projeto_nome=None, segmento=None, tipo="cliente"):
+    """r3 — "Adicionar Contato" dos Atendimentos: o TIPO define o destino no cadastro
+    (cliente | parceiro | fornecedor | convidado — convidado não entra em cadastro) e o
+    contato vira participante EXTERNO numa conversa — a do PROJETO (quando associado) ou num
+    grupo de lead novo. O MOTIVO vira evento inline na conversa. Retorna
+    (conversa, registro|None). Não commita."""
     nome = (nome or "").strip()
     if not nome:
         raise ValueError("Dê um nome ao contato.")
+    tipo = (tipo or "cliente").strip()
+    if tipo not in CONTATO_TIPOS:
+        raise ValueError("Tipo de contato inválido (cliente|parceiro|fornecedor|convidado).")
     telefone = (telefone or "").strip() or None
     email = (email or "").strip() or None
     if not telefone and not email:
@@ -1109,8 +1141,7 @@ def adicionar_contato(db, loja_id, usuario_id, nome, telefone=None, email=None, 
     motivo = (motivo or "").strip()
     if not motivo:
         raise ValueError("Informe o motivo do contato.")
-    cli = Cliente(nome=nome, loja_id=loja_id, whatsapp=telefone, email=email)
-    db.add(cli); db.flush()
+    reg = _cadastrar_contato(db, loja_id, tipo, nome, telefone, email)
     if projeto_nome:
         conv = get_or_create_conversa_projeto(db, loja_id, projeto_nome)
     else:
@@ -1122,10 +1153,10 @@ def adicionar_contato(db, loja_id, usuario_id, nome, telefone=None, email=None, 
         definir_segmento(db, conv, segmento)
     u = db.get(Usuario, usuario_id) if usuario_id else None
     enviar_mensagem(db, conv, usuario_id,
-                    "Contato %s adicionado por %s — motivo: %s"
-                    % (nome, (u.nome if u else "—"), motivo),
+                    "Contato %s (%s) adicionado por %s — motivo: %s"
+                    % (nome, _CONTATO_ROTULO.get(tipo, tipo), (u.nome if u else "—"), motivo),
                     evento="contato_adicionado")
-    return conv, cli
+    return conv, reg
 
 
 def arquivar_conversa(db, conversa, usuario_id, arquivar=True):

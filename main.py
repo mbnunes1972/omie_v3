@@ -5489,16 +5489,19 @@ class Handler(BaseHTTPRequestHandler):
                 if pnome and _projeto_visivel_da_loja(db, pnome, loja_id, usuario) is None:
                     self.send_json({"ok": False, "erro": "Projeto não encontrado."}, code=404); return
                 try:
-                    conv, cli = mod_chat.adicionar_contato(
+                    conv, reg = mod_chat.adicionar_contato(
                         db, loja_id, usuario["id"], dd.get("nome"),
                         telefone=dd.get("telefone"), email=dd.get("email"),
                         motivo=dd.get("motivo"), projeto_nome=pnome,
-                        segmento=dd.get("segmento"))
+                        segmento=dd.get("segmento"),
+                        tipo=dd.get("tipo") or "cliente")
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
-                self.send_json({"ok": True, "conversa_id": conv.id, "cliente_id": cli.id},
+                self.send_json({"ok": True, "conversa_id": conv.id,
+                                "cadastro_id": (reg.id if reg is not None else None),
+                                "tipo": dd.get("tipo") or "cliente"},
                                code=201)
             finally:
                 db.close()

@@ -2107,10 +2107,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       <div style="font-weight:800"><i class="ti ti-user-plus"></i> Adicionar Contato</div>
                       <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()">Voltar</button>
                     </div>
-                    <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:10px">O contato entra no cadastro (fonte de contatos) e passa a receber as mensagens da conversa por WhatsApp/e-mail. Associado a um projeto, entra na conversa do projeto; sem projeto, nasce como lead.</div>
+                    <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:10px">O tipo define o destino no cadastro (Cliente, Parceiro ou Fornecedor — fontes de contato); <b>Convidado</b> só participa da conversa, sem entrar em cadastro. O contato recebe as mensagens da conversa por WhatsApp/e-mail. Associado a um projeto, entra na conversa do projeto; sem projeto, nasce como lead.</div>
                     <div style="max-width:520px">
-                      <label class="field-label">Nome</label>
-                      <input id="oc-ct-nome" type="text" placeholder="Ex.: Síndico do prédio, arquiteto parceiro…" style="width:100%;margin-bottom:10px">
+                      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                        <div style="flex:2;min-width:200px">
+                          <label class="field-label">Nome</label>
+                          <input id="oc-ct-nome" type="text" placeholder="Ex.: Síndico do prédio, arquiteto parceiro…" style="width:100%">
+                        </div>
+                        <div style="flex:1;min-width:150px">
+                          <label class="field-label">Tipo</label>
+                          <select id="oc-ct-tipo" style="width:100%;padding:6px 8px">
+                            <option value="cliente">Cliente</option>
+                            <option value="parceiro">Parceiro</option>
+                            <option value="fornecedor">Fornecedor</option>
+                            <option value="convidado">Convidado (sem cadastro)</option>
+                          </select>
+                        </div>
+                      </div>
                       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
                         <div style="flex:1;min-width:180px">
                           <label class="field-label">WhatsApp</label>
@@ -12827,6 +12840,7 @@ async function ocContatoAbrir(){
   ocMontarPane('atend');
   ocMostrarView('oc-contato');
   ['oc-ct-nome','oc-ct-tel','oc-ct-email','oc-ct-motivo'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+  const tp = document.getElementById('oc-ct-tipo'); if(tp) tp.value = 'cliente';
   document.getElementById('oc-ct-aviso').textContent = '';
   document.getElementById('oc-ct-seg').innerHTML = _ocSegOptions('', '— sem segmento —');
   const selP = document.getElementById('oc-ct-projeto');
@@ -12840,6 +12854,7 @@ async function ocContatoSalvar(){
   const aviso = document.getElementById('oc-ct-aviso'); aviso.textContent = '';
   const payload = {
     nome: document.getElementById('oc-ct-nome').value,
+    tipo: document.getElementById('oc-ct-tipo').value,
     telefone: document.getElementById('oc-ct-tel').value,
     email: document.getElementById('oc-ct-email').value,
     motivo: document.getElementById('oc-ct-motivo').value,

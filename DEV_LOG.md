@@ -2692,6 +2692,14 @@ participante EXTERNO na conversa do projeto (ou grupo de lead); resposta do núm
 conversa (`mod_chat.adicionar_contato`, `POST /api/comunicacao/contatos`).
 `tests/test_chat_contato_segmento.py` (+5). Suíte completa **1641 verde**.
 
+**Ajuste na sequência (pedido do usuário):** o "Adicionar Contato" ganhou o campo **Tipo** — o
+destino no cadastro é definido no formulário: **Cliente · Parceiro** (Parceiro + vínculo
+`ParceiroLoja` com a loja) **· Fornecedor** (telefone no campo `telefone` — o model não tem
+whatsapp) **· Convidado** (SEM cadastro — só participante externo da conversa; não polui as
+fontes de contato). `mod_chat.adicionar_contato(tipo=...)` valida contra `CONTATO_TIPOS`; o
+evento inline nomeia o tipo; endpoint devolve `cadastro_id` (NULL p/ convidado). +1 teste.
+Suíte completa **1642 verde**.
+
 ## Sessão 130 — Frente Orizon Chat 2026-07-31: triagem persistente, full-page canônico, eventos do ciclo e pacote destacável
 
 **Entrada:** orientação `.claude/orientacao-orizon-chat-v2.md` (Claude Cowork, com teste ao vivo no

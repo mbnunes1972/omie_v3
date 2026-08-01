@@ -140,6 +140,10 @@ O que adotar no Orizon Chat:
     segmento. Cria o contato como **Cliente no cadastro (mais uma fonte de contatos)** e o
     pendura como participante externo na conversa do projeto associado — ou num grupo de lead
     novo. Endpoint `POST /api/comunicacao/contatos`.
+    **Revisto na sequência:** o formulário ganhou o campo **Tipo**, que define o destino no
+    cadastro — **Cliente · Parceiro (com vínculo ParceiroLoja) · Fornecedor · Convidado** —
+    convidado NÃO entra em cadastro nenhum (só participa da conversa; não polui as fontes de
+    contato). O evento inline nomeia o tipo.
 
 ## Riscos e pontos de atenção
 

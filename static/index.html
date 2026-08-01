@@ -514,6 +514,37 @@ body{overflow:hidden}
   border-top: 1px solid var(--border);
 }
 .ciclo-card-body.aberto { display: block; }
+
+/* ═══ CICLO FICHÁRIO (spec ciclo/2026-08-01): lombada + tela cheia. 3 estados SEMÂNTICOS por
+   token — não-iniciada --text-3/--surface-2/--border-strong · andamento --info/-soft/-line ·
+   concluída --ok/-soft/-line (decisão deliberada: sai o --accent duplo do .ind-conclusao, que
+   permanece intocado para as outras telas). ═══ */
+.ficha-wrap{display:flex;gap:14px;align-items:stretch;flex:1;min-height:0}
+.ficha-lombada{width:272px;min-width:236px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;padding-right:2px}
+.ficha-tab{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--border);border-left:4px solid var(--border-strong);border-radius:8px;background:var(--card);cursor:pointer;user-select:none}
+.ficha-tab:hover{background:var(--surface-2)}
+.ficha-tab .ficha-cod{font-size:.72rem;color:var(--muted);min-width:20px;text-align:right}
+.ficha-tab .ficha-nome{flex:1;font-size:.83rem;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ficha-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:8px}
+.ficha-tab.st-nao_iniciada .ficha-dot{background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text-3)}
+.ficha-tab.st-andamento{border-left-color:var(--info)}
+.ficha-tab.st-andamento .ficha-dot{background:var(--info-soft);border:1px solid var(--info-line);color:var(--info)}
+.ficha-tab.st-concluida{border-left-color:var(--ok)}
+.ficha-tab.st-concluida .ficha-dot{background:var(--ok);border:1px solid var(--ok-line);color:var(--btn-primary-text)}
+.ficha-tab.ativa{background:var(--surface-2);border-color:var(--accent);box-shadow:var(--shadow)}
+.ficha-conteudo{flex:1;min-width:0;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:16px 18px;overflow-y:auto}
+.ficha-cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+.ficha-badge{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.3px}
+.ficha-badge.st-nao_iniciada{background:var(--surface-2);color:var(--text-3);border:1px solid var(--border-strong)}
+.ficha-badge.st-andamento{background:var(--info-soft);color:var(--info);border:1px solid var(--info-line)}
+.ficha-badge.st-concluida{background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok-line)}
+.ficha-subs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.ficha-subtab{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;padding:5px 11px;border-radius:999px;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text-3);cursor:pointer;user-select:none}
+.ficha-subtab.st-andamento{border-color:var(--info-line);background:var(--info-soft);color:var(--info)}
+.ficha-subtab.st-concluida{border-color:var(--ok-line);background:var(--ok-soft);color:var(--ok)}
+.ficha-subtab.ativa{outline:2px solid var(--accent);outline-offset:1px}
+.ficha-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:220px;color:var(--muted);text-align:center}
+.ficha-conc{display:flex;align-items:center;gap:8px;background:var(--ok-soft);border:1px solid var(--ok-line);color:var(--ok);border-radius:8px;padding:7px 12px;font-size:.82rem;font-weight:600;margin-bottom:12px}
 .home-tab { padding:7px 16px;background:transparent;border:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:14px;font-weight:500;transition:all .15s; }
 .home-tab.ativo, .home-tab.active { color:var(--text);background:var(--surface-2);box-shadow:var(--shadow);font-weight:600; }
 .home-tab:hover { color:var(--text); }
@@ -13924,81 +13955,152 @@ function renderCiclo() {
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos pela obra — desmembramento operacional por parcela"><i class="ti ti-building-community"></i>Retenção por Obra</button>` : ''}
     </div>
   `;
-  for (const etapa of ETAPAS_CICLO) {
-    const dados     = _cicloData[etapa.codigo] || {};
-    const bloqueada = _etapaBloqueada(etapa.codigo) && !STATUS_CONCLUSIVOS.has(dados.status);
-    const etStatus  = bloqueada ? 'bloqueado' : (dados.status || "pendente");
-    // Indicador de Conclusão (Padrao_Design_v6 §4): ícone isolado, sem texto repetido, igual nos 2 temas.
-    const indConcl = etStatus === 'concluido'
-        ? '<span class="ind-conclusao feito" title="Concluído"><i class="ti ti-check"></i></span>'
-      : etStatus === 'em_andamento'
-        ? '<span class="ind-conclusao andamento" title="Em andamento"></span>'
-      : etStatus === 'bloqueado'
-        ? '<span class="ind-conclusao pendente" title="Bloqueado"><i class="ti ti-lock" style="font-size:10px;color:var(--muted)"></i></span>'
-        : '<span class="ind-conclusao pendente" title="Pendente"></span>';
-    const andamentoLabel = (etStatus === 'em_andamento' && etapa.codigo === '7')
-      ? ' <span style="font-size:11px;color:var(--muted);font-style:italic">(aguardando assinatura)</span>' : '';
-    // Para etapa 11 (pai do PE) mostrar indicador de progresso das subfases
-    const peProgressLabel = (etapa.codigo === '11') ? _renderEtapa11Progress() : '';
-    // Cronograma do Ciclo (Modulos_Orizon_v11): data prevista (D0+prazo) e data de conclusão.
-    // Prevista editável só por Gerente+ (reautenticação) — a opção nem aparece p/ os demais.
-    const cronoLabel = _cronoLabelEtapa(etapa.codigo, dados);
-    const indent = etapa.sub ? 'margin-left:24px;' : '';
-    const card   = document.createElement('div');
-    card.className = 'ciclo-card';
-    card.style.cssText = indent;
-    card.innerHTML = `
-      <div class="ciclo-card-header" onclick="toggleCicloCard('${etapa.codigo}')">
-        ${indConcl}
-        <span class="etapa-nome">${etapa.nome}${andamentoLabel}${peProgressLabel}</span>
-        ${cronoLabel}
-      </div>
-      <div class="ciclo-card-body" id="ciclo-body-${etapa.codigo}">
-        ${_cronoRespBlock(etapa.codigo, dados)}
-        ${etapa.acao === 'contrato'
-          ? _renderCardContrato()
-          : etapa.acao === 'conciliacao_final'
-            ? _renderCardConciliacaoFinal(dados, bloqueada)
-          : (etapa.codigo === '8' || etapa.codigo === '11d')
-            ? _renderCardAprovacaoFinanceira(etapa.codigo, dados, bloqueada)
-          : etapa.codigo === '9'
-            ? _renderCardSolicitacaoMedicao(dados, bloqueada)
-          : etapa.codigo === '10'
-            ? _renderCardMedicao(dados, bloqueada)
-          : PE_SUBFASES[etapa.codigo]
-            ? _renderCardPE(etapa.codigo, dados, bloqueada)
-          : etapa.codigo === '12'
-            ? _renderCardImplantacao(dados, bloqueada)
-          : etapa.codigo === '13'
-            ? _renderCardProducao(dados, bloqueada)
-          : etapa.codigo === '14'
-            ? _renderCardEntrega(dados, bloqueada)
-          : etapa.codigo === '15'
-            ? _renderCardEmissaoNfe(dados, bloqueada)
-            : _renderCardGenerico(etapa, dados, bloqueada)}
-      </div>
-    `;
-    panel.appendChild(card);
+  // ── FICHÁRIO (spec ciclo/2026-08-01): lombada com as 19 etapas principais + tela cheia ──
+  if (projetoAtivo && _cicloFichaProjeto !== projetoAtivo.nome_safe) {
+    _cicloFichaProjeto = projetoAtivo.nome_safe;
+    _cicloEtapaAtiva = null;                     // trocou de projeto → volta à etapa atual
   }
-  // Botão "Voltar" também ao final da lista de etapas (usabilidade)
+  if (!_cicloEtapaAtiva || !_fichaEtapaDef(_cicloEtapaAtiva)) _cicloEtapaAtiva = _fichaEtapaAtual();
+  const wrap = document.createElement('div');
+  wrap.className = 'ficha-wrap';
+  wrap.innerHTML = `<div class="ficha-lombada" id="ficha-lombada"></div>
+                    <div class="ficha-conteudo" id="ficha-conteudo"></div>`;
+  panel.appendChild(wrap);
+  _fichaRenderLombada();
+  _fichaRenderConteudo();
+  _fichaEfeitos(_cicloEtapaAtiva);
   const rodape = document.createElement('div');
-  rodape.style.cssText = 'margin-top:14px;display:flex';
+  rodape.style.cssText = 'margin-top:10px;display:flex';
   rodape.innerHTML = `
     <button class="btn btn-ghost btn-sm" onclick="fecharCiclo()"><i class="ti ti-arrow-left"></i>Voltar</button>`;
   panel.appendChild(rodape);
 }
 
-function toggleCicloCard(codigo) {
-  const body = document.getElementById(`ciclo-body-${codigo}`);
-  if (body) body.classList.toggle('aberto');
-  if (codigo === '7' && body && body.classList.contains('aberto')) {
-    carregarDadosContrato();
-  }
-  // Fatia 3 PE: abrir a 11e carrega os ambientes marcados p/ complemento + estado do aditivo
-  if (codigo === '11e' && body && body.classList.contains('aberto')) {
-    peComplementoRender();
-  }
+// ── Ciclo Fichário — estado e helpers (spec ciclo/2026-08-01) ─────────────────
+let _cicloEtapaAtiva = null;        // etapa selecionada (principal OU sub-etapa)
+let _cicloFichaProjeto = null;      // nome_safe — reseta a seleção ao trocar de projeto
+const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '17': ['17a'] };
+
+// Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento).
+function _statusFichario(codigo) {
+  const dados = _cicloData[codigo] || {};
+  if (STATUS_CONCLUSIVOS.has(dados.status)) return 'concluida';
+  if (_etapaBloqueada(codigo)) return 'nao_iniciada';
+  return 'andamento';
 }
+// Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído).
+function _fichaEtapaAtual() {
+  for (const c of ETAPAS_PRINCIPAIS) if (_statusFichario(c) !== 'concluida') return c;
+  return ETAPAS_PRINCIPAIS[ETAPAS_PRINCIPAIS.length - 1];
+}
+function _fichaMae(codigo) { const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p; }
+function _fichaEtapaDef(codigo) { return ETAPAS_CICLO.find(e => e.codigo === codigo); }
+
+function _fichaRenderLombada() {
+  const box = document.getElementById('ficha-lombada');
+  if (!box) return;
+  const ativaMae = _fichaMae(_cicloEtapaAtiva);
+  box.innerHTML = ETAPAS_PRINCIPAIS.map(c => {
+    const e = _fichaEtapaDef(c); if (!e) return '';
+    const st = _statusFichario(c);
+    const dot = st === 'concluida'
+      ? '<span class="ficha-dot"><i class="ti ti-check"></i></span>'
+      : '<span class="ficha-dot"></span>';
+    const pe = (c === '11') ? _renderEtapa11Progress() : '';
+    return `<div class="ficha-tab st-${st}${c === ativaMae ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')" title="${esc(e.nome)}">
+      ${dot}<span class="ficha-cod">${c}</span><span class="ficha-nome">${esc(e.nome)}${pe}</span></div>`;
+  }).join('');
+}
+
+function _fichaRenderConteudo() {
+  const box = document.getElementById('ficha-conteudo');
+  if (!box) return;
+  const codigo = _cicloEtapaAtiva;
+  const etapa = _fichaEtapaDef(codigo);
+  if (!etapa) { box.innerHTML = ''; return; }
+  const dados = _cicloData[codigo] || {};
+  const st = _statusFichario(codigo);
+  const mae = _fichaMae(codigo);
+  const rotStatus = { nao_iniciada: 'Não iniciada', andamento: 'Em andamento', concluida: 'Concluída' }[st];
+  const aguarda = (st === 'andamento' && codigo === '7')
+    ? ' <span style="font-size:11px;color:var(--muted);font-style:italic">(aguardando assinatura)</span>' : '';
+  // Sub-abas (mini-fichário) quando a etapa selecionada — ou sua mãe — tem sub-etapas (11/17).
+  let subs = '';
+  if (_FICHA_SUBS[mae]) {
+    const itens = [mae, ..._FICHA_SUBS[mae]];
+    subs = '<div class="ficha-subs">' + itens.map(c => {
+      const d = _fichaEtapaDef(c); const s = _statusFichario(c);
+      const rot = c === mae ? `${c} · Visão geral` : `${c} · ${d ? d.nome : c}`;
+      return `<span class="ficha-subtab st-${s}${c === codigo ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')">${esc(rot)}</span>`;
+    }).join('') + '</div>';
+  }
+  let corpo;
+  if (st === 'nao_iniciada') {
+    // Etapa futura: placeholder — NÃO chama o _renderCard* (não expõe ações de etapa travada).
+    corpo = `<div class="ficha-ph"><i class="ti ti-lock" style="font-size:26px"></i>
+      <div style="font-weight:700;color:var(--text)">Etapa não iniciada</div>
+      <div style="font-size:.82rem;max-width:420px">Esta etapa é liberada automaticamente quando a
+      etapa anterior do ciclo é concluída. Nenhuma ação disponível ainda.</div></div>`;
+  } else {
+    const bloqueada = _etapaBloqueada(codigo) && !STATUS_CONCLUSIVOS.has(dados.status);
+    const faixaConc = st === 'concluida'
+      ? `<div class="ficha-conc"><i class="ti ti-check"></i> Concluída${dados.concluido_em ? ' em ' + _fmtDataBR(dados.concluido_em) : ''}</div>`
+      : '';
+    corpo = faixaConc + _cronoRespBlock(codigo, dados) + _fichaCorpoEtapa(etapa, dados, bloqueada);
+  }
+  box.innerHTML = `
+    <div class="ficha-cab">
+      <span class="ficha-badge st-${st}">${rotStatus}</span>
+      <span style="font-weight:800;color:var(--text)">${codigo} · ${esc(etapa.nome)}</span>${aguarda}
+      <span style="margin-left:auto">${_cronoLabelEtapa(codigo, dados)}</span>
+    </div>
+    ${subs}
+    ${corpo}`;
+}
+
+// O switch de conteúdo por etapa é o MESMO do acordeão antigo — movido, não reescrito.
+function _fichaCorpoEtapa(etapa, dados, bloqueada) {
+  return etapa.acao === 'contrato'
+      ? _renderCardContrato()
+    : etapa.acao === 'conciliacao_final'
+      ? _renderCardConciliacaoFinal(dados, bloqueada)
+    : (etapa.codigo === '8' || etapa.codigo === '11d')
+      ? _renderCardAprovacaoFinanceira(etapa.codigo, dados, bloqueada)
+    : etapa.codigo === '9'
+      ? _renderCardSolicitacaoMedicao(dados, bloqueada)
+    : etapa.codigo === '10'
+      ? _renderCardMedicao(dados, bloqueada)
+    : PE_SUBFASES[etapa.codigo]
+      ? _renderCardPE(etapa.codigo, dados, bloqueada)
+    : etapa.codigo === '12'
+      ? _renderCardImplantacao(dados, bloqueada)
+    : etapa.codigo === '13'
+      ? _renderCardProducao(dados, bloqueada)
+    : etapa.codigo === '14'
+      ? _renderCardEntrega(dados, bloqueada)
+    : etapa.codigo === '15'
+      ? _renderCardEmissaoNfe(dados, bloqueada)
+      : _renderCardGenerico(etapa, dados, bloqueada);
+}
+
+// Efeitos de carregamento sob demanda que antes disparavam ao ABRIR o card do acordeão —
+// no fichário disparam ao selecionar a etapa (depois do render, pois escrevem no DOM dela).
+function _fichaEfeitos(codigo) {
+  if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
+  if (codigo === '7') carregarDadosContrato();
+  if (codigo === '11e') peComplementoRender();
+}
+
+function _fichaSelecionar(codigo) {
+  _cicloEtapaAtiva = codigo;
+  _fichaRenderLombada();
+  _fichaRenderConteudo();
+  _fichaEfeitos(codigo);
+}
+
+// Compat: os deep-links antigos (ex.: abrirCiclo() + toggleCicloCard('7')) seguem funcionando —
+// selecionar no fichário é o equivalente a "abrir o card".
+function toggleCicloCard(codigo) { _fichaSelecionar(codigo); }
 
 // ── FASE D2: Conciliação Final (etapa 21) — fecha os números e encerra o projeto ──
 function _renderCardConciliacaoFinal(dados, bloqueada) {

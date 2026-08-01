@@ -1364,6 +1364,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (Atendimentos · Chat Interno · Triagem e Contatos · Config do Chat · Meta Externo E2E
 > MET-001..008 com WhatsApp real na B); fora do git como os demais planos.
 >
+> **Sessão 132 (branch feat/ciclo-fichario → main):** Ciclo interno redesenhado em FICHÁRIO
+> (lombada + tela cheia; 3 tokens semânticos por estado; Vera APTA). Ver a sessão p/ os 2
+> fluxos de verificação manual pendentes e o 403 pré-existente do auto-save de pagamento.
+>
 > **Pendentes:** (a) executar o plano complementar (em especial MET-001..008 na B); VPS B →
 > produção segue gated por OK do usuário. (b) **F3/F4/F6** do plano 2026-07-28 seguem pendentes
 > (envio por template — inclusive o ramo fora-da-janela do encaminhamento de documento —,
@@ -2660,6 +2664,47 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 132 — Ciclo interno em FICHÁRIO (lombada + tela cheia) — branch feat/ciclo-fichario
+
+**Frente independente** (spec `docs/superpowers/specs/ciclo/2026-08-01-ciclo-fichario-design.md` +
+mockup aprovado). Redesign de APRESENTAÇÃO apenas: `mod_ciclo.py`, `database.py` e endpoints
+intocados (diff = só `static/index.html`, +168/−66; conferido pela Vera).
+
+**Implementado:** o acordeão vertical de cards deu lugar a **lombada** (as 19 etapas de
+`ETAPAS_PRINCIPAIS`, uma aba por etapa com dot de status) + **tela cheia** da etapa selecionada
+(cabeçalho com badge de status, nome, cronograma `_cronoLabelEtapa`; corpo = o MESMO switch de
+`_renderCard*` de antes — movido p/ `_fichaCorpoEtapa`, não reescrito). **Decisão de design
+registrada:** os 3 estados usam TOKENS SEMÂNTICOS distintos em vez do `--accent` em dois
+tratamentos — não-iniciada `--text-3/--surface-2/--border-strong` · andamento
+`--info/--info-soft/--info-line` · concluída `--ok/--ok-soft/--ok-line`; `.ind-conclusao`
+permanece INTOCADO (outras telas dependem dele) — classes novas `.ficha-*`. Seleção default =
+primeira etapa não concluída (`_fichaEtapaAtual`); troca de projeto reseta. **Sub-abas** da 11
+(Visão geral + 11a–11e) e da 17 (17a) como mini-fichário dentro do conteúdo. **Placeholder**
+"Etapa não iniciada" em etapa futura (não chama `_renderCard*` — zero botões/inputs, conferido).
+Faixa "✓ Concluída em DD/MM/AAAA" padronizada. Preservados: barra de ações do projeto, tag "com
+a bola", `toggleCicloCard` virou alias de `_fichaSelecionar` (deep-links tipo "abrir na etapa 7"
+seguem funcionando), efeitos sob demanda (`carregarDadosContrato` na 7, `peComplementoRender`
+na 11e) disparam na seleção via `_fichaEfeitos`.
+
+**QA (Vera, relatório completo na sessão):** APTA — paridade de constantes JS×backend, 18/18
+medidas de token via getComputedStyle nos DOIS temas (valores distintos entre estados e entre
+claro/escuro), placeholder sem ações, deep-link ok nos 3 projetos, estados da lombada validados
+contra réplica independente do `_statusFichario` sobre o JSON da API (3×19 abas + 12 sub-abas,
+zero divergência), console pageerror ZERO, `check-design-tokens` ✔, pytest de ciclo/arquitetura
+verde. Suíte completa **1646+8 verde** (1 error de colisão de execuções paralelas no
+`orizon_test`; isolado, passa).
+
+**Achados registrados (não são desta frente):** (a) 🟡 `PATCH /orcamentos/<id>/valor` → 403
+recorrente no console ao abrir projeto com contrato assinado — auto-save do preview de pagamento
+(`agendarSalvarPagamento`/`ativarOrcamento`) dispara e o servidor rejeita (orçamento travado
+pós-contrato); PRÉ-EXISTENTE, fora do diff — tratar como pendência própria. (b) Sub-etapa de mãe
+desbloqueada sem status aparece "em andamento" (fórmula da spec §3.2, igual ao acordeão antigo);
+se quiserem sequenciamento visual dentro do PE, é decisão de produto futura.
+
+**Verificação manual pendente (sem massa de dados p/ testar leitura-só):** projeto 100% concluído
+(etapa 21) e reabertura por gerente com cascata (`codigos_a_resetar`) — o front recalcula
+`_statusFichario` a cada `carregarCiclo`, mas vale o olho humano nesses 2 fluxos.
 
 ## Sessão 131 — Revisão de UX da F7/Chat Interno (feedback do usuário sobre a Sessão 130)
 

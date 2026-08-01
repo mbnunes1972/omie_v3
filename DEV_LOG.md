@@ -1349,8 +1349,8 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > relatório na Sessão 130). **Sessão 131**: revisão de UX da F7/Chat Interno aplicada por
 > feedback do usuário — abas Pessoais·Grupos·Arquivadas nos dois canais, Pendentes como
 > filtro, arquivamento real, 7 segmentos no seletor, Mural na barra de ações.
-> **Re-ingestão MCP PENDENTE** — o container Neo4j (docker compose do
-> `../mcp-orizon`) não está de pé nesta máquina; ao subir, rodar `POST localhost:8767/ingest/all`.
+> **Grafo MCP re-ingerido (2026-08-01, pós-fichário + fix do auto-save)** — fonte `all`:
+> código 3313 nodes/3013 edges, banco 210/140, requisitos 31, domínio 19, decisões 17.
 >
 > **🚀 DEPLOY A+B EXECUTADO (2026-07-31, tag `v2026.07.31b-homolog` = `0d41e81`, a pedido do
 > usuário):** VPS A (`orizon-a` :8765, main) e VPS B (`orizon-b` :8766, tag) atualizadas via

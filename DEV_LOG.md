@@ -1352,9 +1352,19 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > **Re-ingestão MCP PENDENTE** — o container Neo4j (docker compose do
 > `../mcp-orizon`) não está de pé nesta máquina; ao subir, rodar `POST localhost:8767/ingest/all`.
 >
-> **Pendentes:** (a) promoção à **VPS B** — avisar o Claude (Cowork): tag `v2026.MM.DD-homolog` +
-> deploy validado (`orizon-b.service`) + E2E com WhatsApp real (número desconhecido → fila de
-> triagem → vínculo → transição de fase → grupo evoluindo → documento encaminhado); VPS B →
+> **🚀 DEPLOY A+B EXECUTADO (2026-07-31, tag `v2026.07.31b-homolog` = `0d41e81`, a pedido do
+> usuário):** VPS A (`orizon-a` :8765, main) e VPS B (`orizon-b` :8766, tag) atualizadas via
+> `deploy_ab.sh` — ambas 302; migrações novas verificadas no Postgres da B (`triagem_entradas` ✓,
+> `conversas.segmento` ✓, `segmento_config.responsavel_funcionario_id` ✓,
+> `conversa_mensagens.evento` ✓); as 4 envs `ORIZON_WA_*` carregadas no processo da B (transporte
+> Meta CONECTADO); webhook `https://homolog.orizonone.com.br/webhooks/whatsapp` vivo (403 p/
+> token errado; site 302); **número conectado (12) 99602-1234** gravado nas bases A, B e local
+> (loja INSPIRIUM). **Plano de Testes COMPLEMENTAR** criado:
+> `plano_de_testes/Plano_de_Testes_Complementar_Orizon_Chat.xlsx` — 43 cenários em 5 jornadas
+> (Atendimentos · Chat Interno · Triagem e Contatos · Config do Chat · Meta Externo E2E
+> MET-001..008 com WhatsApp real na B); fora do git como os demais planos.
+>
+> **Pendentes:** (a) executar o plano complementar (em especial MET-001..008 na B); VPS B →
 > produção segue gated por OK do usuário. (b) **F3/F4/F6** do plano 2026-07-28 seguem pendentes
 > (envio por template — inclusive o ramo fora-da-janela do encaminhamento de documento —,
 > reengajamento RF-17, fluxo da triagem automática RF-08/09; o campo `segmento_sugerido` da fila

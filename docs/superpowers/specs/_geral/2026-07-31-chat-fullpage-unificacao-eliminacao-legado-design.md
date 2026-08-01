@@ -158,6 +158,17 @@ O que adotar no Orizon Chat:
     F7/triagem/contato viram dinâmicos (`GET /api/comunicacao/segmentos/ativos`, aberto a
     qualquer usuário autenticado).
 
+**Rodada 5 (mesmo dia):**
+
+15. **Aba "Todas" (gerência)** nos dois canais: Pessoais são as conversas DO USUÁRIO; quem tem
+    `ver_todas_conversas` ganha a aba **Todas** — no Chat Interno vê a comunicação entre os
+    funcionários (direct/grupo), nos Atendimentos vê todos os atendimentos/projetos.
+    `listar_todas_conversas` passou a incluir tipo `projeto` (+ campos `segmento`/
+    `projeto_nome` para o split por canal). Abrir de Todas: normal quando participa; senão
+    SOMENTE LEITURA (o backend já barrava o post em DM alheia). **Substitui o painel de
+    Administração** (botão/view/funções removidos — um caminho só por ação; a busca do canal
+    cobre título, participantes e prévia).
+
 ## Riscos e pontos de atenção
 
 - `ccAbrirConversaProjeto` é chamado também no fluxo `abrir=true` (~15484) — incluir na busca.

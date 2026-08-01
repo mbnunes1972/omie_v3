@@ -2703,6 +2703,14 @@ validações (triagem config, definir_segmento) aceitam customs da loja.
 `tests/test_chat_segmentos_crud.py` (+5). Suíte completa **1647 verde**; headless validado
 (seletor oculto em conversa interna; tela com responsável/novo/apagar).
 
+**Rodada 5 (mesmo dia):** **aba "Todas" da gerência** nos dois canais (Pessoais = conversas do
+usuário; `ver_todas_conversas` → aba Todas: comunicação entre funcionários no Chat Interno,
+atendimentos/projetos nos Atendimentos). `listar_todas_conversas` inclui tipo `projeto` +
+`segmento`/`projeto_nome` (split por canal). Abrir de Todas: normal se participa, senão somente
+leitura. **Painel de Administração removido** (botão/view/família ocAdmin* — a aba assume; um
+caminho só). Headless: gerente vê DMs alheias na aba, operador não vê a aba. Número conectado
+da loja INSPIRIUM corrigido no banco local (+55 (12) 99602-1234 — não havia registro).
+
 **Ajuste na sequência (pedido do usuário):** o "Adicionar Contato" ganhou o campo **Tipo** — o
 destino no cadastro é definido no formulário: **Cliente · Parceiro** (Parceiro + vínculo
 `ParceiroLoja` com a loja) **· Fornecedor** (telefone no campo `telefone` — o model não tem

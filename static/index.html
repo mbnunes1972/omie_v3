@@ -2065,18 +2065,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     </div>
                     <div id="oc-nova-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
                   </div>
-                  <!-- administração (ver_todas_conversas) -->
-                  <div id="oc-admin" class="oc-view">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                      <div style="font-weight:800"><i class="ti ti-shield-cog"></i> Todas as conversas</div>
-                      <button class="btn btn-ghost btn-sm" onclick="ocAdminFechar()">Voltar</button>
-                    </div>
-                    <div style="display:flex;gap:8px;margin-bottom:8px">
-                      <select id="oc-adm-assunto" onchange="ocAdminCarregar()" style="flex:1;padding:6px 8px"></select>
-                      <select id="oc-adm-part" onchange="ocAdminCarregar()" style="flex:1;padding:6px 8px"></select>
-                    </div>
-                    <div id="oc-adm-lista" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:6px"></div>
-                  </div>
                   <!-- fórum: debates + novo debate + busca -->
                   <div id="oc-forum" class="oc-view">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:8px">
@@ -2269,7 +2257,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                   <button class="btn btn-ghost btn-sm" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
                   <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
                   <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
-                  <button class="btn btn-ghost btn-sm" id="int-admin" style="display:none" onclick="ocAdminAbrir()"><i class="ti ti-shield-cog"></i> Administração</button>
                 </div>
                 <div class="atd-tabs" id="int-tabs"></div>
                 <div class="atd-filtro">
@@ -10198,11 +10185,51 @@ function ocAbrirMural(){
   else if(typeof showToast==='function') showToast('Mural indisponível — atualize a lista.', true);
 }
 
+// ── aba "Todas" (r5): oversight da GERÊNCIA — Pessoais são as conversas DO USUÁRIO; quem tem
+// ver_todas_conversas ganha a aba Todas nos dois canais (comunicação entre funcionários no
+// Chat Interno; todos os atendimentos/projetos nos Atendimentos). Substitui o painel de
+// Administração. Abrir: normal se participa; senão SOMENTE LEITURA (o backend já barra o post).
+function _ocTabsDe(){
+  const t = _OC_TABS.slice();
+  if(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas)
+    t.push({key:'todas', rot:'Todas', icon:'ti-eye'});
+  return t;
+}
+let _ocTodas = null;
+async function _ocTodasCarregar(force){
+  if(_ocTodas && !force) return _ocTodas;
+  try{
+    const d = await fetch('/api/comunicacao/admin/conversas',{credentials:'same-origin'}).then(r=>r.json());
+    if(d && d.ok) _ocTodas = d.conversas || [];
+  }catch(e){}
+  return _ocTodas || [];
+}
+function _ocTodasDoCanal(qual){
+  const l = _ocTodas || [];
+  return qual==='atd' ? l.filter(c=>c.tipo==='projeto' || c.segmento)
+                      : l.filter(c=>(c.tipo==='direct'||c.tipo==='grupo') && !c.segmento);
+}
+function _ocTodasItemHTML(c){
+  const tipoRot = c.tipo==='projeto' ? 'Projeto' : (_INT_TIPOROT[c.tipo]||c.tipo);
+  const badge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(tipoRot)+'</span>'
+    + (c.segmento ? ' <span class="atd-badge atd-b-seg">'+esc(_ocSegRot(c.segmento))+'</span>' : '');
+  return '<div class="atd-item" onclick="ocAbrirTodas('+c.id+')">'
+    + '<div class="atd-top"><span class="atd-nome">'+esc(c.titulo||'Conversa')+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
+    + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.participantes||[]).join(', '))+'</div>'
+    + '<div class="atd-tags">'+badge+'</div></div>';
+}
+async function ocAbrirTodas(id){
+  if((_ocInbox||[]).some(x=>x.id===id)){ await ocAbrirConversa(id); return; }   // participo → normal
+  const c = (_ocTodas||[]).find(x=>x.id===id);
+  if(!c) return;
+  await ocAbrirConversaPorId(c.id, c.titulo||'Conversa', false, c.tipo, c.projeto_nome);   // oversight
+}
+
 async function chatInternoCarregar(){
   // gating dos botões de ação (mesma regra do modal)
   const rede = ((_usuarioAtual && _usuarioAtual.lojas)||[]).find(l=>l.id===(_lojaAtiva||(_usuarioAtual&&(_usuarioAtual.loja_ativa_id||_usuarioAtual.loja_id))));
   const bO = document.getElementById('int-forum-orizon'); if(bO) bO.style.display = (rede && rede.rede_id) ? '' : 'none';
-  const bA = document.getElementById('int-admin'); if(bA) bA.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas) ? '' : 'none';
   const box = document.getElementById('int-lista');
   let d;
   try{ d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json()); }
@@ -10226,21 +10253,30 @@ async function chatInternoCarregar(){
 }
 // Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
 async function intTab(k){
-  _intTab=k; intRender();
-  if(_intVisiveis.length) await ocAbrirConversa(_intVisiveis[0].id);
+  _intTab=k;
+  if(k==='todas') await _ocTodasCarregar();
+  intRender();
+  if(_intVisiveis.length) await (k==='todas' ? ocAbrirTodas(_intVisiveis[0].id) : ocAbrirConversa(_intVisiveis[0].id));
   else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
 }
 let _intVisiveis = [];   // conversas visíveis na aba atual (alvo do auto-abrir)
 function intRender(){
   const tabsEl = document.getElementById('int-tabs');
   const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
-  tabsEl.innerHTML = _OC_TABS.map(t=>{
-    const n = _intInbox.filter(c=>_ocDaTab(c,t.key)).length;
+  tabsEl.innerHTML = _ocTabsDe().map(t=>{
+    const n = t.key==='todas' ? _ocTodasDoCanal('int').length : _intInbox.filter(c=>_ocDaTab(c,t.key)).length;
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
     const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
     return '<div class="atd-tab'+(t.key===_intTab?' active':'')+'" onclick="intTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
   }).join('');
   const box = document.getElementById('int-lista');
+  if(_intTab==='todas'){                              // oversight da gerência (r5)
+    let todos = _ocTodasDoCanal('int');
+    if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+    _intVisiveis = todos;
+    box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
+    return;
+  }
   let itens = _intInbox.filter(c=>_ocDaTab(c,_intTab));
   if(_ocPend.int) itens = itens.filter(c=>c.pendente);
   if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
@@ -10272,7 +10308,8 @@ function _intItemHTML(c){
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
     + '<div class="atd-tags">'+tipoBadge+'</div></div>';
 }
-// (intNova/intForum/intAdmin legados removidos — os botões chamam ocNovaAbrir/ocForumAbrir/ocAdminAbrir.)
+// (intNova/intForum/intAdmin e o painel de Administração legados foram removidos — o oversight
+//  da gerência vive na aba "Todas" dos dois canais, r5.)
 
 // ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];
@@ -10304,8 +10341,10 @@ async function chatAtendCarregar(){
 }
 // Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
 async function atendTab(k){
-  _atdTab=k; atendRender();
-  if(_atdVisiveis.length) await ocAbrirConversa(_atdVisiveis[0].id);
+  _atdTab=k;
+  if(k==='todas') await _ocTodasCarregar();
+  atendRender();
+  if(_atdVisiveis.length) await (k==='todas' ? ocAbrirTodas(_atdVisiveis[0].id) : ocAbrirConversa(_atdVisiveis[0].id));
   else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
 }
 let _atdTriagem = [];    // fila de triagem: recebida SEM DONO → topo de Pessoais (sempre pendente)
@@ -10316,13 +10355,21 @@ function atendRender(){
   const q = ((document.getElementById('atd-busca')||{}).value||'').trim().toLowerCase();
   let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
-  tabsEl.innerHTML = _OC_TABS.map(t=>{
-    const n = _atdInbox.filter(c=>_ocDaTab(c,t.key)).length + (t.key==='pessoais' ? _atdTriagem.length : 0);
+  tabsEl.innerHTML = _ocTabsDe().map(t=>{
+    const n = t.key==='todas' ? _ocTodasDoCanal('atd').length
+            : _atdInbox.filter(c=>_ocDaTab(c,t.key)).length + (t.key==='pessoais' ? _atdTriagem.length : 0);
     const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
     const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
     return '<div class="atd-tab'+(t.key===_atdTab?' active':'')+'" onclick="atendTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
   }).join('');
   const box = document.getElementById('atd-lista');
+  if(_atdTab==='todas'){                              // oversight da gerência (r5)
+    let todos = _ocTodasDoCanal('atd');
+    if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+    _atdVisiveis = todos;
+    box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
+    return;
+  }
   let itens = _atdInbox.filter(c=>_ocDaTab(c,_atdTab));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
   if(_ocPend.atd) itens = itens.filter(c=>c.pendente);
@@ -12745,7 +12792,6 @@ let _ocExternos = [];     // contatos EXTERNOS a incluir (WhatsApp/e-mail, sem U
 let _ocConvAtiva = null;  // id da conversa aberta
 let _ocConvTipo = null;
 let _ocConvProjeto = null;   // nome_safe do projeto quando a conversa aberta é tipo=projeto
-let _ocAdminView = false;    // thread aberta pelo painel admin (read-only)
 let _ocAssuntoCache = null;  // {assuntos:[], projetos:[]}
 let _ocNumChip = null;       // cache do número conectado (false = indisponível p/ este usuário)
 
@@ -12767,7 +12813,7 @@ function ocAbrirPagina(scr){
 }
 
 function ocMostrarView(view){
-  ['oc-vazio','oc-nova','oc-admin','oc-forum','oc-thread','oc-triagem','oc-contato'].forEach(id=>{
+  ['oc-vazio','oc-nova','oc-forum','oc-thread','oc-triagem','oc-contato'].forEach(id=>{
     const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
   });
 }
@@ -12833,7 +12879,7 @@ function _ocTituloComAssunto(c){
 
 // ── thread ────────────────────────────────────────────────────────────────────
 async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
-  _ocConvAtiva = id; _ocAdminView = false; _ocConvTipo = tipo || null;
+  _ocConvAtiva = id; _ocConvTipo = tipo || null;
   _ocConvProjeto = projetoNome || null;
   ocMostrarView('oc-thread');
   if(typeof ocRemoverAnexo === 'function') ocRemoverAnexo();   // limpa anexo pendente ao trocar
@@ -13368,63 +13414,6 @@ async function ocCriar(){
     if(c) await ocAbrirConversa(c.id);
     else await ocAbrirConversaPorId(d.conversa.id, d.conversa.titulo || 'Conversa', true, 'grupo');
   }catch(e){ aviso.textContent = 'Erro de rede.'; }
-}
-
-// ── painel de administração (ver_todas_conversas) ─────────────────────────────
-let _ocAdminInbox = [];
-async function ocAdminAbrir(){
-  ocMontarPane('interno');
-  ocMostrarView('oc-admin');
-  // filtros: assunto (com "todos") + participante (com "todos")
-  if(!_ocAssuntoCache) await ocCarregarAssuntos();
-  ocPreencherSelectAssunto(document.getElementById('oc-adm-assunto'), true);
-  const selP = document.getElementById('oc-adm-part');
-  if(selP && selP.options.length <= 1){
-    try{
-      const d = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
-      selP.innerHTML = '<option value="">— todos os participantes —</option>'
-        + ((d.usuarios||[]).map(u=>'<option value="'+u.id+'">'+esc(u.nome)+'</option>').join(''));
-    }catch(e){ selP.innerHTML = '<option value="">— todos —</option>'; }
-  }
-  await ocAdminCarregar();
-}
-function ocAdminFechar(){
-  _ocAdminView = false;
-  ocPaneVoltar();
-}
-async function ocAdminCarregar(){
-  const box = document.getElementById('oc-adm-lista');
-  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">Carregando…</div>';
-  const a = _ocParseAssunto(document.getElementById('oc-adm-assunto').value);
-  const part = document.getElementById('oc-adm-part').value;
-  const qp = [];
-  if(a.assunto_tipo && document.getElementById('oc-adm-assunto').value){ qp.push('assunto_tipo='+encodeURIComponent(a.assunto_tipo));
-    const ref = a.projeto_nome || a.assunto_id;
-    if(ref) qp.push('assunto_ref='+encodeURIComponent(ref)); }
-  if(part) qp.push('participante='+encodeURIComponent(part));
-  let d;
-  try{ d = await fetch('/api/comunicacao/admin/conversas'+(qp.length?('?'+qp.join('&')):''),{credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">Erro de rede.</div>'; return; }
-  if(!d.ok){ box.innerHTML='<div style="color:var(--err);font-size:12px;padding:8px">'+esc(d.erro||'Erro.')+'</div>'; return; }
-  _ocAdminInbox = d.conversas || [];
-  if(!_ocAdminInbox.length){ box.innerHTML='<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>'; return; }
-  box.innerHTML = _ocAdminInbox.map((c,i)=>{
-    const icon = c.tipo==='grupo'?'ti-users':'ti-user';
-    const seg = (c.assunto && c.assunto.label) ? c.assunto.label : 'Conversa Livre';
-    return '<div onclick="ocAdminAbrirConversa('+i+')" style="padding:8px;border-radius:8px;cursor:pointer;margin-bottom:2px"'
-      + ' onmouseover="this.style.background=\'var(--surface-2)\'" onmouseout="this.style.background=\'\'">'
-      + '<div style="font-weight:700;font-size:13px"><i class="ti '+icon+'"></i> '+esc(c.titulo||'Conversa')+'</div>'
-      + '<div style="font-size:11px;color:var(--muted)">'+esc((c.participantes||[]).join(', '))+'  ·  <span style="color:var(--accent)">'+esc(seg)+'</span></div>'
-      + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.ultima_previa||'—')+'</div>'
-      + '</div>';
-  }).join('');
-}
-async function ocAdminAbrirConversa(idx){
-  const c = _ocAdminInbox[idx];
-  if(!c) return;
-  const seg = (c.assunto && c.assunto.label) ? ('  ·  '+c.assunto.label) : '';
-  await ocAbrirConversaPorId(c.id, (c.titulo||'Conversa') + seg, false, c.tipo);   // oversight: leitura apenas
-  _ocAdminView = true;
 }
 
 // ── Fóruns: debates com assunto + busca ───────────────────────────────────────

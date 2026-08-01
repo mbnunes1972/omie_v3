@@ -957,10 +957,13 @@ def _nomes_participantes(db, conversa_id):
 
 def listar_todas_conversas(db, loja_id, participante_id=None,
                            assunto_tipo=None, assunto_ref=None):
-    """ADMIN (ver_todas_conversas): TODAS as conversas direct/grupo da loja, com filtro opcional
-    por participante e por assunto. `assunto_ref` = projeto_nome (tipo projeto) ou id (custom)."""
+    """OVERSIGHT (ver_todas_conversas — aba "Todas" da gerência, r5): TODAS as conversas
+    direct/grupo/PROJETO da loja — a comunicação entre os funcionários E os atendimentos —
+    com filtro opcional por participante e por assunto. Leitura; postar segue as regras
+    normais (DM alheia é somente leitura). `assunto_ref` = projeto_nome ou id (custom)."""
     q = (db.query(Conversa)
-           .filter(Conversa.loja_id == loja_id, Conversa.tipo.in_(("direct", "grupo"))))
+           .filter(Conversa.loja_id == loja_id,
+                   Conversa.tipo.in_(("direct", "grupo", "projeto"))))
     if assunto_tipo:
         q = q.filter(Conversa.assunto_tipo == assunto_tipo)
         if assunto_tipo == "projeto" and assunto_ref:
@@ -977,9 +980,13 @@ def listar_todas_conversas(db, loja_id, participante_id=None,
         nomes = _nomes_participantes(db, c.id)
         ultima = (db.query(ConversaMensagem).filter_by(conversa_id=c.id)
                     .order_by(ConversaMensagem.criado_em.desc(), ConversaMensagem.id.desc()).first())
+        titulo = c.titulo or (" ↔ ".join(nomes) if c.tipo == "direct" else "Conversa")
+        if c.tipo == "projeto":
+            titulo = "📁 " + ((c.projeto_nome or "Projeto").replace("_", " "))
         itens.append({
-            "id": c.id, "tipo": c.tipo,
-            "titulo": c.titulo or (" ↔ ".join(nomes) if c.tipo == "direct" else "Conversa"),
+            "id": c.id, "tipo": c.tipo, "titulo": titulo,
+            "projeto_nome": c.projeto_nome,
+            "segmento": c.segmento,               # r5: separa atendimentos × internas na aba Todas
             "participantes": nomes, "assunto": _assunto_do(db, c),
             "ultima_previa": (("" if ultima is None else
                                (MASCARA_PRIVADA if ultima.privada else (ultima.corpo or "")))[:120]),

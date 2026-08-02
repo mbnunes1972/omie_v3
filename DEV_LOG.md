@@ -1364,6 +1364,11 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (Atendimentos · Chat Interno · Triagem e Contatos · Config do Chat · Meta Externo E2E
 > MET-001..008 com WhatsApp real na B); fora do git como os demais planos.
 >
+> **🚀 DEPLOY A+B (2026-08-02, tag `v2026.08.02-homolog` = `a5353b6`):** VPS A (main) e VPS B
+> (tag) atualizadas via `deploy_ab.sh` — ambas 302; B com as 4 envs Meta no processo, webhook
+> vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
+> Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
+>
 > **Sessão 133 (fichário fase 2):** AF auditada (3 camadas, front espelha o gate); Briefing e
 > Provisões DIRETO na tela das etapas 3/8/11d; desmembramento em fases disponível desde a
 > Solicitação de Medição (9 e 10; backend já permitia pós-contrato).

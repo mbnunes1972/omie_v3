@@ -13944,6 +13944,7 @@ function _tagComABola() {
 function renderCiclo() {
   const panel = document.getElementById('ciclo-panel');
   if (!panel) return;
+  if (typeof _bfEstacionar === 'function') _bfEstacionar();   // não destruir o form do briefing
   panel.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
       <h3 style="margin:0;color:var(--text);font-weight:800">Etapas do Projeto</h3>
@@ -14017,6 +14018,7 @@ function _fichaRenderLombada() {
 function _fichaRenderConteudo() {
   const box = document.getElementById('ficha-conteudo');
   if (!box) return;
+  if (typeof _bfEstacionar === 'function') _bfEstacionar();   // não destruir o form do briefing
   const codigo = _cicloEtapaAtiva;
   const etapa = _fichaEtapaDef(codigo);
   if (!etapa) { box.innerHTML = ''; return; }
@@ -14062,6 +14064,12 @@ function _fichaRenderConteudo() {
 
 // O switch de conteúdo por etapa é o MESMO do acordeão antigo — movido, não reescrito.
 function _fichaCorpoEtapa(etapa, dados, bloqueada) {
+  const corpo = _fichaCorpoBase(etapa, dados, bloqueada);
+  // r2 (2026-08-02): desmembramento em fases disponível DESDE a Solicitação de Medição —
+  // telas 9 e 10 ganham o bloco (a 11c já o tinha dentro do próprio card).
+  return (etapa.codigo === '9' || etapa.codigo === '10') ? corpo + _desmembramentoBloco() : corpo;
+}
+function _fichaCorpoBase(etapa, dados, bloqueada) {
   return etapa.acao === 'contrato'
       ? _renderCardContrato()
     : etapa.acao === 'conciliacao_final'
@@ -14091,6 +14099,12 @@ function _fichaEfeitos(codigo) {
   if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
   if (codigo === '7') carregarDadosContrato();
   if (codigo === '11e') peComplementoRender();
+  // Fichário fase 2: telas diretas (sem modal) — briefing na 3, provisões nas AFs.
+  if (codigo === '3') briefingInlineMontar();
+  if ((codigo === '8' || codigo === '11d') && _orcamentoAtivoId
+      && _usuarioAtual && _usuarioAtual.pode_aprovar_financeiro) {
+    abrirProvisoes(_orcamentoAtivoId, codigo);
+  }
 }
 
 function _fichaSelecionar(codigo) {
@@ -14103,6 +14117,20 @@ function _fichaSelecionar(codigo) {
 // Compat: os deep-links antigos (ex.: abrirCiclo() + toggleCicloCard('7')) seguem funcionando —
 // selecionar no fichário é o equivalente a "abrir o card".
 function toggleCicloCard(codigo) { _fichaSelecionar(codigo); }
+
+// Desmembramento em FASES de entrega (spec 2026-07-27) — disponível DESDE a Solicitação de
+// Medição (r2 do fichário, pedido 2026-08-02): o backend só exige contrato assinado (etapa 7),
+// então as telas 9 e 10 ganham o mesmo bloco que já existia na 11c (id único por vez — o
+// fichário renderiza uma etapa por vez).
+function _desmembramentoBloco() {
+  return `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">A obra pode exigir
+    entregar o projeto em <strong>fases</strong> — disponível desde a Solicitação de Medição;
+    cada fase percorre o ciclo de forma independente.</div>
+    <button class="btn-ciclo" onclick="peDesmembrarRender()"><i class="ti ti-layout-columns"></i> Desmembrar em fases</button>
+    <div id="pe-desm-container" style="margin-top:12px"></div>
+  </div>`;
+}
 
 // ── FASE D2: Conciliação Final (etapa 21) — fecha os números e encerra o projeto ──
 function _renderCardConciliacaoFinal(dados, bloqueada) {
@@ -14459,9 +14487,8 @@ function _renderCardGenerico(etapa, dados, bloqueada) {
         ${briefLocked ? `<span style="margin-left:10px;font-size:.75rem;color:var(--muted);
           border:1px solid var(--muted);border-radius:3px;padding:1px 6px"><i class="ti ti-lock"></i> bloqueado após 1º orçamento</span>` : ''}
       </div>
-      ${cliId ? `<button class="btn btn-ghost btn-sm" onclick="abrirBriefingProjeto('${(projetoAtivo?.nome_safe||'').replace(/'/g,"\\'")}', '${(cliNome).replace(/'/g,"\\'")}')">
-        ${briefLocked ? '<i class="ti ti-eye"></i> Ver Briefing' : '<i class="ti ti-pencil"></i> ' + (concluido ? 'Editar' : 'Preencher') + ' Briefing'}
-      </button>` : ''}`;
+      ${cliId ? `<div id="bf-inline-slot" style="margin-top:6px"></div>`
+              : '<p style="color:var(--muted);font-size:.85rem">Projeto sem cliente vinculado.</p>'}`;
   }
 
   // Card especial etapa 4 — Orçamento: lista os orçamentos do projeto
@@ -14536,11 +14563,16 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
       <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:4px">Cancelamento de contrato: estorna TODOS os lançamentos e trava o projeto como "cancelado" (revender = novo projeto). Exige senha de Diretor. Só na AF1 — depois, cancelamento e devolução são fora do ciclo.</div>
       <button class="btn-ciclo" onclick="cancelarContrato()" style="background:var(--cancel);color:var(--cancel-on);border-color:var(--cancel);font-weight:700"><i class="ti ti-file-x"></i> Cancelar contrato</button>
     </div>` : '';
-  const _btnProvisoes = `<button onclick="abrirProvisoes(_orcamentoAtivoId, '${codigo}')"
-    style="background:none;border:1px solid var(--border2);color:var(--accent);
-    border-radius:6px;padding:8px 14px;font-size:.85rem;font-weight:600;cursor:pointer">
-    &#x1F4CA; Provisões
-  </button>`;
+  // Fichário fase 2 (2026-08-02): o painel de Provisões renderiza DIRETO na tela da etapa
+  // (slot abaixo; _fichaEfeitos dispara abrirProvisoes). O acesso espelha o backend: GET
+  // /provisoes e a aprovação exigem aprovar_financeiro (Gerente Adm/Fin e Diretores) — para
+  // os demais, aviso claro em vez de um botão que levaria a 403.
+  const _podeAF = !!(_usuarioAtual && _usuarioAtual.pode_aprovar_financeiro);
+  const _btnProvisoes = _podeAF
+    ? `<div id="prov-inline-slot" style="flex:1;min-width:280px;margin-top:4px">
+         <span style="color:var(--muted);font-size:.82rem">Carregando provisões…</span></div>`
+    : `<div style="font-size:.82rem;color:var(--muted)"><i class="ti ti-lock"></i>
+         Aprovação financeira restrita ao Gerente Administrativo/Financeiro e Diretores.</div>`;
   if (concluido) {
     const dt = dados.concluido_em
       ? new Date(dados.concluido_em).toLocaleDateString('pt-BR')
@@ -14771,19 +14803,28 @@ async function abrirProvisoes(oid, afCodigo) {
       </div>`) +
     revisaSection +
     '<div id="_prov-erro" style="color:var(--err);font-size:.78rem;min-height:14px;margin-top:8px"></div>' +
-    actionBtns +
-    '<div style="margin-top:16px;display:flex;justify-content:flex-end">' +
-    '<button data-act="fechar" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
-    'border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Fechar</button>' +
-    '</div>';
+    actionBtns;
 
+  // Fichário fase 2 (2026-08-02): na tela de AF o painel renderiza DIRETO na área da etapa
+  // (sem overlay, sem botão Fechar). O caminho de overlay permanece para compat de fluxos fora
+  // do fichário. A tabela interna já tem scroll próprio (max-height 55vh).
+  const slotInline = document.getElementById('prov-inline-slot');
+  if (slotInline) {
+    slotInline.innerHTML = html;
+    window._provModalOv = null;
+    return;
+  }
   // Build overlay with wider box for table
   const ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;' +
     'align-items:center;justify-content:center;z-index:99999';
   ov.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);' +
     'border-radius:10px;padding:22px 24px;max-width:720px;width:95%;max-height:90vh;overflow-y:auto;' +
-    'box-shadow:0 10px 40px rgba(0,0,0,.6)">' + html + '</div>';
+    'box-shadow:0 10px 40px rgba(0,0,0,.6)">' + html +
+    '<div style="margin-top:16px;display:flex;justify-content:flex-end">' +
+    '<button data-act="fechar" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
+    'border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Fechar</button>' +
+    '</div></div>';
   document.body.appendChild(ov);
 
   // Store oid on overlay for re-use in _provAcao
@@ -17464,7 +17505,18 @@ async function cliViaCepInst(cep) {
 let _bfClienteId = null;
 let _bfProjetoNome = null;   // quando setado, o briefing é por-projeto
 
-async function abrirBriefingProjeto(nomeSafe, clienteNome) {
+// ── Briefing na TELA (fichário fase 2, 2026-08-02): o formulário é UM nó (#bf-box) que
+// MIGRA entre o modal (fluxo do cadastro de cliente/pós-criação) e a tela da etapa 3 do
+// fichário. _bfEstacionar devolve o nó ao modal antes de qualquer re-render do ciclo (senão
+// o innerHTML da tela destruiria o formulário do app inteiro).
+function _bfEstacionar() {
+  const box = document.getElementById('bf-box');
+  const overlay = document.getElementById('modal-briefing');
+  if (box && overlay && box.parentElement !== overlay) overlay.appendChild(box);
+  const fechar = document.getElementById('bf-fechar-btn');
+  if (fechar) fechar.style.display = '';
+}
+async function _bfCarregarProjeto(nomeSafe, clienteNome) {
   _bfProjetoNome = nomeSafe;
   _bfClienteId = null;
   document.getElementById('bf-cliente-nome').textContent = clienteNome || '';
@@ -17480,10 +17532,27 @@ async function abrirBriefingProjeto(nomeSafe, clienteNome) {
     const d = await r.json();
     if (d.ok && d.briefing) _bfPreencherForm(d.briefing);
   } catch(e) {}
+}
+async function abrirBriefingProjeto(nomeSafe, clienteNome) {
+  _bfEstacionar();                                   // garante o formulário de volta no modal
+  await _bfCarregarProjeto(nomeSafe, clienteNome);
   document.getElementById('modal-briefing').style.display = 'flex';
+}
+// Fichário etapa 3: monta o formulário DIRETO na tela (sem modal) e carrega os dados.
+async function briefingInlineMontar() {
+  const slot = document.getElementById('bf-inline-slot');
+  const box = document.getElementById('bf-box');
+  if (!slot || !box || !projetoAtivo) return;
+  slot.appendChild(box);
+  document.getElementById('modal-briefing').style.display = 'none';
+  const fechar = document.getElementById('bf-fechar-btn');
+  if (fechar) fechar.style.display = 'none';         // na tela não há o que "fechar"
+  await _bfCarregarProjeto(projetoAtivo.nome_safe,
+    (projetoAtivo.cliente||{}).nome || projetoAtivo.nome_projeto || '');
 }
 
 async function cliAbrirBriefing(clienteId, clienteNome) {
+  _bfEstacionar();                                   // fluxo do cadastro usa o modal
   _bfProjetoNome = null;
   _bfClienteId = clienteId;
   document.getElementById('bf-cliente-nome').textContent = clienteNome;
@@ -17747,10 +17816,10 @@ function bfFechar() {
 
 <!-- ── Modal Briefing ────────────────────────────────────────────────────── -->
 <div id="modal-briefing" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:min(720px,95vw);max-height:90vh;overflow-y:auto;position:relative;">
+  <div id="bf-box" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:min(720px,95vw);max-height:90vh;overflow-y:auto;position:relative;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <h3 style="color:var(--accent);margin:0;">Briefing — <span id="bf-cliente-nome"></span></h3>
-      <button onclick="bfFechar()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;">&#x2715;</button>
+      <button id="bf-fechar-btn" onclick="bfFechar()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;">&#x2715;</button>
     </div>
 
     <!-- Seção 1: Identificação -->

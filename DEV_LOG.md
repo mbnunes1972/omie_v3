@@ -1364,6 +1364,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > (Atendimentos · Chat Interno · Triagem e Contatos · Config do Chat · Meta Externo E2E
 > MET-001..008 com WhatsApp real na B); fora do git como os demais planos.
 >
+> **Sessão 133 (fichário fase 2):** AF auditada (3 camadas, front espelha o gate); Briefing e
+> Provisões DIRETO na tela das etapas 3/8/11d; desmembramento em fases disponível desde a
+> Solicitação de Medição (9 e 10; backend já permitia pós-contrato).
+>
 > **Sessão 132 (branch feat/ciclo-fichario → main):** Ciclo interno redesenhado em FICHÁRIO
 > (lombada + tela cheia; 3 tokens semânticos por estado; Vera APTA). Ver a sessão p/ os 2
 > fluxos de verificação manual pendentes e o 403 pré-existente do auto-save de pagamento.
@@ -2664,6 +2668,43 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 133 — Fichário fase 2: telas diretas (sem modal) + desmembramento desde a Medição
+
+**Pedido do usuário (2026-08-02):** confirmar que a aprovação financeira é só de gerentes/
+diretores; Briefing e Provisões podem renderizar DIRETO na tela da etapa (como a Comparação de
+Valores, que já ficou boa); e o desmembramento de fases deve estar disponível desde a
+Solicitação de Medição.
+
+**1) Auditoria do acesso à AF — CONFIRMADO em três camadas:** `GET /api/orcamentos/<id>/provisoes`
+exige `perfis.pode(nivel, "aprovar_financeiro")` (403); `POST /provisoes/rev1|rev2` revalida
+login+senha do aprovador (403 "Senha/perfil inválido"); concluir 8/11d no PATCH do ciclo passa
+por `exige_aprovacao_financeira` + `_aprovador_financeiro` (403). O FRONT agora espelha: o
+painel só carrega para `pode_aprovar_financeiro`; os demais veem aviso claro em vez de um botão
+que levaria a 403.
+
+**2) Briefing na tela (etapa 3):** o formulário (#bf-box) virou nó ÚNICO que MIGRA — na etapa 3
+do fichário monta direto na tela (✕ oculto, dados carregados por `_bfCarregarProjeto`); nos
+fluxos de cadastro de cliente/pós-criação continua no modal (`_bfEstacionar` devolve o nó ao
+modal antes de qualquer re-render do ciclo, senão o innerHTML destruiria o form do app inteiro
+— guardas em renderCiclo e _fichaRenderConteudo). Sobrevivência a troca de etapa verificada em
+headless.
+
+**3) Provisões na tela (etapas 8/11d):** `abrirProvisoes` ganhou alvo inline — com
+`#prov-inline-slot` presente (tela de AF do fichário) o painel renderiza direto na etapa, sem
+overlay e sem botão Fechar (rodapé Fechar moveu para o caminho de overlay, mantido por compat);
+`_fichaEfeitos` dispara o carregamento ao selecionar a etapa. Revisar/Aprovar continuam dentro
+do painel (reautenticação preservada); refresh pós-ação re-renderiza o slot.
+
+**4) Desmembramento desde a Solicitação de Medição:** o backend do `POST /parcelas` só exige
+contrato assinado (etapa 7) — nenhuma trava adicional; as telas 9 e 10 ganharam o mesmo bloco
+"Desmembrar em fases" da 11c (append central em `_fichaCorpoEtapa`; id único por vez — o
+fichário renderiza uma etapa por tela). A 11c permanece como estava.
+
+**Verificação:** headless — briefing inline preenchido + sobrevive re-render; provisões com
+tabela e Aprovar na tela do gerente e aviso "restrita ao Gerente Adm/Financeiro e Diretores"
+sem a capability; desmembramento renderizando o pool de ambientes na 9; zero pageerror.
+`node --check` ok. Suíte completa **1647 verde**.
 
 ## Sessão 132 — Ciclo interno em FICHÁRIO (lombada + tela cheia) — branch feat/ciclo-fichario
 

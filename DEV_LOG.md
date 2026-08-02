@@ -1369,6 +1369,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 134:** pós-assinatura os parâmetros da negociação saem da SIDEBAR e ficam
+> registrados (read-only) na aba Contrato: desconto, pagamento, parcelamento, entrada e
+> ambientes fechados com valores — dados congelados do orçamento contratado.
+>
 > **Sessão 133 (fichário fase 2):** AF auditada (3 camadas, front espelha o gate); Briefing e
 > Provisões DIRETO na tela das etapas 3/8/11d; desmembramento em fases disponível desde a
 > Solicitação de Medição (9 e 10; backend já permitia pós-contrato).
@@ -2673,6 +2677,30 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 134 — Pós-assinatura: parâmetros saem da sidebar; registro congelado na aba Contrato
+
+**Pedido (detalhe cosmético importante):** após a assinatura, os PARÂMETROS da negociação
+(desconto, modalidade, parcelas, entrada) não aparecem mais na barra lateral — o registro passa
+a viver na aba Contrato do fichário, acessível e read-only. Custos adicionais: fora do escopo.
+
+**Sidebar:** `_sbParamsAtualizar()` decide pela MESMA fonte do lock pós-assinatura
+(`_negSaveTravado`: `_contratoAssinado` com exceção do complemento de PE, que segue negociável e
+mantém a sidebar). Hooks: `goPage(2)`, `atualizarBotoesAprovacao` (cobre projeto sem contrato
+após visitar um assinado — flag stale) e fim de `aplicarBloqueioNegociacao` (troca de orçamento
+contratado↔complemento).
+
+**Aba Contrato:** `_contratoParamsResumo()` (efeito da etapa 7) monta o painel "Parâmetros da
+negociação — registro do contrato" com dados CONGELADOS do orçamento CONTRATADO
+(`GET /projetos/<n>/orcamentos` → `contratado_id`; `GET /orcamentos/<id>/ambientes`): desconto
+global, forma de pagamento, parcelamento (Nx de R$V), entrada (valor/forma/data), total do
+contrato, valor à vista e a lista de ambientes fechados com seus valores.
+
+**Validação headless:** Norberto (assinado) → sidebar oculta + painel completo (20% · Cartão
+15x de R$ 13.000,35 · entrada R$ 30.000 pix · 4 ambientes com valores); Projeto_Reuniao_2 (sem
+contrato) aberto NA SEQUÊNCIA → sidebar volta a aparecer (stale resolvido); zero pageerror.
+Nota: Projeto_A tem contrato COM assinatura no banco de dev (por isso esconde lá também —
+correto). Suíte completa **1647 verde**.
 
 ## Sessão 133 — Fichário fase 2: telas diretas (sem modal) + desmembramento desde a Medição
 

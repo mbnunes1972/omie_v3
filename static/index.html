@@ -4405,7 +4405,8 @@ function goPage(n){
   document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
   if(navEl) navEl.classList.add('active');
   const sbParams = document.getElementById('sb-params');
-  if(sbParams) sbParams.style.display = n===2 ? 'block' : 'none';
+  if(sbParams) sbParams.style.display = 'none';
+  if(n===2) _sbParamsAtualizar();   // pós-assinatura os parâmetros saem da sidebar (registro na aba Contrato)
   if(n===2 && projetoAtivo) carregarMargensSalvas();
   if(n===0) projCarregar();
   if(n===7){ adminCarregarConsole(); } // page-07: console
@@ -13793,6 +13794,19 @@ function _orcamentoAprovado() {
 // parâmetros na sidebar (#sb-params: desconto, modalidade, parcelas, formas,
 // taxa TF) quanto a área principal (#page-02: tabela, painéis, datas, total),
 // exceto os botões de ação (tratados em atualizarBotoesAprovacao).
+// Pós-assinatura (detalhe cosmético 2026-08-02): os PARÂMETROS da negociação saem da sidebar
+// quando o orçamento em foco está travado pelo contrato — o registro congelado passa a viver na
+// aba Contrato do fichário (_contratoParamsResumo). Complemento de PE (negociável) mantém a
+// sidebar. Custos adicionais: fora do escopo deste ajuste.
+function _sbParamsAtualizar(){
+  const sb = document.getElementById('sb-params');
+  if (!sb) return;
+  const p2 = document.getElementById('page-02');
+  const ativa = !!(p2 && p2.classList.contains('active'));
+  sb.style.display = (ativa && !(typeof _negSaveTravado === 'function' && _negSaveTravado()))
+    ? 'block' : 'none';
+}
+
 function aplicarBloqueioNegociacao(travar) {
   const roots = ['sb-params', 'page-02']
     .map(id => document.getElementById(id))
@@ -13824,6 +13838,7 @@ function aplicarBloqueioNegociacao(travar) {
   if (!travar && typeof atualizarFormasPagamento === 'function') {
     atualizarFormasPagamento(document.getElementById('neg-pagamento')?.value || 'a_vista');
   }
+  _sbParamsAtualizar();
 }
 
 // Fatia 3 PE: fonte ÚNICA da decisão de lock da negociação pós-assinatura — o orçamento de
@@ -13857,6 +13872,7 @@ function atualizarBotoesAprovacao() {
   // de leitura à margem real / provisões em projetos fechados.
   const _bp = document.getElementById('btn-params');
   if (_bp) _bp.style.display = '';
+  _sbParamsAtualizar();   // sidebar de parâmetros some pós-assinatura (e volta no não-assinado)
   if (assinado) {
     _aplicarLockNegociacaoPosAssinatura();
     const actionRow = document.querySelector('#page-02 .action-row');
@@ -14097,7 +14113,7 @@ function _fichaCorpoBase(etapa, dados, bloqueada) {
 // no fichário disparam ao selecionar a etapa (depois do render, pois escrevem no DOM dela).
 function _fichaEfeitos(codigo) {
   if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
-  if (codigo === '7') carregarDadosContrato();
+  if (codigo === '7') { carregarDadosContrato(); _contratoParamsResumo(); }
   if (codigo === '11e') peComplementoRender();
   // Fichário fase 2: telas diretas (sem modal) — briefing na 3, provisões nas AFs.
   if (codigo === '3') briefingInlineMontar();
@@ -16331,9 +16347,65 @@ async function revisarContrato() {
 }
 
 function _renderCardContrato() {
-  return `<div id="contrato-ui">
+  return `<div id="ct-params-resumo"></div>
+  <div id="contrato-ui">
     <p style="color:var(--muted);font-size:.85rem;margin-bottom:12px">Carregando...</p>
   </div>`;
+}
+
+// Registro dos parâmetros da negociação na aba Contrato (2026-08-02): desconto, forma de
+// pagamento, parcelamento, entrada e a lista de ambientes fechados com seus valores — lidos do
+// orçamento CONTRATADO (valores congelados no fechamento), não do preview vivo.
+async function _contratoParamsResumo(){
+  const box = document.getElementById('ct-params-resumo');
+  if (!box || !projetoAtivo) return;
+  try{
+    const d = await fetch('/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/orcamentos',
+                          {credentials:'same-origin'}).then(r=>r.json());
+    if(!d.ok || !d.contratado_id){ box.innerHTML=''; return; }   // sem contrato → sem registro
+    const o = (d.orcamentos||[]).find(x=>x.id===d.contratado_id);
+    if(!o){ box.innerHTML=''; return; }
+    const amb = await fetch('/orcamentos/'+o.id+'/ambientes',{credentials:'same-origin'})
+                  .then(r=>r.json()).catch(()=>({}));
+    const ambs = amb.ambientes || [];
+    let plano = null;
+    try{ plano = o.forma_pagamento ? JSON.parse(o.forma_pagamento) : null; }catch(e){}
+    const fmt = v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const parc = (plano && plano.parcelas) || [];
+    const mesma = parc.length && parc.every(p=>Math.abs((p.valor||0)-(parc[0].valor||0)) < 0.01);
+    const parcTxt = parc.length
+      ? (mesma ? parc.length+'x de '+fmt(parc[0].valor)
+               : parc.length+' parcelas (total '+fmt(parc.reduce((t,p)=>t+(p.valor||0),0))+')')
+      : '—';
+    const entradaTxt = (plano && plano.entrada_valor)
+      ? fmt(plano.entrada_valor)
+        + (plano.entrada_forma ? ' ('+esc(plano.entrada_forma)+')' : '')
+        + (plano.entrada_data ? ' em '+_fmtDataBR(plano.entrada_data) : '')
+      : '—';
+    const linhasAmb = ambs.map(a2=>{
+      const di = a2.desconto_individual_pct
+        ? ' <span style="color:var(--muted);font-size:.75rem">(desc. '+a2.desconto_individual_pct+'%)</span>' : '';
+      const v = (a2.order_total != null ? a2.order_total : a2.budget_total);
+      return '<tr><td style="padding:3px 10px;font-size:.82rem">'+esc(a2.nome_exibicao||a2.nome||'Ambiente')+di+'</td>'
+        + '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem">'+fmt(v)+'</td></tr>';
+    }).join('');
+    box.innerHTML = `
+      <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--surface-2)">
+        <div style="font-weight:800;color:var(--text);margin-bottom:8px"><i class="ti ti-file-description"></i> Parâmetros da negociação — registro do contrato</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 18px;font-size:.85rem;color:var(--text)">
+          <div><span style="color:var(--muted)">Desconto global:</span> <strong>${(o.desconto_pct||0)}%</strong></div>
+          <div><span style="color:var(--muted)">Forma de pagamento:</span> <strong>${esc((plano && plano.nome_forma) || '—')}</strong></div>
+          <div><span style="color:var(--muted)">Parcelamento:</span> <strong>${parcTxt}</strong></div>
+          <div><span style="color:var(--muted)">Entrada:</span> <strong>${entradaTxt}</strong></div>
+          <div><span style="color:var(--muted)">Total (contrato):</span> <strong>${fmt(o.valor_total)}</strong></div>
+          <div><span style="color:var(--muted)">Valor à vista:</span> <strong>${fmt(o.valor_liquido)}</strong></div>
+        </div>
+        ${ambs.length ? `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:4px">Ambientes fechados</div>
+          <table style="width:100%;border-collapse:collapse">${linhasAmb}</table>
+        </div>` : ''}
+      </div>`;
+  }catch(e){ box.innerHTML=''; }
 }
 
 function mostrarErroModal(mensagem) {

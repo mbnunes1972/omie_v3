@@ -16368,6 +16368,23 @@ async function _contratoParamsResumo(){
     const amb = await fetch('/orcamentos/'+o.id+'/ambientes',{credentials:'same-origin'})
                   .then(r=>r.json()).catch(()=>({}));
     const ambs = amb.ambientes || [];
+    // Valores FINAIS por ambiente (correção 2026-08-02): budget/order do pool são venda BRUTA e
+    // CUSTO DE FÁBRICA — o que vale no contrato é o VBNA (negociado) e o VAVA (à vista) do MOTOR.
+    // O preview do breakdown devolve os ambientes com o pool_ambiente_id → pareamento exato.
+    let porId = {}, fatorFin = 1;
+    try{
+      const prev = await fetch('/api/orcamentos/'+o.id+'/negociacao-preview',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body:'{}'}).then(r=>r.json());
+      if (prev && prev.ok){
+        (prev.ambientes||[]).forEach(x=>{ if(x.id!=null) porId[x.id]=x; });
+        const sm = prev.sombra || {};
+        // MESMA regra da tabela de negociação: coluna financiada por ambiente =
+        // VAVA × (Val_Cont/VAVO) — soma bate exatamente o Total (contrato).
+        if (sm.VAVO > 0 && sm.Val_Cont > 0) fatorFin = sm.Val_Cont / sm.VAVO;
+      }
+    }catch(e){}
+    const temFinais = Object.keys(porId).length > 0;
     let plano = null;
     try{ plano = o.forma_pagamento ? JSON.parse(o.forma_pagamento) : null; }catch(e){}
     const fmt = v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -16385,10 +16402,29 @@ async function _contratoParamsResumo(){
     const linhasAmb = ambs.map(a2=>{
       const di = a2.desconto_individual_pct
         ? ' <span style="color:var(--muted);font-size:.75rem">(desc. '+a2.desconto_individual_pct+'%)</span>' : '';
-      const v = (a2.order_total != null ? a2.order_total : a2.budget_total);
-      return '<tr><td style="padding:3px 10px;font-size:.82rem">'+esc(a2.nome_exibicao||a2.nome||'Ambiente')+di+'</td>'
-        + '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem">'+fmt(v)+'</td></tr>';
+      const fin = porId[a2.id] || {};
+      const vFin = (fin.VAVA || 0) * fatorFin;      // "Com financiamento" — igual à tabela de negociação
+      const cols = temFinais
+        ? '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;color:var(--muted)">'+fmt(fin.VAVA)+'</td>'
+          + '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem">'+fmt(vFin)+'</td>'
+        : '';
+      return '<tr><td style="padding:3px 10px;font-size:.82rem">'+esc(a2.nome_exibicao||a2.nome||'Ambiente')+di+'</td>'+cols+'</tr>';
     }).join('');
+    const cabAmb = temFinais
+      ? '<tr><th style="text-align:left;padding:3px 10px;font-size:.75rem;color:var(--muted);font-weight:600">Ambiente</th>'
+        + '<th style="text-align:right;padding:3px 10px;font-size:.75rem;color:var(--muted);font-weight:600">À vista</th>'
+        + '<th style="text-align:right;padding:3px 10px;font-size:.75rem;color:var(--muted);font-weight:600">Com financiamento</th></tr>'
+      : '';
+    const somaFin = temFinais ? ambs.reduce((t,a2)=>t+((((porId[a2.id]||{}).VAVA)||0)*fatorFin),0) : 0;
+    const difGeral = temFinais ? ((o.valor_total||0) - somaFin) : 0;
+    const notaGeral = (temFinais && Math.abs(difGeral) > 1)
+      ? '<div style="font-size:.72rem;color:var(--muted);margin-top:4px">A diferença de '+fmt(Math.abs(difGeral))
+        + ' para o Total do contrato são itens de ordem geral fora dos ambientes (ex.: brindes/custos especiais).</div>'
+      : '';
+    const rodapeAmb = temFinais
+      ? '<tr style="border-top:1px solid var(--border)"><td style="padding:4px 10px;font-size:.8rem;font-weight:700">Total dos ambientes</td><td></td>'
+        + '<td style="padding:4px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;font-weight:700">'+fmt(somaFin)+'</td></tr>'
+      : '';
     box.innerHTML = `
       <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--surface-2)">
         <div style="font-weight:800;color:var(--text);margin-bottom:8px"><i class="ti ti-file-description"></i> Parâmetros da negociação — registro do contrato</div>
@@ -16401,8 +16437,8 @@ async function _contratoParamsResumo(){
           <div><span style="color:var(--muted)">Valor à vista:</span> <strong>${fmt(o.valor_liquido)}</strong></div>
         </div>
         ${ambs.length ? `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
-          <div style="font-size:.8rem;color:var(--muted);margin-bottom:4px">Ambientes fechados</div>
-          <table style="width:100%;border-collapse:collapse">${linhasAmb}</table>
+          <div style="font-size:.8rem;color:var(--muted);margin-bottom:4px">Ambientes fechados${temFinais ? '' : ' <span style="font-size:.72rem">(valores finais indisponíveis p/ o seu perfil)</span>'}</div>
+          <table style="width:100%;border-collapse:collapse">${cabAmb}${linhasAmb}${rodapeAmb}</table>${notaGeral}
         </div>` : ''}
       </div>`;
   }catch(e){ box.innerHTML=''; }

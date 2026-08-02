@@ -2696,6 +2696,16 @@ negociação — registro do contrato" com dados CONGELADOS do orçamento CONTRA
 global, forma de pagamento, parcelamento (Nx de R$V), entrada (valor/forma/data), total do
 contrato, valor à vista e a lista de ambientes fechados com seus valores.
 
+**Correção (mesmo dia, achado do usuário):** a primeira versão listava os ambientes com
+`order_total` do pool — que é o **CUSTO DE FÁBRICA** (CFA), não o valor de fechamento
+(`budget_total` = venda bruta; `order_total` = pedido à fábrica). Agora os valores vêm do MOTOR
+via `POST /api/orcamentos/<id>/negociacao-preview` (breakdown com `pool_ambiente_id` →
+pareamento exato): colunas **À vista (VAVA)** e **Com financiamento (VAVA × Val_Cont/VAVO)** —
+as MESMAS da tabela de negociação; rodapé soma a coluna financiada e uma nota explica a
+diferença residual para o Total do contrato (itens de ordem geral fora dos ambientes, ex.
+brindes/custos especiais — no Norberto, R$ 548,29). Perfil sem visão comercial
+(`_bloqueio_comercial`) degrada para a lista de nomes sem valores.
+
 **Validação headless:** Norberto (assinado) → sidebar oculta + painel completo (20% · Cartão
 15x de R$ 13.000,35 · entrada R$ 30.000 pix · 4 ambientes com valores); Projeto_Reuniao_2 (sem
 contrato) aberto NA SEQUÊNCIA → sidebar volta a aparecer (stale resolvido); zero pageerror.

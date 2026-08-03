@@ -1369,6 +1369,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 142 (retenção auditável):** motivo em SELETOR (catálogo MOTIVOS_RETENCAO,
+> obrigatório) + descrição livre; data da retenção visível no form; histórico com
+> Fase(s)/motivo tipo+descrição (snapshot `fases_json`). Suíte 1687 verde.
+>
 > **Sessão 141 (Agenda Fatia 2):** a Agenda ganhou TELA — nav "Agenda" + visão Calendário
 > (grade do mês, badges por Setor, Σ de entregas no dia, drill-down inline) sobre o novo
 > `GET /api/agenda` + `mod_agenda.py` (marcos por Setor; entrega 16 por fase). Subfases do
@@ -2723,6 +2727,23 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 142 — Retenção AUDITÁVEL: catálogo de motivos + descrição + data do ato + fases no histórico
+
+**Pedido do usuário** (a "casca externa" da retenção ficou boa; faltava auditabilidade):
+- **Motivo vira SELETOR** do catálogo `mod_retido.MOTIVOS_RETENCAO` (Atraso da Obra ·
+  Aprovação do Arquiteto · Aprovação do Cliente · Financeiro · Definição de Projeto · Fábrica ·
+  Outros) + **campo descrição** livre para detalhar o fato. Backend valida (400 fora do
+  catálogo; obrigatório). Schema: `retencao_obra.motivo_tipo` novo; `motivo` passa a ser a
+  descrição; `fases_json` = SNAPSHOT das ordens das fases retidas no ato.
+- **Data da retenção** (o dia do ato, `criado_em`) agora aparece no form da nova retenção
+  (fixa) ao lado da liberação prevista (editável) — antes só a liberação aparecia.
+- **Histórico** (auditoria ao abrir o painel): Retenção (data) · Etapa do ciclo · **Fase(s)** ·
+  Ambientes · Motivo (tipo + descrição) · Liberação prevista · Situação.
+- Medidor (sinalizar) envia tipo+descrição concatenados no sinal (SinalRetido.motivo, livre).
+
+Testes atualizados p/ o motivo obrigatório + novo `test_motivo_do_catalogo_e_obrigatorio`;
+suíte **1687 verde**; `node --check` ok. (Restart aplica a migração das colunas novas.)
 
 ## Sessão 141 — Agenda da Loja FATIA 2: marcos + endpoint + visão Calendário (primeira TELA da Agenda)
 

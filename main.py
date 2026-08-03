@@ -4492,11 +4492,17 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         self.send_json({"ok": False, "erro": "liberacao_prevista inválida (AAAA-MM-DD)."},
                                        code=400); return
+                # rev 2026-08-03 (auditoria): motivo vem do CATÁLOGO; descrição livre à parte
+                motivo_tipo = (req.get("motivo_tipo") or "").strip()
+                if motivo_tipo not in _mret.MOTIVOS_RETENCAO:
+                    self.send_json({"ok": False, "erro": "Escolha o motivo da retenção (%s)."
+                                    % ", ".join(_mret.MOTIVOS_RETENCAO)}, code=400); return
                 valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
                 liquidos, val_liq = _liquidos_contrato_por_ambiente(contrato.orcamento_id, db)
                 ok, erro, resumo = _mret.reter(
                     db, nome, req.get("ambientes") or [], contrato.orcamento_id, valores,
-                    val_cont, usuario.get("id"), motivo=(req.get("motivo") or "").strip() or None,
+                    val_cont, usuario.get("id"), motivo_tipo=motivo_tipo,
+                    motivo=(req.get("descricao") or req.get("motivo") or "").strip() or None,
                     liberacao_prevista=lib_prev,
                     etapa_codigo=(req.get("etapa_codigo") or "").strip() or None,
                     liquidos_por_ambiente=liquidos, val_liq=val_liq)

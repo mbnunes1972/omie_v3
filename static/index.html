@@ -14693,17 +14693,23 @@ function _retidoRenderNova(d){
   const btn = _podeAutorizarFront()
     ? `<button onclick="retidoReter()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Reter selecionados (gerência)</button>`
     : `<button onclick="retidoSinalizar()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Sinalizar retenção (medidor)</button>`;
+  // rev 2026-08-03 (auditoria): motivo = SELETOR do catálogo + descrição livre; a data da
+  // RETENÇÃO é o dia do ato (exibida, não editável) — editável é só a liberação prevista.
+  const motivos = ['Atraso da Obra','Aprovação do Arquiteto','Aprovação do Cliente','Financeiro','Definição de Projeto','Fábrica','Outros'];   // espelho de mod_retido.MOTIVOS_RETENCAO (backend valida)
+  const opts = '<option value="">— motivo —</option>' + motivos.map(m=>`<option value="${m}">${m}</option>`).join('');
   return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">Nova retenção${_retidoEtapaCtx ? ` <span style="color:var(--muted);font-weight:400">— acionada na etapa ${esc(_etapaRotulo(_retidoEtapaCtx))}</span>` : ''}</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chks}</div>
-    <div style="display:grid;grid-template-columns:1fr 170px;gap:8px;margin-bottom:10px">
-      <input id="retido-novo-motivo" type="text" placeholder="Motivo da retenção (ex.: obra sem contrapiso)" style="${_retidoInputStyle}">
-      <input id="retido-novo-data" type="date" title="Previsão de liberação para prosseguimento" style="${_retidoInputStyle}">
+    <div style="display:grid;grid-template-columns:210px 1fr;gap:8px;margin-bottom:8px">
+      <select id="retido-novo-motivo-tipo" style="${_retidoInputStyle}">${opts}</select>
+      <input id="retido-novo-descricao" type="text" placeholder="Descrição do fato (opcional — detalhe o que gerou a retenção)" style="${_retidoInputStyle}">
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <span style="font-size:10px;color:var(--muted)">A data é a <strong style="color:var(--text)">previsão de liberação</strong> para prosseguimento.</span>
-      ${btn}
+    <div style="display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="font-size:12px;color:var(--muted)">Data da retenção: <strong style="color:var(--text)">${_fmtDataBR(_hojeISO())}</strong> <span style="font-size:10px">(o dia do ato)</span></div>
+      <div><label class="field-label">Liberação prevista</label>
+      <input id="retido-novo-data" type="date" title="Previsão de liberação para prosseguimento" style="${_retidoInputStyle}"></div>
     </div>
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px">${btn}</div>
   </div>`;
 }
 function _etapaRotulo(cod){
@@ -14713,11 +14719,14 @@ function _etapaRotulo(cod){
 async function retidoReter(){
   const ids = [...document.querySelectorAll('.retido-novo-chk:checked')].map(c=>parseInt(c.value,10));
   if(!ids.length){ showToast('Selecione ao menos um ambiente para reter.', true); return; }
-  const motivo = (document.getElementById('retido-novo-motivo')?.value||'').trim();
+  const motivoTipo = document.getElementById('retido-novo-motivo-tipo')?.value || '';
+  if(!motivoTipo){ showToast('Escolha o motivo da retenção.', true); return; }
+  const descricao = (document.getElementById('retido-novo-descricao')?.value||'').trim();
   const dataLib = document.getElementById('retido-novo-data')?.value || '';
   const d = await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retencoes',
     {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({ambientes:ids, motivo, liberacao_prevista:dataLib||null,
+     body:JSON.stringify({ambientes:ids, motivo_tipo:motivoTipo, descricao,
+                          liberacao_prevista:dataLib||null,
                           etapa_codigo:_retidoEtapaCtx||null})}).then(r=>r.json()).catch(()=>({}));
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Retenção registrada.', false);
@@ -14727,7 +14736,9 @@ async function retidoReter(){
 async function retidoSinalizar(){
   const ids = [...document.querySelectorAll('.retido-novo-chk:checked')].map(c=>parseInt(c.value,10));
   if(!ids.length){ showToast('Selecione ao menos um ambiente.', true); return; }
-  const motivo = (document.getElementById('retido-novo-motivo')?.value||'').trim();
+  const mt = document.getElementById('retido-novo-motivo-tipo')?.value || '';
+  const desc = (document.getElementById('retido-novo-descricao')?.value||'').trim();
+  const motivo = [mt, desc].filter(Boolean).join(' — ');
   const d = await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/sinalizar',
     {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
      body:JSON.stringify({pool_ambiente_ids:ids, motivo})}).then(r=>r.json()).catch(()=>({}));
@@ -14739,18 +14750,22 @@ function _retidoRenderHistorico(regs){
   if(!regs.length) return '';
   const rows = regs.map(r=>{
     const ambs = (r.ambientes||[]).map(a=>esc(a.nome||('Amb '+a.id))).join(', ');
+    const fases = (r.fases||[]).length ? r.fases.map(f=>'Fase '+f).join(', ') : '—';
+    const motivo = esc(r.motivo_tipo||'—')
+      + (r.motivo?` <span style="color:var(--muted);font-size:11px">${esc(r.motivo)}</span>`:'');
     const sit = r.liberado_em
       ? `<span style="color:var(--ok)">Liberada em ${_fmtDataBR(r.liberado_em)}</span>`
       : `<span style="color:var(--warn)">Em aberto</span>`;
     return `<tr><td style="white-space:nowrap">${_fmtDataBR(r.criado_em)||'—'}</td>
       <td style="white-space:nowrap">${r.etapa_codigo?esc(_etapaRotulo(r.etapa_codigo)):'—'}</td>
-      <td>${ambs||'—'}</td><td>${esc(r.motivo||'—')}</td>
+      <td style="white-space:nowrap">${fases}</td>
+      <td>${ambs||'—'}</td><td>${motivo}</td>
       <td style="white-space:nowrap">${r.liberacao_prevista?_fmtDataBR(r.liberacao_prevista):'—'}</td>
       <td style="white-space:nowrap">${sit}</td></tr>`;
   }).join('');
   return `<div style="margin-top:14px">
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Histórico de retenções</div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Quando</th><th>Etapa do ciclo</th><th>Ambientes</th><th>Motivo</th><th>Liberação prevista</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Retenção</th><th>Etapa do ciclo</th><th>Fase(s)</th><th>Ambientes</th><th>Motivo</th><th>Liberação prevista</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 function _retidoRenderParcelas(d){

@@ -111,9 +111,15 @@ def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, cr
 # na Medição, no PE e durante a Montagem — VÁRIAS vezes. Cada evento é registrado em
 # `RetencaoObra` (quando, etapa do ciclo, ambientes, motivo, data prevista de liberação).
 
+# Catálogo de motivos (rev 2026-08-03 — auditoria): o SELETOR do modal; a descrição livre do
+# fato vai em `motivo` (detalhe). "Outros" cobre o que não se encaixa.
+MOTIVOS_RETENCAO = ["Atraso da Obra", "Aprovação do Arquiteto", "Aprovação do Cliente",
+                    "Financeiro", "Definição de Projeto", "Fábrica", "Outros"]
+
+
 def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_cont,
           criado_por_id, motivo=None, liberacao_prevista=None, etapa_codigo=None,
-          liquidos_por_ambiente=None, val_liq=0.0):
+          liquidos_por_ambiente=None, val_liq=0.0, motivo_tipo=None):
     """Retenção DIRETA de ambientes (gerência), em cima do estado atual das fases.
 
     - Projeto NÃO desmembrado: cria [fase que segue, fase retida] (retida por último; se TODOS
@@ -226,7 +232,11 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
     for s in db.query(SinalRetido).filter_by(projeto_nome=projeto_nome, confirmado=0).all():
         if s.pool_ambiente_id in pedidos:
             s.confirmado = 1
-    reg = RetencaoObra(projeto_nome=projeto_nome, etapa_codigo=etapa_codigo, motivo=motivo,
+    fases_retidas = sorted({a["ordem"] for a in afetadas
+                            if a.get("status") == STATUS_RETIDO and a.get("ordem") is not None})
+    reg = RetencaoObra(projeto_nome=projeto_nome, etapa_codigo=etapa_codigo,
+                       motivo_tipo=motivo_tipo, motivo=motivo,
+                       fases_json=json.dumps(fases_retidas),
                        liberacao_prevista=liberacao_prevista,
                        ambientes_json=json.dumps(sorted(pedidos)),
                        criado_por_id=criado_por_id)
@@ -243,7 +253,12 @@ def listar_retencoes(db, projeto_nome):
             ambs = json.loads(r.ambientes_json or "[]")
         except ValueError:
             ambs = []
-        out.append({"id": r.id, "etapa_codigo": r.etapa_codigo, "motivo": r.motivo,
+        try:
+            fases = json.loads(r.fases_json or "[]")
+        except ValueError:
+            fases = []
+        out.append({"id": r.id, "etapa_codigo": r.etapa_codigo,
+                    "motivo_tipo": r.motivo_tipo, "motivo": r.motivo, "fases": fases,
                     "liberacao_prevista": r.liberacao_prevista.isoformat() if r.liberacao_prevista else None,
                     "criado_em": r.criado_em.isoformat() if r.criado_em else None,
                     "liberado_em": r.liberado_em.isoformat() if r.liberado_em else None,

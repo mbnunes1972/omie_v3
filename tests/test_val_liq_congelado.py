@@ -102,7 +102,7 @@ def test_retencao_com_split_e_liberacao_em_ondas(app_db, seed, http_client_facto
     c = http_client_factory(); c.login("dir_l1", "senha123")
     # retenção direta em projeto NÃO desmembrado (cria [segue, retida]) — congela liq nos dois
     st, d = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[1], ids[2]], "etapa_codigo": "10"})
+                   {"ambientes": [ids[1], ids[2]], "motivo_tipo": "Atraso da Obra", "etapa_codigo": "10"})
     assert st == 200 and d["ok"], (st, d)
     soma, _ = _soma_liq(app_db, nome)
     assert soma == 3000.00
@@ -114,7 +114,8 @@ def test_retencao_com_split_e_liberacao_em_ondas(app_db, seed, http_client_facto
     retidas = [f for f in fases if f.status == "retido"]
     assert len(retidas) == 1 and retidas[0].val_liq_congelado == 1000.00
     # segunda retenção (agora desmembrado, com SPLIT da fase que segue) preserva a soma
-    st, d = c.post("/api/projetos/%s/retencoes" % nome, {"ambientes": [ids[0]], "etapa_codigo": "11"})
+    st, d = c.post("/api/projetos/%s/retencoes" % nome,
+                   {"ambientes": [ids[0]], "motivo_tipo": "Outros", "etapa_codigo": "11"})
     assert st == 200 and d["ok"], (st, d)
     soma, _ = _soma_liq(app_db, nome)
     assert soma == 3000.00

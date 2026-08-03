@@ -44,7 +44,8 @@ def test_reter_direto_e_registro(app_db, seed, http_client_factory):
     ids = _setup_pool(app_db, seed)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[2]], "motivo": "Obra sem contrapiso",
+                   {"ambientes": [ids[2]], "motivo_tipo": "Atraso da Obra",
+                    "descricao": "Obra sem contrapiso",
                     "liberacao_prevista": "2026-09-20", "etapa_codigo": "10"})
     assert st == 200 and d["ok"], (st, d)
     st, lst = c.get("/api/projetos/%s/parcelas" % nome)
@@ -56,11 +57,24 @@ def test_reter_direto_e_registro(app_db, seed, http_client_factory):
     assert st == 200 and len(h["retencoes"]) == 1
     reg = h["retencoes"][0]
     assert reg["etapa_codigo"] == "10"
-    assert reg["motivo"] == "Obra sem contrapiso"
+    assert reg["motivo_tipo"] == "Atraso da Obra"        # catálogo (rev 2026-08-03)
+    assert reg["motivo"] == "Obra sem contrapiso"        # descrição livre do fato
+    assert reg["fases"] == [2]                           # snapshot da fase retida
     assert reg["liberacao_prevista"] == "2026-09-20"
     assert reg["liberado_em"] is None
     assert reg["criado_em"]
     assert [a["nome"] for a in reg["ambientes"]] == ["Home"]
+
+
+def test_motivo_do_catalogo_e_obrigatorio(app_db, seed, http_client_factory):
+    nome = seed["projeto_l1"]
+    ids = _setup_pool(app_db, seed)
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/projetos/%s/retencoes" % nome, {"ambientes": [ids[0]]})
+    assert st == 400 and "motivo" in d["erro"].lower()
+    st, d = c.post("/api/projetos/%s/retencoes" % nome,
+                   {"ambientes": [ids[0]], "motivo_tipo": "Qualquer Coisa"})
+    assert st == 400, (st, d)                            # fora do catálogo
 
 
 def test_segunda_retencao_faz_split_preservando_congelados(app_db, seed, http_client_factory):
@@ -68,13 +82,14 @@ def test_segunda_retencao_faz_split_preservando_congelados(app_db, seed, http_cl
     ids = _setup_pool(app_db, seed)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, _ = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[2]], "motivo": "1a", "etapa_codigo": "10"})
+                   {"ambientes": [ids[2]], "motivo_tipo": "Atraso da Obra", "etapa_codigo": "10"})
     assert st == 200
     st, lst = c.get("/api/projetos/%s/parcelas" % nome)
     val_fase1 = lst["parcelas"][0]["val_cont_congelado"]
     # 2ª retenção, no PE: retém a Cozinha, que está na fase 1 junto com a Suite → SPLIT
     st, d = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[0]], "motivo": "Parede da cozinha atrasou",
+                   {"ambientes": [ids[0]], "motivo_tipo": "Definição de Projeto",
+                    "descricao": "Parede da cozinha atrasou",
                     "liberacao_prevista": "2026-10-05", "etapa_codigo": "11"})
     assert st == 200 and d["ok"], (st, d)
     st, lst = c.get("/api/projetos/%s/parcelas" % nome)
@@ -96,9 +111,10 @@ def test_reter_ja_retido_e_fase_em_expedicao(app_db, seed, http_client_factory):
     ids = _setup_pool(app_db, seed)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, _ = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[2]], "etapa_codigo": "9"})
+                   {"ambientes": [ids[2]], "motivo_tipo": "Outros", "etapa_codigo": "9"})
     assert st == 200
-    st, d = c.post("/api/projetos/%s/retencoes" % nome, {"ambientes": [ids[2]]})
+    st, d = c.post("/api/projetos/%s/retencoes" % nome,
+                   {"ambientes": [ids[2]], "motivo_tipo": "Outros"})
     assert st == 409 and "retido" in d["erro"].lower()
     # fase 1 (Cozinha+Suite) entra em expedição → reter Cozinha bloqueia
     db = app_db.get_session()
@@ -109,7 +125,8 @@ def test_reter_ja_retido_e_fase_em_expedicao(app_db, seed, http_client_factory):
         db.commit()
     finally:
         db.close()
-    st, d = c.post("/api/projetos/%s/retencoes" % nome, {"ambientes": [ids[0]]})
+    st, d = c.post("/api/projetos/%s/retencoes" % nome,
+                   {"ambientes": [ids[0]], "motivo_tipo": "Outros"})
     assert st == 409 and "expedi" in d["erro"].lower()
 
 
@@ -118,8 +135,8 @@ def test_liberar_estampa_registro(app_db, seed, http_client_factory):
     ids = _setup_pool(app_db, seed)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, _ = c.post("/api/projetos/%s/retencoes" % nome,
-                   {"ambientes": [ids[1], ids[2]], "liberacao_prevista": "2026-09-20",
-                    "etapa_codigo": "10"})
+                   {"ambientes": [ids[1], ids[2]], "motivo_tipo": "Atraso da Obra",
+                    "liberacao_prevista": "2026-09-20", "etapa_codigo": "10"})
     assert st == 200
     # onda 1: libera só a Suite → registro segue aberto
     st, d = c.post("/api/projetos/%s/retido/liberar" % nome, {"pool_ambiente_ids": [ids[1]]})

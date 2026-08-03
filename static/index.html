@@ -3622,8 +3622,36 @@ async function cfgAgendaSalvar(lid){
 // Marcos por dia/Setor de todos os cronogramas da loja (GET /api/agenda). Semana/Mês e o
 // painel Capacidade entram nas Fatias 3/4. Visão operacional recebe marcos SEM valores.
 let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
+let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-function agendaAbrir(){ if(_agAno===null){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); } agendaCarregar(); }
+function agendaAbrir(){
+  if(_agAno===null){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
+  fetch('/projetos',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
+    if(d && d.ok){ _agProjLista=(d.projetos||[]); if(document.getElementById('agenda-ui')) _agRender(); }
+  }).catch(()=>{});
+  agendaCarregar();
+}
+async function agendaProjeto(v){
+  _agProjFiltro = v || null; _agSel=null;
+  if(_agProjFiltro){
+    // salto para o mês relevante: 1º marco pendente a partir de hoje (senão o último marco)
+    try{
+      const h=new Date();
+      const ini=new Date(h.getFullYear(), h.getMonth()-3, 1);
+      const de=_agIso(ini.getFullYear(), ini.getMonth(), 1);
+      const fim=new Date(h.getFullYear(), h.getMonth()+10, 0);
+      const ate=_agIso(fim.getFullYear(), fim.getMonth(), fim.getDate());
+      const d=await fetch('/api/agenda?de='+de+'&ate='+ate+'&projeto='+encodeURIComponent(_agProjFiltro),{credentials:'same-origin'}).then(r=>r.json());
+      const ms=(d&&d.ok&&d.marcos)||[];
+      if(ms.length){
+        const hoje=_agIso(h.getFullYear(),h.getMonth(),h.getDate());
+        const alvo=(ms.find(m=>!m.realizado && m.data>=hoje)||ms[ms.length-1]).data;
+        _agAno=parseInt(alvo.slice(0,4),10); _agMes=parseInt(alvo.slice(5,7),10)-1;
+      }
+    }catch(e){}
+  }
+  agendaCarregar();
+}
 function agendaNav(d){
   if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
   else { _agMes+=d; if(_agMes<0){_agMes=11;_agAno--;} if(_agMes>11){_agMes=0;_agAno++;} }
@@ -3635,7 +3663,8 @@ async function agendaCarregar(){
   const box=document.getElementById('agenda-ui'); if(!box) return;
   const ult = new Date(_agAno, _agMes+1, 0).getDate();
   try{
-    const r = await fetch('/api/agenda?de='+_agIso(_agAno,_agMes,1)+'&ate='+_agIso(_agAno,_agMes,ult), {credentials:'same-origin'});
+    const r = await fetch('/api/agenda?de='+_agIso(_agAno,_agMes,1)+'&ate='+_agIso(_agAno,_agMes,ult)
+      +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):''), {credentials:'same-origin'});
     const d = await r.json();
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
     _agMarcos=d.marcos||[]; _agVisao=d.visao||'comercial'; _agSetores=d.setores||[];
@@ -3679,6 +3708,10 @@ function _agRender(){
       <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Semana</button>
       <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Mês</button>
     </div>`;
+  // seletor de projeto → agenda específica (visão melhorada do cronograma do projeto)
+  const projOpts = '<option value="">Todos os projetos</option>' + _agProjLista.map(p=>
+    `<option value="${esc(p.nome_safe)}"${_agProjFiltro===p.nome_safe?' selected':''}>${esc(p.nome_projeto||p.nome_safe)}${p.cliente_nome?' · '+esc(p.cliente_nome):''}</option>`).join('');
+  const seletorProj = `<select onchange="agendaProjeto(this.value)" style="${_retidoInputStyle};max-width:260px">${projOpts}</select>`;
   const prim = new Date(_agAno,_agMes,1), ultD = new Date(_agAno,_agMes+1,0).getDate();
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
   _agEntradas=[];
@@ -3698,10 +3731,12 @@ function _agRender(){
       const idx=_agEntradas.length;
       _agEntradas.push({dia:iso, projeto:g.pj});
       const sel=_agSel && _agSel.dia===iso && _agSel.projeto===g.pj;
+      // agenda de UM projeto: dispensa o prefixo do nome — a célula vira o cronograma dele
+      const rotulo=_agProjFiltro?`${esc(g.principal.titulo)}`:`${esc(g.pj)} · ${esc(g.principal.titulo)}`;
       linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" title="${esc(g.pj)} — ${esc(g.principal.titulo)}${g.n>1?' (+'+(g.n-1)+' relacionados)':''}"
         style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text);cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-radius:5px;padding:1px 3px;${sel?'background:var(--surface-2);font-weight:700;':''}">
         <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[g.st]}"></span>
-        <span style="overflow:hidden;text-overflow:ellipsis">${esc(g.pj)} · ${esc(g.principal.titulo)}${g.n>1?` (+${g.n-1})`:''}</span></div>`;
+        <span style="overflow:hidden;text-overflow:ellipsis">${rotulo}${g.n>1?` (+${g.n-1})`:''}</span></div>`;
     });
     if(grupos.length>3){
       const idx=_agEntradas.length;
@@ -3726,6 +3761,7 @@ function _agRender(){
         <button class="btn btn-ghost btn-sm" onclick="agendaNav(1)">&#x203A;</button>
         <button class="btn btn-ghost btn-sm" onclick="agendaNav(0)">hoje</button>
       </div>
+      ${seletorProj}
       <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>

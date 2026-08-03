@@ -154,6 +154,11 @@ def test_endpoint_agenda(app_db, seed, http_client_factory):
     # filtro de setor no servidor
     st, d2 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&setor=medicao")
     assert st == 200 and all(m["setor"] == "medicao" for m in d2["marcos"])
+    # filtro de PROJETO (agenda específica / cronograma do projeto)
+    st, d3 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&projeto=%s" % nome)
+    assert st == 200 and d3["marcos"] and all(m["projeto"] == nome for m in d3["marcos"])
+    st, d4 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&projeto=Nao_Existe")
+    assert st == 200 and d4["marcos"] == []
 
 
 def test_endpoint_agenda_isola_loja(app_db, seed, http_client_factory):

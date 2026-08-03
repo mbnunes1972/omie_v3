@@ -2745,6 +2745,13 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 Testes atualizados p/ o motivo obrigatório + novo `test_motivo_do_catalogo_e_obrigatorio`;
 suíte **1687 verde**; `node --check` ok. (Restart aplica a migração das colunas novas.)
 
+**Rev 3 (mesmo dia): SELETOR DE PROJETO na Agenda** — "agenda específica do projeto" (visão
+melhorada do cronograma): select no cabeçalho (lista de `/projetos`, "Todos os projetos" +
+nome·cliente); parâmetro `projeto` novo no GET /api/agenda (filtra no servidor); ao escolher,
+a Agenda SALTA para o mês relevante (1º marco pendente ≥ hoje na janela −3m/+9m; senão o
+último) e as células dispensam o prefixo do nome (viram o cronograma do projeto). Teste do
+parâmetro no endpoint.
+
 **Rev 2 (mesmo dia): Calendário SEM valores + catálogo de itens com valor (spec §5 rev 2).**
 Feedback: o R$ no marco não tinha nomenclatura ("valor de quê?"). Decisão: Calendário = datas
 e status apenas (rodapé de entregas e coluna Valor removidos); TODO valor na Agenda passa a

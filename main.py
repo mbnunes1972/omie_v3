@@ -1452,6 +1452,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     return None
             de, ate, setor = _pd(_q("de")), _pd(_q("ate")), (_q("setor") or None)
+            proj_filtro = unquote(_q("projeto") or "") or None   # agenda de UM projeto (cronograma)
             db = get_session()
             try:
                 import mod_agenda as _mag
@@ -1464,6 +1465,8 @@ class Handler(BaseHTTPRequestHandler):
                            .join(Contrato, Contrato.projeto_nome == Projeto.nome_safe)
                            .filter(Projeto.loja_id == loja_id)
                            .distinct().all())
+                if proj_filtro:
+                    projs = [p for p in projs if p.nome_safe == proj_filtro]
                 if _ve_apenas_proprios_projetos(ator.get("nivel")):
                     projs = [p for p in projs
                              if p.criado_por_id in (None, ator.get("id"))]

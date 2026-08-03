@@ -2745,6 +2745,15 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 Testes atualizados p/ o motivo obrigatório + novo `test_motivo_do_catalogo_e_obrigatorio`;
 suíte **1687 verde**; `node --check` ok. (Restart aplica a migração das colunas novas.)
 
+**Rev 4 (mesmo dia): contraste dos bullets de status** — a paleta EMPOEIRADA do design system
+(sálvia/ocre/rosa-vinho) não contrasta em ponto de 8px. Tokens novos VÍVIDOS em
+`orizon-tokens.css` (claro/escuro): `--status-ok` (#16A34A / #4ADE80), `--status-warn`
+(#EAB308 / #FACC15), `--status-err` (#DC2626 / #F87171); "Em andamento" = `var(--text)`
+(preto no claro, branco no escuro — pedido do usuário); pontos 8→11px (célula, legenda e
+detalhe). OBS do episódio: o "filtro de projeto não funcionou" era SERVIDOR SEM RESTART
+(processo de 07:37, anterior ao endpoint com o parâmetro) — o teste do filtro passa; frontend
+atualiza do disco, Python não.
+
 **Rev 3 (mesmo dia): SELETOR DE PROJETO na Agenda** — "agenda específica do projeto" (visão
 melhorada do cronograma): select no cabeçalho (lista de `/projetos`, "Todos os projetos" +
 nome·cliente); parâmetro `projeto` novo no GET /api/agenda (filtra no servidor); ao escolher,

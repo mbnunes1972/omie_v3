@@ -89,6 +89,11 @@
   --err:       #9C4147;   /* vinho — puxa para o vermelho sem estridência */
   --err-soft:  #F7E9EA;
   --err-line:  #D8A6A9;
+  /* Status VÍVIDOS (Agenda 2026-08-03): para PONTOS PEQUENOS de status, a paleta empoeirada
+     não tem contraste — estes são deliberadamente mais brilhantes. Neutro = var(--text). */
+  --status-ok:   #16A34A;
+  --status-warn: #EAB308;
+  --status-err:  #DC2626;
   --cancel:    #6B4423;   /* marrom escuro — cancelamento de contrato (sério, distinto do coral de "danger") */
   --cancel-on: #FFFFFF;
   --info:      #21618F;
@@ -149,6 +154,10 @@
   --err:       #C08183;   /* rosa-vinho empoeirado — piso de legibilidade */
   --err-soft:  rgba(107,49,56,.20);
   --err-line:  #6B3138;   /* vinho profundo — bordas de erro/perigo */
+  /* Status VÍVIDOS (Agenda 2026-08-03) — mais brilho no escuro para pontos pequenos */
+  --status-ok:   #4ADE80;
+  --status-warn: #FACC15;
+  --status-err:  #F87171;
   --cancel:    #8B5E3C;   /* marrom médio — legível sobre fundo escuro */
   --cancel-on: #FFFFFF;
   --info:      #8BA6BD;   /* azul empoeirado */

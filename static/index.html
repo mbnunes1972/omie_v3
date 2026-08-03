@@ -3677,7 +3677,9 @@ async function agendaCarregar(){
 // Código de CORES por STATUS (não por setor): verde concluído · cinza andamento normal ·
 // amarelo com pendência (fase retida) · vermelho atrasado (previsto no passado).
 const _AG_PRIORIDADE = ['16','17','10','11e','14','13','9','11c','11a','11b','15','12','8','11d','18','19','20','21'];
-const _AG_ST_COR = {concluido:'var(--ok)', normal:'var(--muted)', pendencia:'var(--warn)', atrasado:'var(--err)'};
+// Cores VÍVIDAS de status (tokens próprios — a paleta empoeirada não contrasta em ponto
+// pequeno); "Em andamento" = var(--text): branco no tema escuro, preto no claro.
+const _AG_ST_COR = {concluido:'var(--status-ok)', normal:'var(--text)', pendencia:'var(--status-warn)', atrasado:'var(--status-err)'};
 const _AG_ST_ROT = {concluido:'Concluído', normal:'Em andamento', pendencia:'Com pendência', atrasado:'Atrasado'};
 function _agPrio(m){ const i=_AG_PRIORIDADE.indexOf(m.etapa); return i<0?99:i; }
 function _agStatusMarco(m, hojeIso){
@@ -3702,7 +3704,7 @@ function _agRender(){
     const ativo=_agSetorFiltro===s.id;
     return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
   }).join('');
-  const legenda = Object.keys(_AG_ST_ROT).map(s=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)"><span style="width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[s]}"></span>${_AG_ST_ROT[s]}</span>`).join(' ');
+  const legenda = Object.keys(_AG_ST_ROT).map(s=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><span style="width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[s]}"></span>${_AG_ST_ROT[s]}</span>`).join(' ');
   const switcher = `<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
       <button class="home-tab ativo" style="border-radius:0">Calendário</button>
       <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Semana</button>
@@ -3735,7 +3737,7 @@ function _agRender(){
       const rotulo=_agProjFiltro?`${esc(g.principal.titulo)}`:`${esc(g.pj)} · ${esc(g.principal.titulo)}`;
       linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" title="${esc(g.pj)} — ${esc(g.principal.titulo)}${g.n>1?' (+'+(g.n-1)+' relacionados)':''}"
         style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text);cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-radius:5px;padding:1px 3px;${sel?'background:var(--surface-2);font-weight:700;':''}">
-        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[g.st]}"></span>
+        <span style="flex:none;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[g.st]}"></span>
         <span style="overflow:hidden;text-overflow:ellipsis">${rotulo}${g.n>1?` (+${g.n-1})`:''}</span></div>`;
     });
     if(grupos.length>3){
@@ -3786,7 +3788,7 @@ function _agRenderDia(){
   const rows=marcos.map(m=>{
     const st=_agStatusMarco(m,hojeIso);
     return `<tr>
-      <td style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px"></span>${_AG_ST_ROT[st]}</td>
+      <td style="white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px;vertical-align:-1px"></span>${_AG_ST_ROT[st]}</td>
       <td>${esc(m.titulo)}${m.fase?` <span style="color:var(--muted);font-size:11px">(Fase ${m.fase}${m.retida?' — retida':''})</span>`:(m.retida?' <span style="color:var(--muted);font-size:11px">(retida)</span>':'')}</td>
       <td style="white-space:nowrap;color:var(--muted)">${esc(rotSetor[m.setor]||m.setor)}</td>
       <td>${esc(m.projeto||'')}${m.cliente?` <span style="color:var(--muted)">· ${esc(m.cliente)}</span>`:''}</td></tr>`;

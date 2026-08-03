@@ -3621,16 +3621,15 @@ async function cfgAgendaSalvar(lid){
 // ── Agenda da Loja (Fatia 2 — visão Calendário; spec 2026-08-03) ─────────────────────────
 // Marcos por dia/Setor de todos os cronogramas da loja (GET /api/agenda). Semana/Mês e o
 // painel Capacidade entram nas Fatias 3/4. Visão operacional recebe marcos SEM valores.
-let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[], _agDiaSel=null;
-const _AG_COR = {medicao:'var(--accent)', pe:'var(--warn)', expedicao:'var(--ok)', montagem:'var(--text)', financeiro:'var(--muted)'};
+let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function agendaAbrir(){ if(_agAno===null){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); } agendaCarregar(); }
 function agendaNav(d){
   if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
   else { _agMes+=d; if(_agMes<0){_agMes=11;_agAno--;} if(_agMes>11){_agMes=0;_agAno++;} }
-  _agDiaSel=null; agendaCarregar();
+  _agSel=null; agendaCarregar();
 }
-function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agDiaSel=null; _agRender(); }
+function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agSel=null; _agRender(); }
 function _agIso(a,m,d){ const p=n=>String(n).padStart(2,'0'); return a+'-'+p(m+1)+'-'+p(d); }
 async function agendaCarregar(){
   const box=document.getElementById('agenda-ui'); if(!box) return;
@@ -3643,6 +3642,28 @@ async function agendaCarregar(){
     _agRender();
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
 }
+// Revisão UX 2026-08-03 (feedback do usuário): a célula do dia mostra UMA LINHA POR PROJETO —
+// só o EVENTO PRINCIPAL (prioridade abaixo; ex.: Entrega no cliente engole a NF-e do mesmo
+// dia), com "(+n)" quando há eventos relacionados. Clique → lista dos relacionados, inline.
+// Código de CORES por STATUS (não por setor): verde concluído · cinza andamento normal ·
+// amarelo com pendência (fase retida) · vermelho atrasado (previsto no passado).
+const _AG_PRIORIDADE = ['16','17','10','11e','14','13','9','11c','11a','11b','15','12','8','11d','18','19','20','21'];
+const _AG_ST_COR = {concluido:'var(--ok)', normal:'var(--muted)', pendencia:'var(--warn)', atrasado:'var(--err)'};
+const _AG_ST_ROT = {concluido:'Concluído', normal:'Em andamento', pendencia:'Com pendência', atrasado:'Atrasado'};
+function _agPrio(m){ const i=_AG_PRIORIDADE.indexOf(m.etapa); return i<0?99:i; }
+function _agStatusMarco(m, hojeIso){
+  if(m.realizado) return 'concluido';
+  if(m.retida) return 'pendencia';
+  if(m.data < hojeIso) return 'atrasado';
+  return 'normal';
+}
+function _agStatusGrupo(ms, hojeIso){
+  const rank={concluido:0, normal:1, pendencia:2, atrasado:3};
+  let pior='concluido';
+  ms.forEach(m=>{ const s=_agStatusMarco(m,hojeIso); if(rank[s]>rank[pior]) pior=s; });
+  return pior;
+}
+let _agEntradas=[];   // registro por render: índice → {dia, projeto} (evita nome em onclick)
 function _agRender(){
   const box=document.getElementById('agenda-ui'); if(!box) return;
   const marcos = _agSetorFiltro ? _agMarcos.filter(m=>m.setor===_agSetorFiltro) : _agMarcos;
@@ -3650,8 +3671,9 @@ function _agRender(){
   marcos.forEach(m=>{ (porDia[m.data]=porDia[m.data]||[]).push(m); });
   const chips = _agSetores.map(s=>{
     const ativo=_agSetorFiltro===s.id;
-    return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?(_AG_COR[s.id]||'var(--border)'):'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}"><span style="width:8px;height:8px;border-radius:50%;background:${_AG_COR[s.id]||'var(--muted)'}"></span>${esc(s.rotulo)}</span>`;
+    return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
   }).join('');
+  const legenda = Object.keys(_AG_ST_ROT).map(s=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted)"><span style="width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[s]}"></span>${_AG_ST_ROT[s]}</span>`).join(' ');
   const switcher = `<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
       <button class="home-tab ativo" style="border-radius:0">Calendário</button>
       <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Semana</button>
@@ -3659,24 +3681,44 @@ function _agRender(){
     </div>`;
   const prim = new Date(_agAno,_agMes,1), ultD = new Date(_agAno,_agMes+1,0).getDate();
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
+  _agEntradas=[];
   let cels='';
-  for(let i=0;i<prim.getDay();i++) cels+='<div style="min-height:86px"></div>';
+  for(let i=0;i<prim.getDay();i++) cels+='<div style="min-height:96px"></div>';
   for(let dia=1;dia<=ultD;dia++){
     const iso=_agIso(_agAno,_agMes,dia), ms=porDia[iso]||[];
-    const porSetor={};
-    ms.forEach(m=>{ porSetor[m.setor]=(porSetor[m.setor]||0)+1; });
-    const badges=Object.keys(porSetor).map(s=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--text)"><span style="width:7px;height:7px;border-radius:50%;background:${_AG_COR[s]||'var(--muted)'}"></span>${porSetor[s]}</span>`).join(' ');
-    // rodapé do dia: Σ das ENTREGAS (etapa 16) — o foco de datas de entrega do Calendário
+    // agrupa por PROJETO: evento principal + relacionados
+    const porProj={};
+    ms.forEach(m=>{ (porProj[m.projeto]=porProj[m.projeto]||[]).push(m); });
+    const grupos=Object.keys(porProj).map(pj=>{
+      const lst=porProj[pj].slice().sort((a,b)=>_agPrio(a)-_agPrio(b));
+      return {pj, principal:lst[0], n:lst.length, st:_agStatusGrupo(lst,hojeIso)};
+    }).sort((a,b)=>_agPrio(a.principal)-_agPrio(b.principal));
+    let linhas='';
+    grupos.slice(0,3).forEach(g=>{
+      const idx=_agEntradas.length;
+      _agEntradas.push({dia:iso, projeto:g.pj});
+      const sel=_agSel && _agSel.dia===iso && _agSel.projeto===g.pj;
+      linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" title="${esc(g.pj)} — ${esc(g.principal.titulo)}${g.n>1?' (+'+(g.n-1)+' relacionados)':''}"
+        style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text);cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-radius:5px;padding:1px 3px;${sel?'background:var(--surface-2);font-weight:700;':''}">
+        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[g.st]}"></span>
+        <span style="overflow:hidden;text-overflow:ellipsis">${esc(g.pj)} · ${esc(g.principal.titulo)}${g.n>1?` (+${g.n-1})`:''}</span></div>`;
+    });
+    if(grupos.length>3){
+      const idx=_agEntradas.length;
+      _agEntradas.push({dia:iso, projeto:null});
+      linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" style="font-size:10px;color:var(--muted);cursor:pointer;padding:1px 3px">+${grupos.length-3} projeto(s)</div>`;
+    }
+    // rodapé do dia: Σ das ENTREGAS (etapa 16) — foco de volume diário
     const entregas = ms.filter(m=>m.etapa==='16' && m.valor!=null).reduce((t,m)=>t+m.valor,0);
     const rodape = entregas>0?`<div style="font-size:10px;font-family:var(--font-mono);color:var(--ok);margin-top:2px">R$ ${fmt(entregas)}</div>`:'';
-    const hoje = iso===hojeIso, sel = _agDiaSel===iso;
-    cels+=`<div onclick="agendaDia('${iso}')" style="min-height:86px;border:${hoje?'2px':'1px'} solid ${(sel||hoje)?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 8px;cursor:${ms.length?'pointer':'default'};background:${sel?'var(--surface-2)':'transparent'}">
+    const hoje = iso===hojeIso;
+    cels+=`<div style="min-height:96px;border:${hoje?'2px':'1px'} solid ${hoje?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 6px 4px">
         <div style="font-size:11px;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':'600'}">${dia}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${badges}</div>${rodape}</div>`;
+        <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div>${rodape}</div>`;
   }
   const cab=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(x=>`<div style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${x}</div>`).join('');
   box.innerHTML = `
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px">
       ${switcher}
       <div style="display:flex;align-items:center;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick="agendaNav(-1)">&#x2039;</button>
@@ -3686,25 +3728,40 @@ function _agRender(){
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
     </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cab}${cels}</div>
     <div id="agenda-dia-det" style="margin-top:14px"></div>`;
-  if(_agDiaSel) _agRenderDia();
+  if(_agSel) _agRenderDia();
 }
-function agendaDia(iso){ _agDiaSel = (_agDiaSel===iso?null:iso); _agRender(); }
+let _agSel=null;   // {dia, projeto|null} — evento clicado (projeto=null → todos do dia)
+function agendaEvento(idx){
+  const e=_agEntradas[idx]; if(!e) return;
+  _agSel = (_agSel && _agSel.dia===e.dia && _agSel.projeto===e.projeto) ? null : e;
+  _agRender();
+}
 function _agRenderDia(){
-  const det=document.getElementById('agenda-dia-det'); if(!det||!_agDiaSel) return;
-  const marcos=(_agSetorFiltro?_agMarcos.filter(m=>m.setor===_agSetorFiltro):_agMarcos).filter(m=>m.data===_agDiaSel);
+  const det=document.getElementById('agenda-dia-det'); if(!det||!_agSel) return;
+  const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
+  let marcos=(_agSetorFiltro?_agMarcos.filter(m=>m.setor===_agSetorFiltro):_agMarcos).filter(m=>m.data===_agSel.dia);
+  if(_agSel.projeto) marcos=marcos.filter(m=>m.projeto===_agSel.projeto);
   if(!marcos.length){ det.innerHTML=''; return; }
+  marcos=marcos.slice().sort((a,b)=>(a.projeto||'').localeCompare(b.projeto||'')||_agPrio(a)-_agPrio(b));
   const comercial=_agVisao!=='operacional';
   const rotSetor={}; _agSetores.forEach(s=>rotSetor[s.id]=s.rotulo);
-  const rows=marcos.map(m=>`<tr>
-      <td style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_AG_COR[m.setor]||'var(--muted)'};margin-right:6px"></span>${esc(rotSetor[m.setor]||m.setor)}</td>
+  const rows=marcos.map(m=>{
+    const st=_agStatusMarco(m,hojeIso);
+    return `<tr>
+      <td style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px"></span>${_AG_ST_ROT[st]}</td>
       <td>${esc(m.titulo)}${m.fase?` <span style="color:var(--muted);font-size:11px">(Fase ${m.fase}${m.retida?' — retida':''})</span>`:(m.retida?' <span style="color:var(--muted);font-size:11px">(retida)</span>':'')}</td>
+      <td style="white-space:nowrap;color:var(--muted)">${esc(rotSetor[m.setor]||m.setor)}</td>
       <td>${esc(m.projeto||'')}${m.cliente?` <span style="color:var(--muted)">· ${esc(m.cliente)}</span>`:''}</td>
-      ${comercial?`<td style="text-align:right;font-family:var(--font-mono)">${m.valor!=null?'R$ '+fmt(m.valor):'—'}</td>`:''}
-      <td style="white-space:nowrap">${m.realizado?'<span style="color:var(--ok);font-weight:700">Realizado</span>':'<span style="color:var(--muted)">Previsto</span>'}</td></tr>`).join('');
-  det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Marcos de ${_fmtDataBR(_agDiaSel)}</div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Marco</th><th>Projeto</th>${comercial?'<th style="text-align:right">Valor</th>':''}<th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      ${comercial?`<td style="text-align:right;font-family:var(--font-mono)">${m.valor!=null?'R$ '+fmt(m.valor):'—'}</td>`:''}</tr>`;
+  }).join('');
+  const tit=_agSel.projeto
+    ? `${esc(_agSel.projeto)} — eventos de ${_fmtDataBR(_agSel.dia)}`
+    : `Todos os eventos de ${_fmtDataBR(_agSel.dia)}`;
+  det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${tit}</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Evento</th><th>Setor</th><th>Projeto</th>${comercial?'<th style="text-align:right">Valor</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // ── Config → Cronograma de Projeto Padrão (v11 prazo + v12 função responsável por fase) ──

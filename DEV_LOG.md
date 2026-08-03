@@ -2756,6 +2756,17 @@ Fatia 2 do plano — a Agenda aparece na interface.
 Suíte **1686 verde** (+9); `node --check` ok; 4 falhas pré-existentes de chat/e-mail seguem.
 Próxima: **Fatia 3** (cargas distribuídas + visões Semana/Mês).
 
+**Rev UX (mesmo dia, feedback do usuário — a célula estava confusa):** a célula do dia deixou
+de mostrar bolinhas por Setor (cada etapa era um marco → um projeto testado enchia o dia). Agora
+mostra **uma linha por PROJETO** com só o **evento principal** (prioridade: Entrega no cliente >
+Montagem > Medição > assinatura do PE > Entrega no depósito > … — a NF-e do mesmo dia vira
+relacionado) + "(+n)"; clique na linha abre INLINE a lista dos eventos relacionados do projeto
+naquele dia ("+k projeto(s)" abre o dia inteiro). **Cores agora são por STATUS**, não por
+setor: verde Concluído · cinza Em andamento · amarelo Com pendência (fase retida) · vermelho
+Atrasado (previsto no passado) — com legenda no topo; o filtro por Setor segue nos chips. Σ das
+entregas continua no rodapé do dia. (Ruído observado no teste veio de dados de dev com várias
+etapas concluídas no mesmo dia — o agrupamento resolve também para dados reais.)
+
 ## Sessão 140 — Agenda da Loja FATIA 1: `val_liq_congelado` por fase (unidade da Agenda)
 
 Fatia 1 do plano. **Val_Liq (VAVO − Cust_Ad, base das comissões) congelado POR FASE** — a

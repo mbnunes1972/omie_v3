@@ -1321,6 +1321,8 @@ class Handler(BaseHTTPRequestHandler):
                     out.append({"id": p.id, "ordem": p.ordem, "status": p.status,
                                 "fracao_val_cont": round(p.fracao_val_cont or 0.0, 6),
                                 "val_cont_congelado": round(p.val_cont_congelado or 0.0, 2),
+                                "val_liq_congelado": (round(p.val_liq_congelado, 2)
+                                                      if p.val_liq_congelado is not None else None),
                                 "liberacao_prevista": (p.liberacao_prevista.isoformat()
                                                        if p.liberacao_prevista else None),
                                 "entrega_prevista": (p.entrega_prevista.isoformat()
@@ -4399,11 +4401,13 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": "liberacao_prevista inválida (AAAA-MM-DD)."},
                                        code=400); return
                 valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
+                liquidos, val_liq = _liquidos_contrato_por_ambiente(contrato.orcamento_id, db)
                 ok, erro, resumo = _mret.reter(
                     db, nome, req.get("ambientes") or [], contrato.orcamento_id, valores,
                     val_cont, usuario.get("id"), motivo=(req.get("motivo") or "").strip() or None,
                     liberacao_prevista=lib_prev,
-                    etapa_codigo=(req.get("etapa_codigo") or "").strip() or None)
+                    etapa_codigo=(req.get("etapa_codigo") or "").strip() or None,
+                    liquidos_por_ambiente=liquidos, val_liq=val_liq)
                 if not ok:
                     db.rollback()
                     self.send_json({"ok": False, "erro": erro}, code=409); return
@@ -4461,8 +4465,10 @@ class Handler(BaseHTTPRequestHandler):
                 if contrato is None:
                     self.send_json({"ok": False, "erro": "Desmembre após o contrato assinado."}, code=409); return
                 valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
+                liquidos, val_liq = _liquidos_contrato_por_ambiente(contrato.orcamento_id, db)
                 ok, erro, parcelas = _mret.confirmar(db, nome, contrato.orcamento_id, valores,
-                                                     val_cont, usuario.get("id"))
+                                                     val_cont, usuario.get("id"),
+                                                     liquidos_por_ambiente=liquidos, val_liq=val_liq)
                 if not ok:
                     db.rollback()
                     self.send_json({"ok": False, "erro": erro}, code=409); return
@@ -4510,12 +4516,17 @@ class Handler(BaseHTTPRequestHandler):
                 valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
                 grupos_valores = [[valores.get(aid, 0.0) for aid in grupo] for grupo in parcelas_ids]
                 congeladas = _mpar.congelar_parcelas(grupos_valores, val_cont)
+                # Agenda Fatia 1: congela também o Val_Liq da fase (mesma partição, Σ exata)
+                liquidos, val_liq = _liquidos_contrato_por_ambiente(contrato.orcamento_id, db)
+                cong_liq = _mpar.congelar_parcelas(
+                    [[liquidos.get(aid, 0.0) for aid in grupo] for grupo in parcelas_ids], val_liq)
                 previsoes = _previsoes_fases(req, len(parcelas_ids))
                 criadas = []
                 for i, (grupo, cong) in enumerate(zip(parcelas_ids, congeladas)):
                     p = ParcelaProjeto(projeto_nome=nome, ordem=cong["ordem"], status="aguardando",
                                        fracao_val_cont=cong["fracao_val_cont"],
                                        val_cont_congelado=cong["val_cont_congelado"],
+                                       val_liq_congelado=cong_liq[i]["val_cont_congelado"],
                                        orcamento_id=contrato.orcamento_id,
                                        criado_por_id=getattr(usuario, "id", None),
                                        liberacao_prevista=previsoes[i][0],
@@ -4569,6 +4580,13 @@ class Handler(BaseHTTPRequestHandler):
                     amb_ids, grupos, mae.val_cont_congelado, mae.fracao_val_cont, valores)
                 if not ok:
                     self.send_json({"ok": False, "erro": erro}, code=400); return
+                # Agenda Fatia 1: reparte também o Val_Liq congelado da mãe (mesma partição).
+                # Mãe legada sem o campo (pré-backfill): aproxima pelo rateio líquido atual.
+                liquidos, _vl = _liquidos_contrato_por_ambiente(mae.orcamento_id, db)
+                mae_liq = (mae.val_liq_congelado if mae.val_liq_congelado is not None
+                           else round(sum(liquidos.get(a, 0.0) for a in amb_ids), 2))
+                _okl, _errl, novas_liq = _mpar.desmembrar_fase(
+                    amb_ids, grupos, mae_liq, 0.0, liquidos)
                 criadas = []
                 previsoes = _previsoes_fases(req, len(grupos))
                 # novas herdam a POSIÇÃO da mãe (ordem; desempate por id = ordem dos grupos)
@@ -4576,6 +4594,7 @@ class Handler(BaseHTTPRequestHandler):
                     p = ParcelaProjeto(projeto_nome=nome, ordem=mae.ordem, status=mae.status,
                                        fracao_val_cont=ng["fracao_val_cont"],
                                        val_cont_congelado=ng["val_cont_congelado"],
+                                       val_liq_congelado=novas_liq[i]["val_cont_congelado"],
                                        orcamento_id=mae.orcamento_id,
                                        criado_por_id=(usuario.get("id") if isinstance(usuario, dict)
                                                       else getattr(usuario, "id", None)),
@@ -12723,6 +12742,56 @@ def _valores_contrato_por_ambiente(orcamento_id, db):
     return out, round(float(d.get("Val_Cont") or 0), 2)
 
 
+def _liquidos_contrato_por_ambiente(orcamento_id, db):
+    """({pool_ambiente_id: Val_Liq_Amb}, Val_Liq) — rateio do Val_Liq (VAVO − Cust_Ad, a base
+    das comissões e da Agenda) por ambiente, proporcional ao VAVA, com o resíduo no último
+    (Σ exata). Gêmeo de _valores_contrato_por_ambiente; mesma lógica de
+    mod_comissao._liquidos_por_ambiente, mas com soma exata p/ congelamento (Agenda Fatia 1)."""
+    from mod_contrato import ambientes_valor_contrato
+    orc = db.get(Orcamento, orcamento_id)
+    if not orc:
+        return {}, 0.0
+    d = _negociacao_breakdown(orc, db)
+    ambs = d.get("ambientes", [])
+    valores = ambientes_valor_contrato([("", float(a.get("VAVA") or 0.0)) for a in ambs],
+                                       d.get("VAVO", 0.0), d.get("Val_Liq", 0.0))
+    out = {}
+    for a, (_n, v) in zip(ambs, valores):
+        aid = a.get("id")
+        if aid is not None:
+            out[aid] = round(float(v or 0), 2)
+    return out, round(float(d.get("Val_Liq") or 0), 2)
+
+
+def _backfill_val_liq_fases(db):
+    """Backfill ÚNICO (idempotente) do val_liq_congelado em fases legadas (NULL): melhor
+    aproximação disponível = motor atual, somando o rateio líquido dos ambientes de cada fase.
+    Roda no start (fail-soft por projeto). Retorna nº de fases preenchidas."""
+    pendentes = (db.query(ParcelaProjeto)
+                   .filter(ParcelaProjeto.val_liq_congelado == None).all())  # noqa: E711
+    por_projeto = {}
+    for p in pendentes:
+        por_projeto.setdefault(p.projeto_nome, []).append(p)
+    n = 0
+    for nome, fases in por_projeto.items():
+        try:
+            oid = next((f.orcamento_id for f in fases if f.orcamento_id), None)
+            if not oid:
+                continue
+            liq, _total = _liquidos_contrato_por_ambiente(oid, db)
+            for f in fases:
+                ambs = db.query(ParcelaAmbiente).filter_by(parcela_id=f.id).all()
+                f.val_liq_congelado = round(sum(liq.get(a.pool_ambiente_id, 0.0) for a in ambs), 2)
+                n += 1
+            db.flush()
+        except Exception as e:
+            db.rollback()
+            logging.getLogger(__name__).warning(
+                "backfill val_liq_congelado falhou no projeto %s: %s", nome, e)
+    db.commit()
+    return n
+
+
 def _montar_dados_projeto_para_contrato(nome_safe: str, orcamento_id: int, db) -> tuple:
     """
     Retorna (projeto_dict, cliente_dict, orcamento_dict) para geração do contrato.
@@ -13493,6 +13562,10 @@ def main():
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst
             _pst.backfill_perfis_todas_lojas(_dbp)
+            # Agenda Fatia 1: fases legadas ganham o val_liq_congelado (motor atual, 1x).
+            _nliq = _backfill_val_liq_fases(_dbp)
+            if _nliq:
+                print(f"[AGENDA] backfill val_liq_congelado: {_nliq} fase(s) preenchida(s)")
         finally:
             _dbp.close()
     except Exception as _e:

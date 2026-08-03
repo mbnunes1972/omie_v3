@@ -66,10 +66,11 @@ def ja_desmembrado(db, projeto_nome):
     return db.query(ParcelaProjeto).filter_by(projeto_nome=projeto_nome).first() is not None
 
 
-def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, criado_por_id):
+def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, criado_por_id,
+              liquidos_por_ambiente=None, val_liq=0.0):
     """Gerência confirma o desmembramento: parcela PRONTA (segue) × RETIDA (aguarda obra). Reusa
-    mod_parcelas (partição + congelamento do val_cont). NÃO toca no razão. Não commita.
-    Retorna (ok, erro, parcelas)."""
+    mod_parcelas (partição + congelamento do val_cont — e do val_liq, Agenda Fatia 1). NÃO toca
+    no razão. Não commita. Retorna (ok, erro, parcelas)."""
     if ja_desmembrado(db, projeto_nome):
         return (False, "Projeto já desmembrado.", None)
     sinais = db.query(SinalRetido).filter_by(projeto_nome=projeto_nome, confirmado=0).all()
@@ -80,14 +81,18 @@ def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, cr
     ok, erro, retidos, prontos = mod_parcelas.particionar_por_selecao(pool_ids, retido_ids)
     if not ok:
         return (False, erro, None)             # ex.: todos retidos → nada a desmembrar
+    liq = liquidos_por_ambiente or {}
     grupos = [prontos, retidos]                # ordem 1 = pronta (segue); ordem 2 = retida
     grupos_valores = [[float(valores_por_ambiente.get(aid, 0.0)) for aid in g] for g in grupos]
     congeladas = mod_parcelas.congelar_parcelas(grupos_valores, val_cont)
+    cong_liq = mod_parcelas.congelar_parcelas(
+        [[float(liq.get(aid, 0.0)) for aid in g] for g in grupos], val_liq)
     parcelas = []
-    for grupo, cong, status in zip(grupos, congeladas, ["aguardando", STATUS_RETIDO]):
+    for i, (grupo, cong, status) in enumerate(zip(grupos, congeladas, ["aguardando", STATUS_RETIDO])):
         p = ParcelaProjeto(projeto_nome=projeto_nome, ordem=cong["ordem"], status=status,
                            fracao_val_cont=cong["fracao_val_cont"],
                            val_cont_congelado=cong["val_cont_congelado"],
+                           val_liq_congelado=cong_liq[i]["val_cont_congelado"],
                            orcamento_id=orcamento_id, criado_por_id=criado_por_id)
         db.add(p); db.flush()
         for aid in grupo:
@@ -107,7 +112,8 @@ def confirmar(db, projeto_nome, orcamento_id, valores_por_ambiente, val_cont, cr
 # `RetencaoObra` (quando, etapa do ciclo, ambientes, motivo, data prevista de liberação).
 
 def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_cont,
-          criado_por_id, motivo=None, liberacao_prevista=None, etapa_codigo=None):
+          criado_por_id, motivo=None, liberacao_prevista=None, etapa_codigo=None,
+          liquidos_por_ambiente=None, val_liq=0.0):
     """Retenção DIRETA de ambientes (gerência), em cima do estado atual das fases.
 
     - Projeto NÃO desmembrado: cria [fase que segue, fase retida] (retida por último; se TODOS
@@ -133,6 +139,7 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
     if ja_retidos:
         return (False, "Ambiente(s) já retido(s): %s." % ", ".join(str(x) for x in sorted(ja_retidos)), None)
 
+    liq = liquidos_por_ambiente or {}
     afetadas = []
     if not ja_desmembrado(db, projeto_nome):
         prontos = sorted(set(valores_por_ambiente.keys()) - pedidos)
@@ -140,12 +147,16 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
         grupos = ([prontos, retidos] if prontos else [retidos])
         grupos_valores = [[float(valores_por_ambiente.get(a, 0.0)) for a in g] for g in grupos]
         congeladas = mod_parcelas.congelar_parcelas(grupos_valores, val_cont)
-        for grupo, cong in zip(grupos, congeladas):
+        # Agenda Fatia 1: congela também o Val_Liq (mesma partição, Σ exata)
+        cong_liq = mod_parcelas.congelar_parcelas(
+            [[float(liq.get(a, 0.0)) for a in g] for g in grupos], val_liq)
+        for i, (grupo, cong) in enumerate(zip(grupos, congeladas)):
             eh_retida = (grupo is retidos)
             p = ParcelaProjeto(projeto_nome=projeto_nome, ordem=cong["ordem"],
                                status=(STATUS_RETIDO if eh_retida else "aguardando"),
                                fracao_val_cont=cong["fracao_val_cont"],
                                val_cont_congelado=cong["val_cont_congelado"],
+                               val_liq_congelado=cong_liq[i]["val_cont_congelado"],
                                orcamento_id=orcamento_id, criado_por_id=criado_por_id,
                                liberacao_prevista=(liberacao_prevista if eh_retida else None))
             db.add(p); db.flush()
@@ -183,17 +194,24 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
                 fase.fracao_val_cont, valores_por_ambiente)
             if not ok:
                 return (False, erro, None)
+            # Agenda Fatia 1: reparte também o Val_Liq congelado (mãe legada → rateio atual)
+            mae_liq = (fase.val_liq_congelado if fase.val_liq_congelado is not None
+                       else round(sum(float(liq.get(a, 0.0)) for a in ids_fase), 2))
+            _okl, _errl, novas_liq = mod_parcelas.desmembrar_fase(
+                sorted(ids_fase), [resto, sel_ord], mae_liq, 0.0, liq)
             nova_ordem = (db.query(ParcelaProjeto)
                             .filter_by(projeto_nome=projeto_nome).count()) + 1
             r = ParcelaProjeto(projeto_nome=projeto_nome, ordem=nova_ordem, status=STATUS_RETIDO,
                                fracao_val_cont=novas[1]["fracao_val_cont"],
                                val_cont_congelado=novas[1]["val_cont_congelado"],
+                               val_liq_congelado=novas_liq[1]["val_cont_congelado"],
                                orcamento_id=fase.orcamento_id, criado_por_id=criado_por_id,
                                liberacao_prevista=liberacao_prevista,
                                entrega_prevista=fase.entrega_prevista)
             db.add(r); db.flush()
             fase.fracao_val_cont = novas[0]["fracao_val_cont"]
             fase.val_cont_congelado = novas[0]["val_cont_congelado"]
+            fase.val_liq_congelado = novas_liq[0]["val_cont_congelado"]
             for m in membros:
                 m.valor_ambiente = float(valores_por_ambiente.get(m.pool_ambiente_id,
                                                                   m.valor_ambiente or 0.0))
@@ -342,6 +360,13 @@ def liberar(db, projeto_nome, pool_ambiente_ids, liberado_por_id=None):
             parc.val_cont_congelado)
         v_lib, v_resto = cong[0]["val_cont_congelado"], cong[1]["val_cont_congelado"]
         fr_lib = _split_fracao(parc.fracao_val_cont, parc.val_cont_congelado, v_lib)
+        # Agenda Fatia 1: Val_Liq congelado acompanha o split na MESMA proporção do Val_Cont
+        # (última fatia absorve o resíduo). Mãe legada sem o campo → segue None (backfill cobre).
+        if parc.val_liq_congelado is not None and (parc.val_cont_congelado or 0) > 0:
+            liq_lib = round(parc.val_liq_congelado * v_lib / parc.val_cont_congelado, 2)
+            liq_resto = round(parc.val_liq_congelado - liq_lib, 2)
+        else:
+            liq_lib = liq_resto = None
         # A parcela existente vira a LIBERADA (segue); cria uma nova RETIDA para o resto.
         nova_ordem = (db.query(ParcelaProjeto)
                         .filter_by(projeto_nome=projeto_nome).count()) + 1
@@ -350,7 +375,8 @@ def liberar(db, projeto_nome, pool_ambiente_ids, liberado_por_id=None):
                            val_cont_congelado=v_resto, orcamento_id=parc.orcamento_id,
                            criado_por_id=liberado_por_id,
                            liberacao_prevista=parc.liberacao_prevista,
-                           entrega_prevista=parc.entrega_prevista)
+                           entrega_prevista=parc.entrega_prevista,
+                           val_liq_congelado=liq_resto)
         db.add(r); db.flush()
         for m in membros:
             if m.pool_ambiente_id in resto:
@@ -359,6 +385,7 @@ def liberar(db, projeto_nome, pool_ambiente_ids, liberado_por_id=None):
         parc.liberacao_prevista = None
         parc.fracao_val_cont = fr_lib
         parc.val_cont_congelado = v_lib
+        parc.val_liq_congelado = liq_lib
         db.flush()
         afetadas.append({"id": parc.id, "status": "aguardando", "val_cont_congelado": v_lib,
                          "ambientes": libs_ord})

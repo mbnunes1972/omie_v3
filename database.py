@@ -780,6 +780,11 @@ class ParcelaProjeto(Base):
     # (obra libera) e a NOVA previsão de entrega da fase (antes do card de expedição existir).
     liberacao_prevista    = Column(Date, nullable=True)
     entrega_prevista      = Column(Date, nullable=True)
+    # Agenda Fatia 1 (spec 2026-08-03 §4): Val_Liq da fase (VAVO−Cust_Ad rateado por ambiente,
+    # base das comissões e da Agenda) CONGELADO na criação — como o Val_Cont, não se recalcula
+    # (a proporção VAVO/Cust_Ad do projeto pode mudar depois). NULL = legado pendente de
+    # backfill (main._backfill_val_liq_fases roda no start, idempotente).
+    val_liq_congelado     = Column(Float, nullable=True)
 
 
 class ParcelaAmbiente(Base):
@@ -1847,6 +1852,8 @@ def _migrar_colunas_pg():
         # Retenção recorrente + previsões por fase (2026-08-02)
         "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS liberacao_prevista DATE",
         "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS entrega_prevista DATE",
+        # Agenda Fatia 1 (2026-08-03): Val_Liq congelado por fase
+        "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS val_liq_congelado DOUBLE PRECISION",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

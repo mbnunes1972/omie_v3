@@ -1369,6 +1369,11 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 140 (Agenda Fatia 1):** `parcela_projeto.val_liq_congelado` — Val_Liq congelado
+> por fase nos 5 caminhos (desmembrar, sucessivo, reter, liberar em ondas, confirmar) com
+> Σ == Val_Liq exata; helper `_liquidos_contrato_por_ambiente`; backfill idempotente no
+> start; GET /parcelas expõe. Suíte 1677 verde. Próxima: Fatia 2 (marcos + Calendário).
+>
 > **Sessão 139 (Agenda Fatia 0):** `mod_calendario.py` (dias úteis genérico, 12 testes) +
 > seção `agenda` na config da loja + aba Config → Agenda. **Rev do usuário (mesmo dia):**
 > `teto_dias_montagem` REMOVIDO (a janela de trabalho vem do CRONOGRAMA de entrega, que já
@@ -2712,6 +2717,35 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 140 — Agenda da Loja FATIA 1: `val_liq_congelado` por fase (unidade da Agenda)
+
+Fatia 1 do plano. **Val_Liq (VAVO − Cust_Ad, base das comissões) congelado POR FASE** — a
+unidade de volume da Agenda (decisão da Sessão 138; congela-se porque recalcular on-the-fly
+divergiria da comissão paga se a proporção VAVO/Cust_Ad mudar).
+
+- **Schema:** `parcela_projeto.val_liq_congelado` (Float, NULL = legado) + migração
+  idempotente. **Backfill único no start** (`main._backfill_val_liq_fases`, fail-soft por
+  projeto, junto dos backfills existentes): fases legadas ganham o rateio líquido do motor
+  ATUAL (melhor aproximação disponível).
+- **Helper:** `_liquidos_contrato_por_ambiente(orcamento_id, db)` — gêmeo de
+  `_valores_contrato_por_ambiente`, rateia o Val_Liq proporcional ao VAVA reusando
+  `mod_contrato.ambientes_valor_contrato` (resíduo no último → Σ EXATA).
+- **Congelado nos 5 caminhos** (mesma partição do Val_Cont, última fatia absorve o resíduo):
+  POST /parcelas (2× `congelar_parcelas`) · POST /parcelas/<id>/desmembrar (2×
+  `desmembrar_fase`; mãe legada sem o campo → aproxima pelo rateio atual) · `mod_retido.reter`
+  (criação e split; params novos `liquidos_por_ambiente`/`val_liq`) · `mod_retido.liberar`
+  (split em ondas: liq acompanha a PROPORÇÃO do split de Val_Cont; mãe legada segue None) ·
+  `mod_retido.confirmar` (legado, params novos). Funções puras de `mod_parcelas` INALTERADAS
+  (chamadas 2×) — proporções idênticas pois ambos os rateios são proporcionais ao VAVA.
+- **GET /parcelas** expõe `val_liq_congelado` ao lado do `val_cont_congelado`.
+- **TDD:** `tests/test_val_liq_congelado.py` (4 testes; cenário com comissão arq 10% repassada
+  → Val_Liq 3000 ≠ Val_Cont 3333,33, liq/ambiente = 1000 exato): invariante
+  `Σ val_liq_congelado == Val_Liq` no desmembramento, no sucessivo, na retenção com split e na
+  liberação em ondas; backfill idempotente.
+
+Suíte **1677 verde** (+4? novos+ajustes); 4 falhas pré-existentes de chat/e-mail seguem.
+Próxima: **Fatia 2** (offsets das subfases do PE + mod_agenda marcos + endpoint + Calendário).
 
 ## Sessão 139 — Agenda da Loja FATIA 0: mod_calendario (dias úteis genérico) + config "Agenda e Capacidade"
 

@@ -137,7 +137,9 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
             pedidos.add(int(aid))
         except (TypeError, ValueError):
             continue
-    validos = {p.id for p in db.query(PoolAmbiente).filter_by(projeto_id=projeto_nome).all()}
+    # 🟠 Vera E2E 2026-08-03: válidos são os ambientes do orçamento CONTRATADO (as chaves do
+    # rateio de valores) — não o pool inteiro (que ainda tem ambientes de orçamento perdedor).
+    validos = set(valores_por_ambiente.keys())
     pedidos &= validos
     if not pedidos:
         return (False, "Nenhum ambiente válido informado.", None)

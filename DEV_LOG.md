@@ -1369,6 +1369,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 147 (E2E da Vera):** fluxo completo até a NF-e (bloqueio = sem Emitente no dev
+> local, esperado); invariantes exatos. 2 bugs CORRIGIDOS: 🔴 assinatura zerava
+> parametros_json de projeto sem parâmetros persistidos (Prov_Imp→0 no recálculo vivo) e
+> 🟠 desmembramento/retenção exigiam ambientes de orçamento PERDEDOR (agora escopados ao
+> contratado). Dados do Projeto_Vera_E2E mantidos p/ inspeção. Suíte 1701 verde.
+>
 > **Sessão 146 (Visão Operacional REATIVADA):** re-chave nivel→FUNÇÃO em
 > `escopo_por_atribuicao` (`funcao_operacional`: atribuicoes_json > catálogo de nomes;
 > guarda de gerência/admin) + Função resolvida na sessão e no `_ator_dict` (que ganhou
@@ -2752,6 +2758,38 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 147 — E2E da Vera (Projeto_Vera_E2E): fluxo completo até a NF-e + 2 bugs corrigidos
+
+**Simulação ponta a ponta executada pela Vera** (pedido do usuário): cliente → projeto →
+briefing → 2 orçamentos com XMLs Promob REAIS → parceiro 5% + descontos + cartão c/ entrada →
+contrato assinado → AF I → medição → desmembramento em 2 fases c/ previsões → retenção +
+liberação → PE completo (11a–11e c/ XMLs executivos) + AF II → expedição 12/13/14 → NF-e
+BLOQUEADA por falta de `Emitente` no banco de dev local (config de ambiente, não bug; o
+INSPIRIUM de homolog vive na VPS) → 16/17 gated corretamente. Invariantes ✓ (Σ val_cont
+78.581,77 e Σ val_liq 77.121,35 exatos; balanço `confere: true`). Dados mantidos no banco
+(`Projeto_Vera_E2E`) p/ inspeção pela UI.
+
+**Achados corrigidos:**
+- **🔴 Assinatura ZERAVA os parâmetros do projeto** (`_congelar_segmentacao_no_projeto`):
+  projeto que nunca persistiu `parametros_json` vive dos defaults da loja (fallback vivo);
+  congelar a segmentação gravava SÓ {pct_mercadoria, pct_servico} e descartava os defaults →
+  recálculo ao vivo pós-assinatura zerava `Prov_Imp` (7.858,18 → 0,00) e inflava a margem
+  (29,2% → 39,4%) na tela de Provisões/AF II. Fix: sem parâmetros persistidos, congela os
+  DEFAULTS EFETIVOS (`parametros_default_loja(cfg)`) junto com a segmentação — comportamento
+  idêntico antes/depois da assinatura. (Congelados do contrato/razão nunca foram afetados.)
+- **🟠 Desmembramento/retenção validavam contra o POOL INTEIRO** (incl. ambientes de orçamento
+  PERDEDOR): a partição exigia alocar ambiente nunca vendido (contaminando a fase e a
+  entrega). Fix: POST /parcelas valida contra os ambientes do orçamento CONTRATADO; GET
+  /parcelas devolve `pool` escopado ao contratado (fallback: pool inteiro sem contrato);
+  `mod_retido.reter` valida pelos ambientes do rateio do contrato.
+- 🟢 "Agenda vazia p/ consultora" na rodada dela = servidor sem restart (o fix do
+  `ator["id"]` da Sessão 146 resolve — confirmado pela própria análise).
+
+Testes novos: `test_ambiente_de_orcamento_perdedor_fica_fora` +
+`test_congelar_segmentacao_preserva_defaults`. Suíte **1701 verde**; o cluster FLAKY de
+comunicação oscilou 4→6 nesta rodada (2 extras com Timeout; passam isolados — mesmo grupo já
+anotado, frente do Chat).
 
 ## Sessão 146 — VISÃO OPERACIONAL reativada: re-chave nivel → FUNÇÃO (fecha o 🔴1 da Vera e a pendência de 2026-07-10)
 

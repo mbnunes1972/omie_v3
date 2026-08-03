@@ -66,6 +66,75 @@ def test_reter_direto_e_registro(app_db, seed, http_client_factory):
     assert [a["nome"] for a in reg["ambientes"]] == ["Home"]
 
 
+def _criar_orcamento_perdedor(app_db, seed, nome_amb="Perdedor"):
+    """2º orçamento (não contratado) com ambiente próprio no pool — cenário do achado 🟠 da
+    Vera (E2E): o ambiente do perdedor NÃO pode contaminar desmembramento/retenção."""
+    from database import Orcamento
+    db = app_db.get_session()
+    try:
+        o2 = Orcamento(projeto_id=seed["projeto_l1"], nome="Orçamento perdedor", ordem=9,
+                       loja_id=seed["loja1_id"])
+        db.add(o2); db.flush()
+        pa = PoolAmbiente(projeto_id=seed["projeto_l1"], nome=nome_amb, nome_exibicao=nome_amb,
+                          xml_path="/dev/null", ambientes_json="[]",
+                          budget_total=500.0, order_total=200.0)
+        db.add(pa); db.flush()
+        db.add(OrcamentoAmbiente(orcamento_id=o2.id, pool_ambiente_id=pa.id))
+        db.commit()
+        return pa.id
+    finally:
+        db.close()
+
+
+def test_ambiente_de_orcamento_perdedor_fica_fora(app_db, seed, http_client_factory):
+    nome = seed["projeto_l1"]
+    ids = _setup_pool(app_db, seed)
+    perdedor_id = _criar_orcamento_perdedor(app_db, seed)
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    # o pool oferecido a desmembramento/retenção é o do orçamento CONTRATADO
+    st, lst = c.get("/api/projetos/%s/parcelas" % nome)
+    assert st == 200 and perdedor_id not in [a["id"] for a in lst["pool"]]
+    # partição SÓ com os ambientes contratados passa (antes: 400 exigindo o perdedor)
+    st, d = c.post("/api/projetos/%s/parcelas" % nome,
+                   {"parcelas": [[ids[0], ids[1]], [ids[2]]]})
+    assert st == 200 and d["ok"], (st, d)
+    # nenhuma fase contém o ambiente do perdedor
+    st, lst = c.get("/api/projetos/%s/parcelas" % nome)
+    todos = [a["id"] for f in lst["parcelas"] for a in f["ambientes"]]
+    assert perdedor_id not in todos
+    # reter o ambiente do perdedor é recusado
+    st, d = c.post("/api/projetos/%s/retencoes" % nome,
+                   {"ambientes": [perdedor_id], "motivo_tipo": "Outros"})
+    assert st == 409 and "válido" in d["erro"].lower()
+
+
+def test_congelar_segmentacao_preserva_defaults(app_db, seed):
+    """🔴 Vera E2E: assinatura de projeto SEM parametros_json persistido descartava os defaults
+    vivos (carga_trib etc.) ao congelar a segmentação — Prov_Imp zerava no recálculo ao vivo."""
+    import json as _json
+    import main as m
+    nome = seed["projeto_l1"]
+    db = app_db.get_session()
+    try:
+        db.get(Projeto, nome).parametros_json = None
+        db.commit()
+        seg = m._congelar_segmentacao_no_projeto(db, seed["loja1_id"], nome)
+        db.commit()
+        assert seg is not None
+        par = _json.loads(db.get(Projeto, nome).parametros_json)
+        assert "pct_mercadoria" in par and "pct_servico" in par
+        assert "carga_trib" in par and "incluir_custos" in par   # defaults congelados JUNTO
+        # projeto COM parâmetros persistidos: preserva o que já existia
+        db.get(Projeto, nome).parametros_json = _json.dumps({"carga_trib": 12.5})
+        db.commit()
+        m._congelar_segmentacao_no_projeto(db, seed["loja1_id"], nome)
+        db.commit()
+        par2 = _json.loads(db.get(Projeto, nome).parametros_json)
+        assert par2["carga_trib"] == 12.5 and "pct_mercadoria" in par2
+    finally:
+        db.close()
+
+
 def test_motivo_do_catalogo_e_obrigatorio(app_db, seed, http_client_factory):
     nome = seed["projeto_l1"]
     ids = _setup_pool(app_db, seed)

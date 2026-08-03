@@ -616,12 +616,20 @@ def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
     default da loja) no `parametros_json` do projeto — chamado na assinatura. Depois disso NF-e e NFS-e
     leem os MESMOS percentuais, imunes a mudança do default da loja. Retorna o par congelado ou None
     (loja/projeto ausente). NÃO commita (o chamador decide) e preserva os demais parâmetros."""
-    from mod_orcamento_params import resolver_segmentacao, segmentacao_efetiva
+    from mod_orcamento_params import (parametros_default_loja, resolver_segmentacao,
+                                      segmentacao_efetiva)
     lj = db.get(Loja, loja_id) if loja_id else None
     pj = _projeto_da_loja(db, projeto_nome, loja_id)
     if lj is None or pj is None:
         return None
-    par = json.loads(pj.parametros_json) if pj.parametros_json else {}
+    if pj.parametros_json:
+        par = json.loads(pj.parametros_json)
+    else:
+        # 🔴 Vera E2E 2026-08-03: projeto que NUNCA persistiu parâmetros vive dos defaults da
+        # loja (fallback do breakdown). Gravar só a segmentação DESCARTAVA esses defaults
+        # (carga_trib etc.) → recálculo "ao vivo" pós-assinatura zerava Prov_Imp e inflava a
+        # margem. Congela os defaults EFETIVOS junto — o comportamento não muda na assinatura.
+        par = parametros_default_loja(_cfg_financeira_loja(db, loja_id))
     seg = segmentacao_efetiva(resolver_segmentacao(lj.pct_mercadoria, lj.pct_servico), par)
     par["pct_mercadoria"] = seg["pct_mercadoria"]
     par["pct_servico"]    = seg["pct_servico"]
@@ -1333,9 +1341,20 @@ class Handler(BaseHTTPRequestHandler):
                 sinais = [{"pool_ambiente_id": s["pool_ambiente_id"], "motivo": s["motivo"],
                            "nome": pa_nome.get(s["pool_ambiente_id"], "")}
                           for s in _mret.listar_sinais(db, nome)]
+                # 🟠 Vera E2E 2026-08-03: o "pool" oferecido a desmembramento/retenção são os
+                # ambientes do orçamento CONTRATADO (ambiente de orçamento perdedor fica fora);
+                # sem contrato, cai no pool inteiro (comportamento antigo).
+                _ctr = (db.query(Contrato).filter_by(projeto_nome=nome)
+                          .order_by(Contrato.id.desc()).first())
+                if _ctr:
+                    _ids_ctr = [lk.pool_ambiente_id for lk in
+                                db.query(OrcamentoAmbiente).filter_by(
+                                    orcamento_id=_ctr.orcamento_id).all()]
+                    pool_out = [{"id": i, "nome": pa_nome.get(i, "")} for i in _ids_ctr]
+                else:
+                    pool_out = [{"id": i, "nome": n} for i, n in pa_nome.items()]
                 self.send_json({"ok": True, "parcelas": out, "desmembrado": bool(out),
-                                "sinais_retido": sinais,
-                                "pool": [{"id": i, "nome": n} for i, n in pa_nome.items()]})
+                                "sinais_retido": sinais, "pool": pool_out})
             finally:
                 db.close()
             return
@@ -4635,7 +4654,13 @@ class Handler(BaseHTTPRequestHandler):
                     parcelas_ids = [[int(x) for x in grupo] for grupo in parcelas_ids]
                 except (TypeError, ValueError):
                     self.send_json({"ok": False, "erro": "Ambientes inválidos"}, code=400); return
-                pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()]
+                # 🟠 Vera E2E 2026-08-03: a partição vale sobre os ambientes do orçamento
+                # CONTRATADO — não o pool inteiro do projeto (que ainda contém os ambientes de
+                # orçamentos PERDEDORES; exigi-los na fase contaminava a entrega com ambiente
+                # nunca vendido).
+                pool_ids = [lk.pool_ambiente_id for lk in
+                            db.query(OrcamentoAmbiente).filter_by(
+                                orcamento_id=contrato.orcamento_id).all()]
                 ok, erro = _mpar.validar_particao_parcelas(pool_ids, parcelas_ids)
                 if not ok:
                     self.send_json({"ok": False, "erro": erro}, code=400); return

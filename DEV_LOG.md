@@ -2791,6 +2791,15 @@ Testes novos: `test_ambiente_de_orcamento_perdedor_fica_fora` +
 comunicação oscilou 4→6 nesta rodada (2 extras com Timeout; passam isolados — mesmo grupo já
 anotado, frente do Chat).
 
+**Rev — UI de Pontos de Venda (usuário: "não achei o caminho"):** o caminho NÃO existia — o
+backend do PDV (spec _geral/2026-07-22: `POST/GET /api/admin/lojas/<id>/pdvs`, criação
+exclusiva do super_admin, PDV herda rede/config da mãe e fiscal sai pela mãe) estava pronto
+desde 22/07, mas a seção prevista na spec nunca foi ligada no frontend. Criada a aba
+**"Pontos de Venda"** no console da loja (Admin): lista (nome/código/cidade/responsável/
+status) p/ quem vê a loja; formulário de criação inline SÓ para super_admin (demais veem o
+aviso de exclusividade). Também: linha **"Desconto efetivo"** (% e R$, global ∘ individuais)
+no registro do contrato — origem da dúvida do usuário sobre os números do E2E.
+
 **Rev UX do modal de Retenção (feedback do usuário sobre os dados do E2E — "confuso, não sei
 qual ambiente foi retido"):** os cards de fase ganharam TÍTULO ("Fase N · status"), previsões
 da fase (entrega/liberação), borda âmbar quando retida e — na retida — o motivo/data do evento

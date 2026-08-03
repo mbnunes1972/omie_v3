@@ -11342,8 +11342,10 @@ async function adminRenderLoja(box){
       <button class="home-tab" id="loja-tab-usuarios" onclick="adminLojaTab('usuarios')">Usuários</button>
       <button class="home-tab" id="loja-tab-perfis" onclick="adminLojaTab('perfis')">Perfis de Usuário</button>
       <button class="home-tab" id="loja-tab-modulos" onclick="adminLojaTab('modulos')">Módulos</button>
+      <button class="home-tab" id="loja-tab-pdvs" onclick="adminLojaTab('pdvs')">Pontos de Venda</button>
     </div>
     <div id="loja-panel-dados"></div>
+    <div id="loja-panel-pdvs" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="loja-panel-usuarios" style="display:none">
       <button class="btn btn-ghost btn-sm" onclick="abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:(_adminNav.loja&&_adminNav.loja.id)||(_usuarioAtual&&_usuarioAtual.loja_id), loja_nome:(_adminNav.loja&&_adminNav.loja.nome)||'', onSaved:adminUsuariosCarregar})" style="font-size:11px">+ Novo usuário</button>
       <div id="admin-usuarios-lista" style="margin-top:10px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -11356,7 +11358,7 @@ async function adminRenderLoja(box){
 }
 
 function adminLojaTab(qual){
-  ['dados','usuarios','perfis','modulos'].forEach(q => {
+  ['dados','usuarios','perfis','modulos','pdvs'].forEach(q => {
     const tab   = document.getElementById('loja-tab-'+q);
     const panel = document.getElementById('loja-panel-'+q);
     if (tab)   tab.classList.toggle('ativo', q===qual);
@@ -11364,6 +11366,65 @@ function adminLojaTab(qual){
   });
   if (qual==='modulos') adminModulosCarregar();
   if (qual==='perfis')  adminPerfisCarregar();
+  if (qual==='pdvs')    adminPdvsCarregar();
+}
+
+// ── Pontos de Venda da loja (spec _geral/2026-07-22): a UI que faltava (backend já existia).
+// PDV = Loja com mãe: opera venda/projeto próprios; fiscal/documentos pela MÃE; razão e
+// tenancy próprios. Criação é EXCLUSIVA do super_admin (o backend recusa 403 para os demais).
+async function adminPdvsCarregar(){
+  const panel = document.getElementById('loja-panel-pdvs'); if(!panel) return;
+  const lid = _lojaAtiva || (_usuarioAtual && _usuarioAtual.loja_id);
+  if(!lid){ panel.innerHTML='<em style="color:var(--muted);font-size:12px">Loja não identificada.</em>'; return; }
+  const d = await fetch('/api/admin/lojas/'+lid+'/pdvs',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ panel.innerHTML='<em style="color:var(--muted);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
+  const pdvs = d.pdvs||[];
+  const linhas = pdvs.map(p=>`<tr>
+      <td>${esc(p.nome)}</td><td style="font-family:var(--font-mono)">${esc(p.codigo||'—')}</td>
+      <td style="color:var(--muted)">${esc([p.cidade,p.estado].filter(Boolean).join('/')||'—')}</td>
+      <td style="color:var(--muted)">${esc(p.responsavel||'—')}</td>
+      <td>${p.ativo?'<span style="color:var(--status-ok);font-weight:700">Ativo</span>':'<span style="color:var(--muted)">Inativo</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="color:var(--muted);padding:14px">Nenhum Ponto de Venda nesta loja.</td></tr>';
+  const ehSuper = _usuarioAtual && _usuarioAtual.nivel==='super_admin';
+  const form = ehSuper ? `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:14px;max-width:720px">
+      <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">Novo Ponto de Venda</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
+        <input id="pdv-novo-nome" type="text" placeholder="Nome do Ponto de Venda *" style="${_retidoInputStyle}">
+        <input id="pdv-novo-codigo" type="text" placeholder="Código * (ex.: PDV1)" style="${_retidoInputStyle}">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+        <input id="pdv-novo-responsavel" type="text" placeholder="Responsável" style="${_retidoInputStyle}">
+        <input id="pdv-novo-telefone" type="text" placeholder="Telefone" style="${_retidoInputStyle}">
+        <input id="pdv-novo-email" type="text" placeholder="E-mail" style="${_retidoInputStyle}">
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 80px;gap:8px;margin-bottom:10px">
+        <input id="pdv-novo-cidade" type="text" placeholder="Cidade" style="${_retidoInputStyle}">
+        <input id="pdv-novo-uf" type="text" placeholder="UF" maxlength="2" style="${_retidoInputStyle}">
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span style="font-size:10px;color:var(--muted)">O PDV herda rede e config financeira da loja-mãe; NF-e/documentos saem pela mãe.</span>
+        <button class="btn btn-primary btn-sm" onclick="adminPdvCriar(${lid})">Criar Ponto de Venda</button>
+      </div>
+    </div>`
+    : '<div style="font-size:11px;color:var(--muted);margin-top:12px">A criação de Pontos de Venda é exclusiva do administrador da plataforma (Painel Orizon).</div>';
+  panel.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;max-width:720px">Ponto de Venda é uma unidade <strong style="color:var(--text)">filha desta loja</strong>: vende e conduz projetos próprios, mas o fiscal (NF-e) e os modelos de documento saem pela loja-mãe.</div>
+    <table class="cli-table"><thead><tr><th>Nome</th><th>Código</th><th>Cidade</th><th>Responsável</th><th>Status</th></tr></thead><tbody>${linhas}</tbody></table>
+    ${form}`;
+}
+async function adminPdvCriar(lid){
+  const v = id => (document.getElementById(id)?.value||'').trim();
+  const nome=v('pdv-novo-nome'), codigo=v('pdv-novo-codigo');
+  if(!nome || !codigo){ showToast('Nome e código são obrigatórios.', true); return; }
+  const d = await fetch('/api/admin/lojas/'+lid+'/pdvs',{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({nome, codigo, responsavel:v('pdv-novo-responsavel'),
+      telefone:v('pdv-novo-telefone'), email:v('pdv-novo-email'),
+      cidade:v('pdv-novo-cidade'), estado:v('pdv-novo-uf')})}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha ao criar'), true); return; }
+  showToast('Ponto de Venda criado.', false);
+  adminPdvsCarregar();
 }
 
 async function adminLojaProjetosCarregar(){

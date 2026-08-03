@@ -17129,6 +17129,14 @@ async function _contratoParamsResumo(){
         <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">Projeto <strong style="color:var(--text)">${esc(projetoAtivo.nome_projeto||projetoAtivo.nome_safe||'—')}</strong>${(()=>{const c=(projetoAtivo.cliente||{}).nome||projetoAtivo.nome_cliente||'';return c?' · Cliente <strong style="color:var(--text)">'+esc(c)+'</strong>':'';})()}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 18px;font-size:.85rem;color:var(--text)">
           <div><span style="color:var(--muted)">Desconto global:</span> <strong>${(o.desconto_pct||0)}%</strong></div>
+          ${(()=>{ // Desconto EFETIVO (2026-08-03): global ∘ individuais — a MESMA conta da tela de
+                   // negociação (VBNO − VAVO); evita ler "5%" e estranhar a redução real maior.
+            if(!temFinais) return '';
+            const vbno=Number(sombra.VBNO)||0, vavo=Number(sombra.VAVO)||0;
+            if(!(vbno>0) || vbno-vavo<0.005) return '';
+            const pct=((vbno-vavo)/vbno*100).toFixed(2).replace('.',',');
+            return `<div title="Desconto global composto com os descontos individuais por ambiente (bruto − à vista)"><span style="color:var(--muted)">Desconto efetivo:</span> <strong>${pct}% (${fmt(vbno-vavo)})</strong></div>`;
+          })()}
           <div><span style="color:var(--muted)">Forma de pagamento:</span> <strong>${esc((plano && plano.nome_forma) || '—')}</strong></div>
           <div><span style="color:var(--muted)">Parcelamento:</span> <strong>${parcTxt}</strong></div>
           <div><span style="color:var(--muted)">Entrada:</span> <strong>${entradaTxt}</strong></div>

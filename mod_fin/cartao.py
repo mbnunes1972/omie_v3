@@ -75,13 +75,18 @@ def calcular(valor_avista: float, entrada: float,
     valor_parcela     = round(financiado / n, 2)
     total_cliente     = round(ent + financiado, 2)
 
+    # última parcela absorve o resíduo do arredondamento (mesma regra da venda
+    # programada): entrada + Σ parcelas = total_cliente exato ao centavo
+    ajuste_ultimo = round(financiado - valor_parcela * n, 2)
+
     dc   = parse_data(data_contrato)
     plan = [linha_contrato(dc)]
     if ent > 0:
         plan.append(linha_entrada(dc, ent))
     for i in range(1, n + 1):
         data_venc = dc + timedelta(days=30 * i)
-        plan.append(linha_parcela(i, data_venc, valor_parcela))
+        valor = valor_parcela + (ajuste_ultimo if i == n else 0)
+        plan.append(linha_parcela(i, data_venc, valor))
 
     return {
         "ok":                True,

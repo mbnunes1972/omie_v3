@@ -56,3 +56,26 @@ def test_valor_liberado_igual_valor_avista():
         assert r['ok'], f"falhou n={n}"
         assert abs(r['valor_liberado'] - 20000) < 1, \
             f"valor_liberado={r['valor_liberado']} != 20000 (n={n})"
+
+
+def test_plano_fecha_ao_centavo_com_total_cliente():
+    """Última parcela absorve o resíduo do arredondamento: entrada + Σ parcelas
+    do plano = total_cliente EXATO (caso Norberto: 15×13.000,35 dava 4 centavos
+    a mais que o financiado de 195.005,21)."""
+    r = calcular(205192.68, 30000, 15, '2026-07-21')
+    assert r['ok']
+    parcelas = [p for p in r['parcelas'] if p.get('tipo') in ('primeira', 'parcela')]
+    assert len(parcelas) == 15
+    soma = round(r['entrada'] + sum(p['valor'] for p in parcelas), 2)
+    assert soma == r['total_cliente'], f"{soma} != {r['total_cliente']}"
+    # as N−1 primeiras seguem iguais ao valor_parcela divulgado
+    assert all(abs(p['valor'] - r['valor_parcela']) < 0.005 for p in parcelas[:-1])
+
+
+def test_plano_fecha_ao_centavo_varios_n():
+    for n in (2, 6, 12, 21):
+        r = calcular(33333.33, 1111.11, n, '2026-06-01')
+        assert r['ok'], f"falhou n={n}"
+        parcelas = [p for p in r['parcelas'] if p.get('tipo') in ('primeira', 'parcela')]
+        soma = round(r['entrada'] + sum(p['valor'] for p in parcelas), 2)
+        assert soma == r['total_cliente'], f"n={n}: {soma} != {r['total_cliente']}"

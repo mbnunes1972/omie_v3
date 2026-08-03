@@ -6807,7 +6807,7 @@ async function atualizarAymore() {
 
   const tbody = document.getElementById('ay-parc-body');
   tbody.innerHTML = d.parcelas.map(p => {
-    const valorReal = p.tipo === 'contrato' ? null : p.tipo === 'entrada' ? p.valor : d.valor_parcela;
+    const valorReal = p.tipo === 'contrato' ? null : p.valor;   // plano do backend (última absorve resíduo)
     return _planoLinha(p, valorReal);
   }).join('');
   tbody.innerHTML += `<tr style="border-top:1px solid var(--border2)">
@@ -6822,7 +6822,7 @@ async function atualizarAymore() {
     total_cliente: d.total_cliente, texto_cartao: '',
     parcelas: (d.parcelas || [])
       .filter(p => p.tipo === 'primeira' || p.tipo === 'parcela')
-      .map((p, i) => ({ num: i + 1, data: p.data, valor: d.valor_parcela, forma: _formaParcela })),
+      .map((p, i) => ({ num: i + 1, data: p.data, valor: p.valor, forma: _formaParcela })),
   };
   _atualizarImpostos('ay', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
@@ -6908,7 +6908,7 @@ async function atualizarCartao() {
   const tbody = document.getElementById('cc-parc-body');
   tbody.innerHTML = d.parcelas.map(p => {
     const [rowBg, bg, color, label] = _PLANO_LINHA[p.tipo] || _PLANO_LINHA.parcela;
-    const valorReal = p.tipo==='contrato'?null:p.tipo==='entrada'?p.valor:d.valor_parcela;
+    const valorReal = p.tipo==='contrato'?null:p.valor;   // plano do backend (última absorve resíduo)
     const numCell = p.num > 0 ? p.num : '—';
     return `<tr style="background:${rowBg}">
       <td style="padding:8px 12px;color:var(--muted);font-size:11px">${numCell}</td>
@@ -6931,7 +6931,10 @@ async function atualizarCartao() {
     entrada_valor: entrada, entrada_data: document.getElementById('cc-entrada-data')?.value || '', entrada_forma: _formaEntrada,
     total_cliente: d.total_cliente,
     texto_cartao: _ccTexto,
-    parcelas: Array.from({length: (n || 1)}, (_, i) => ({num: i+1, valor: n === 1 ? (d.valor_parcela || d.total_cliente) : d.valor_parcela, data: '', forma: 'cartao_credito'})),
+    // valores do PLANO do backend (a última parcela absorve o resíduo do arredondamento)
+    parcelas: (d.parcelas || [])
+      .filter(p => p.tipo === 'primeira' || p.tipo === 'parcela')
+      .map((p, i) => ({num: i+1, valor: p.valor, data: '', forma: 'cartao_credito'})),
   };
   _atualizarImpostos('cc', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
@@ -16371,17 +16374,17 @@ async function _contratoParamsResumo(){
     // Valores FINAIS por ambiente (correção 2026-08-02): budget/order do pool são venda BRUTA e
     // CUSTO DE FÁBRICA — o que vale no contrato é o VBNA (negociado) e o VAVA (à vista) do MOTOR.
     // O preview do breakdown devolve os ambientes com o pool_ambiente_id → pareamento exato.
-    let porId = {}, fatorFin = 1;
+    let porId = {}, fatorFin = 1, sombra = {};
     try{
       const prev = await fetch('/api/orcamentos/'+o.id+'/negociacao-preview',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
          body:'{}'}).then(r=>r.json());
       if (prev && prev.ok){
         (prev.ambientes||[]).forEach(x=>{ if(x.id!=null) porId[x.id]=x; });
-        const sm = prev.sombra || {};
+        sombra = prev.sombra || {};
         // MESMA regra da tabela de negociação: coluna financiada por ambiente =
         // VAVA × (Val_Cont/VAVO) — soma bate exatamente o Total (contrato).
-        if (sm.VAVO > 0 && sm.Val_Cont > 0) fatorFin = sm.Val_Cont / sm.VAVO;
+        if (sombra.VAVO > 0 && sombra.Val_Cont > 0) fatorFin = sombra.Val_Cont / sombra.VAVO;
       }
     }catch(e){}
     const temFinais = Object.keys(porId).length > 0;
@@ -16389,10 +16392,14 @@ async function _contratoParamsResumo(){
     try{ plano = o.forma_pagamento ? JSON.parse(o.forma_pagamento) : null; }catch(e){}
     const fmt = v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
     const parc = (plano && plano.parcelas) || [];
-    const mesma = parc.length && parc.every(p=>Math.abs((p.valor||0)-(parc[0].valor||0)) < 0.01);
+    const _iguais = n2 => parc.slice(0,n2).every(p=>Math.abs((p.valor||0)-(parc[0].valor||0)) < 0.01);
+    const mesma = parc.length && _iguais(parc.length);
+    // última pode absorver o resíduo do arredondamento → "15x de X (última: Y)"
+    const quase = !mesma && parc.length > 1 && _iguais(parc.length-1);
     const parcTxt = parc.length
       ? (mesma ? parc.length+'x de '+fmt(parc[0].valor)
-               : parc.length+' parcelas (total '+fmt(parc.reduce((t,p)=>t+(p.valor||0),0))+')')
+         : quase ? parc.length+'x de '+fmt(parc[0].valor)+' (última: '+fmt(parc[parc.length-1].valor)+')'
+         : parc.length+' parcelas (total '+fmt(parc.reduce((t,p)=>t+(p.valor||0),0))+')')
       : '—';
     const entradaTxt = (plano && plano.entrada_valor)
       ? fmt(plano.entrada_valor)
@@ -16415,26 +16422,39 @@ async function _contratoParamsResumo(){
         + '<th style="text-align:right;padding:3px 10px;font-size:.75rem;color:var(--muted);font-weight:600">À vista</th>'
         + '<th style="text-align:right;padding:3px 10px;font-size:.75rem;color:var(--muted);font-weight:600">Com financiamento</th></tr>'
       : '';
-    const somaFin = temFinais ? ambs.reduce((t,a2)=>t+((((porId[a2.id]||{}).VAVA)||0)*fatorFin),0) : 0;
-    const difGeral = temFinais ? ((o.valor_total||0) - somaFin) : 0;
+    // Itens de ordem geral (ex.: custo especial repassado): linha do ORÇAMENTO fora dos
+    // ambientes — no motor, VAVO = ΣVAVA + custo especial. Sem esta linha a soma da tabela
+    // não fecha com o Total do contrato (achado do usuário: 224.456,92 vs 225.005,21).
+    const somaAv   = temFinais ? ambs.reduce((t,a2)=>t+(((porId[a2.id]||{}).VAVA)||0),0) : 0;
+    const geralAv  = temFinais ? Math.max(0, (Number(sombra.VAVO)||0) - somaAv) : 0;
+    const totAv    = somaAv + geralAv;                 // = VAVO
+    const totFin   = totAv * fatorFin;                 // = Val_Cont (Total do contrato)
+    const linhaGeral = (temFinais && geralAv > 0.005)
+      ? '<tr><td style="padding:3px 10px;font-size:.82rem">Itens de ordem geral <span style="color:var(--muted);font-size:.75rem">(custo especial fora dos ambientes)</span></td>'
+        + '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;color:var(--muted)">'+fmt(geralAv)+'</td>'
+        + '<td style="padding:3px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem">'+fmt(geralAv*fatorFin)+'</td></tr>'
+      : '';
+    const difGeral = temFinais ? ((o.valor_total||0) - totFin) : 0;
     const notaGeral = (temFinais && Math.abs(difGeral) > 1)
-      ? '<div style="font-size:.72rem;color:var(--muted);margin-top:4px">A diferença de '+fmt(Math.abs(difGeral))
-        + ' para o Total do contrato são itens de ordem geral fora dos ambientes (ex.: brindes/custos especiais).</div>'
+      ? '<div style="font-size:.72rem;color:var(--muted);margin-top:4px">Atenção: a soma recalculada pelo motor difere '+fmt(Math.abs(difGeral))
+        + ' do Total congelado no fechamento do contrato.</div>'
       : '';
     const rodapeAmb = temFinais
-      ? '<tr style="border-top:1px solid var(--border)"><td style="padding:4px 10px;font-size:.8rem;font-weight:700">Total dos ambientes</td><td></td>'
-        + '<td style="padding:4px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;font-weight:700">'+fmt(somaFin)+'</td></tr>'
+      ? '<tr style="border-top:1px solid var(--border)"><td style="padding:4px 10px;font-size:.8rem;font-weight:700">Total</td>'
+        + '<td style="padding:4px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;font-weight:700">'+fmt(totAv)+'</td>'
+        + '<td style="padding:4px 10px;text-align:right;font-family:var(--font-mono);font-size:.82rem;font-weight:700">'+fmt(totFin)+'</td></tr>'
       : '';
     box.innerHTML = `
       <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--surface-2)">
-        <div style="font-weight:800;color:var(--text);margin-bottom:8px"><i class="ti ti-file-description"></i> Parâmetros da negociação — registro do contrato</div>
+        <div style="font-weight:800;color:var(--text);margin-bottom:2px"><i class="ti ti-file-description"></i> Parâmetros da negociação — registro do contrato</div>
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:8px">Projeto <strong style="color:var(--text)">${esc(projetoAtivo.nome_projeto||projetoAtivo.nome_safe||'—')}</strong>${(()=>{const c=(projetoAtivo.cliente||{}).nome||projetoAtivo.nome_cliente||'';return c?' · Cliente <strong style="color:var(--text)">'+esc(c)+'</strong>':'';})()}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px 18px;font-size:.85rem;color:var(--text)">
           <div><span style="color:var(--muted)">Desconto global:</span> <strong>${(o.desconto_pct||0)}%</strong></div>
           <div><span style="color:var(--muted)">Forma de pagamento:</span> <strong>${esc((plano && plano.nome_forma) || '—')}</strong></div>
           <div><span style="color:var(--muted)">Parcelamento:</span> <strong>${parcTxt}</strong></div>
           <div><span style="color:var(--muted)">Entrada:</span> <strong>${entradaTxt}</strong></div>
           <div><span style="color:var(--muted)">Total (contrato):</span> <strong>${fmt(o.valor_total)}</strong></div>
-          <div><span style="color:var(--muted)">Valor à vista:</span> <strong>${fmt(o.valor_liquido)}</strong></div>
+          <div><span style="color:var(--muted)">Valor à vista:</span> <strong>${temFinais ? fmt(totAv) : '—'}</strong></div>
         </div>
         ${ambs.length ? `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px">
           <div style="font-size:.8rem;color:var(--muted);margin-bottom:4px">Ambientes fechados${temFinais ? '' : ' <span style="font-size:.72rem">(valores finais indisponíveis p/ o seu perfil)</span>'}</div>

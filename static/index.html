@@ -2513,7 +2513,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Retenção por Obra</div>
         <span onclick="retidoFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">A obra do cliente pode segurar alguns ambientes. O <strong style="color:var(--text)">Medidor</strong> sinaliza os ambientes retidos; a <strong style="color:var(--text)">Gerência</strong> confirma o desmembramento (parcela que <strong style="color:var(--text)">segue</strong> × parcela <strong style="color:var(--text)">retida</strong>). Ao liberar, a parcela retoma de onde parou.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">A obra do cliente pode segurar ambientes <strong style="color:var(--text)">a qualquer momento</strong> (da Solicitação de Medição à Montagem) e <strong style="color:var(--text)">mais de uma vez</strong>. Cada retenção registra quando foi, em qual etapa do ciclo, os ambientes, o motivo e a <strong style="color:var(--text)">previsão de liberação</strong>. O Medidor pode sinalizar; a Gerência efetiva a retenção e depois libera — a fase retida retoma de onde parou.</div>
       <div id="retido-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
   </div>
@@ -14088,10 +14088,24 @@ function _fichaRenderConteudo() {
 
 // O switch de conteúdo por etapa é o MESMO do acordeão antigo — movido, não reescrito.
 function _fichaCorpoEtapa(etapa, dados, bloqueada) {
-  const corpo = _fichaCorpoBase(etapa, dados, bloqueada);
+  let corpo = _fichaCorpoBase(etapa, dados, bloqueada);
   // r2 (2026-08-02): desmembramento em fases disponível DESDE a Solicitação de Medição —
   // telas 9 e 10 ganham o bloco (a 11c já o tinha dentro do próprio card).
-  return (etapa.codigo === '9' || etapa.codigo === '10') ? corpo + _desmembramentoBloco() : corpo;
+  if (etapa.codigo === '9' || etapa.codigo === '10') corpo += _desmembramentoBloco();
+  // Retenção por obra RECORRENTE (2026-08-02): acionável da Solicitação de Medição (9),
+  // Medição (10), PE (11) até a Montagem (17) — não é mais um ato único da medição.
+  const _maeRet = _fichaMae(etapa.codigo);
+  if (['9', '10', '11', '17'].includes(_maeRet)) corpo += _retencaoBloco(_maeRet);
+  return corpo;
+}
+
+function _retencaoBloco(etapaCtx) {
+  return `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">A obra pode segurar
+    ambientes <strong>a qualquer momento</strong> — cada retenção registra quando foi, a etapa do
+    ciclo, o motivo e a previsão de liberação.</div>
+    <button class="btn-ciclo" onclick="retidoAbrir(projetoAtivo.nome_safe, '${etapaCtx}')"><i class="ti ti-hand-stop"></i> Retenção por obra</button>
+  </div>`;
 }
 function _fichaCorpoBase(etapa, dados, bloqueada) {
   return etapa.acao === 'contrato'
@@ -14173,7 +14187,7 @@ async function _entregaFaixaRender(){
           ? `<i class="ti ti-calendar-event"></i> Previsão de entrega ${_fmtDataBR(f.previsao)}`
           : `<span style="color:var(--text-3)">Entrega a definir</span>`);
     const ret = f.status === 'retido'
-      ? ` <span style="color:var(--text-3);font-size:var(--fs-xs)">(retida — obra)</span>` : '';
+      ? ` <span style="color:var(--text-3);font-size:var(--fs-xs)">(retida — ${f.liberacao_prevista ? 'liberação prevista '+_fmtDataBR(f.liberacao_prevista) : 'obra'})</span>` : '';
     return { dataTxt, ret };
   };
   if(!d.desmembrado){
@@ -14398,44 +14412,107 @@ const _RETIDO_STATUS = {
   liquidada:    {rot:'Liquidada',        cor:'var(--muted)'},
   retido:       {rot:'Retido pela obra', cor:'var(--warn)'},
 };
-async function retidoAbrir(nomeSafe){
+// Revisão 2026-08-02 (retenção RECORRENTE): o modal deixa de ser o fluxo em 2 atos
+// (sinalizar→confirmar 1x) e vira — Nova retenção (checkbox + motivo + previsão de liberação;
+// gerência retém direto, medidor sinaliza) · Fases do projeto (com liberar) · Histórico.
+let _retidoEtapaCtx = null;   // etapa do CICLO onde a retenção foi acionada (vai pro registro)
+async function retidoAbrir(nomeSafe, etapaCtx){
   _retidoNome = nomeSafe;
+  _retidoEtapaCtx = etapaCtx || (typeof _cicloEtapaAtiva !== 'undefined' && _cicloEtapaAtiva
+                                 ? _fichaMae(_cicloEtapaAtiva) : null);
   document.getElementById('retido-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('modal-retido').style.display = 'flex';
   await retidoRecarregar();
 }
 function retidoFechar(){ document.getElementById('modal-retido').style.display = 'none'; }
 async function retidoRecarregar(){
-  const d = await (await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/parcelas',{credentials:'same-origin'})).json().catch(()=>({}));
+  const [d, h] = await Promise.all([
+    fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/parcelas',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retencoes',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
+  ]);
   const body = document.getElementById('retido-body');
   if(!d || !d.ok){ body.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc((d&&d.erro)||'Sem acesso.')+'</em>'; return; }
-  body.innerHTML = d.desmembrado ? _retidoRenderParcelas(d) : _retidoRenderPool(d);
+  let html = _retidoRenderNova(d);
+  if (d.desmembrado) html += _retidoRenderParcelas(d);
+  html += _retidoRenderHistorico((h && h.ok && h.retencoes) || []);
+  body.innerHTML = html;
 }
-function _retidoRenderPool(d){
-  const pool = d.pool || [];
-  if(!pool.length) return '<em style="color:var(--muted);font-size:12px">Este projeto ainda não tem ambientes no pool.</em>';
-  const sin = new Set((d.sinais_retido||[]).map(s=>s.pool_ambiente_id));
-  let h = '<div style="font-size:12px;color:var(--text);font-weight:700;margin-bottom:8px">Ambientes do projeto</div>'
-        + '<div style="display:flex;flex-direction:column;gap:6px">';
-  pool.forEach(a=>{
-    const r = sin.has(a.id);
-    h += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">
-      <span style="font-size:13px;color:var(--text)">${esc(a.nome||('Ambiente '+a.id))}${r?' <span style="font-size:10px;color:var(--warn);font-weight:700;margin-left:6px">● retido</span>':''}</span>
-      <button class="btn btn-ghost btn-sm" onclick="retidoToggle(${a.id},${r?1:0})">${r?'Desmarcar':'Marcar retido'}</button>
-    </div>`;
+const _retidoInputStyle = 'height:var(--control-h-sm);padding:0 10px;background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-size:12px';
+function _retidoRenderNova(d){
+  // elegíveis = fora de fase retida/liquidada (projeto não desmembrado → pool inteiro)
+  let eleg = [];
+  if(!d.desmembrado){ eleg = d.pool || []; }
+  else (d.parcelas||[]).forEach(p=>{
+    if(p.status !== 'retido' && p.status !== 'liquidada') eleg.push(...(p.ambientes||[]));
   });
-  h += '</div>';
-  const nSin = pool.filter(a=>sin.has(a.id)).length;
-  if(nSin<=0){
-    h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">Nenhum ambiente retido. Marque os que a obra está segurando (ação do Medidor).</div>';
-  } else if(nSin>=pool.length){
-    h += '<div style="font-size:11px;color:var(--warn);margin-top:12px">Todos os ambientes estão marcados — deixe ao menos um para seguir (não há o que desmembrar com tudo retido).</div>';
-  } else if(_podeAutorizarFront()){
-    h += `<div style="margin-top:14px;text-align:right"><button onclick="retidoConfirmar()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Confirmar desmembramento (gerência)</button></div>`;
-  } else {
-    h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">'+nSin+' ambiente(s) sinalizado(s) — aguardando a gerência confirmar o desmembramento.</div>';
-  }
-  return h;
+  if(!eleg.length)
+    return '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Nenhum ambiente disponível para reter (tudo retido, liquidado ou sem pool).</div>';
+  const sin = new Set((d.sinais_retido||[]).map(s=>s.pool_ambiente_id));
+  const chks = eleg.map(a=>`<label style="font-size:12px;color:var(--text);display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:5px 9px;cursor:pointer">
+      <input type="checkbox" class="retido-novo-chk" value="${a.id}"${sin.has(a.id)?' checked':''}> ${esc(a.nome||('Amb '+a.id))}${sin.has(a.id)?' <span style="font-size:10px;color:var(--warn)" title="sinalizado pelo medidor">●</span>':''}
+    </label>`).join('');
+  const btn = _podeAutorizarFront()
+    ? `<button onclick="retidoReter()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Reter selecionados (gerência)</button>`
+    : `<button onclick="retidoSinalizar()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Sinalizar retenção (medidor)</button>`;
+  return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">Nova retenção${_retidoEtapaCtx ? ` <span style="color:var(--muted);font-weight:400">— acionada na etapa ${esc(_etapaRotulo(_retidoEtapaCtx))}</span>` : ''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chks}</div>
+    <div style="display:grid;grid-template-columns:1fr 170px;gap:8px;margin-bottom:10px">
+      <input id="retido-novo-motivo" type="text" placeholder="Motivo da retenção (ex.: obra sem contrapiso)" style="${_retidoInputStyle}">
+      <input id="retido-novo-data" type="date" title="Previsão de liberação para prosseguimento" style="${_retidoInputStyle}">
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span style="font-size:10px;color:var(--muted)">A data é a <strong style="color:var(--text)">previsão de liberação</strong> para prosseguimento.</span>
+      ${btn}
+    </div>
+  </div>`;
+}
+function _etapaRotulo(cod){
+  const e = (typeof ETAPAS_CICLO !== 'undefined') && ETAPAS_CICLO.find(x=>x.codigo===cod);
+  return e ? cod+' · '+e.nome : cod;
+}
+async function retidoReter(){
+  const ids = [...document.querySelectorAll('.retido-novo-chk:checked')].map(c=>parseInt(c.value,10));
+  if(!ids.length){ showToast('Selecione ao menos um ambiente para reter.', true); return; }
+  const motivo = (document.getElementById('retido-novo-motivo')?.value||'').trim();
+  const dataLib = document.getElementById('retido-novo-data')?.value || '';
+  const d = await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retencoes',
+    {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({ambientes:ids, motivo, liberacao_prevista:dataLib||null,
+                          etapa_codigo:_retidoEtapaCtx||null})}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  showToast('Retenção registrada.', false);
+  await retidoRecarregar();
+  if (typeof _entregaFaixaRender === 'function') _entregaFaixaRender();
+}
+async function retidoSinalizar(){
+  const ids = [...document.querySelectorAll('.retido-novo-chk:checked')].map(c=>parseInt(c.value,10));
+  if(!ids.length){ showToast('Selecione ao menos um ambiente.', true); return; }
+  const motivo = (document.getElementById('retido-novo-motivo')?.value||'').trim();
+  const d = await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/sinalizar',
+    {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({pool_ambiente_ids:ids, motivo})}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  showToast('Ambiente(s) sinalizado(s) — a gerência efetiva a retenção.', false);
+  await retidoRecarregar();
+}
+function _retidoRenderHistorico(regs){
+  if(!regs.length) return '';
+  const rows = regs.map(r=>{
+    const ambs = (r.ambientes||[]).map(a=>esc(a.nome||('Amb '+a.id))).join(', ');
+    const sit = r.liberado_em
+      ? `<span style="color:var(--ok)">Liberada em ${_fmtDataBR(r.liberado_em)}</span>`
+      : `<span style="color:var(--warn)">Em aberto</span>`;
+    return `<tr><td style="white-space:nowrap">${_fmtDataBR(r.criado_em)||'—'}</td>
+      <td style="white-space:nowrap">${r.etapa_codigo?esc(_etapaRotulo(r.etapa_codigo)):'—'}</td>
+      <td>${ambs||'—'}</td><td>${esc(r.motivo||'—')}</td>
+      <td style="white-space:nowrap">${r.liberacao_prevista?_fmtDataBR(r.liberacao_prevista):'—'}</td>
+      <td style="white-space:nowrap">${sit}</td></tr>`;
+  }).join('');
+  return `<div style="margin-top:14px">
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Histórico de retenções</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Quando</th><th>Etapa do ciclo</th><th>Ambientes</th><th>Motivo</th><th>Liberação prevista</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
 }
 function _retidoRenderParcelas(d){
   const parc = d.parcelas || [];
@@ -14445,9 +14522,11 @@ function _retidoRenderParcelas(d){
   parc.forEach(p=>{
     const s = _RETIDO_STATUS[p.status] || {rot:p.status,cor:'var(--muted)'};
     const ambs = (p.ambientes||[]).map(a=>esc(a.nome||('Amb '+a.id))).join(', ');
+    const libPrev = (p.status==='retido' && p.liberacao_prevista)
+      ? ` <span style="font-size:11px;color:var(--muted)">· liberação prevista ${_fmtDataBR(p.liberacao_prevista)}</span>` : '';
     h += `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:700;color:${s.cor}">● ${esc(s.rot)}</span>
+        <span style="font-size:12px;font-weight:700;color:${s.cor}">● ${esc(s.rot)}${libPrev}</span>
         <span style="font-size:12px;color:var(--muted)">R$ ${fmt(p.val_cont_congelado||0)}</span>
       </div>
       <div style="font-size:12px;color:var(--text)">${ambs||'—'}</div>`;
@@ -14465,21 +14544,6 @@ function _retidoRenderParcelas(d){
   h += '<div style="font-size:11px;color:var(--muted);margin-top:12px">A parcela <strong style="color:var(--text)">retida</strong> fica fora do fluxo (execução e reconhecimento contábil diferidos) até ser liberada.</div>';
   return h;
 }
-async function retidoToggle(ambId, jaRetido){
-  const url = '/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/'+(jaRetido?'limpar':'sinalizar');
-  const payload = jaRetido ? {pool_ambiente_id: ambId} : {pool_ambiente_ids:[ambId]};
-  const d = await (await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
-  await retidoRecarregar();
-}
-async function retidoConfirmar(){
-  if(!(await confirmarPopup('Confirmar o desmembramento? Os ambientes retidos formam uma parcela que aguarda a obra; os demais seguem o ciclo.',
-      {titulo:'Retenção por Obra', okLabel:'Confirmar', cancelLabel:'Cancelar'}))) return;
-  const d = await (await fetch('/api/projetos/'+encodeURIComponent(_retidoNome)+'/retido/confirmar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
-  showToast('Desmembramento confirmado.', false);
-  await retidoRecarregar();
-}
 async function retidoLiberar(pid){
   const ids = Array.from(document.querySelectorAll('.retido-lib-chk-'+pid+':checked')).map(c=>parseInt(c.value,10));
   if(!ids.length){ showToast('Selecione ao menos um ambiente para liberar.', true); return; }
@@ -14487,6 +14551,7 @@ async function retidoLiberar(pid){
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Ambiente(s) liberado(s) — a parcela retoma o ciclo.', false);
   await retidoRecarregar();
+  if (typeof _entregaFaixaRender === 'function') _entregaFaixaRender();
 }
 
 function _renderCardGenerico(etapa, dados, bloqueada) {
@@ -15740,6 +15805,9 @@ async function peDesmembrarRender(){
   catch(e){ cont.innerHTML='<span style="color:var(--err)">Erro ao carregar.</span>'; return; }
   if(!j.ok){ cont.innerHTML=`<span style="color:var(--err)">${esc(j.erro||'Erro')}</span>`; return; }
   const fmt = v => 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  _desmNomesAmb = {};
+  (j.pool||[]).forEach(a=>{ _desmNomesAmb[a.id] = a.nome; });
+  (j.parcelas||[]).forEach(p=>(p.ambientes||[]).forEach(a=>{ _desmNomesAmb[a.id] = a.nome; }));
   if(j.desmembrado){
     // Desmembramento SUCESSIVO: fase com 2+ ambientes (não liquidada) pode ser dividida de novo
     // — a decisão pode sair depois (ex.: no PE). Form inline, mesmo padrão do desmembramento.
@@ -15756,6 +15824,7 @@ async function peDesmembrarRender(){
     <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Atribua cada ambiente a uma fase (nº). Cada fase percorre o ciclo (Aprovação → Entrega → NF-e) de forma independente.</div>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>Ambiente</th><th style="text-align:right">Fase nº</th></tr></thead><tbody>${rows}</tbody></table></div>
     <button class="btn-ciclo" style="margin-top:10px" onclick="peDesmembrarCriar()"><i class="ti ti-check"></i> Criar fases</button>
+    <div id="pe-desm-sub" style="margin-top:10px"></div>
   </div>`;
 }
 
@@ -15766,10 +15835,51 @@ async function peDesmembrarCriar(){
   inputs.forEach(el => { const n = parseInt(el.value)||1; (grupos[n]=grupos[n]||[]).push(parseInt(el.dataset.amb)); });
   const parcelas = Object.keys(grupos).sort((a,b)=>a-b).map(k=>grupos[k]);
   if(parcelas.length < 2){ await avisoPopup('Use ao menos 2 números de fase diferentes.',{titulo:'Desmembrar'}); return; }
+  _desmPedirPrevisoes(parcelas, null);   // passo 2: previsões de liberação e de entrega por fase
+}
+
+// ── Passo 2 do desmembramento (2026-08-02): previsões por NOVA fase ─────────────────────────
+// O desmembramento solicita, para cada fase criada, a PREVISÃO DE LIBERAÇÃO para
+// prosseguimento e a NOVA PREVISÃO DE ENTREGA (alimenta a faixa de entrega das etapas 9→16).
+let _desmNomesAmb = {};
+function _desmPedirPrevisoes(grupos, pid){
+  const sub = document.getElementById('pe-desm-sub');
+  if(!sub) return;
+  const rows = grupos.map((g,i)=>`<tr>
+      <td style="white-space:nowrap">Nova fase ${i+1}</td>
+      <td>${esc(g.map(a=>_desmNomesAmb[a]||('Amb '+a)).join(', '))}</td>
+      <td style="text-align:right"><input type="date" class="desm-prev-lib" data-g="${i}" style="${_retidoInputStyle}"></td>
+      <td style="text-align:right"><input type="date" class="desm-prev-ent" data-g="${i}" style="${_retidoInputStyle}"></td>
+    </tr>`).join('');
+  sub.innerHTML = `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-3) var(--sp-4)">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Para cada nova fase, informe a <strong>previsão de liberação</strong> para prosseguimento e a <strong>nova previsão de entrega</strong> (opcionais — sem data, vale a previsão geral do projeto).</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Fase</th><th>Ambientes</th><th style="text-align:right">Liberação prevista</th><th style="text-align:right">Previsão de entrega</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-ciclo" onclick="_desmExecutar(${pid===null?'null':pid})"><i class="ti ti-check"></i> Confirmar desmembramento</button>
+      <button class="btn-ciclo" onclick="document.getElementById('pe-desm-sub').innerHTML=''">Voltar</button>
+    </div>
+  </div>`;
+  _desmGruposPend = grupos;
+}
+let _desmGruposPend = null;
+async function _desmExecutar(pid){
+  if(!projetoAtivo || !_desmGruposPend) return;
+  const previsoes = _desmGruposPend.map((_,i)=>({
+    liberacao: document.querySelector(`.desm-prev-lib[data-g="${i}"]`)?.value || null,
+    entrega:   document.querySelector(`.desm-prev-ent[data-g="${i}"]`)?.value || null,
+  }));
+  const url = pid === null
+    ? `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas`
+    : `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas/${pid}/desmembrar`;
   try {
-    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas`,
-      {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({parcelas})}).then(r=>r.json());
-    if(j.ok){ showToast('Projeto desmembrado em '+j.parcelas.length+' fases.'); peDesmembrarRender(); _entregaFaixaRender(); }
+    const j = await fetch(url, {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({parcelas:_desmGruposPend, previsoes})}).then(r=>r.json());
+    if(j.ok){
+      showToast(pid === null ? 'Projeto desmembrado em '+j.parcelas.length+' fases.'
+                             : 'Fase desmembrada em '+j.parcelas.length+' novas fases.');
+      _desmGruposPend = null;
+      peDesmembrarRender(); _entregaFaixaRender();
+    }
     else { await avisoPopup(j.erro||'Erro',{titulo:'Desmembrar'}); }
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Desmembrar'}); }
 }
@@ -15801,12 +15911,7 @@ async function peDesmembrarFaseCriar(pid){
   inputs.forEach(el => { const n = parseInt(el.value)||1; (grupos[n]=grupos[n]||[]).push(parseInt(el.dataset.amb)); });
   const parcelas = Object.keys(grupos).sort((a,b)=>a-b).map(k=>grupos[k]);
   if(parcelas.length < 2){ await avisoPopup('Use ao menos 2 números de fase diferentes.',{titulo:'Desmembrar fase'}); return; }
-  try {
-    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas/${pid}/desmembrar`,
-      {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({parcelas})}).then(r=>r.json());
-    if(j.ok){ showToast('Fase desmembrada em '+j.parcelas.length+' novas fases.'); peDesmembrarRender(); _entregaFaixaRender(); }
-    else { await avisoPopup(j.erro||'Erro',{titulo:'Desmembrar fase'}); }
-  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Desmembrar fase'}); }
+  _desmPedirPrevisoes(parcelas, pid);   // passo 2: previsões por nova fase (mesmo padrão)
 }
 
 // ── Fatia B — box do ramo do custo financeiro (loja próprio × antecipação × financeira) ──

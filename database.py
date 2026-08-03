@@ -776,6 +776,10 @@ class ParcelaProjeto(Base):
     criado_em             = Column(DateTime, default=datetime.utcnow)
     criado_por_id         = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     prazo_conclusao       = Column(DateTime, nullable=True)   # Fase A: prazo da fase (validado × cronograma)
+    # Previsões pedidas no desmembramento/retenção (2026-08-02): quando a fase pode PROSSEGUIR
+    # (obra libera) e a NOVA previsão de entrega da fase (antes do card de expedição existir).
+    liberacao_prevista    = Column(Date, nullable=True)
+    entrega_prevista      = Column(Date, nullable=True)
 
 
 class ParcelaAmbiente(Base):
@@ -800,6 +804,25 @@ class SinalRetido(Base):
     confirmado        = Column(Integer, nullable=False, default=0)
     criado_em         = Column(DateTime, default=datetime.utcnow)
     __table_args__ = (UniqueConstraint("projeto_nome", "pool_ambiente_id", name="uq_sinal_retido"),)
+
+
+class RetencaoObra(Base):
+    """Registro HISTÓRICO de cada EVENTO de retenção por obra (decisão 2026-08-02): a retenção
+    pode ser acionada em qualquer etapa entre a Solicitação de Medição e a Montagem, e VÁRIAS
+    vezes. Cada evento grava quando foi, em qual fase do ciclo (etapa_codigo), quais ambientes,
+    o motivo e a data prevista de liberação. `liberado_em` é estampado quando TODOS os ambientes
+    do evento saem de fase retida (liberação em ondas conta pela última)."""
+    __tablename__ = "retencao_obra"
+    id                  = Column(Integer,  primary_key=True, autoincrement=True)
+    projeto_nome        = Column(Text,     nullable=False, index=True)
+    etapa_codigo        = Column(Text,     nullable=True)    # fase do CICLO onde foi acionada (9/10/11…/17)
+    motivo              = Column(Text,     nullable=True)
+    liberacao_prevista  = Column(Date,     nullable=True)
+    ambientes_json      = Column(Text,     nullable=False, default="[]")   # [pool_ambiente_id, ...]
+    criado_em           = Column(DateTime, default=datetime.utcnow)
+    criado_por_id       = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    liberado_em         = Column(DateTime, nullable=True)
+    liberado_por_id     = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
 
 
 class ArquivoPE(Base):
@@ -1821,6 +1844,9 @@ def _migrar_colunas_pg():
         "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS responsavel_terceiro_id INTEGER",
         # Desmembramento operacional Fatia 3: valor bruto por ambiente (split exato na liberação).
         "ALTER TABLE parcela_ambiente ADD COLUMN IF NOT EXISTS valor_ambiente DOUBLE PRECISION DEFAULT 0.0",
+        # Retenção recorrente + previsões por fase (2026-08-02)
+        "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS liberacao_prevista DATE",
+        "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS entrega_prevista DATE",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

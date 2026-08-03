@@ -1321,6 +1321,10 @@ class Handler(BaseHTTPRequestHandler):
                     out.append({"id": p.id, "ordem": p.ordem, "status": p.status,
                                 "fracao_val_cont": round(p.fracao_val_cont or 0.0, 6),
                                 "val_cont_congelado": round(p.val_cont_congelado or 0.0, 2),
+                                "liberacao_prevista": (p.liberacao_prevista.isoformat()
+                                                       if p.liberacao_prevista else None),
+                                "entrega_prevista": (p.entrega_prevista.isoformat()
+                                                     if p.entrega_prevista else None),
                                 "ambientes": [{"id": a.pool_ambiente_id,
                                                "nome": pa_nome.get(a.pool_ambiente_id, "")} for a in ambs]})
                 import mod_retido as _mret
@@ -1376,8 +1380,11 @@ class Handler(BaseHTTPRequestHandler):
                         card = cards.get(p.id)
                         fases.append({
                             "id": p.id, "ordem": p.ordem, "status": p.status,
+                            # prioridade: expedição da fase > previsão pedida no desmembramento > global
                             "previsao": (_iso(card.prazo_entrega)
-                                         if (card and card.prazo_entrega) else previsao),
+                                         if (card and card.prazo_entrega)
+                                         else (_iso(p.entrega_prevista) or previsao)),
+                            "liberacao_prevista": _iso(p.liberacao_prevista),
                             "entregue_em": _iso(card.data_entrega) if card else None,
                             "ambientes": [pa_nome.get(a.pool_ambiente_id, "") for a in ambs]})
                 else:
@@ -1395,6 +1402,33 @@ class Handler(BaseHTTPRequestHandler):
                                   "ambientes": [n for n in nomes_amb if n]})
                 self.send_json({"ok": True, "desmembrado": bool(parcs),
                                 "previsao": previsao, "entregue_em": entregue, "fases": fases})
+            finally:
+                db.close()
+            return
+
+        m_rets = re.match(r'^/api/projetos/([^/]+)/retencoes$', path)
+        if m_rets:
+            # Histórico de retenções por obra (eventos): quando, etapa do ciclo, ambientes,
+            # motivo, liberação prevista e liberação efetiva.
+            nome = unquote(m_rets.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                import mod_retido as _mret
+                pa_nome = {pa.id: (pa.nome_exibicao or pa.nome)
+                           for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()}
+                regs = _mret.listar_retencoes(db, nome)
+                for r in regs:
+                    r["ambientes"] = [{"id": a, "nome": pa_nome.get(a, "")} for a in r["ambientes"]]
+                self.send_json({"ok": True, "retencoes": regs})
             finally:
                 db.close()
             return
@@ -4330,6 +4364,55 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # ── Desmembramento OPERACIONAL (Fatia 1): ambientes retidos pela obra ──────────────────
+        m_rnew = re.match(r'^/api/projetos/([^/]+)/retencoes$', path)
+        if m_rnew:
+            # Retenção RECORRENTE (2026-08-02): a GERÊNCIA retém ambientes em qualquer momento
+            # entre a Solicitação de Medição e a Montagem. Body: {ambientes: [ids], motivo,
+            # liberacao_prevista: 'AAAA-MM-DD', etapa_codigo}. Cria/derrama fases (split se
+            # preciso) e registra o evento em RetencaoObra.
+            import mod_retido as _mret
+            nome = unquote(m_rnew.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not perfis.pode(usuario.get("nivel"), "autorizar"):
+                    self.send_json({"ok": False, "erro": "Reter exige gerência (autorizar)."}, code=403); return
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                if contrato is None:
+                    self.send_json({"ok": False, "erro": "Retenção só após o contrato."}, code=409); return
+                lib_prev = None
+                if req.get("liberacao_prevista"):
+                    try:
+                        lib_prev = datetime.strptime(str(req["liberacao_prevista"])[:10],
+                                                     "%Y-%m-%d").date()
+                    except ValueError:
+                        self.send_json({"ok": False, "erro": "liberacao_prevista inválida (AAAA-MM-DD)."},
+                                       code=400); return
+                valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
+                ok, erro, resumo = _mret.reter(
+                    db, nome, req.get("ambientes") or [], contrato.orcamento_id, valores,
+                    val_cont, usuario.get("id"), motivo=(req.get("motivo") or "").strip() or None,
+                    liberacao_prevista=lib_prev,
+                    etapa_codigo=(req.get("etapa_codigo") or "").strip() or None)
+                if not ok:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": erro}, code=409); return
+                db.commit()
+                self.send_json({"ok": True, **resumo})
+            finally:
+                db.close()
+            return
+
         # POST .../retido/sinalizar — MEDIDOR marca ambientes retidos. Body: {pool_ambiente_ids, motivo}.
         m_rsig = re.match(r'^/api/projetos/([^/]+)/retido/(sinalizar|limpar|confirmar|liberar)$', path)
         if m_rsig:
@@ -4369,6 +4452,8 @@ class Handler(BaseHTTPRequestHandler):
                     if not ok:
                         db.rollback()
                         self.send_json({"ok": False, "erro": erro}, code=409); return
+                    # fecha os registros de retenção cujos ambientes já saíram todos de fase retida
+                    _mret.estampar_liberacoes(db, nome, usuario.get("id"))
                     db.commit()
                     self.send_json({"ok": True, "parcelas": afetadas}); return
                 contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
@@ -4425,13 +4510,16 @@ class Handler(BaseHTTPRequestHandler):
                 valores, val_cont = _valores_contrato_por_ambiente(contrato.orcamento_id, db)
                 grupos_valores = [[valores.get(aid, 0.0) for aid in grupo] for grupo in parcelas_ids]
                 congeladas = _mpar.congelar_parcelas(grupos_valores, val_cont)
+                previsoes = _previsoes_fases(req, len(parcelas_ids))
                 criadas = []
-                for grupo, cong in zip(parcelas_ids, congeladas):
+                for i, (grupo, cong) in enumerate(zip(parcelas_ids, congeladas)):
                     p = ParcelaProjeto(projeto_nome=nome, ordem=cong["ordem"], status="aguardando",
                                        fracao_val_cont=cong["fracao_val_cont"],
                                        val_cont_congelado=cong["val_cont_congelado"],
                                        orcamento_id=contrato.orcamento_id,
-                                       criado_por_id=getattr(usuario, "id", None))
+                                       criado_por_id=getattr(usuario, "id", None),
+                                       liberacao_prevista=previsoes[i][0],
+                                       entrega_prevista=previsoes[i][1])
                     db.add(p); db.flush()
                     for aid in grupo:
                         db.add(ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid))
@@ -4482,14 +4570,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok:
                     self.send_json({"ok": False, "erro": erro}, code=400); return
                 criadas = []
+                previsoes = _previsoes_fases(req, len(grupos))
                 # novas herdam a POSIÇÃO da mãe (ordem; desempate por id = ordem dos grupos)
-                for grupo, ng in zip(grupos, novas):
+                for i, (grupo, ng) in enumerate(zip(grupos, novas)):
                     p = ParcelaProjeto(projeto_nome=nome, ordem=mae.ordem, status=mae.status,
                                        fracao_val_cont=ng["fracao_val_cont"],
                                        val_cont_congelado=ng["val_cont_congelado"],
                                        orcamento_id=mae.orcamento_id,
                                        criado_por_id=(usuario.get("id") if isinstance(usuario, dict)
-                                                      else getattr(usuario, "id", None)))
+                                                      else getattr(usuario, "id", None)),
+                                       liberacao_prevista=(previsoes[i][0] or mae.liberacao_prevista),
+                                       entrega_prevista=(previsoes[i][1] or mae.entrega_prevista))
                     db.add(p); db.flush()
                     for aid in grupo:
                         db.add(ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid))
@@ -12591,6 +12682,26 @@ def _ambientes_valor_para_contrato(orcamento_id, db):
     itens = [(nome_por_id.get(a.get("id"), ""), float(a.get("VAVA") or 0.0))
              for a in d.get("ambientes", [])]
     return ambientes_valor_contrato(itens, d.get("VAVO", 0.0), d.get("Val_Cont", 0.0))
+
+
+def _previsoes_fases(req, n):
+    """Previsões pedidas no desmembramento (2026-08-02): `req["previsoes"]` é uma lista paralela
+    aos grupos, cada item {liberacao: 'AAAA-MM-DD', entrega: 'AAAA-MM-DD'} (ambos opcionais).
+    Retorna n pares (liberacao_date|None, entrega_date|None); entrada inválida vira None."""
+    from datetime import datetime as _dt
+    prevs = req.get("previsoes") or []
+    out = []
+    for i in range(n):
+        item = prevs[i] if (i < len(prevs) and isinstance(prevs[i], dict)) else {}
+        par = []
+        for chave in ("liberacao", "entrega"):
+            v = item.get(chave)
+            try:
+                par.append(_dt.strptime(str(v)[:10], "%Y-%m-%d").date() if v else None)
+            except ValueError:
+                par.append(None)
+        out.append(tuple(par))
+    return out
 
 
 def _valores_contrato_por_ambiente(orcamento_id, db):

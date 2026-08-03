@@ -1369,6 +1369,14 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 138 (design, sem código):** AGENDA DA LOJA — decisões fechadas em debate (Setor,
+> Calendário/Semana/Mês, Capacidade; unidade Val_Liq c/ novo congelado
+> `val_liq_congelado`; `mod_calendario` de dias úteis; acesso via visao_do_papel). Spec:
+> `docs/superpowers/specs/agenda/2026-08-03-...-design.md`; plano em 5 fatias no
+> `plans/agenda/`. Próximo passo: Fatia 0 (calendário útil + config). Parecer VAVO×Val_Liq
+> nas provisões: convenção documentada (NOMENCLATURA §3b) — migração é frente própria c/
+> contador.
+>
 > **Sessão 137:** retenção por obra RECORRENTE — acionável nas etapas 9/10/11/17, várias
 > vezes, com registro histórico (quando, etapa do ciclo, ambientes, motivo, PREVISÃO DE
 > LIBERAÇÃO) em `retencao_obra`; modal revisado (nova retenção direta + histórico); split de
@@ -2696,6 +2704,33 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 138 — Agenda da Loja: design fechado em debate (SEM código) + parecer VAVO×Val_Liq
+
+**Formato pedido pelo usuário:** debater formato e nomenclatura ANTES de qualquer linha de
+código. Debate em 2 rodadas → decisões fechadas e registradas na spec
+`docs/superpowers/specs/agenda/2026-08-03-agenda-da-loja-design.md` + plano em fatias em
+`docs/superpowers/plans/agenda/2026-08-03-agenda-da-loja-plan.md`.
+
+**Decisões:** módulo "Agenda da Loja"; agrupamento por **Setor** (refina `FAIXA_POR_ETAPA`, v1
+sem Comercial: Medição · PE · Expedição · Montagem · Financeiro); visões **Calendário/Semana/
+Mês** + painel **Capacidade**; três naturezas de dado (Marco/Carga/Capacidade); Agenda 100%
+DERIVADA dos cronogramas (sem tabela nova de datas). **Unidade = Val_Liq** (VAVO−Cust_Ad, base
+das comissões — decisão do usuário, corrigindo a proposta inicial de val_cont): novo congelado
+`parcela_projeto.val_liq_congelado` em TODOS os caminhos de criação/split de fase (motivo:
+on-the-fly divergiria da comissão paga se VAVO/Cust_Ad mudar). Consolidação = entrega no
+período, EXCETO Montagem (carga distribuída em dias úteis); Capacidade v1 = dimensionamento de
+duplas (⌈Σ carga/produtividade⌉, R$7.000/dupla/dia CONFIGURÁVEL), Gantt nominal fica pra v2.
+**`mod_calendario.py` novo** (dias úteis genérico — confirmado que não existe hoje; feriados
+configuráveis já na v1). Acesso: reusa `main._bloqueio_comercial` → `mod_escopo.visao_do_papel`
+(operacional vê marcos/contagens SEM R$ e sem Capacidade; consultor filtrado por posse).
+
+**Parecer (achado do usuário, fora do escopo):** `frete_loc/assist/ins_loc/prov_mont/prov_gar`
+sobre VAVO **têm motivo documentado** — `docs/referencia/NOMENCLATURA.md §3b` (convenção
+canônica; motor deve espelhar `mod_contabil.constituir_provisoes_venda`, bug antigo da
+assistência nasceu de base divergente). Migrar p/ Val_Liq é RECALIBRAÇÃO de negócio (encolhe
+provisões pelo fator Val_Liq/VAVO; % das lojas foram calibrados sobre VAVO) → frente própria
+com o contador; a Agenda não depende (usa Val_Liq por definição própria).
 
 ## Sessão 137 — Retenção por obra RECORRENTE (9→17) com registro histórico + previsões no desmembramento
 

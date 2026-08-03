@@ -1370,9 +1370,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
 > **Sessão 139 (Agenda Fatia 0):** `mod_calendario.py` (dias úteis genérico, 12 testes) +
-> seção `agenda` na config da loja (produtividade R$7k/dupla/dia, duplas, sábado útil,
-> feriados, teto, horizonte) + aba Config → Agenda. Suíte 1672 verde. Próxima: Fatia 1
-> (`val_liq_congelado`).
+> seção `agenda` na config da loja + aba Config → Agenda. **Rev do usuário (mesmo dia):**
+> `teto_dias_montagem` REMOVIDO (a janela de trabalho vem do CRONOGRAMA de entrega, que já
+> prevê cada etapa — a produtividade só converte necessidade diária em recurso);
+> `produtividade_pe_rs_dia` NOVA (PE análogo à montagem, R$20k/dia default); painel separado
+> por títulos Projeto Executivo · Montagem · Calendário útil. Spec §5/§6/§8 revisados
+> (PE também com carga distribuída). Suíte 1672 verde. Próxima: Fatia 1 (`val_liq_congelado`).
 >
 > **Sessão 138 (design, sem código):** AGENDA DA LOJA — decisões fechadas em debate (Setor,
 > Calendário/Semana/Mês, Capacidade; unidade Val_Liq c/ novo congelado
@@ -2731,6 +2734,15 @@ Primeira fatia do plano (`docs/superpowers/plans/agenda/2026-08-03-agenda-da-loj
 
 Suíte **1672 verde** (+12); `node --check` ok; as 4 falhas pré-existentes de chat/e-mail seguem.
 Próxima: **Fatia 1** (`val_liq_congelado`).
+
+**Rev (mesmo dia, correção do usuário):** o `teto_dias_montagem` NÃO fazia sentido — o
+cronograma de entrega já prevê a montagem por projeto; a janela de trabalho vem DELE, e a
+produtividade só converte a necessidade diária em recurso (duplas). Removido do default, da
+validação e do painel (o save também apaga a chave de configs já gravadas). Acrescentada a
+**estimativa de Projeto Executivo**: `produtividade_pe_rs_dia` (default R$ 20.000/dia,
+configurável), análoga à da montagem — PE passa a ter carga distribuída e ocupação diária no
+painel Capacidade. Aba Config → Agenda reorganizada com títulos **Projeto Executivo** ·
+**Montagem** · **Calendário útil**. Spec §5/§6/§8 e plano (Fatias 3/4) revisados.
 
 ## Sessão 138 — Agenda da Loja: design fechado em debate (SEM código) + parecer VAVO×Val_Liq
 

@@ -3545,15 +3545,24 @@ async function cfgAgendaRender(){
   const num = (id,lbl,val,step,title) =>
      '<div><label class="field-label"'+(title?' title="'+esc(title)+'"':'')+'>'+lbl+'</label>'
     +'<input type="number" min="0" step="'+step+'" id="'+id+'" value="'+val+'" style="width:170px"></div>';
+  const titulo = t => '<div style="font-weight:700;color:var(--text);font-size:13px;'
+    +'border-bottom:1px solid var(--border);padding-bottom:4px;margin:14px 0 10px">'+t+'</div>';
   box.innerHTML =
-     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;max-width:780px">Parâmetros da '
-    +'<strong style="color:var(--text)">Agenda da Loja</strong>: capacidade de montagem (converte o volume '
-    +'líquido a montar em <strong style="color:var(--text)">duplas por dia</strong>) e o calendário útil '
-    +'(usado no espalhamento das cargas; futuramente também no prazo contratual).</div>'
-    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">'
-    +num('cfg-ag-produtividade','Produtividade da montagem (R$/dupla/dia)', ag.produtividade_montagem_rs_dupla_dia ?? 7000, '100', 'Valor líquido que uma dupla monta por dia útil')
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:4px;max-width:780px">Parâmetros da '
+    +'<strong style="color:var(--text)">Agenda da Loja</strong>. A janela de trabalho de cada projeto/fase '
+    +'vem do <strong style="color:var(--text)">cronograma de entrega</strong>; as produtividades abaixo '
+    +'convertem a necessidade diária resultante em recurso necessário no período.</div>'
+    +titulo('Projeto Executivo')
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap">'
+    +num('cfg-ag-prod-pe','Produtividade média (R$/dia)', ag.produtividade_pe_rs_dia ?? 20000, '500', 'Valor líquido de PE produzido por dia útil')
+    +'</div>'
+    +titulo('Montagem')
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap">'
+    +num('cfg-ag-produtividade','Produtividade por dupla (R$/dupla/dia)', ag.produtividade_montagem_rs_dupla_dia ?? 7000, '100', 'Valor líquido que uma dupla monta por dia útil')
     +num('cfg-ag-duplas','Duplas disponíveis', ag.duplas_disponiveis ?? 2, '1', 'Linha de capacidade no painel')
-    +num('cfg-ag-teto','Teto de dias de montagem por fase', ag.teto_dias_montagem ?? 10, '1', 'Limite da janela derivada por produtividade')
+    +'</div>'
+    +titulo('Calendário útil')
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px">'
     +num('cfg-ag-horizonte','Horizonte da Capacidade (semanas)', ag.horizonte_capacidade_semanas ?? 6, '1', '')
     +'</div>'
     +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);margin-bottom:14px;cursor:pointer">'
@@ -3588,11 +3597,12 @@ async function cfgAgendaSalvar(lid){
     ...(_cfgFin.agenda || {}),
     produtividade_montagem_rs_dupla_dia: num('cfg-ag-produtividade') || 7000,
     duplas_disponiveis: Math.max(0, parseInt((document.getElementById('cfg-ag-duplas')||{}).value, 10) || 0),
-    teto_dias_montagem: Math.max(1, parseInt((document.getElementById('cfg-ag-teto')||{}).value, 10) || 10),
+    produtividade_pe_rs_dia: num('cfg-ag-prod-pe') || 20000,
     horizonte_capacidade_semanas: Math.max(1, parseInt((document.getElementById('cfg-ag-horizonte')||{}).value, 10) || 6),
     sabado_util: !!(document.getElementById('cfg-ag-sabado')||{}).checked,
     feriados: _cfgAgFeriados.slice(),
   };
+  delete _cfgFin.agenda.teto_dias_montagem;   // rev 2026-08-03: janela vem do cronograma, sem teto
   const r = await fetch('/api/admin/lojas/'+lid+'/config-financeira', {method:'PUT', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify(_cfgFin)});
   const d = await r.json().catch(()=>({}));

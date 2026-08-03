@@ -66,23 +66,33 @@ Executado substitui previsto: etapa concluída usa `concluido_em`/datas realizad
   afetados.
 - Unidade secundária alternável na UI: nº de fases/projetos e nº de ambientes.
 
-## 5. Consolidação (fechada)
+## 5. Consolidação (fechada; rev 2026-08-03)
 
-- **Todos os setores:** volume do período = Σ Val_Liq das fases com MARCO (entrega do setor)
+- **Regra geral:** volume do período = Σ Val_Liq das fases com MARCO (entrega do setor)
   dentro do período ("o que entrego nesta semana/mês").
-- **Exceção — Montagem:** carga DISTRIBUÍDA pela janela de montagem da fase, em **dias úteis**
-  (§6/§7). É o que torna honesta a conta de duplas/dia.
+- **Montagem e Projeto Executivo:** carga DISTRIBUÍDA pela **janela do CRONOGRAMA** da
+  etapa, em **dias úteis** (§6/§7). É o que torna honesta a conta de recurso/dia.
 
-## 6. Capacidade (v1 = dimensionamento; v2 = alocação nominal)
+## 6. Capacidade (v1 = dimensionamento; v2 = alocação nominal) — rev 2026-08-03
 
-- Janela de montagem da fase: começa no 1º dia útil após a entrega da fase (§3-Expedição);
-  duração em dias úteis `= clamp(⌈val_liq_fase / produtividade⌉, 1, teto_config)`
-  (1 dupla implícita na v1; teto default = 10 dias úteis).
-- Carga diária da fase = `val_liq / dias`. **Duplas necessárias no dia**
-  `= ⌈Σ cargas do dia / produtividade⌉`.
-- Painel: barras por dia (horizonte configurável, default 6 semanas), linha do nº de duplas
-  disponíveis, destaque nos estouros. Também aparece resumido: rodapé do dia no Calendário e
-  linha própria na Semana; no Mês, `dias-dupla necessários vs disponíveis`.
+**Princípio (correção do usuário):** a janela de trabalho NÃO é derivada da produtividade nem
+tem teto artificial — **ela vem do cronograma de entrega do projeto** (cada etapa tem sua data
+prevista). O cronograma dá a necessidade de produção diária; a produtividade converte essa
+necessidade em recurso necessário no período.
+
+- **Montagem:** janela da fase = do 1º dia útil após a entrega da fase (§3-Expedição) até a
+  `data_prevista_conclusao` da etapa 17 (fase com `entrega_prevista` própria desloca a janela
+  junto). Carga diária = `val_liq` espalhado nos dias úteis da janela
+  (`mod_calendario.espalhar`). **Duplas necessárias no dia = ⌈Σ cargas do dia ÷
+  produtividade_montagem⌉**, comparadas às `duplas_disponiveis`.
+- **Projeto Executivo (análogo):** janela = da conclusão da etapa 10 até a
+  `data_prevista_conclusao` da 11 (subfases refinam depois). Carga diária = `val_liq`
+  espalhado na janela. **Ocupação do PE no dia = Σ cargas ÷ produtividade_pe_rs_dia**
+  (default R$ 20.000/dia) — mostrada como % da capacidade diária de PE.
+- Painel: barras por dia (horizonte configurável, default 6 semanas) — duplas de montagem
+  (linha das disponíveis, destaque nos estouros) e ocupação do PE. Resumos: rodapé do dia no
+  Calendário; linha própria na Semana; no Mês, `dias-dupla` e `dias-PE` necessários vs
+  disponíveis.
 - **v2 (fora desta spec):** cadastro de montadores/duplas, atribuição fase→dupla→dias, Gantt
   nominal com arrastar. O desenho da v1 (carga diária POR FASE) é exatamente o insumo da v2.
 
@@ -101,17 +111,20 @@ migrar depois (fora desta v1):
 
 ## 8. Parâmetros (config da loja, nova seção "Agenda e Capacidade")
 
-| Parâmetro | Default | Uso |
-|---|---|---|
-| `produtividade_montagem_rs_dupla_dia` | 7.000,00 | conversão carga→duplas (o nº do usuário; configurável) |
-| `duplas_disponiveis` | 2 | linha de capacidade |
-| `sabado_util` | false | calendário útil |
-| `feriados` | [] | calendário útil |
-| `teto_dias_montagem` | 10 | clamp da janela por fase |
-| `horizonte_capacidade_semanas` | 6 | painel Capacidade |
+Painel Config → aba "Agenda", separado por títulos **Projeto Executivo**, **Montagem** e
+**Calendário útil** (decisão do usuário, rev 2026-08-03):
 
-Estrutura preparada para produtividades de outros setores no futuro (medições/dia,
-R$/projetista/dia) — v1 só montagem.
+| Parâmetro | Seção | Default | Uso |
+|---|---|---|---|
+| `produtividade_pe_rs_dia` | Projeto Executivo | 20.000,00 | conversão carga→ocupação do PE |
+| `produtividade_montagem_rs_dupla_dia` | Montagem | 7.000,00 | conversão carga→duplas |
+| `duplas_disponiveis` | Montagem | 2 | linha de capacidade |
+| `sabado_util` | Calendário útil | false | calendário útil |
+| `feriados` | Calendário útil | [] | calendário útil |
+| `horizonte_capacidade_semanas` | Calendário útil | 6 | painel Capacidade |
+
+(`teto_dias_montagem` foi REMOVIDO na rev 2026-08-03 — a janela vem do cronograma, §6.)
+Estrutura preparada para produtividades de outros setores no futuro (ex.: medições/dia).
 
 ## 9. Acesso por perfil (verificado no código)
 

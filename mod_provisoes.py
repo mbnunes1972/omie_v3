@@ -40,14 +40,15 @@ def config_financeira_default():
         "cronograma_formato": 2,
         # Prazo contratual (Fatia 3): promessa formal em DIAS ÚTEIS a partir da assinatura.
         "prazo_contratual_dias_uteis": 50,
-        # Agenda da Loja (Fatia 0, spec 2026-08-03): capacidade de montagem + calendário útil.
-        # Estrutura preparada p/ produtividades de outros setores no futuro (v1: só montagem).
+        # Agenda da Loja (Fatia 0, spec 2026-08-03; rev 2026-08-03): capacidade + calendário útil.
+        # A janela de cada carga vem do CRONOGRAMA do projeto (sem teto artificial — decisão do
+        # usuário); a produtividade converte carga diária em recurso necessário.
         "agenda": {
-            "produtividade_montagem_rs_dupla_dia": 7000.0,
+            "produtividade_montagem_rs_dupla_dia": 7000.0,   # Montagem: R$ líquido/dupla/dia útil
             "duplas_disponiveis": 2,
+            "produtividade_pe_rs_dia": 20000.0,              # Projeto Executivo: R$ líquido/dia útil
             "sabado_util": False,
             "feriados": [],                       # ["AAAA-MM-DD", ...] — mod_calendario
-            "teto_dias_montagem": 10,
             "horizonte_capacidade_semanas": 6,
         },
         "cronograma_padrao": [
@@ -137,8 +138,8 @@ def validar_config_financeira(dados):
             erros.append("Agenda: produtividade de montagem (R$/dupla/dia) deve ser maior que zero.")
         if _f(ag.get("duplas_disponiveis")) < 0:
             erros.append("Agenda: duplas disponíveis não pode ser negativo.")
-        if _f(ag.get("teto_dias_montagem")) < 1:
-            erros.append("Agenda: teto de dias de montagem deve ser ao menos 1.")
+        if _f(ag.get("produtividade_pe_rs_dia")) <= 0:
+            erros.append("Agenda: produtividade de Projeto Executivo (R$/dia) deve ser maior que zero.")
         hz = _f(ag.get("horizonte_capacidade_semanas"))
         if hz < 1 or hz > 26:
             erros.append("Agenda: horizonte de capacidade deve estar entre 1 e 26 semanas.")

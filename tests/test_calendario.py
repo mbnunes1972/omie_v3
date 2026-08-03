@@ -88,10 +88,12 @@ def test_config_default_tem_secao_agenda():
     assert ag is not None
     assert ag["produtividade_montagem_rs_dupla_dia"] == 7000.0
     assert ag["duplas_disponiveis"] == 2
+    assert ag["produtividade_pe_rs_dia"] == 20000.0
     assert ag["sabado_util"] is False
     assert ag["feriados"] == []
-    assert ag["teto_dias_montagem"] == 10
     assert ag["horizonte_capacidade_semanas"] == 6
+    # rev 2026-08-03: SEM teto artificial — a janela vem do cronograma do projeto
+    assert "teto_dias_montagem" not in ag
 
 
 def test_validar_config_agenda():
@@ -105,3 +107,5 @@ def test_validar_config_agenda():
     assert any("feriado" in e.lower() for e in mod_provisoes.validar_config_financeira(ruim2))
     ruim3 = dict(base, agenda=dict(base["agenda"], duplas_disponiveis=-1))
     assert any("dupla" in e.lower() for e in mod_provisoes.validar_config_financeira(ruim3))
+    ruim4 = dict(base, agenda=dict(base["agenda"], produtividade_pe_rs_dia=0))
+    assert any("projeto executivo" in e.lower() for e in mod_provisoes.validar_config_financeira(ruim4))

@@ -192,12 +192,39 @@ def autorizar_desconto(token_solicitante: str, login_autorizador: str,
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def _funcao_do_usuario(u):
+    """(funcao_nome, papeis) da Função do Funcionário vinculado a esta conta, ou (None, None).
+    Alimenta mod_escopo.escopo_por_atribuicao/visao_do_papel — re-chave da visão operacional
+    (2026-08-03): o discriminador é a FUNÇÃO, não o nivel (aposentado no Perfil-4)."""
+    import json as _json
+    from sqlalchemy.orm import object_session
+    from database import Funcao, Funcionario
+    db = object_session(u)
+    if db is None or not getattr(u, "id", None):
+        return None, None
+    f = (db.query(Funcao.nome, Funcao.atribuicoes_json)
+           .join(Funcionario, Funcionario.funcao_id == Funcao.id)
+           .filter(Funcionario.usuario_id == u.id).first())
+    if not f:
+        return None, None
+    papeis = None
+    if f[1]:
+        try:
+            papeis = _json.loads(f[1])
+        except ValueError:
+            papeis = None
+    return f[0], papeis
+
+
 def _usuario_dict(u: Usuario) -> dict:
+    _funcao_nome, _funcao_papeis = _funcao_do_usuario(u)
     return {
         "id":                u.id,
         "nome":              u.nome,
         "login":             u.login,
         "nivel":             u.nivel,
+        "funcao_nome":       _funcao_nome,
+        "funcao_papeis":     _funcao_papeis,
         "tema":              getattr(u, "tema", None) or "escuro",
         "loja_id":           u.loja_id,
         "rede_id":           u.rede_id,

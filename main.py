@@ -13108,8 +13108,14 @@ def _ator_dict(db, usuario_sessao, header_loja_id=None):
     # não pode virar loja ativa 'válida' (viraria tela vazia silenciosa) — trata como sem loja.
     if is_super and active is not None and db.get(Loja, active) is None:
         active = None
-    return {"nivel": u.nivel, "loja_id": u.loja_id, "rede_id": u.rede_id,
-            "active_loja_id": active, "lojas_ids": membership}
+    # Função do Funcionário vinculado (re-chave da visão operacional, 2026-08-03): alimenta
+    # mod_escopo.escopo_por_atribuicao/visao_do_papel. `id` incluído junto (predicados de
+    # posse/atribuição usam ator.get("id")).
+    from auth.auth import _funcao_do_usuario as _fdu
+    _funcao_nome, _funcao_papeis = _fdu(u)
+    return {"id": u.id, "nivel": u.nivel, "loja_id": u.loja_id, "rede_id": u.rede_id,
+            "active_loja_id": active, "lojas_ids": membership,
+            "funcao_nome": _funcao_nome, "funcao_papeis": _funcao_papeis}
 
 
 def _resolver_pdf_contrato(pdf_path):

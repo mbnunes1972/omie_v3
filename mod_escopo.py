@@ -30,9 +30,23 @@ def funcao_compativel(papel, funcao_nome):
 # Perfis que veem só o que criaram (posse do projeto). Regras §3. Dirigido pela BASE (perfis.py) para
 # sobreviver à migração de nivel e escopar corretamente perfis customizados derivados de "operador".
 
-# Perfis operacionais escopados pelo Mapa (só o atribuído). Decisão da Fase 1: apenas estes; os demais
-# perfis de loja (conferente/assistente_logistico/assistente_administrativo) seguem vendo tudo na loja.
+# LEGADO (pré-Perfil-4): níveis aposentados na migração — mantidos por segurança, mas nenhuma
+# conta real os tem desde a Sessão 61. O chaveamento VIVO é pela FUNÇÃO (re-chave 2026-08-03,
+# achado 🔴1 da Vera: a visão operacional ficou dormente da migração até aqui).
 _ESCOPO_ATRIBUICAO = frozenset({"projetista_executivo", "medidor", "supervisor_montagem"})
+
+# Funções que executam papel operacional (união de PAPEL_FUNCOES) — fallback por NOME enquanto
+# `Funcao.atribuicoes_json` (fonte preferida, ver funcao_operacional) não é preenchida na Config.
+FUNCOES_OPERACIONAIS = frozenset(n for nomes in PAPEL_FUNCOES.values() for n in nomes)
+
+
+def funcao_operacional(funcao_nome, papeis=None):
+    """True se a Função executa papel operacional (PE/Medição/Montagem/Assistência).
+    `papeis` = Funcao.atribuicoes_json parseada (fonte PREFERIDA quando preenchida — elimina o
+    acoplamento por nome); sem ela, decide pelo catálogo de nomes (FUNCOES_OPERACIONAIS)."""
+    if papeis:
+        return any(p in PAPEIS for p in papeis)
+    return bool(funcao_nome) and funcao_nome in FUNCOES_OPERACIONAIS
 
 
 def _eh_admin(ator):
@@ -51,7 +65,16 @@ def escopo_por_posse(ator):
 
 
 def escopo_por_atribuicao(ator):
-    return (ator or {}).get("nivel") in _ESCOPO_ATRIBUICAO
+    """Operacional (escopado pelo Mapa; sem visão comercial) — re-chave 2026-08-03: decide pela
+    FUNÇÃO do Funcionário vinculado ao usuário (`ator["funcao_nome"]`/`ator["funcao_papeis"]`,
+    resolvidos por main._ator_dict), não mais pelo nivel (aposentado no Perfil-4). Gerência e
+    admin NUNCA são escopados pelo Mapa, qualquer que seja a função cadastrada."""
+    a = ator or {}
+    if a.get("nivel") in _ESCOPO_ATRIBUICAO:      # legado — inofensivo, nenhuma conta real tem
+        return True
+    if _eh_admin(a) or eh_gerencia(a):
+        return False
+    return funcao_operacional(a.get("funcao_nome"), a.get("funcao_papeis"))
 
 
 def pode_ver_projeto(ator, meta, usuario_ids_atribuidos):

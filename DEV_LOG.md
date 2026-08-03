@@ -1369,6 +1369,13 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 146 (Visão Operacional REATIVADA):** re-chave nivel→FUNÇÃO em
+> `escopo_por_atribuicao` (`funcao_operacional`: atribuicoes_json > catálogo de nomes;
+> guarda de gerência/admin) + Função resolvida na sessão e no `_ator_dict` (que ganhou
+> `id` — bug latente da posse na Agenda). Medidor real: escopo pelo Mapa, 403 no
+> comercial, Agenda sem valores. Suíte 1701 verde, zero regressão. Fecha o 🔴1 da Vera e
+> a pendência de 2026-07-10.
+>
 > **Sessão 145 (Vera na Agenda):** 🟠 cadeia de entrega UNIFICADA (helper canônico
 > `data_entrega_da_fase` — faixa e Agenda davam datas diferentes) e 🟡 backfill das
 > subfases do PE em cronograma legado (marcos de PE apareciam vazios com carga cheia) —
@@ -2745,6 +2752,34 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 146 — VISÃO OPERACIONAL reativada: re-chave nivel → FUNÇÃO (fecha o 🔴1 da Vera e a pendência de 2026-07-10)
+
+A frente prometida na Sessão 145. Desde a migração Perfil-4 (Sessão 61) nenhuma conta tinha os
+níveis aposentados que `mod_escopo.escopo_por_atribuicao` comparava — a visão "operacional"
+(sem comercial, escopo pelo Mapa) ficou DORMENTE ~1 mês. Re-chave executada:
+
+- **`mod_escopo`:** `funcao_operacional(nome, papeis)` novo — decide por
+  `Funcao.atribuicoes_json` (papéis; fonte PREFERIDA quando preenchida, elimina acoplamento
+  por nome — era o follow-up anotado no próprio arquivo) com fallback no catálogo
+  `PAPEL_FUNCOES` (Projetista Executivo · Medidor · Montador · Supervisor de Montagem).
+  `escopo_por_atribuicao` usa `ator["funcao_nome"]/["funcao_papeis"]`; **guarda nova:
+  gerência/admin NUNCA são escopados pelo Mapa** (diretor cadastrado como Montador não perde a
+  visão comercial). Check legado por nivel mantido (inofensivo).
+- **Resolução da Função:** `auth._funcao_do_usuario(u)` (Funcionario.usuario_id → Funcao) —
+  entra no `_usuario_dict` (sessão, recomputado a cada request) E no `main._ator_dict`
+  (que também ganhou **`id`** — os predicados de posse usavam `ator.get("id")` que era sempre
+  None: bug latente do endpoint da Agenda no filtro de posse do consultor, corrigido junto).
+- **Efeito:** medidor/projetista/montador REAL (conta operador + Funcionário com função
+  operacional) agora: vê só projetos atribuídos no Mapa; 403 nos endpoints comerciais
+  (`_bloqueio_comercial`); Agenda com marcos SEM valor e cargas/capacidade vazios.
+- **TDD** `tests/test_visao_operacional.py` (5): predicados puros (nome, papéis, guarda de
+  gerência, legado) + ponta a ponta (medidor real na Agenda sem valores/cargas; 403 no
+  negociacao-preview; consultor sem Funcionário segue comercial).
+
+Suíte **1701 verde** (+5, ZERO regressão da reativação). Spec da Agenda §9: aviso de dormência
+trocado por "REATIVADA". (Servidor local NÃO reiniciado ainda — a Vera está no meio da
+simulação E2E contra ele; aplicar no próximo restart.)
 
 ## Sessão 145 — Auditoria da Vera na Agenda v1: 2 achados corrigidos, 1 documentado como dormente
 

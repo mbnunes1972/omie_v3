@@ -155,13 +155,14 @@ tenancy, "nenhuma"). Não está em `mod_tenancy.py` — tenancy resolve LOJA; pa
   **sem R$, sem Semana/Mês e sem o painel Capacidade** (duplas derivam de R$ — vazariam
   volume). Útil para o montador ver a própria semana sem expor o comercial.
 
-> ⚠️ **DORMENTE (auditoria da Vera, 2026-08-03):** o gate `mod_escopo.escopo_por_atribuicao`
-> compara `nivel` contra valores APOSENTADOS na migração Perfil-4 (`medidor`,
-> `projetista_executivo`, `supervisor_montagem`) — nenhuma conta real cai em "operacional"
-> hoje (débito documentado no DEV_LOG desde 2026-07-10, anterior à Agenda). O branch da
-> Agenda está implementado e testado no código, mas só passa a valer quando a frente de
-> re-chaveamento (nivel → Função/Mapa de Atribuições) for executada. Até lá, a proteção
-> efetiva é o escopo por posse (consultor) e a tenancy por loja.
+> ✅ **REATIVADA (frente de re-chave, 2026-08-03 — mesma data da auditoria):** o gate
+> `mod_escopo.escopo_por_atribuicao` foi re-chaveado do `nivel` (aposentado no Perfil-4)
+> para a **FUNÇÃO do Funcionário vinculado à conta** — `Funcao.atribuicoes_json` (papéis)
+> quando preenchida, senão o catálogo de nomes `PAPEL_FUNCOES` (Projetista Executivo,
+> Medidor, Montador, Supervisor de Montagem). Guarda: gerência/admin nunca são escopados
+> pelo Mapa, qualquer que seja a função cadastrada. A visão operacional da Agenda (marcos
+> sem R$, sem cargas/Capacidade) passou a valer para contas reais e está coberta por teste
+> ponta a ponta (`tests/test_visao_operacional.py`).
 
 ## 10. Backend (forma)
 

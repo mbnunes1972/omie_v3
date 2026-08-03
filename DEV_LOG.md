@@ -2710,8 +2710,10 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
    (`ajuste_ultimo`), invariante `entrada + Σ parcelas = total_cliente` ao centavo (Norberto:
    14× 13.000,35 + última 13.000,31). Frontend persiste/exibe as parcelas REAIS do plano
    (cartão gerava N iguais na mão; aymoré gravava `d.valor_parcela`; VP/TF já estavam certos), e
-   o registro do contrato mostra "Nx de V (última: V′)". **Contratos já congelados (Norberto)
-   mantêm o plano antigo de parcelas iguais** — registro histórico, não regravado.
+   o registro do contrato mostra "Nx de V (última: V′)". **Norberto: a pedido do usuário, o
+   plano congelado foi REGRAVADO no banco de dev LOCAL** (última parcela 13.000,35 → 13.000,31 +
+   `texto_cartao`; backup do JSON original no scratchpad da sessão) — VPS A/B seguem com o plano
+   antigo até ordem de promover.
 
 **Validação:** headless no banco de dev (tabela e plano novos batem ao centavo, acima);
 `node --check` ok; suíte **1645 verde + 4 falhas PRÉ-EXISTENTES** em `test_chat_wa`/

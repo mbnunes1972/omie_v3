@@ -3624,6 +3624,7 @@ let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comer
 let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
 let _agVista='cal', _agSemBase=null, _agCargas=[], _agItens=[], _agSelCarga=null;
 let _agCap=[], _agCapCfg={};   // Fatia 4: capacidade (duplas de montagem + ocupação do PE)
+let _agMont={itens:[], conflitos:[]};   // Gantt de montagem + espelho de atribuições
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function _agSegunda(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function agendaVista(v){
@@ -3699,6 +3700,13 @@ async function agendaCarregar(){
     _agMarcos=d.marcos||[]; _agCargas=d.cargas||[]; _agVisao=d.visao||'comercial';
     _agSetores=d.setores||[]; _agItens=d.itens||[];
     _agCap=d.capacidade||[]; _agCapCfg=d.capacidade_cfg||{};
+    if(_agVista==='cap'){
+      // Gantt de montagem + espelho de atribuições (rev 2026-08-03)
+      const rm = await fetch('/api/agenda/montagem?de='+de+'&ate='+ate
+        +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):''), {credentials:'same-origin'})
+        .then(r=>r.json()).catch(()=>({}));
+      _agMont = (rm && rm.ok) ? rm : {itens:[], conflitos:[]};
+    }
     if(_agVista==='sem') _agRenderSemana();
     else if(_agVista==='mes') _agRenderMes();
     else if(_agVista==='cap') _agRenderCap();
@@ -3908,22 +3916,59 @@ function _agRenderCap(){
   }
   const porDia={}; _agCap.forEach(c=>{ porDia[c.data]=c; });
   const disp=Math.max(0,parseInt(_agCapCfg.duplas_disponiveis,10)||0);
-  const maxD=Math.max(disp,...dias.map(i=>(porDia[i]||{}).duplas||0),1)+1;
   const rotDia=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
   const barra=(hPct,cor,rot,topo)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px">
       <div style="height:110px;width:100%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end">
         ${topo?`<div style="font-size:9px;text-align:center;color:var(--muted)">${topo}</div>`:''}
         <div style="height:${hPct}%;background:${cor};border-radius:4px 4px 0 0;min-height:${hPct>0?'3':'0'}px"></div>
       </div><div style="font-size:9px;color:var(--muted)">${rot}</div></div>`;
-  // faixa 1 — Montagem (duplas)
-  let totalDuplasDia=0;
-  const barsM=dias.map(iso=>{
-    const c=porDia[iso]||{}; const n=c.duplas||0; totalDuplasDia+=n;
-    const cor=n>disp?'var(--status-err)':(n>0?'var(--status-ok)':'var(--border)');
-    return barra(Math.round(n/maxD*100), cor, rotDia(iso), n>0?String(n):'');
-  }).join('');
-  const linhaCap=disp>0?`<div style="position:absolute;left:0;right:0;bottom:${14+Math.round(disp/maxD*110)}px;border-top:2px dashed var(--muted);opacity:.7"></div>
-    <div style="position:absolute;right:4px;bottom:${16+Math.round(disp/maxD*110)}px;font-size:9px;color:var(--muted)">${disp} dupla(s) disponíveis</div>`:'';
+  // ── faixa 1 — Montagem: GANTT (rev 2026-08-03; barras de duplas viraram rodapé do Gantt) ──
+  const mont=_agMont.itens||[], confs=_agMont.conflitos||[];
+  const confKeys=new Set(); confs.forEach(c=>(c.itens||[]).forEach(x=>confKeys.add(x.projeto+'|'+(x.fase||''))));
+  const nDias=dias.length;
+  const colGrid=`display:grid;grid-template-columns:190px repeat(${nDias},minmax(13px,1fr));gap:2px;align-items:center`;
+  const cabecalhoG=`<div style="${colGrid};margin-bottom:2px"><div></div>${dias.map((iso,i)=>{
+      const dt=new Date(iso+'T00:00:00'); const seg=dt.getDay()===1;
+      const hoje=iso===hojeIso;
+      return `<div style="font-size:8px;text-align:center;overflow:hidden;white-space:nowrap;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':(seg?'700':'400')}">${(seg||i===0||hoje)?rotDia(iso):''}</div>`;
+    }).join('')}</div>`;
+  let linhasG='';
+  mont.forEach(it=>{
+    let a=dias.findIndex(x=>x>=it.inicio);
+    let b=nDias-1; while(b>=0 && dias[b]>it.fim) b--;
+    if(a<0 || b<0 || a>b){ if(it.inicio<=dias[nDias-1] && it.fim>=dias[0]){ a=Math.max(a,0); b=Math.max(b,a); } else return; }
+    const key=it.projeto+'|'+(it.fase||'');
+    const cor=it.realizado?'var(--status-ok)':(confKeys.has(key)?'var(--status-err)':(it.retida?'var(--status-warn)':'var(--accent)'));
+    const rot=esc(it.projeto)+(it.fase?' · F'+it.fase:'');
+    const tip=`${it.projeto}${it.fase?' · Fase '+it.fase:''} — ${_fmtDataBR(it.inicio)} a ${_fmtDataBR(it.fim)}${it.val_liq!=null?' · R$ '+fmt(it.val_liq):''}${it.retida?' · RETIDA':''}${confKeys.has(key)?' · ⚠ CONFLITO de montador':''}`;
+    linhasG+=`<div style="${colGrid};margin-bottom:2px">
+      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:6px" title="${esc(tip)}">${rot}</div>
+      <div style="grid-column:${2+a} / ${3+b};height:15px;border-radius:7px;background:${cor}" title="${esc(tip)}"></div>
+    </div>`;
+  });
+  if(!linhasG) linhasG=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma montagem com janela no período.</div>`;
+  let totalDuplasDia=0; dias.forEach(iso=>{ totalDuplasDia+=((porDia[iso]||{}).duplas||0); });
+  const rodapeDuplas=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
+      <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Duplas/dia (${disp} disponíveis)</div>
+      ${dias.map(iso=>{ const n=(porDia[iso]||{}).duplas||0;
+        return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${n>disp?'var(--status-err)':(n?'var(--text)':'var(--text-3)')};font-weight:${n>disp?'800':'400'}">${n||''}</div>`; }).join('')}
+    </div>`;
+  const confHtml=confs.length?`<div style="border:1px solid var(--status-err);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text)">
+      <strong style="color:var(--status-err)">⚠ Conflito de montador (períodos sobrepostos):</strong>
+      ${confs.map(c=>esc(c.nome||'?')+' — '+(c.itens||[]).map(x=>esc(x.projeto)+(x.fase?' F'+x.fase:'')+' ('+_fmtDataBR(x.inicio)+'–'+_fmtDataBR(x.fim)+')').join(' × ')).join('; ')}
+    </div>`:'';
+  const espelho=mont.length?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:6px">Atribuições de montagem — projeto por ambiente <span style="color:var(--muted);font-weight:400;font-size:10px">(espelho do Mapa de Atribuições; valor líquido = referência da comissão)</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${mont.map(it=>{
+        const key=it.projeto+'|'+(it.fase||'');
+        return `<div style="border:1px solid ${confKeys.has(key)?'var(--status-err)':'var(--border)'};border-radius:8px;padding:10px 12px;min-width:240px;flex:1;max-width:360px">
+          <div style="font-size:12px;font-weight:700;color:var(--text)">${esc(it.projeto)}${it.fase?` · Fase ${it.fase}`:''} <span style="color:var(--muted);font-weight:400;font-size:10px">${_fmtDataBR(it.inicio)}–${_fmtDataBR(it.fim)}</span></div>
+          ${(it.ambientes||[]).map(a2=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--border);padding:5px 0;font-size:12px">
+            <div><div style="color:var(--text)">${esc(a2.nome||('Amb '+a2.id))}</div>${a2.val_liq!=null?`<div style="font-size:10px;color:var(--muted);font-family:var(--font-mono)">R$ ${fmt(a2.val_liq)}</div>`:''}</div>
+            <div style="text-align:right;color:${a2.montador?'var(--text)':'var(--status-warn)'};font-size:11px">${a2.montador?esc(a2.montador.nome||''):'— sem montador —'}</div>
+          </div>`).join('')||'<div style="font-size:11px;color:var(--muted);padding-top:4px">Sem ambientes.</div>'}
+        </div>`;}).join('')}</div>
+    </div>`:'';
   const capTotal=disp*dias.length;
   // faixa 2 — Projeto Executivo (ocupação %)
   const maxP=Math.max(120,...dias.map(i=>(porDia[i]||{}).pe_pct||0));
@@ -3938,9 +3983,11 @@ function _agRenderCap(){
   const diasPe=(_agCapCfg.produtividade_pe>0)?(somaPe/_agCapCfg.produtividade_pe):0;
   box.innerHTML = _agHeader(`${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}`)
     +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
-      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Montagem — duplas necessárias por dia</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''}</div>
-      <div style="position:relative"><div style="display:flex;gap:3px;align-items:flex-end">${barsM}</div>${linhaCap}</div>
+      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Montagem — Gantt do período</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada barra é a JANELA de montagem de um projeto/fase (entrega → prevista da etapa 17). Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito</div>
+      ${confHtml}
+      ${cabecalhoG}${linhasG}${rodapeDuplas}
+      ${espelho}
     </div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px">
       <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Projeto Executivo — ocupação diária</div>
@@ -14877,11 +14924,18 @@ async function mapaAbrir(nomeSafe){
   mapaRender(d);
 }
 function mapaFechar(){ document.getElementById('modal-mapa').style.display = 'none'; }
+// Rev 2026-08-03 (pedido do usuário): grade VERTICALIZADA — colunas = FUNÇÕES (papéis),
+// linhas = AMBIENTES. A linha "Projeto inteiro" saiu: no topo há a linha "Todos os
+// ambientes", que aplica o MESMO profissional a todos (um POST em lote, uma notificação).
+// Atribuição NULL legada (projeto inteiro) aparece como valor herdado nos ambientes.
+let _mapaAmbIds = [];
 function mapaRender(d){
   const papeis = d.papeis || Object.keys(_PAPEL_LABEL);
-  const cols = [{id:null, nome:'Projeto inteiro'}].concat(d.ambientes || []);
+  const ambientes = d.ambientes || [];
+  _mapaAmbIds = ambientes.map(a=>a.id);
   const atrib = {};
   (d.atribuicoes || []).forEach(a => { atrib[a.papel+'|'+(a.pool_ambiente_id||'')] = a; });
+  const valorDe = a => a ? (a.funcionario_id?('f:'+a.funcionario_id):(a.terceiro_id?('t:'+a.terceiro_id):'')) : '';
   const opts = (papel, cur) => {
     const aceitas = _PAPEL_FUNCOES[papel] || [];
     const elig = (_mapaProfs||[]).filter(p => aceitas.includes(p.funcao_nome));
@@ -14890,29 +14944,50 @@ function mapaRender(d){
       h += '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+esc(p.nome)+' ('+esc(p.funcao_nome)+')</option>'; });
     return h;
   };
-  let html = '<table class="proj-table" style="width:100%"><thead><tr><th>Papel</th>'
-    + cols.map(c => '<th>'+esc(c.nome)+'</th>').join('') + '</tr></thead><tbody>';
+  let html = '<table class="proj-table" style="width:100%"><thead><tr><th>Ambiente</th>'
+    + papeis.map(p => '<th>'+esc(_PAPEL_LABEL[p]||p)+'</th>').join('') + '</tr></thead><tbody>';
+  // linha "Todos os ambientes": aplica o mesmo nome em todos (lote)
+  html += '<tr style="background:var(--surface-2)"><td style="font-weight:700;color:var(--text)">Todos os ambientes</td>';
   papeis.forEach(papel => {
-    html += '<tr><td style="font-weight:600;color:var(--text)">'+esc(_PAPEL_LABEL[papel]||papel)+'</td>';
-    cols.forEach(c => {
-      const a = atrib[papel+'|'+(c.id||'')];
-      const cur = a ? (a.funcionario_id?('f:'+a.funcionario_id):(a.terceiro_id?('t:'+a.terceiro_id):'')) : '';
-      html += '<td><select onchange="mapaSetAtribuicao(\''+papel+'\','+(c.id||'null')+',this.value)" style="width:160px;box-sizing:border-box">'+opts(papel, cur)+'</select></td>';
+    html += '<td><select onchange="mapaSetTodos(\''+papel+'\',this.value)" title="Aplica o mesmo profissional a todos os ambientes" style="width:170px;box-sizing:border-box">'+opts(papel,'')+'</select></td>';
+  });
+  html += '</tr>';
+  ambientes.forEach(a2 => {
+    html += '<tr><td style="font-weight:600;color:var(--text)">'+esc(a2.nome)+'</td>';
+    papeis.forEach(papel => {
+      const espec = atrib[papel+'|'+a2.id];
+      const geral = atrib[papel+'|'];            // NULL legado (projeto inteiro) — herdado
+      const cur = valorDe(espec) || valorDe(geral);
+      const herdado = !espec && geral && valorDe(geral);
+      html += '<td><select onchange="mapaSetAtribuicao(\''+papel+'\','+a2.id+',this.value)" style="width:170px;box-sizing:border-box;'+(herdado?'opacity:.75;':'')+'"'+(herdado?' title="Herdado da atribuição geral do projeto — alterar grava só neste ambiente"':'')+'>'+opts(papel, cur)+'</select></td>';
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
+  if(!ambientes.length)
+    html = '<div style="font-size:12px;color:var(--muted)">Este projeto ainda não tem ambientes no pool.</div>';
   const aviso = (_mapaProfs||[]).length ? '' :
     '<div style="font-size:11px;color:var(--warn);margin-top:8px">Nenhum funcionário/terceiro com função cadastrada — cadastre em Cadastro e defina a Função.</div>';
   document.getElementById('mapa-body').innerHTML = html + aviso;
 }
-async function mapaSetAtribuicao(papel, ambId, sel){
-  const body = {papel: papel, pool_ambiente_id: (ambId===null||ambId==='null') ? null : ambId};
+function _mapaBodyAlvo(body, sel){
   if(sel){ const p = sel.split(':'); if(p[0]==='f') body.funcionario_id = parseInt(p[1],10); else body.terceiro_id = parseInt(p[1],10); }
+  return body;
+}
+async function _mapaPost(body){
   const d = await (await fetch('/api/projetos/'+encodeURIComponent(_mapaNome)+'/atribuicoes',{method:'POST',credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json().catch(()=>({}));
-  if(!d.ok) showToast('Erro: '+(d.erro||'falha'), true); else showToast('Atribuição salva.', false);
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); }
+  else if(d.aviso_conflito){ showToast(d.aviso_conflito, true); }   // conflito de montador (períodos sobrepostos)
+  else showToast('Atribuição salva.'+(d.notificado?' Profissional notificado no Orizon Chat.':''), false);
   mapaAbrir(_mapaNome);   // recarrega o grid (reflete substituições/limpezas)
+}
+async function mapaSetAtribuicao(papel, ambId, sel){
+  await _mapaPost(_mapaBodyAlvo({papel: papel, pool_ambiente_id: ambId}, sel));
+}
+async function mapaSetTodos(papel, sel){
+  if(!_mapaAmbIds.length) return;
+  await _mapaPost(_mapaBodyAlvo({papel: papel, pool_ambiente_ids: _mapaAmbIds}, sel));
 }
 
 // ── Retenção por Obra — desmembramento operacional por ambiente (spec 2026-07-27) ──────────

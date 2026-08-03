@@ -1434,6 +1434,57 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/agenda/montagem":
+            # ── Gantt de MONTAGEM + espelho de atribuições (rev 2026-08-03) ──
+            # Um item por projeto/fase com janela de montagem; ambientes com Val_Liq (base da
+            # comissão) e o montador do Mapa; conflitos = mesmo montador em janelas sobrepostas
+            # de projetos distintos. Visão operacional recebe SEM valores.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            from urllib.parse import parse_qs
+            _qs = parse_qs(urlparse(self.path).query)
+            def _q(k):
+                return (_qs.get(k) or [None])[0]
+            def _pd(s):
+                try:
+                    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                except ValueError:
+                    return None
+            de, ate = _pd(_q("de")), _pd(_q("ate"))
+            proj_filtro = unquote(_q("projeto") or "") or None
+            db = get_session()
+            try:
+                import mod_agenda as _mag
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                visao = mod_escopo.visao_do_papel(ator)
+                _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag, proj_filtro)
+                if de:
+                    itens = [i for i in itens if i["fim"] >= de]
+                if ate:
+                    itens = [i for i in itens if i["inicio"] <= ate]
+                conflitos = _mag.conflitos_montagem(itens)
+                for it in itens:
+                    it["inicio"] = it["inicio"].isoformat()
+                    it["fim"] = it["fim"].isoformat()
+                    if visao == "operacional":
+                        it["val_liq"] = None
+                        for a in it["ambientes"]:
+                            a["val_liq"] = None
+                for c in conflitos:
+                    for x in c["itens"]:
+                        x["inicio"] = x["inicio"].isoformat()
+                        x["fim"] = x["fim"].isoformat()
+                self.send_json({"ok": True, "itens": itens, "conflitos": conflitos,
+                                "visao": visao})
+            finally:
+                db.close()
+            return
+
         m_rets = re.match(r'^/api/projetos/([^/]+)/retencoes$', path)
         if m_rets:
             # Histórico de retenções por obra (eventos): quando, etapa do ciclo, ambientes,
@@ -1487,63 +1538,7 @@ class Handler(BaseHTTPRequestHandler):
                 if _err:
                     self.send_json({"ok": False, "erro": _err}, code=403); return
                 visao = mod_escopo.visao_do_papel(ator)
-                projs = (db.query(Projeto)
-                           .join(Contrato, Contrato.projeto_nome == Projeto.nome_safe)
-                           .filter(Projeto.loja_id == loja_id)
-                           .distinct().all())
-                if proj_filtro:
-                    projs = [p for p in projs if p.nome_safe == proj_filtro]
-                if _ve_apenas_proprios_projetos(ator.get("nivel")):
-                    projs = [p for p in projs
-                             if p.criado_por_id in (None, ator.get("id"))]
-                if mod_escopo.escopo_por_atribuicao(ator):
-                    _atrib = _projetos_atribuidos_ao_usuario(db, ator.get("id"), loja_id)
-                    projs = [p for p in projs if p.nome_safe in _atrib]
-                dados = []
-                for pr in projs:
-                    if pr.status == "perdido":
-                        continue
-                    contrato = (db.query(Contrato).filter_by(projeto_nome=pr.nome_safe)
-                                  .order_by(Contrato.id.desc()).first())
-                    orc = db.get(Orcamento, contrato.orcamento_id) if contrato else None
-                    cli = db.get(Cliente, pr.cliente_id) if pr.cliente_id else None
-                    etapas = {}
-                    for e in db.query(CicloEtapa).filter_by(projeto_nome=pr.nome_safe).all():
-                        etapas[e.etapa_codigo] = {
-                            "prevista": e.data_prevista_conclusao,
-                            "concluida_em": (e.concluido_em
-                                             if e.status in mod_ciclo.STATUS_CONCLUSIVOS else None)}
-                    parcs = (db.query(ParcelaProjeto).filter_by(projeto_nome=pr.nome_safe)
-                               .order_by(ParcelaProjeto.ordem.asc()).all())
-                    cards = {c.parcela_id: c for c in
-                             db.query(CicloLogistico)
-                               .filter(CicloLogistico.projeto_nome == pr.nome_safe,
-                                       CicloLogistico.parcela_id != None).all()}  # noqa: E711
-                    card_glob = (db.query(CicloLogistico)
-                                   .filter_by(projeto_nome=pr.nome_safe, parcela_id=None)
-                                   .order_by(CicloLogistico.id.desc()).first())
-                    fases = []
-                    for f in parcs:
-                        card = cards.get(f.id)
-                        fases.append({"ordem": f.ordem, "status": f.status,
-                                      "val_liq": f.val_liq_congelado,
-                                      "entrega_prevista": f.entrega_prevista,
-                                      "card_prazo_entrega": card.prazo_entrega if card else None,
-                                      "card_data_entrega": card.data_entrega if card else None})
-                    if not fases:
-                        _c16 = etapas.get("16") or {}
-                        fases = [{"ordem": None, "status": None,
-                                  "val_liq": (orc.valor_liquido if orc else None),
-                                  "entrega_prevista": None,
-                                  "card_prazo_entrega": card_glob.prazo_entrega if card_glob else None,
-                                  "card_data_entrega": ((card_glob.data_entrega if card_glob else None)
-                                                        or _c16.get("concluida_em"))}]
-                    dados.append({"nome_safe": pr.nome_safe,
-                                  "cliente": (cli.nome if cli else None),
-                                  "val_liq": (orc.valor_liquido if orc else None),
-                                  "previsao_medicao": pr.previsao_medicao,
-                                  "data_entrega": pr.data_entrega,
-                                  "etapas": etapas, "fases": fases})
+                dados = _agenda_dados_projetos(db, ator, loja_id, proj_filtro)
                 out = []
                 for m in _mag.marcos(dados, de=de, ate=ate, setor=setor):
                     if visao == "operacional":
@@ -9607,29 +9602,26 @@ class Handler(BaseHTTPRequestHandler):
                     papel = (req.get("papel") or "").strip()
                     if papel not in mod_escopo.PAPEIS:
                         self.send_json({"ok": False, "erro": "Papel inválido"}, code=400); return
-                    amb_id = req.get("pool_ambiente_id")
-                    amb_id = int(amb_id) if amb_id not in (None, "", 0, "0") else None
-                    # ambiente, se informado, tem de ser do projeto
-                    if amb_id is not None:
-                        pa = db.get(PoolAmbiente, amb_id)
-                        if pa is None or pa.projeto_id != nome_safe:
-                            self.send_json({"ok": False, "erro": "Ambiente não encontrado"}, code=404); return
+                    # LOTE (rev 2026-08-03, box "Todos os ambientes" do Mapa): pool_ambiente_ids
+                    # aplica o MESMO alvo a vários ambientes num só POST — uma auditoria e UMA
+                    # notificação (evita N mensagens ao mesmo profissional).
+                    if req.get("pool_ambiente_ids"):
+                        try:
+                            alvo_amb_ids = [int(x) for x in req["pool_ambiente_ids"]]
+                        except (TypeError, ValueError):
+                            self.send_json({"ok": False, "erro": "Ambientes inválidos"}, code=400); return
+                    else:
+                        _raw = req.get("pool_ambiente_id")
+                        alvo_amb_ids = [int(_raw) if _raw not in (None, "", 0, "0") else None]
+                    for aid in alvo_amb_ids:
+                        if aid is not None:
+                            pa = db.get(PoolAmbiente, aid)
+                            if pa is None or pa.projeto_id != nome_safe:
+                                self.send_json({"ok": False, "erro": "Ambiente não encontrado"}, code=404); return
                     fio_id = req.get("funcionario_id") or None
                     ter_id = req.get("terceiro_id") or None
-                    # localiza a linha vigente (projeto, ambiente, papel)
-                    reg = (db.query(AtribuicaoAmbiente)
-                           .filter_by(projeto_nome=nome_safe, papel=papel)
-                           .filter(AtribuicaoAmbiente.pool_ambiente_id.is_(None) if amb_id is None
-                                   else AtribuicaoAmbiente.pool_ambiente_id == amb_id).first())
-                    antigo = None
-                    if reg is not None:
-                        antigo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
-                    # alvo vazio → limpar
-                    if not fio_id and not ter_id:
-                        if reg is not None:
-                            db.delete(reg)
-                        novo = None
-                    else:
+                    alvo = None
+                    if fio_id or ter_id:
                         # resolve alvo, valida loja + função compatível com o papel (§7)
                         if fio_id:
                             alvo = db.get(Funcionario, int(fio_id)); ter_id = None
@@ -9644,21 +9636,82 @@ class Handler(BaseHTTPRequestHandler):
                             self.send_json({"ok": False,
                                             "erro": "Profissional não tem função compatível com este papel"}, code=400)
                             return
-                        if reg is None:
-                            reg = AtribuicaoAmbiente(loja_id=loja_id, projeto_nome=nome_safe,
-                                                     pool_ambiente_id=amb_id, papel=papel)
-                            db.add(reg)
-                        reg.funcionario_id = int(fio_id) if fio_id else None
-                        reg.terceiro_id    = int(ter_id) if ter_id else None
-                        reg.atribuido_por_id = usuario["id"]
-                        novo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
+                    trocas = []
+                    for amb_id in alvo_amb_ids:
+                        reg = (db.query(AtribuicaoAmbiente)
+                               .filter_by(projeto_nome=nome_safe, papel=papel)
+                               .filter(AtribuicaoAmbiente.pool_ambiente_id.is_(None) if amb_id is None
+                                       else AtribuicaoAmbiente.pool_ambiente_id == amb_id).first())
+                        antigo = None
+                        if reg is not None:
+                            antigo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
+                        if alvo is None:
+                            if reg is not None:
+                                db.delete(reg)
+                            novo = None
+                        else:
+                            if reg is None:
+                                reg = AtribuicaoAmbiente(loja_id=loja_id, projeto_nome=nome_safe,
+                                                         pool_ambiente_id=amb_id, papel=papel)
+                                db.add(reg)
+                            reg.funcionario_id = int(fio_id) if fio_id else None
+                            reg.terceiro_id    = int(ter_id) if ter_id else None
+                            reg.atribuido_por_id = usuario["id"]
+                            novo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
+                        trocas.append({"pool_ambiente_id": amb_id, "alvo_antigo": antigo, "alvo_novo": novo})
                     db.add(LogAcaoGerencial(
                         solicitante_id=usuario["id"], autorizador_id=usuario["id"],
                         acao="atribuir_mapa", projeto_nome=nome_safe, etapa_alvo=papel,
-                        contexto=json.dumps({"papel": papel, "pool_ambiente_id": amb_id,
-                                             "alvo_antigo": antigo, "alvo_novo": novo})))
+                        contexto=json.dumps({"papel": papel, "trocas": trocas})))
                     db.commit()
-                    self.send_json({"ok": True, "atribuicoes": _serializar_atribuicoes(db, nome_safe)})
+                    # ── pós-commit, best-effort: notificação via Orizon Chat + aviso de conflito ──
+                    _PAPEL_ROTULO = {"projeto_executivo": "Projeto Executivo", "medicao": "Medição",
+                                     "montagem": "Montagem", "assistencia": "Assistência"}
+                    notificado, aviso_conflito = False, None
+                    if alvo is not None:
+                        try:
+                            alvo_uid = getattr(alvo, "usuario_id", None)
+                            if alvo_uid and alvo_uid != usuario["id"]:
+                                import mod_chat as _mchat
+                                nomes_amb = [pa.nome_exibicao or pa.nome for pa in
+                                             db.query(PoolAmbiente).filter(
+                                                 PoolAmbiente.id.in_([a for a in alvo_amb_ids if a])).all()]
+                                onde = ("no projeto inteiro" if alvo_amb_ids == [None]
+                                        else ("no ambiente %s" % nomes_amb[0] if len(nomes_amb) == 1
+                                              else "em %d ambientes (%s)" % (len(nomes_amb), ", ".join(nomes_amb))))
+                                corpo = ("📌 Você foi atribuído como responsável de %s %s no projeto %s."
+                                         % (_PAPEL_ROTULO.get(papel, papel), onde, nome_safe))
+                                conv = _mchat.get_or_create_direct(db, loja_id, usuario["id"], alvo_uid,
+                                                                  assunto_tipo="livre")
+                                msg = _mchat.enviar_mensagem(db, conv, usuario["id"], corpo)
+                                db.commit()
+                                try:
+                                    import mod_chat_externo as _mwa
+                                    _mwa.notificar_conversa(db, conv, msg, usuario["id"])
+                                    db.commit()
+                                except Exception:
+                                    db.rollback()
+                                notificado = True
+                        except Exception:
+                            db.rollback()   # notificação nunca derruba a atribuição (já commitada)
+                        if papel == "montagem":
+                            try:
+                                import mod_agenda as _mag
+                                _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                                _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag)
+                                _chave = ("f:%d" % int(fio_id)) if fio_id else ("t:%d" % int(ter_id))
+                                _hit = next((c for c in _mag.conflitos_montagem(_itens)
+                                             if c["chave"] == _chave
+                                             and any(x["projeto"] == nome_safe for x in c["itens"])), None)
+                                if _hit:
+                                    _outros = sorted({x["projeto"] for x in _hit["itens"]
+                                                      if x["projeto"] != nome_safe})
+                                    aviso_conflito = ("⚠ %s já tem montagem em período sobreposto: %s."
+                                                      % (_hit["nome"] or "O profissional", ", ".join(_outros)))
+                            except Exception:
+                                db.rollback()
+                    self.send_json({"ok": True, "atribuicoes": _serializar_atribuicoes(db, nome_safe),
+                                    "notificado": notificado, "aviso_conflito": aviso_conflito})
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -12891,6 +12944,119 @@ def _valores_contrato_por_ambiente(orcamento_id, db):
         if aid is not None:
             out[aid] = round(float(v or 0), 2)
     return out, round(float(d.get("Val_Cont") or 0), 2)
+
+
+def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
+    """Dados por projeto para o motor da Agenda (mod_agenda) — extraído do handler
+    GET /api/agenda para reuso pelo painel de Montagem (Gantt/espelho). Aplica os escopos:
+    posse (consultor), atribuição (operacional) e filtro opcional de projeto."""
+    projs = (db.query(Projeto)
+               .join(Contrato, Contrato.projeto_nome == Projeto.nome_safe)
+               .filter(Projeto.loja_id == loja_id)
+               .distinct().all())
+    if proj_filtro:
+        projs = [p for p in projs if p.nome_safe == proj_filtro]
+    if _ve_apenas_proprios_projetos(ator.get("nivel")):
+        projs = [p for p in projs if p.criado_por_id in (None, ator.get("id"))]
+    if mod_escopo.escopo_por_atribuicao(ator):
+        _atrib = _projetos_atribuidos_ao_usuario(db, ator.get("id"), loja_id)
+        projs = [p for p in projs if p.nome_safe in _atrib]
+    dados = []
+    for pr in projs:
+        if pr.status == "perdido":
+            continue
+        contrato = (db.query(Contrato).filter_by(projeto_nome=pr.nome_safe)
+                      .order_by(Contrato.id.desc()).first())
+        orc = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+        cli = db.get(Cliente, pr.cliente_id) if pr.cliente_id else None
+        etapas = {}
+        for e in db.query(CicloEtapa).filter_by(projeto_nome=pr.nome_safe).all():
+            etapas[e.etapa_codigo] = {
+                "prevista": e.data_prevista_conclusao,
+                "concluida_em": (e.concluido_em
+                                 if e.status in mod_ciclo.STATUS_CONCLUSIVOS else None)}
+        parcs = (db.query(ParcelaProjeto).filter_by(projeto_nome=pr.nome_safe)
+                   .order_by(ParcelaProjeto.ordem.asc()).all())
+        cards = {c.parcela_id: c for c in
+                 db.query(CicloLogistico)
+                   .filter(CicloLogistico.projeto_nome == pr.nome_safe,
+                           CicloLogistico.parcela_id != None).all()}  # noqa: E711
+        card_glob = (db.query(CicloLogistico)
+                       .filter_by(projeto_nome=pr.nome_safe, parcela_id=None)
+                       .order_by(CicloLogistico.id.desc()).first())
+        fases = []
+        for f in parcs:
+            card = cards.get(f.id)
+            fases.append({"id": f.id, "ordem": f.ordem, "status": f.status,
+                          "val_liq": f.val_liq_congelado,
+                          "entrega_prevista": f.entrega_prevista,
+                          "card_prazo_entrega": card.prazo_entrega if card else None,
+                          "card_data_entrega": card.data_entrega if card else None})
+        if not fases:
+            _c16 = etapas.get("16") or {}
+            fases = [{"id": None, "ordem": None, "status": None,
+                      "val_liq": (orc.valor_liquido if orc else None),
+                      "entrega_prevista": None,
+                      "card_prazo_entrega": card_glob.prazo_entrega if card_glob else None,
+                      "card_data_entrega": ((card_glob.data_entrega if card_glob else None)
+                                            or _c16.get("concluida_em"))}]
+        dados.append({"nome_safe": pr.nome_safe,
+                      "cliente": (cli.nome if cli else None),
+                      "val_liq": (orc.valor_liquido if orc else None),
+                      "orcamento_id": (contrato.orcamento_id if contrato else None),
+                      "previsao_medicao": pr.previsao_medicao,
+                      "data_entrega": pr.data_entrega,
+                      "etapas": etapas, "fases": fases})
+    return dados
+
+
+def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None):
+    """Itens do Gantt de MONTAGEM enriquecidos: ambientes da fase com Val_Liq por ambiente
+    (referência da comissão) e o MONTADOR responsável (Mapa de Atribuições; específico do
+    ambiente prevalece sobre projeto-inteiro). Base do GET /api/agenda/montagem e do aviso de
+    conflito no POST de atribuição."""
+    import mod_agenda as _mag
+    dados = _agenda_dados_projetos(db, ator, loja_id, proj_filtro)
+    itens = _mag.itens_montagem(dados, cfg_agenda)
+    por_proj = {d["nome_safe"]: d for d in dados}
+    cache_liq, cache_atr, cache_nome = {}, {}, {}
+    def _nome_alvo(fid, tid):
+        chave = ("f:%d" % fid) if fid else ("t:%d" % tid)
+        if chave not in cache_nome:
+            alvo = db.get(Funcionario, fid) if fid else db.get(Terceiro, tid)
+            cache_nome[chave] = alvo.nome if alvo else None
+        return chave, cache_nome[chave]
+    for it in itens:
+        d = por_proj.get(it["projeto"]) or {}
+        oid = d.get("orcamento_id")
+        if oid not in cache_liq:
+            cache_liq[oid] = _liquidos_contrato_por_ambiente(oid, db)[0] if oid else {}
+        if it["projeto"] not in cache_atr:
+            cache_atr[it["projeto"]] = _atribuicoes_dicts(db, it["projeto"])
+        liq, atribs = cache_liq[oid], cache_atr[it["projeto"]]
+        if it.get("fase_id"):
+            amb_ids = [a.pool_ambiente_id for a in
+                       db.query(ParcelaAmbiente).filter_by(parcela_id=it["fase_id"]).all()]
+        else:
+            amb_ids = ([lk.pool_ambiente_id for lk in
+                        db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).all()]
+                       if oid else [])
+        pa_nome = {pa.id: (pa.nome_exibicao or pa.nome)
+                   for pa in db.query(PoolAmbiente).filter(PoolAmbiente.id.in_(amb_ids)).all()} \
+            if amb_ids else {}
+        ambs, montadores = [], {}
+        for aid in amb_ids:
+            resp = mod_escopo.resolver_responsavel(atribs, aid, "montagem")
+            m = None
+            if resp:
+                chave, nome = _nome_alvo(resp.get("funcionario_id"), resp.get("terceiro_id"))
+                m = {"chave": chave, "nome": nome}
+                montadores[chave] = m
+            ambs.append({"id": aid, "nome": pa_nome.get(aid, ""),
+                         "val_liq": liq.get(aid), "montador": m})
+        it["ambientes"] = ambs
+        it["montadores"] = list(montadores.values())
+    return itens
 
 
 def _liquidos_contrato_por_ambiente(orcamento_id, db):

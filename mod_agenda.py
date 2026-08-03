@@ -197,6 +197,80 @@ def cargas(projetos, cfg_agenda=None, de=None, ate=None):
     return out
 
 
+# ── Gantt de MONTAGEM (rev 2026-08-03, feedback do usuário: capacidade pouco clara) ──────────
+# Um item por projeto/fase com janela de montagem = dia útil seguinte à ENTREGA da fase até a
+# prevista/realizada da 17 (mesma regra das cargas). Alimenta o Gantt + espelho de atribuições.
+
+def itens_montagem(projetos, cfg_agenda=None):
+    """[{projeto, cliente, fase, fase_id, inicio, fim, val_liq, realizado, retida}] por fase
+    com janela de montagem calculável (sem entrega prevista → fora). Ordenado por início."""
+    import mod_calendario
+    cfg = cfg_agenda or {}
+    out = []
+    for p in (projetos or []):
+        et = p.get("etapas") or {}
+        e16, e17 = et.get("16") or {}, et.get("17") or {}
+        conc17 = _d(e17.get("concluida_em"))
+        fim17 = conc17 or _d(e17.get("prevista"))
+        val_proj = p.get("val_liq")
+        fases = p.get("fases") or [{"id": None, "ordem": None, "status": None,
+                                    "val_liq": val_proj, "entrega_prevista": None,
+                                    "card_prazo_entrega": None,
+                                    "card_data_entrega": _d(e16.get("concluida_em"))}]
+        for f in fases:
+            entrega = data_entrega_da_fase(f.get("card_data_entrega"), f.get("card_prazo_entrega"),
+                                           f.get("entrega_prevista"), p.get("data_entrega"),
+                                           e16.get("prevista"))
+            if not entrega:
+                continue
+            from datetime import timedelta
+            inicio = mod_calendario.proximo_dia_util(entrega + timedelta(days=1), cfg)
+            fim = fim17 if (fim17 and fim17 >= inicio) else inicio
+            out.append({"projeto": p.get("nome_safe"), "cliente": p.get("cliente"),
+                        "fase": f.get("ordem"), "fase_id": f.get("id"),
+                        "inicio": inicio, "fim": fim, "val_liq": f.get("val_liq"),
+                        "realizado": conc17 is not None,
+                        "retida": f.get("status") == "retido"})
+    out.sort(key=lambda i: (i["inicio"], i["projeto"] or "", i["fase"] or 0))
+    return out
+
+
+def conflitos_montagem(itens):
+    """Conflitos de MONTADOR: o mesmo profissional responsável por montagens de PROJETOS
+    distintos com janelas SOBREPOSTAS (montagens já realizadas ficam fora). `itens` são os de
+    itens_montagem enriquecidos com `montadores: [{chave, nome}]` (chave = 'f:<id>'/'t:<id>').
+    Retorna [{chave, nome, itens: [{projeto, fase, inicio, fim}]}] ordenado por nome."""
+    por_alvo = {}
+    for it in (itens or []):
+        if it.get("realizado"):
+            continue
+        for m in (it.get("montadores") or []):
+            if not m.get("chave"):
+                continue
+            por_alvo.setdefault(m["chave"], {"nome": m.get("nome"), "itens": []})
+            reg = por_alvo[m["chave"]]["itens"]
+            ref = (it["projeto"], it.get("fase"))
+            if ref not in [(x["projeto"], x.get("fase")) for x in reg]:
+                reg.append({"projeto": it["projeto"], "fase": it.get("fase"),
+                            "inicio": it["inicio"], "fim": it["fim"]})
+    out = []
+    for chave, dados in por_alvo.items():
+        lst = dados["itens"]
+        conflitantes = set()
+        for i in range(len(lst)):
+            for j in range(i + 1, len(lst)):
+                a, b = lst[i], lst[j]
+                if a["projeto"] == b["projeto"]:
+                    continue                       # fases do MESMO projeto podem dividir a equipe
+                if a["inicio"] <= b["fim"] and b["inicio"] <= a["fim"]:
+                    conflitantes.add(i); conflitantes.add(j)
+        if conflitantes:
+            out.append({"chave": chave, "nome": dados["nome"],
+                        "itens": [lst[k] for k in sorted(conflitantes)]})
+    out.sort(key=lambda c: c["nome"] or "")
+    return out
+
+
 # ── Fatia 4: CAPACIDADE — dimensionamento diário (spec §6 rev) ───────────────────────────────
 # A janela de trabalho vem do CRONOGRAMA (cargas acima); a produtividade converte a
 # necessidade diária em recurso: Montagem em DUPLAS (⌈Σ/produtividade⌉ × disponíveis) e

@@ -1369,6 +1369,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 149 (Gantt de Montagem + Mapa novo):** Capacidade→Montagem virou GANTT
+> (janelas por projeto/fase, duplas/dia no rodapé, conflitos em vermelho) + espelho de
+> atribuições com Val_Liq por ambiente; Mapa de Atribuições verticalizado (ambientes ×
+> funções, "Todos os ambientes" em lote); atribuição notifica o profissional no Orizon
+> Chat; conflito de montador detectado no POST e no painel. Suíte 1708 verde. Local + VPS A.
+>
 > **Sessão 148 (DEPLOY A+B + MCP):** pacote das Sessões 135–147 promovido — VPS A pela
 > `main`, VPS B pela tag `v2026.08.03-homolog` (backfills/reparos rodam no boot); grafo MCP
 > re-ingerido. Produção intocada (gated por OK do usuário).
@@ -2762,6 +2768,40 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 149 — Gantt de Montagem + Mapa de Atribuições verticalizado + notificação no Chat + conflitos
+
+**Pedido do usuário** (capacidade pouco clara + revisão do Mapa):
+
+- **Gantt no painel de Montagem (Capacidade):** as barras diárias de duplas viraram um
+  **Gantt** — uma barra por projeto/fase com a JANELA de montagem (entrega → prevista da 17;
+  `mod_agenda.itens_montagem`), cores por estado (verde concluída · accent prevista · âmbar
+  retida · vermelho conflito), cabeçalho com dias úteis e HOJE destacado, e as duplas/dia como
+  RODAPÉ do próprio Gantt (mesmo eixo). PE (ocupação) inalterado.
+- **Espelho das atribuições de montagem** no mesmo painel: card por projeto/fase com os
+  AMBIENTES, o **Val_Liq de cada ambiente** (referência da comissão, rateio exato de
+  `_liquidos_contrato_por_ambiente`) e o **montador** do Mapa (específico do ambiente vence o
+  projeto-inteiro); sem montador = alerta âmbar. Endpoint novo `GET /api/agenda/montagem`
+  (dados via `_agenda_dados_projetos`, extraído do handler da Agenda; visão operacional sem
+  valores).
+- **Conflito de montador:** `mod_agenda.conflitos_montagem` — mesmo profissional responsável
+  por montagens de PROJETOS distintos com janelas SOBREPOSTAS (fases do mesmo projeto não
+  conflitam; realizado fora). Aparece no painel (box vermelho + barra/card vermelhos) e como
+  **aviso no POST de atribuição** (`aviso_conflito` → toast).
+- **Mapa de Atribuições VERTICALIZADO:** linhas = AMBIENTES, colunas = FUNÇÕES (papéis); a
+  linha "Projeto inteiro" saiu — no topo entra **"Todos os ambientes"**, que aplica o mesmo
+  profissional a todos via POST em LOTE (`pool_ambiente_ids` novo no endpoint: uma auditoria,
+  UMA notificação). Atribuição NULL legada aparece como valor HERDADO (marcado; alterar grava
+  específico).
+- **Notificação via Orizon Chat ao atribuir:** best-effort pós-commit — direct
+  atribuidor→profissional (`get_or_create_direct` + `enviar_mensagem`: "📌 Você foi atribuído
+  como responsável de <papel> no ambiente/em N ambientes do projeto X") + espelho WhatsApp
+  (`notificar_conversa`). Nunca derruba a atribuição; só quando o alvo tem conta vinculada.
+
+**TDD** `tests/test_montagem_gantt.py` (4): janela/retida/sem-entrega, conflitos puros
+(sobreposição entre projetos; mesma-obra e realizado fora), POST em lote + mensagem no Chat +
+espelho no GET, aviso de conflito no POST + conflito no GET. Suíte **1708 verde**; validação
+ao vivo (10 montagens no horizonte, Val_Liq por ambiente exato). `node --check` ok.
 
 ## Sessão 148 — DEPLOY A+B (tag `v2026.08.03-homolog`) + re-ingestão do grafo MCP
 

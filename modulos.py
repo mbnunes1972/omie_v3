@@ -21,7 +21,7 @@ MODULOS = {
                     "arquivos": [],
                     "tabelas": ["log_autorizacoes", "log_acoes_gerenciais", "log_acesso_delegado"], "rotas": []},
     "ciclo":       {"camada": "nucleo", "depende_de": [],
-                    "arquivos": ["mod_ciclo.py", "mod_cronograma.py"],
+                    "arquivos": ["mod_ciclo.py", "mod_cronograma.py", "mod_calendario.py"],
                     "tabelas": ["ciclo_etapas", "ciclo_documentos", "ciclo_revisoes"], "rotas": []},
     "integracoes": {"camada": "nucleo", "depende_de": [],
                     # PACOTE (reorganização 2026-07-15) — ver o comentário em "fiscal".

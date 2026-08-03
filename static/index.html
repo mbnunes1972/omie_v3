@@ -1914,12 +1914,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <button class="home-tab ativo" id="cfg-tab-provisoes"  onclick="cfgTab('provisoes')">Provisões</button>
       <button class="home-tab"       id="cfg-tab-comissao"   onclick="cfgTab('comissao')">Remunerações</button>
       <button class="home-tab"       id="cfg-tab-cronograma" onclick="cfgTab('cronograma')">Cronograma</button>
+      <button class="home-tab"       id="cfg-tab-agenda"     onclick="cfgTab('agenda')">Agenda</button>
       <button class="home-tab"       id="cfg-tab-funcoes"    onclick="cfgTab('funcoes')">Funções</button>
       <button class="home-tab"       id="cfg-tab-documentos" onclick="cfgTab('documentos')">Documentos</button>
     </div>
     <div id="cfg-panel-provisoes"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="cfg-panel-comissao" style="display:none"></div>
     <div id="cfg-panel-cronograma" style="display:none"></div>
+    <div id="cfg-panel-agenda" style="display:none"></div>
     <div id="cfg-panel-funcoes" style="display:none"></div>
     <div id="cfg-panel-documentos" style="display:none"></div>
   </div>
@@ -3514,7 +3516,7 @@ let _cfgTabAtual = 'provisoes';
 function cfgRender(){ _empSeletorPreencher('cfg-emp-seletor'); cfgTab(_cfgTabAtual || 'provisoes'); }
 function cfgTab(qual){
   _cfgTabAtual = qual;
-  ['provisoes','comissao','cronograma','funcoes','documentos'].forEach(q => {
+  ['provisoes','comissao','cronograma','agenda','funcoes','documentos'].forEach(q => {
     const tab = document.getElementById('cfg-tab-'+q);
     const panel = document.getElementById('cfg-panel-'+q);
     if(tab) tab.classList.toggle('ativo', q===qual);
@@ -3523,9 +3525,81 @@ function cfgTab(qual){
   if(qual==='provisoes')  adminFinanceiroCarregar();   // % das provisões (montagem/assist/garantia/comissão)
   if(qual==='comissao')   cfgComissaoRender();
   if(qual==='cronograma') cfgCronogramaRender();
+  if(qual==='agenda')     cfgAgendaRender();
   if(qual==='funcoes')    cfgFuncoesRender();
   if(qual==='documentos') cfgDocumentosRender();
 }
+// ── Config → Agenda e Capacidade (Agenda da Loja, Fatia 0 — spec 2026-08-03) ─────────────
+let _cfgAgFeriados = [];
+async function cfgAgendaRender(){
+  const box = document.getElementById('cfg-panel-agenda'); if(!box) return;
+  const lid = _lojaAtiva || (_usuarioAtual && _usuarioAtual.loja_id);
+  if(!lid){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Loja não identificada.</em>'; return; }
+  box.innerHTML='<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const r = await fetch('/api/admin/lojas/'+lid+'/config-financeira', {credentials:'same-origin'});
+  if(r.status===403){ box.innerHTML='<em style="color:var(--muted)">Sem acesso.</em>'; return; }
+  const _d = await r.json().catch(()=>({}));
+  _cfgFin = _d.config || {};
+  const ag = _cfgFin.agenda || {};
+  _cfgAgFeriados = (ag.feriados || []).slice().sort();
+  const num = (id,lbl,val,step,title) =>
+     '<div><label class="field-label"'+(title?' title="'+esc(title)+'"':'')+'>'+lbl+'</label>'
+    +'<input type="number" min="0" step="'+step+'" id="'+id+'" value="'+val+'" style="width:170px"></div>';
+  box.innerHTML =
+     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;max-width:780px">Parâmetros da '
+    +'<strong style="color:var(--text)">Agenda da Loja</strong>: capacidade de montagem (converte o volume '
+    +'líquido a montar em <strong style="color:var(--text)">duplas por dia</strong>) e o calendário útil '
+    +'(usado no espalhamento das cargas; futuramente também no prazo contratual).</div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px">'
+    +num('cfg-ag-produtividade','Produtividade da montagem (R$/dupla/dia)', ag.produtividade_montagem_rs_dupla_dia ?? 7000, '100', 'Valor líquido que uma dupla monta por dia útil')
+    +num('cfg-ag-duplas','Duplas disponíveis', ag.duplas_disponiveis ?? 2, '1', 'Linha de capacidade no painel')
+    +num('cfg-ag-teto','Teto de dias de montagem por fase', ag.teto_dias_montagem ?? 10, '1', 'Limite da janela derivada por produtividade')
+    +num('cfg-ag-horizonte','Horizonte da Capacidade (semanas)', ag.horizonte_capacidade_semanas ?? 6, '1', '')
+    +'</div>'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);margin-bottom:14px;cursor:pointer">'
+    +'<input type="checkbox" id="cfg-ag-sabado"'+(ag.sabado_util?' checked':'')+'> Sábado conta como dia útil</label>'
+    +'<div style="max-width:520px;margin-bottom:14px">'
+    +'<label class="field-label">Feriados (não contam como dia útil)</label>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'
+    +'<input type="date" id="cfg-ag-feriado-novo" style="width:170px">'
+    +'<button class="btn btn-ghost btn-sm" onclick="cfgAgFeriadoAdd()">Adicionar</button></div>'
+    +'<div id="cfg-ag-feriados-lista" style="display:flex;flex-wrap:wrap;gap:6px"></div></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="cfgAgendaSalvar('+lid+')">Salvar Agenda e Capacidade</button>';
+  _cfgAgFeriadosRender();
+}
+function _cfgAgFeriadosRender(){
+  const el = document.getElementById('cfg-ag-feriados-lista'); if(!el) return;
+  el.innerHTML = _cfgAgFeriados.length
+    ? _cfgAgFeriados.map((f,i)=>'<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text)">'
+        +_fmtDataBR(f)+'<span onclick="cfgAgFeriadoDel('+i+')" style="cursor:pointer;color:var(--muted)" title="Remover">&#x2715;</span></span>').join('')
+    : '<span style="font-size:12px;color:var(--muted)">Nenhum feriado cadastrado.</span>';
+}
+function cfgAgFeriadoAdd(){
+  const inp = document.getElementById('cfg-ag-feriado-novo');
+  const v = inp && inp.value;
+  if(!v){ showToast('Escolha a data do feriado.', true); return; }
+  if(!_cfgAgFeriados.includes(v)) _cfgAgFeriados.push(v);
+  _cfgAgFeriados.sort(); inp.value=''; _cfgAgFeriadosRender();
+}
+function cfgAgFeriadoDel(i){ _cfgAgFeriados.splice(i,1); _cfgAgFeriadosRender(); }
+async function cfgAgendaSalvar(lid){
+  const num = id => parseFloat((document.getElementById(id)||{}).value);
+  _cfgFin.agenda = {
+    ...(_cfgFin.agenda || {}),
+    produtividade_montagem_rs_dupla_dia: num('cfg-ag-produtividade') || 7000,
+    duplas_disponiveis: Math.max(0, parseInt((document.getElementById('cfg-ag-duplas')||{}).value, 10) || 0),
+    teto_dias_montagem: Math.max(1, parseInt((document.getElementById('cfg-ag-teto')||{}).value, 10) || 10),
+    horizonte_capacidade_semanas: Math.max(1, parseInt((document.getElementById('cfg-ag-horizonte')||{}).value, 10) || 6),
+    sabado_util: !!(document.getElementById('cfg-ag-sabado')||{}).checked,
+    feriados: _cfgAgFeriados.slice(),
+  };
+  const r = await fetch('/api/admin/lojas/'+lid+'/config-financeira', {method:'PUT', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(_cfgFin)});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ showToast('Erro: '+(d.erro||'falha ao salvar'), true); return; }
+  showToast('Agenda e Capacidade salvas.');
+}
+
 // ── Config → Cronograma de Projeto Padrão (v11 prazo + v12 função responsável por fase) ──
 async function cfgCronogramaRender(){
   const box = document.getElementById('cfg-panel-cronograma'); if(!box) return;

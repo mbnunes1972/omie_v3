@@ -40,6 +40,16 @@ def config_financeira_default():
         "cronograma_formato": 2,
         # Prazo contratual (Fatia 3): promessa formal em DIAS ÚTEIS a partir da assinatura.
         "prazo_contratual_dias_uteis": 50,
+        # Agenda da Loja (Fatia 0, spec 2026-08-03): capacidade de montagem + calendário útil.
+        # Estrutura preparada p/ produtividades de outros setores no futuro (v1: só montagem).
+        "agenda": {
+            "produtividade_montagem_rs_dupla_dia": 7000.0,
+            "duplas_disponiveis": 2,
+            "sabado_util": False,
+            "feriados": [],                       # ["AAAA-MM-DD", ...] — mod_calendario
+            "teto_dias_montagem": 10,
+            "horizonte_capacidade_semanas": 6,
+        },
         "cronograma_padrao": [
             {"codigo": "8",  "prazo_dias": 2},   {"codigo": "9",  "prazo_dias": 3},
             {"codigo": "10", "prazo_dias": 5},   {"codigo": "11", "prazo_dias": 10},
@@ -120,6 +130,23 @@ def validar_config_financeira(dados):
     pc = d.get("prazo_contratual_dias_uteis")
     if pc is not None and _f(pc) <= 0:
         erros.append("Prazo contratual (dias úteis) deve ser maior que zero.")
+    ag = d.get("agenda")
+    if ag is not None:
+        from datetime import datetime as _dt
+        if _f(ag.get("produtividade_montagem_rs_dupla_dia")) <= 0:
+            erros.append("Agenda: produtividade de montagem (R$/dupla/dia) deve ser maior que zero.")
+        if _f(ag.get("duplas_disponiveis")) < 0:
+            erros.append("Agenda: duplas disponíveis não pode ser negativo.")
+        if _f(ag.get("teto_dias_montagem")) < 1:
+            erros.append("Agenda: teto de dias de montagem deve ser ao menos 1.")
+        hz = _f(ag.get("horizonte_capacidade_semanas"))
+        if hz < 1 or hz > 26:
+            erros.append("Agenda: horizonte de capacidade deve estar entre 1 e 26 semanas.")
+        for f in (ag.get("feriados") or []):
+            try:
+                _dt.strptime(str(f), "%Y-%m-%d")
+            except (ValueError, TypeError):
+                erros.append("Agenda: feriado inválido (%r) — use AAAA-MM-DD." % (f,))
     return erros
 
 

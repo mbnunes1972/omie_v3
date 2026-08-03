@@ -53,6 +53,17 @@ def _d(v):
     return v.date() if isinstance(v, datetime) else v
 
 
+def data_entrega_da_fase(card_data, card_prazo, entrega_prevista_fase,
+                         data_entrega_projeto, prevista_16=None):
+    """Cadeia CANÔNICA da data de entrega de uma fase — COMPARTILHADA pela faixa de entrega
+    (entrega-resumo) e pela Agenda (achado 🟠2 da Vera, 2026-08-03: as duas divergiam).
+    Ordem: entrega realizada (card) > prazo da expedição > previsão da fase > DATA DE ENTREGA
+    do projeto (âncora formal, definida na assinatura) > prevista da etapa 16 (último recurso
+    — o progressivo do cronograma pode divergir da promessa formal, que prevalece)."""
+    return (_d(card_data) or _d(card_prazo) or _d(entrega_prevista_fase)
+            or _d(data_entrega_projeto) or _d(prevista_16))
+
+
 def marcos_do_projeto(p):
     """Marcos de UM projeto (lista, sem ordenação). Executado substitui previsto
     (concluida_em → realizado=True); etapa sem nenhuma data não gera marco."""
@@ -80,8 +91,9 @@ def marcos_do_projeto(p):
                                 "card_data_entrega": _d(e16.get("concluida_em"))}]
     for f in fases:
         entregue = _d(f.get("card_data_entrega"))
-        data = (entregue or _d(f.get("card_prazo_entrega")) or _d(f.get("entrega_prevista"))
-                or _d(e16.get("prevista")) or _d(p.get("data_entrega")))
+        data = data_entrega_da_fase(entregue, f.get("card_prazo_entrega"),
+                                    f.get("entrega_prevista"), p.get("data_entrega"),
+                                    e16.get("prevista"))
         if not data:
             continue
         out.append({**base, "data": data, "setor": "expedicao", "etapa": "16",
@@ -159,10 +171,10 @@ def cargas_do_projeto(p, cfg_agenda=None):
             _add_espalhado("conferencia", vl, _dia_seguinte_util(fim11, cfg), fim12, f.get("ordem"))
         # Produção: marco valorado na SAÍDA da fábrica (prevista/realizada da 13)
         _add_marco("producao", vl, fim13, f.get("ordem"))
-        # Entrega ao cliente: marco valorado na data de entrega da fase (regra da faixa)
-        entrega = (_d(f.get("card_data_entrega")) or _d(f.get("card_prazo_entrega"))
-                   or _d(f.get("entrega_prevista")) or _d(e16.get("prevista"))
-                   or _d(p.get("data_entrega")))
+        # Entrega ao cliente: marco valorado na data de entrega da fase (cadeia canônica)
+        entrega = data_entrega_da_fase(f.get("card_data_entrega"), f.get("card_prazo_entrega"),
+                                       f.get("entrega_prevista"), p.get("data_entrega"),
+                                       e16.get("prevista"))
         _add_marco("entrega", vl, entrega, f.get("ordem"))
         # Montagem: dia útil seguinte à entrega da fase → prevista da 17
         if entrega:

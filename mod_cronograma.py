@@ -94,6 +94,36 @@ def prazo_excede_limite(limite, prazo):
     return prazo > limite
 
 
+def backfill_subfases_pe(db):
+    """Backfill ÚNICO (idempotente) dos offsets default das subfases do PE em cronogramas
+    LEGADOS (gerados antes da Sessão 141): projeto com etapa 11 datada mas subfases sem data
+    ganha as frações da janela 10→11 (achado 🟡3 da Vera: os MARCOS de PE ficavam invisíveis
+    no Calendário enquanto a CARGA de PE aparecia cheia nas outras visões). Não sobrescreve
+    data existente. Não commita. Retorna nº de subfases preenchidas."""
+    com_11 = (db.query(CicloEtapa)
+                .filter(CicloEtapa.etapa_codigo == "11",
+                        CicloEtapa.data_prevista_conclusao.isnot(None)).all())
+    n = 0
+    for e11 in com_11:
+        e10 = (db.query(CicloEtapa)
+                 .filter_by(projeto_nome=e11.projeto_nome, etapa_codigo="10").first())
+        ini = e10.data_prevista_conclusao if e10 else None
+        if not ini or ini >= e11.data_prevista_conclusao:
+            continue
+        dur = (e11.data_prevista_conclusao - ini).days
+        for cod_sf, frac in SUBFASES_PE_FRACOES:
+            sf = (db.query(CicloEtapa)
+                    .filter_by(projeto_nome=e11.projeto_nome, etapa_codigo=cod_sf).first())
+            if sf is None:
+                sf = CicloEtapa(projeto_nome=e11.projeto_nome, etapa_codigo=cod_sf)
+                db.add(sf)
+            if sf.data_prevista_conclusao is None:
+                sf.data_prevista_conclusao = ini + timedelta(days=round(dur * frac))
+                n += 1
+    db.flush()
+    return n
+
+
 def tem_cronograma(db, projeto_nome):
     """True se o projeto já tem ao menos uma etapa com data prevista (cronograma gerado)."""
     return (db.query(CicloEtapa)

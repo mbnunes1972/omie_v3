@@ -1377,15 +1377,20 @@ class Handler(BaseHTTPRequestHandler):
                              for c in db.query(CicloLogistico)
                                         .filter(CicloLogistico.projeto_nome == nome,
                                                 CicloLogistico.parcela_id != None).all()}  # noqa: E711
+                    import mod_agenda as _mag_er
                     for p in parcs:
                         ambs = db.query(ParcelaAmbiente).filter_by(parcela_id=p.id).all()
                         card = cards.get(p.id)
+                        # cadeia CANÔNICA compartilhada com a Agenda (mod_agenda, Vera 🟠2):
+                        # prazo da expedição > previsão da fase > data de entrega do projeto >
+                        # prevista da etapa 16 (último recurso)
+                        _prev_fase = _mag_er.data_entrega_da_fase(
+                            None, card.prazo_entrega if card else None,
+                            p.entrega_prevista, proj.data_entrega,
+                            e16.data_prevista_conclusao if e16 else None)
                         fases.append({
                             "id": p.id, "ordem": p.ordem, "status": p.status,
-                            # prioridade: expedição da fase > previsão pedida no desmembramento > global
-                            "previsao": (_iso(card.prazo_entrega)
-                                         if (card and card.prazo_entrega)
-                                         else (_iso(p.entrega_prevista) or previsao)),
+                            "previsao": (_prev_fase.isoformat() if _prev_fase else None),
                             "liberacao_prevista": _iso(p.liberacao_prevista),
                             "entregue_em": _iso(card.data_entrega) if card else None,
                             "ambientes": [pa_nome.get(a.pool_ambiente_id, "") for a in ambs]})
@@ -1400,7 +1405,9 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         nomes_amb = list(pa_nome.values())
                     fases.append({"id": None, "ordem": 1, "status": None,
-                                  "previsao": previsao, "entregue_em": entregue,
+                                  "previsao": (previsao
+                                               or (_iso(e16.data_prevista_conclusao) if e16 else None)),
+                                  "entregue_em": entregue,
                                   "ambientes": [n for n in nomes_amb if n]})
                 self.send_json({"ok": True, "desmembrado": bool(parcs),
                                 "previsao": previsao, "entregue_em": entregue, "fases": fases})
@@ -13685,6 +13692,12 @@ def main():
             _nliq = _backfill_val_liq_fases(_dbp)
             if _nliq:
                 print(f"[AGENDA] backfill val_liq_congelado: {_nliq} fase(s) preenchida(s)")
+            # Agenda pós-Vera (🟡3): cronogramas legados ganham as datas das subfases do PE.
+            import mod_cronograma as _mcr_bf
+            _nsf = _mcr_bf.backfill_subfases_pe(_dbp)
+            _dbp.commit()
+            if _nsf:
+                print(f"[AGENDA] backfill subfases do PE: {_nsf} data(s) prevista(s) preenchida(s)")
         finally:
             _dbp.close()
     except Exception as _e:

@@ -1369,6 +1369,14 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 145 (Vera na Agenda):** 🟠 cadeia de entrega UNIFICADA (helper canônico
+> `data_entrega_da_fase` — faixa e Agenda davam datas diferentes) e 🟡 backfill das
+> subfases do PE em cronograma legado (marcos de PE apareciam vazios com carga cheia) —
+> corrigidos. 🔴 "visão operacional" da Agenda está DORMENTE (escopo_por_atribuicao usa
+> níveis aposentados do Perfil-4; débito de 2026-07-10) → **PENDÊNCIA: frente de
+> re-chaveamento nivel→Função/Mapa**; spec §9 anotada. Falhas de chat/e-mail são FLAKY
+> (passaram na rodada da Vera). Suíte 1696 verde.
+>
 > **Sessão 144 (Agenda Fatia 4 — v1 COMPLETA):** painel Capacidade (duplas de montagem ×
 > disponíveis + ocupação do PE, barras por dia útil, horizonte configurável) + unificação do
 > nav do Chat ("Config do Chat" removido — página única com navegação interna; bullet =
@@ -2737,6 +2745,36 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 145 — Auditoria da Vera na Agenda v1: 2 achados corrigidos, 1 documentado como dormente
+
+Relatório completo da Vera (3 achados + confirmações positivas do invariante Σ val_liq,
+tenancy, config, tokens, retenção e nav do Chat):
+
+- **🟠2 CORRIGIDO — cadeias de data de entrega divergiam** entre `entrega-resumo` (faixa
+  9→16) e `mod_agenda` (Norberto: faixa dizia 26/08, Agenda 01/09). Agora há UMA cadeia
+  canônica compartilhada — `mod_agenda.data_entrega_da_fase`: realizado > prazo da expedição >
+  previsão da fase > **data de entrega do projeto (âncora formal da assinatura)** > prevista
+  da etapa 16 (último recurso; o progressivo do cronograma NÃO prevalece sobre a promessa
+  formal). `entrega-resumo` importa o helper; teste da precedência novo.
+- **🟡3 CORRIGIDO — marcos de PE invisíveis em cronograma legado** (subfases sem data; a
+  carga de PE aparecia cheia nas outras visões — inconsistência entre visões):
+  `mod_cronograma.backfill_subfases_pe` novo, rodando no START (idempotente, não sobrescreve
+  data existente): projeto com 10 e 11 datadas ganha as frações da janela nas subfases.
+- **🔴1 DOCUMENTADO (não corrigido aqui) — "visão operacional" da Agenda está DORMENTE:**
+  `mod_escopo.escopo_por_atribuicao` compara `nivel` contra valores aposentados na migração
+  Perfil-4 → nenhuma conta real cai em "operacional" (débito conhecido desde 2026-07-10,
+  anterior à Agenda). O branch sem-R$ da Agenda existe e está testado, mas só valerá com o
+  re-chaveamento nivel→Função/Mapa — **frente própria** (mexe em segurança/escopo do sistema
+  inteiro, não cabe embutida na Agenda). Spec §9 anotada com o aviso; até lá valem posse
+  (consultor) e tenancy.
+- **OBS da rodada:** na suíte da Vera as 4 falhas de `test_chat_wa`/`test_comunicacao`
+  PASSARAM (1698 verdes) — são FLAKY (ordem/ambiente), não quebradas; na minha rodada seguinte
+  voltaram a falhar. Investigar na frente do Chat.
+- Vera não tinha navegador nesta rodada — recomendou passada visual (claro/escuro + barras da
+  Capacidade) antes de considerar o frontend 100% auditado; fica como verificação manual sua.
+
+Suíte **1696 verde** (+2 testes dos fixes).
 
 ## Sessão 144 — Agenda FATIA 4 (painel Capacidade — fecha a Agenda v1) + unificação do nav do Chat
 

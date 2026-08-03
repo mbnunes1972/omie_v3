@@ -151,9 +151,17 @@ tenancy, "nenhuma"). Não está em `mod_tenancy.py` — tenancy resolve LOJA; pa
 
 - **Visão comercial** (gerência, consultor…): tudo — marcos com R$, cargas, Capacidade.
   Consultor: agenda filtrada aos SEUS projetos (mesma regra de posse do restante do sistema).
-- **Visão operacional** (medidor, projetista, montador): Calendário/Semana com marcos e
-  CONTAGENS, **sem R$ e sem o painel Capacidade** (duplas derivam de R$ — vazariam volume).
-  Útil para o montador ver a própria semana sem expor o comercial.
+- **Visão operacional** (medidor, projetista, montador): Calendário com marcos e CONTAGENS,
+  **sem R$, sem Semana/Mês e sem o painel Capacidade** (duplas derivam de R$ — vazariam
+  volume). Útil para o montador ver a própria semana sem expor o comercial.
+
+> ⚠️ **DORMENTE (auditoria da Vera, 2026-08-03):** o gate `mod_escopo.escopo_por_atribuicao`
+> compara `nivel` contra valores APOSENTADOS na migração Perfil-4 (`medidor`,
+> `projetista_executivo`, `supervisor_montagem`) — nenhuma conta real cai em "operacional"
+> hoje (débito documentado no DEV_LOG desde 2026-07-10, anterior à Agenda). O branch da
+> Agenda está implementado e testado no código, mas só passa a valer quando a frente de
+> re-chaveamento (nivel → Função/Mapa de Atribuições) for executada. Até lá, a proteção
+> efetiva é o escopo por posse (consultor) e a tenancy por loja.
 
 ## 10. Backend (forma)
 

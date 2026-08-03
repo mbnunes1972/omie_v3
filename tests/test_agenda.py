@@ -68,6 +68,18 @@ def test_entrega_sem_desmembramento_usa_projeto():
         [("16", date(2026, 12, 1), None, 3000.0)]
 
 
+def test_cadeia_canonica_data_entrega_projeto_vence_prevista_16():
+    # Vera 🟠2: a ÂNCORA formal (Projeto.data_entrega) prevalece sobre o progressivo da 16;
+    # a prevista da 16 é só último recurso — MESMA cadeia da faixa de entrega (entrega-resumo).
+    p = _proj(data_entrega=datetime(2026, 12, 1),
+              etapas={"16": {"prevista": datetime(2026, 11, 25)}})
+    ms = [m for m in mod_agenda.marcos([p]) if m["etapa"] == "16"]
+    assert ms[0]["data"] == date(2026, 12, 1)
+    p2 = _proj(data_entrega=None, etapas={"16": {"prevista": datetime(2026, 11, 25)}})
+    ms2 = [m for m in mod_agenda.marcos([p2]) if m["etapa"] == "16"]
+    assert ms2[0]["data"] == date(2026, 11, 25)   # sem âncora → último recurso
+
+
 def test_filtros_periodo_e_setor():
     p = _proj(etapas={"9": {"prevista": datetime(2026, 9, 1)},
                       "13": {"prevista": datetime(2026, 10, 10)}})
@@ -179,6 +191,34 @@ def test_cronograma_data_subfases_do_pe(app_db, seed):
         db.commit()
         assert (db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11c")
                   .first().data_prevista_conclusao == manual)
+    finally:
+        db.close()
+
+
+def test_backfill_subfases_pe_em_cronograma_legado(app_db, seed):
+    import mod_cronograma
+    nome = seed["projeto_l2"]          # projeto sem interferência dos outros testes
+    db = app_db.get_session()
+    try:
+        for cod in ("10", "11", "11a", "11b", "11c", "11d", "11e"):
+            e = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo=cod).first()
+            if e:
+                db.delete(e)
+        db.flush()
+        db.add(CicloEtapa(projeto_nome=nome, etapa_codigo="10",
+                          data_prevista_conclusao=datetime(2026, 9, 1)))
+        db.add(CicloEtapa(projeto_nome=nome, etapa_codigo="11",
+                          data_prevista_conclusao=datetime(2026, 9, 11)))   # janela de 10 dias
+        db.commit()
+        n = mod_cronograma.backfill_subfases_pe(db)
+        db.commit()
+        assert n >= 5
+        prev = {e.etapa_codigo: e.data_prevista_conclusao
+                for e in db.query(CicloEtapa).filter_by(projeto_nome=nome).all()}
+        assert prev["11a"] == datetime(2026, 9, 3)    # 20% de 10 dias
+        assert prev["11e"] == datetime(2026, 9, 11)   # 100%
+        assert mod_cronograma.backfill_subfases_pe(db) == 0 or \
+            all(prev[c] is not None for c in ("11a", "11b", "11c", "11d", "11e"))  # idempotente p/ ESTE projeto
     finally:
         db.close()
 

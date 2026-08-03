@@ -2520,10 +2520,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <div id="modal-retido" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
     <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:24px;max-width:720px;width:94%;max-height:90vh;overflow:auto;animation:mIn .18s ease">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Retenção por Obra</div>
+        <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Retenção</div>
         <span onclick="retidoFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">A obra do cliente pode segurar ambientes <strong style="color:var(--text)">a qualquer momento</strong> (da Solicitação de Medição à Montagem) e <strong style="color:var(--text)">mais de uma vez</strong>. Cada retenção registra quando foi, em qual etapa do ciclo, os ambientes, o motivo e a <strong style="color:var(--text)">previsão de liberação</strong>. O Medidor pode sinalizar; a Gerência efetiva a retenção e depois libera — a fase retida retoma de onde parou.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">Ambientes podem ser retidos <strong style="color:var(--text)">a qualquer momento</strong> (da Solicitação de Medição à Montagem) e <strong style="color:var(--text)">mais de uma vez</strong> — obra, aprovações, financeiro, fábrica etc. Cada retenção registra quando foi, em qual etapa do ciclo, os ambientes, o motivo e a <strong style="color:var(--text)">previsão de liberação</strong>. O Medidor pode sinalizar; a Gerência efetiva a retenção e depois libera — o retido retoma de onde parou.</div>
       <div id="retido-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
   </div>
@@ -3708,13 +3708,13 @@ function _agRender(){
       _agEntradas.push({dia:iso, projeto:null});
       linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" style="font-size:10px;color:var(--muted);cursor:pointer;padding:1px 3px">+${grupos.length-3} projeto(s)</div>`;
     }
-    // rodapé do dia: Σ das ENTREGAS (etapa 16) — foco de volume diário
-    const entregas = ms.filter(m=>m.etapa==='16' && m.valor!=null).reduce((t,m)=>t+m.valor,0);
-    const rodape = entregas>0?`<div style="font-size:10px;font-family:var(--font-mono);color:var(--ok);margin-top:2px">R$ ${fmt(entregas)}</div>`:'';
+    // rev 2026-08-03 (feedback): Calendário SEM valores — datas e status apenas; os volumes
+    // (com nomenclatura própria por item) entram nas visões Semana/Mês e no painel Capacidade
+    // da Fatia 3, onde há espaço para rotular o que cada R$ significa.
     const hoje = iso===hojeIso;
     cels+=`<div style="min-height:96px;border:${hoje?'2px':'1px'} solid ${hoje?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 6px 4px">
         <div style="font-size:11px;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':'600'}">${dia}</div>
-        <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div>${rodape}</div>`;
+        <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div></div>`;
   }
   const cab=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(x=>`<div style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${x}</div>`).join('');
   box.innerHTML = `
@@ -3746,7 +3746,6 @@ function _agRenderDia(){
   if(_agSel.projeto) marcos=marcos.filter(m=>m.projeto===_agSel.projeto);
   if(!marcos.length){ det.innerHTML=''; return; }
   marcos=marcos.slice().sort((a,b)=>(a.projeto||'').localeCompare(b.projeto||'')||_agPrio(a)-_agPrio(b));
-  const comercial=_agVisao!=='operacional';
   const rotSetor={}; _agSetores.forEach(s=>rotSetor[s.id]=s.rotulo);
   const rows=marcos.map(m=>{
     const st=_agStatusMarco(m,hojeIso);
@@ -3754,14 +3753,13 @@ function _agRenderDia(){
       <td style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px"></span>${_AG_ST_ROT[st]}</td>
       <td>${esc(m.titulo)}${m.fase?` <span style="color:var(--muted);font-size:11px">(Fase ${m.fase}${m.retida?' — retida':''})</span>`:(m.retida?' <span style="color:var(--muted);font-size:11px">(retida)</span>':'')}</td>
       <td style="white-space:nowrap;color:var(--muted)">${esc(rotSetor[m.setor]||m.setor)}</td>
-      <td>${esc(m.projeto||'')}${m.cliente?` <span style="color:var(--muted)">· ${esc(m.cliente)}</span>`:''}</td>
-      ${comercial?`<td style="text-align:right;font-family:var(--font-mono)">${m.valor!=null?'R$ '+fmt(m.valor):'—'}</td>`:''}</tr>`;
+      <td>${esc(m.projeto||'')}${m.cliente?` <span style="color:var(--muted)">· ${esc(m.cliente)}</span>`:''}</td></tr>`;
   }).join('');
   const tit=_agSel.projeto
     ? `${esc(_agSel.projeto)} — eventos de ${_fmtDataBR(_agSel.dia)}`
     : `Todos os eventos de ${_fmtDataBR(_agSel.dia)}`;
   det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${tit}</div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Evento</th><th>Setor</th><th>Projeto</th>${comercial?'<th style="text-align:right">Valor</th>':''}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Evento</th><th>Setor</th><th>Projeto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // ── Config → Cronograma de Projeto Padrão (v11 prazo + v12 função responsável por fase) ──
@@ -14213,7 +14211,7 @@ function renderCiclo() {
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="abrirCronograma('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-calendar-stats"></i>Cronograma</button>` : ''}
       ${projetoAtivo && _usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}
-      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos pela obra — desmembramento operacional por parcela"><i class="ti ti-building-community"></i>Retenção por Obra</button>` : ''}
+      ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos — o projeto pode ser retido a qualquer momento"><i class="ti ti-building-community"></i>Retenção</button>` : ''}
     </div>
   `;
   // ── FICHÁRIO (spec ciclo/2026-08-01): lombada com as 19 etapas principais + tela cheia ──
@@ -14340,10 +14338,10 @@ function _fichaCorpoEtapa(etapa, dados, bloqueada) {
 
 function _retencaoBloco(etapaCtx) {
   return `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">A obra pode segurar
-    ambientes <strong>a qualquer momento</strong> — cada retenção registra quando foi, a etapa do
-    ciclo, o motivo e a previsão de liberação.</div>
-    <button class="btn-ciclo" onclick="retidoAbrir(projetoAtivo.nome_safe, '${etapaCtx}')"><i class="ti ti-hand-stop"></i> Retenção por obra</button>
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Ambientes podem ser
+    retidos <strong>a qualquer momento</strong> (obra, aprovações, financeiro, fábrica…) — cada
+    retenção registra quando foi, a etapa do ciclo, o motivo e a previsão de liberação.</div>
+    <button class="btn-ciclo" onclick="retidoAbrir(projetoAtivo.nome_safe, '${etapaCtx}')"><i class="ti ti-hand-stop"></i> Retenção</button>
   </div>`;
 }
 function _fichaCorpoBase(etapa, dados, bloqueada) {

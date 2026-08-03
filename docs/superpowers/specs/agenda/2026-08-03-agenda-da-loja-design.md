@@ -66,12 +66,27 @@ Executado substitui previsto: etapa concluída usa `concluido_em`/datas realizad
   afetados.
 - Unidade secundária alternável na UI: nº de fases/projetos e nº de ambientes.
 
-## 5. Consolidação (fechada; rev 2026-08-03)
+## 5. Valores na Agenda — catálogo de ITENS COM VALOR (rev 2 · 2026-08-03, feedback do usuário)
 
-- **Regra geral:** volume do período = Σ Val_Liq das fases com MARCO (entrega do setor)
-  dentro do período ("o que entrego nesta semana/mês").
-- **Montagem e Projeto Executivo:** carga DISTRIBUÍDA pela **janela do CRONOGRAMA** da
-  etapa, em **dias úteis** (§6/§7). É o que torna honesta a conta de recurso/dia.
+**Onde valor NÃO aparece: no Calendário.** A visão Calendário é de DATAS e STATUS (mostrar R$
+no marco sem rótulo confundia — "valor de quê?"). Todo valor exibido na Agenda tem NOME DE
+ITEM explícito, e vive nas visões Semana/Mês e no painel Capacidade (Fatia 3/4).
+
+**Catálogo (proposta acordada na conversa, base da Fatia 3):**
+
+| Item (rótulo na tela) | Natureza | Período/Data (fonte: CRONOGRAMA do projeto) | Valor |
+|---|---|---|---|
+| **Projeto Executivo** | carga distribuída | janela: conclusão da 10 → prevista da 11 (por fase do desmembramento) | Val_Liq da fase espalhado em dias úteis |
+| **Conferência e Implantação** | carga distribuída | janela: prevista da 11 → prevista da 12 | idem |
+| **Produção (saída da fábrica)** | marco valorado | data prevista de conclusão da 13 (saída) | Val_Liq da fase no dia |
+| **Montagem** | carga distribuída | janela: entrega da fase → prevista da 17 | Val_Liq da fase espalhado em dias úteis |
+| **Entrega ao cliente** | marco valorado | data de entrega da fase (regra da faixa) | Val_Liq da fase no dia |
+
+- **Semana/Mês:** uma LINHA por item do catálogo (o rótulo resolve a nomenclatura — "Montagem
+  R$ 42k na semana" é inequívoco), célula = Σ do item no dia/período.
+- **Capacidade:** DUAS faixas — **Montagem** (duplas necessárias × disponíveis) e **Projeto
+  Executivo** (ocupação diária × produtividade R$ 20k/dia) — o PE não fica órfão do "Gantt".
+  Conferência/Produção não têm produtividade configurada na v1 → só volume na Semana/Mês.
 
 ## 6. Capacidade (v1 = dimensionamento; v2 = alocação nominal) — rev 2026-08-03
 

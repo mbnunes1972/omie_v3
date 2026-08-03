@@ -2745,6 +2745,17 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 Testes atualizados p/ o motivo obrigatório + novo `test_motivo_do_catalogo_e_obrigatorio`;
 suíte **1687 verde**; `node --check` ok. (Restart aplica a migração das colunas novas.)
 
+**Rev 2 (mesmo dia): Calendário SEM valores + catálogo de itens com valor (spec §5 rev 2).**
+Feedback: o R$ no marco não tinha nomenclatura ("valor de quê?"). Decisão: Calendário = datas
+e status apenas (rodapé de entregas e coluna Valor removidos); TODO valor na Agenda passa a
+ter NOME DE ITEM e vive na Semana/Mês + Capacidade (Fatia 3/4). Catálogo proposto e registrado
+na spec: Projeto Executivo (carga 10→11) · Conferência e Implantação (carga 11→12) · Produção
+(marco valorado: saída da fábrica, prevista da 13) · Montagem (carga entrega→17) · Entrega ao
+cliente (marco valorado) — tudo em Val_Liq por fase, janelas do CRONOGRAMA. Capacidade com
+DUAS faixas (Montagem em duplas + PE em ocupação — o PE não fica órfão do "Gantt").
+Oportunidade aplicada: rótulos "Retenção por Obra" → **"Retenção"** (títulos/botões/textos —
+o catálogo de motivos já cobre causas além da obra).
+
 **Rev (mesmo dia, decisão do usuário): retenção é POR AMBIENTE — fase FORA do registro.**
 Fase no registro daria conflito com desmembramentos posteriores (o retrato mudaria) e
 complicaria relatório. `fases_json` removido (coluna nunca chegou a produção); o registro

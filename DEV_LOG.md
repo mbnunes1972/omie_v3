@@ -2791,6 +2791,14 @@ Testes novos: `test_ambiente_de_orcamento_perdedor_fica_fora` +
 comunicação oscilou 4→6 nesta rodada (2 extras com Timeout; passam isolados — mesmo grupo já
 anotado, frente do Chat).
 
+**Rev UX do modal de Retenção (feedback do usuário sobre os dados do E2E — "confuso, não sei
+qual ambiente foi retido"):** os cards de fase ganharam TÍTULO ("Fase N · status"), previsões
+da fase (entrega/liberação), borda âmbar quando retida e — na retida — o motivo/data do evento
+de retenção EM ABERTO que a segura; rótulos "Segue"/"Retido pela obra" → "Em andamento"/
+"Retida" (cores nos tokens vívidos). No Histórico, a retenção MAIS RECENTE já abre EXPANDIDA
+(ambientes retidos + descrição à vista — era o caso do E2E: retenção já liberada só aparecia
+atrás do clique) e as linhas ganharam chevron ▸/▾.
+
 ## Sessão 146 — VISÃO OPERACIONAL reativada: re-chave nivel → FUNÇÃO (fecha o 🔴1 da Vera e a pendência de 2026-07-10)
 
 A frente prometida na Sessão 145. Desde a migração Perfil-4 (Sessão 61) nenhuma conta tinha os

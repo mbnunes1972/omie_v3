@@ -822,10 +822,10 @@ class RetencaoObra(Base):
     projeto_nome        = Column(Text,     nullable=False, index=True)
     etapa_codigo        = Column(Text,     nullable=True)    # fase do CICLO onde foi acionada (9/10/11…/17)
     # rev 2026-08-03 (auditoria): motivo_tipo = catálogo (mod_retido.MOTIVOS_RETENCAO);
-    # motivo = descrição livre do fato; fases_json = ordens das fases retidas (snapshot).
+    # motivo = descrição livre do fato. A retenção é POR AMBIENTE (ambientes_json) — decisão
+    # do usuário: fase NÃO entra no registro (desmembramentos posteriores mudariam o retrato).
     motivo_tipo         = Column(Text,     nullable=True)
     motivo              = Column(Text,     nullable=True)
-    fases_json          = Column(Text,     nullable=True)
     liberacao_prevista  = Column(Date,     nullable=True)
     ambientes_json      = Column(Text,     nullable=False, default="[]")   # [pool_ambiente_id, ...]
     criado_em           = Column(DateTime, default=datetime.utcnow)
@@ -1858,9 +1858,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS entrega_prevista DATE",
         # Agenda Fatia 1 (2026-08-03): Val_Liq congelado por fase
         "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS val_liq_congelado DOUBLE PRECISION",
-        # Retenção auditável (2026-08-03): catálogo de motivo + snapshot das fases retidas
+        # Retenção auditável (2026-08-03): catálogo de motivo (retenção é POR AMBIENTE)
         "ALTER TABLE retencao_obra ADD COLUMN IF NOT EXISTS motivo_tipo TEXT",
-        "ALTER TABLE retencao_obra ADD COLUMN IF NOT EXISTS fases_json TEXT",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

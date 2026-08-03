@@ -59,7 +59,7 @@ def test_reter_direto_e_registro(app_db, seed, http_client_factory):
     assert reg["etapa_codigo"] == "10"
     assert reg["motivo_tipo"] == "Atraso da Obra"        # catálogo (rev 2026-08-03)
     assert reg["motivo"] == "Obra sem contrapiso"        # descrição livre do fato
-    assert reg["fases"] == [2]                           # snapshot da fase retida
+    assert "fases" not in reg                            # retenção é POR AMBIENTE (sem fase)
     assert reg["liberacao_prevista"] == "2026-09-20"
     assert reg["liberado_em"] is None
     assert reg["criado_em"]

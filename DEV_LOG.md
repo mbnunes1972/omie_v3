@@ -2745,6 +2745,13 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 Testes atualizados p/ o motivo obrigatório + novo `test_motivo_do_catalogo_e_obrigatorio`;
 suíte **1687 verde**; `node --check` ok. (Restart aplica a migração das colunas novas.)
 
+**Rev (mesmo dia, decisão do usuário): retenção é POR AMBIENTE — fase FORA do registro.**
+Fase no registro daria conflito com desmembramentos posteriores (o retrato mudaria) e
+complicaria relatório. `fases_json` removido (coluna nunca chegou a produção); o registro
+auditável = ambientes + motivo + datas. UI: seleção de ambientes virou LISTA com scroll
+(checkboxes); o resumo do histórico mostra só Retenção · Etapa do ciclo · Motivo · Liberação
+prevista · Situação — clicar na linha EXPANDE o detalhe (ambientes retidos + descrição).
+
 ## Sessão 141 — Agenda da Loja FATIA 2: marcos + endpoint + visão Calendário (primeira TELA da Agenda)
 
 Fatia 2 do plano — a Agenda aparece na interface.

@@ -232,11 +232,8 @@ def reter(db, projeto_nome, amb_ids, orcamento_id, valores_por_ambiente, val_con
     for s in db.query(SinalRetido).filter_by(projeto_nome=projeto_nome, confirmado=0).all():
         if s.pool_ambiente_id in pedidos:
             s.confirmado = 1
-    fases_retidas = sorted({a["ordem"] for a in afetadas
-                            if a.get("status") == STATUS_RETIDO and a.get("ordem") is not None})
     reg = RetencaoObra(projeto_nome=projeto_nome, etapa_codigo=etapa_codigo,
                        motivo_tipo=motivo_tipo, motivo=motivo,
-                       fases_json=json.dumps(fases_retidas),
                        liberacao_prevista=liberacao_prevista,
                        ambientes_json=json.dumps(sorted(pedidos)),
                        criado_por_id=criado_por_id)
@@ -253,12 +250,8 @@ def listar_retencoes(db, projeto_nome):
             ambs = json.loads(r.ambientes_json or "[]")
         except ValueError:
             ambs = []
-        try:
-            fases = json.loads(r.fases_json or "[]")
-        except ValueError:
-            fases = []
         out.append({"id": r.id, "etapa_codigo": r.etapa_codigo,
-                    "motivo_tipo": r.motivo_tipo, "motivo": r.motivo, "fases": fases,
+                    "motivo_tipo": r.motivo_tipo, "motivo": r.motivo,
                     "liberacao_prevista": r.liberacao_prevista.isoformat() if r.liberacao_prevista else None,
                     "criado_em": r.criado_em.isoformat() if r.criado_em else None,
                     "liberado_em": r.liberado_em.isoformat() if r.liberado_em else None,

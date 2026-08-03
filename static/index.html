@@ -14687,9 +14687,11 @@ function _retidoRenderNova(d){
   if(!eleg.length)
     return '<div style="font-size:12px;color:var(--muted);margin-bottom:14px">Nenhum ambiente disponível para reter (tudo retido, liquidado ou sem pool).</div>';
   const sin = new Set((d.sinais_retido||[]).map(s=>s.pool_ambiente_id));
-  const chks = eleg.map(a=>`<label style="font-size:12px;color:var(--text);display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:5px 9px;cursor:pointer">
-      <input type="checkbox" class="retido-novo-chk" value="${a.id}"${sin.has(a.id)?' checked':''}> ${esc(a.nome||('Amb '+a.id))}${sin.has(a.id)?' <span style="font-size:10px;color:var(--warn)" title="sinalizado pelo medidor">●</span>':''}
-    </label>`).join('');
+  // rev 2026-08-03: seleção POR AMBIENTE em LISTA com scroll (decisão do usuário)
+  const chks = `<div style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px 12px;display:flex;flex-direction:column;gap:2px;margin-bottom:10px">`
+    + eleg.map(a=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;padding:3px 0">
+        <input type="checkbox" class="retido-novo-chk" value="${a.id}"${sin.has(a.id)?' checked':''}> ${esc(a.nome||('Amb '+a.id))}${sin.has(a.id)?' <span style="font-size:10px;color:var(--warn)" title="sinalizado pelo medidor">●</span>':''}
+      </label>`).join('') + '</div>';
   const btn = _podeAutorizarFront()
     ? `<button onclick="retidoReter()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Reter selecionados (gerência)</button>`
     : `<button onclick="retidoSinalizar()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Sinalizar retenção (medidor)</button>`;
@@ -14699,7 +14701,7 @@ function _retidoRenderNova(d){
   const opts = '<option value="">— motivo —</option>' + motivos.map(m=>`<option value="${m}">${m}</option>`).join('');
   return `<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
     <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">Nova retenção${_retidoEtapaCtx ? ` <span style="color:var(--muted);font-weight:400">— acionada na etapa ${esc(_etapaRotulo(_retidoEtapaCtx))}</span>` : ''}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chks}</div>
+    ${chks}
     <div style="display:grid;grid-template-columns:210px 1fr;gap:8px;margin-bottom:8px">
       <select id="retido-novo-motivo-tipo" style="${_retidoInputStyle}">${opts}</select>
       <input id="retido-novo-descricao" type="text" placeholder="Descrição do fato (opcional — detalhe o que gerou a retenção)" style="${_retidoInputStyle}">
@@ -14747,26 +14749,33 @@ async function retidoSinalizar(){
   await retidoRecarregar();
 }
 function _retidoRenderHistorico(regs){
+  // rev 2026-08-03 (decisão do usuário): resumo SEM ambientes/descrição — etapa do ciclo,
+  // motivo e datas. Clique na linha expande o detalhe (ambientes retidos + descrição do fato).
   if(!regs.length) return '';
-  const rows = regs.map(r=>{
+  const rows = regs.map((r,i)=>{
     const ambs = (r.ambientes||[]).map(a=>esc(a.nome||('Amb '+a.id))).join(', ');
-    const fases = (r.fases||[]).length ? r.fases.map(f=>'Fase '+f).join(', ') : '—';
-    const motivo = esc(r.motivo_tipo||'—')
-      + (r.motivo?` <span style="color:var(--muted);font-size:11px">${esc(r.motivo)}</span>`:'');
     const sit = r.liberado_em
       ? `<span style="color:var(--ok)">Liberada em ${_fmtDataBR(r.liberado_em)}</span>`
       : `<span style="color:var(--warn)">Em aberto</span>`;
-    return `<tr><td style="white-space:nowrap">${_fmtDataBR(r.criado_em)||'—'}</td>
+    return `<tr onclick="retidoHistToggle(${i})" style="cursor:pointer" title="Clique para ver os ambientes retidos e a descrição">
+      <td style="white-space:nowrap">${_fmtDataBR(r.criado_em)||'—'}</td>
       <td style="white-space:nowrap">${r.etapa_codigo?esc(_etapaRotulo(r.etapa_codigo)):'—'}</td>
-      <td style="white-space:nowrap">${fases}</td>
-      <td>${ambs||'—'}</td><td>${motivo}</td>
+      <td style="white-space:nowrap">${esc(r.motivo_tipo||'—')}</td>
       <td style="white-space:nowrap">${r.liberacao_prevista?_fmtDataBR(r.liberacao_prevista):'—'}</td>
-      <td style="white-space:nowrap">${sit}</td></tr>`;
+      <td style="white-space:nowrap">${sit}</td></tr>
+    <tr id="retido-hist-det-${i}" style="display:none"><td colspan="5" style="padding:8px 14px;background:var(--surface-2)">
+      <div style="font-size:12px;color:var(--text)"><strong>Ambientes retidos:</strong> ${ambs||'—'}</div>
+      ${r.motivo?`<div style="font-size:12px;margin-top:4px"><strong style="color:var(--text)">Descrição:</strong> <span style="color:var(--muted)">${esc(r.motivo)}</span></div>`:''}
+    </td></tr>`;
   }).join('');
   return `<div style="margin-top:14px">
-    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Histórico de retenções</div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Retenção</th><th>Etapa do ciclo</th><th>Fase(s)</th><th>Ambientes</th><th>Motivo</th><th>Liberação prevista</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">Histórico de retenções <span style="color:var(--muted);font-weight:400;font-size:11px">(clique numa retenção para o detalhe)</span></div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Retenção</th><th>Etapa do ciclo</th><th>Motivo</th><th>Liberação prevista</th><th>Situação</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
+}
+function retidoHistToggle(i){
+  const el = document.getElementById('retido-hist-det-'+i);
+  if(el) el.style.display = (el.style.display === 'none') ? '' : 'none';
 }
 function _retidoRenderParcelas(d){
   const parc = d.parcelas || [];

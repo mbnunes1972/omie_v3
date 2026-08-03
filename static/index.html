@@ -14071,6 +14071,10 @@ function _fichaRenderConteudo() {
       : '';
     corpo = faixaConc + _cronoRespBlock(codigo, dados) + _fichaCorpoEtapa(etapa, dados, bloqueada);
   }
+  // Faixa de entrega (9→16): da Solicitação de Medição até a Entrega no cliente, a data de
+  // entrega fica sempre visível (previsão → entregue), global ou por fase (desmembramento).
+  const _maeN = parseInt(mae, 10);
+  const faixaEntrega = (_maeN >= 9 && _maeN <= 16) ? '<div id="entrega-faixa"></div>' : '';
   box.innerHTML = `
     <div class="ficha-cab">
       <span class="ficha-badge st-${st}">${rotStatus}</span>
@@ -14078,7 +14082,8 @@ function _fichaRenderConteudo() {
       <span style="margin-left:auto">${_cronoLabelEtapa(codigo, dados)}</span>
     </div>
     ${subs}
-    ${corpo}`;
+    ${faixaEntrega}${corpo}`;
+  if (faixaEntrega) _entregaFaixaRender();
 }
 
 // O switch de conteúdo por etapa é o MESMO do acordeão antigo — movido, não reescrito.
@@ -14148,6 +14153,44 @@ function _desmembramentoBloco() {
     cada fase percorre o ciclo de forma independente.</div>
     <button class="btn-ciclo" onclick="peDesmembrarRender()"><i class="ti ti-layout-columns"></i> Desmembrar em fases</button>
     <div id="pe-desm-container" style="margin-top:12px"></div>
+  </div>`;
+}
+
+// ── Faixa de entrega (etapas 9→16): previsão × entregue, global ou por fase ─────────────────
+// Padrão de tela: bloco INLINE (decisão do usuário 2026-08-02 — sem modal adicional), no mesmo
+// estilo do desmembramento; os ambientes de cada fase aparecem direto na linha.
+async function _entregaFaixaRender(){
+  const box = document.getElementById('entrega-faixa');
+  if (!box || !projetoAtivo) return;
+  let d;
+  try{ d = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/entrega-resumo`,{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML=''; return; }
+  if(!d || !d.ok || !(d.fases||[]).length){ box.innerHTML=''; return; }
+  const linha = f => {
+    const dataTxt = f.entregue_em
+      ? `<span style="color:var(--ok);font-weight:700"><i class="ti ti-truck-delivery"></i> Entregue em ${_fmtDataBR(f.entregue_em)}</span>`
+      : (f.previsao
+          ? `<i class="ti ti-calendar-event"></i> Previsão de entrega ${_fmtDataBR(f.previsao)}`
+          : `<span style="color:var(--text-3)">Entrega a definir</span>`);
+    const ret = f.status === 'retido'
+      ? ` <span style="color:var(--text-3);font-size:var(--fs-xs)">(retida — obra)</span>` : '';
+    return { dataTxt, ret };
+  };
+  if(!d.desmembrado){
+    const f = d.fases[0], l = linha(f);
+    box.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;margin-bottom:12px;font-size:var(--fs-sm);color:var(--text)">
+      <span>${l.dataTxt}</span>
+      <span style="color:var(--text-3);font-size:var(--fs-xs)">${esc((f.ambientes||[]).join(', '))}</span>
+    </div>`;
+    return;
+  }
+  const rows = d.fases.map(f => { const l = linha(f);
+    return `<tr><td style="white-space:nowrap">Fase ${f.ordem}${l.ret}</td>
+      <td style="white-space:nowrap">${l.dataTxt}</td>
+      <td>${esc((f.ambientes||[]).join(', '))}</td></tr>`; }).join('');
+  box.innerHTML = `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;margin-bottom:12px">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:4px">Entrega por fase</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Fase</th><th>Entrega</th><th>Ambientes</th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 
@@ -15698,8 +15741,14 @@ async function peDesmembrarRender(){
   if(!j.ok){ cont.innerHTML=`<span style="color:var(--err)">${esc(j.erro||'Erro')}</span>`; return; }
   const fmt = v => 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   if(j.desmembrado){
-    const rows = j.parcelas.map(p => `<tr><td>Fase ${p.ordem}</td><td class="num">${fmt(p.val_cont_congelado)}</td><td>${esc(p.ambientes.map(a=>a.nome).join(', '))}</td><td>${esc(p.status)}</td></tr>`).join('');
-    cont.innerHTML = `<div class="table-wrap"><table class="tbl"><thead><tr><th>Fase</th><th style="text-align:right">Val. Contrato</th><th>Ambientes</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    // Desmembramento SUCESSIVO: fase com 2+ ambientes (não liquidada) pode ser dividida de novo
+    // — a decisão pode sair depois (ex.: no PE). Form inline, mesmo padrão do desmembramento.
+    _desmFasesCache = j.parcelas;
+    const rows = j.parcelas.map(p => `<tr><td>Fase ${p.ordem}</td><td class="num">${fmt(p.val_cont_congelado)}</td><td>${esc(p.ambientes.map(a=>a.nome).join(', '))}</td><td>${esc(p.status)}</td>
+      <td style="text-align:right">${(p.status !== 'liquidada' && p.ambientes.length > 1)
+        ? `<button class="btn-ciclo" onclick="peDesmembrarFase(${p.id})"><i class="ti ti-layout-columns"></i> Desmembrar</button>` : ''}</td></tr>`).join('');
+    cont.innerHTML = `<div class="table-wrap"><table class="tbl"><thead><tr><th>Fase</th><th style="text-align:right">Val. Contrato</th><th>Ambientes</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div id="pe-desm-sub" style="margin-top:10px"></div>`;
     return;
   }
   const rows = (j.pool||[]).map(a => `<tr><td>${esc(a.nome)}</td><td style="text-align:right"><input type="number" min="1" max="9" value="1" data-amb="${a.id}" class="desm-parc" style="width:60px;height:var(--control-h-sm);padding:0 8px;background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);text-align:center"></td></tr>`).join('');
@@ -15720,9 +15769,44 @@ async function peDesmembrarCriar(){
   try {
     const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas`,
       {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({parcelas})}).then(r=>r.json());
-    if(j.ok){ showToast('Projeto desmembrado em '+j.parcelas.length+' fases.'); peDesmembrarRender(); }
+    if(j.ok){ showToast('Projeto desmembrado em '+j.parcelas.length+' fases.'); peDesmembrarRender(); _entregaFaixaRender(); }
     else { await avisoPopup(j.erro||'Erro',{titulo:'Desmembrar'}); }
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Desmembrar'}); }
+}
+
+// ── Desmembramento SUCESSIVO (2026-08-02): dividir uma fase JÁ criada em novas fases ────────
+// Ex.: na Medição desmembrou em 2; no PE decide-se dividir a fase 1 de novo. A partição vale
+// sobre os ambientes DA fase; o valor congelado da mãe é preservado (rateio proporcional, a
+// última absorve o resíduo). Fase liquidada ou já em expedição não desmembra (backend recusa).
+let _desmFasesCache = null;
+function peDesmembrarFase(pid){
+  const sub = document.getElementById('pe-desm-sub');
+  const p = (_desmFasesCache||[]).find(x=>x.id===pid);
+  if(!sub || !p) return;
+  const rows = p.ambientes.map(a => `<tr><td>${esc(a.nome)}</td><td style="text-align:right"><input type="number" min="1" max="9" value="1" data-amb="${a.id}" class="desm-sub-parc" style="width:60px;height:var(--control-h-sm);padding:0 8px;background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);text-align:center"></td></tr>`).join('');
+  sub.innerHTML = `<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:var(--sp-3) var(--sp-4)">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Dividir a <strong>Fase ${p.ordem}</strong> em novas fases: atribua cada ambiente a um nº (ao menos 2 diferentes). O valor congelado da fase é preservado — rateio proporcional entre as novas.</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Ambiente</th><th style="text-align:right">Nova fase nº</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-ciclo" onclick="peDesmembrarFaseCriar(${pid})"><i class="ti ti-check"></i> Criar novas fases</button>
+      <button class="btn-ciclo" onclick="document.getElementById('pe-desm-sub').innerHTML=''">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+async function peDesmembrarFaseCriar(pid){
+  if(!projetoAtivo) return;
+  const inputs = [...document.querySelectorAll('.desm-sub-parc')];
+  const grupos = {};
+  inputs.forEach(el => { const n = parseInt(el.value)||1; (grupos[n]=grupos[n]||[]).push(parseInt(el.dataset.amb)); });
+  const parcelas = Object.keys(grupos).sort((a,b)=>a-b).map(k=>grupos[k]);
+  if(parcelas.length < 2){ await avisoPopup('Use ao menos 2 números de fase diferentes.',{titulo:'Desmembrar fase'}); return; }
+  try {
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/parcelas/${pid}/desmembrar`,
+      {method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({parcelas})}).then(r=>r.json());
+    if(j.ok){ showToast('Fase desmembrada em '+j.parcelas.length+' novas fases.'); peDesmembrarRender(); _entregaFaixaRender(); }
+    else { await avisoPopup(j.erro||'Erro',{titulo:'Desmembrar fase'}); }
+  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Desmembrar fase'}); }
 }
 
 // ── Fatia B — box do ramo do custo financeiro (loja próprio × antecipação × financeira) ──

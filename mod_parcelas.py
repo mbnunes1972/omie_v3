@@ -128,3 +128,45 @@ def congelar_parcelas(parcelas_ambientes, val_cont):
             "val_cont_congelado": valor,
         })
     return resultado
+
+
+def desmembrar_fase(amb_ids_fase, grupos, val_mae, fracao_mae, valores_por_amb):
+    """Desmembramento SUCESSIVO: divide uma fase já congelada em novas fases.
+
+    A partição vale sobre os ambientes DA FASE (não do pool inteiro); a soma dos novos
+    valores/frações preserva EXATAMENTE `val_mae`/`fracao_mae` (a última absorve o resíduo do
+    arredondamento) — o invariante #5 (Σ val_cont_congelado == Val_Cont) segue de pé no total.
+    O rateio entre os grupos é proporcional a `valores_por_amb` (valor de contrato por
+    ambiente); se a soma for zero, divide igualmente.
+
+    Args:
+        amb_ids_fase: ids de ambiente da fase-mãe.
+        grupos: lista de listas de ids (≥2), uma por nova fase.
+        val_mae / fracao_mae: congelados da fase-mãe.
+        valores_por_amb: {pool_ambiente_id: valor de contrato}.
+    Returns:
+        (ok: bool, erro: str|None, novas: [{fracao_val_cont, val_cont_congelado}]).
+    """
+    if not isinstance(grupos, list) or len(grupos) < 2:
+        return False, "Desmembrar exige ao menos 2 novas fases.", []
+    ok, erro = validar_particao_parcelas(amb_ids_fase, grupos)
+    if not ok:
+        return False, erro, []
+    vm = round(float(val_mae or 0.0), 2)
+    fm = float(fracao_mae or 0.0)
+    somas = [sum(float(valores_por_amb.get(a, 0.0) or 0.0) for a in g) for g in grupos]
+    total = sum(somas)
+    n = len(grupos)
+    novas, acum_v, acum_f = [], 0.0, 0.0
+    for i, s in enumerate(somas):
+        frac_rel = (s / total) if total > 0 else 1.0 / n
+        if i < n - 1:
+            valor = round(vm * frac_rel, 2)
+            frac = fm * frac_rel
+        else:
+            valor = round(vm - acum_v, 2)   # última absorve o resíduo
+            frac = fm - acum_f
+        acum_v = round(acum_v + valor, 2)
+        acum_f += frac
+        novas.append({"fracao_val_cont": frac, "val_cont_congelado": valor})
+    return True, None, novas

@@ -1333,6 +1333,71 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+
+        m_entr = re.match(r'^/api/projetos/([^/]+)/entrega-resumo$', path)
+        if m_entr:
+            # Faixa de entrega do fichário (etapas 9→16): previsão × entregue, global e por fase.
+            # Previsão: CicloLogistico.prazo_entrega da fase (expedição) ou Projeto.data_entrega;
+            # entregue: CicloLogistico.data_entrega, e no global também a etapa 16 concluída.
+            nome = unquote(m_entr.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                proj = _projeto_da_loja(db, nome, loja_id)
+                if proj is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                _iso = lambda v: v.isoformat() if v else None
+                previsao = _iso(proj.data_entrega)
+                card_glob = (db.query(CicloLogistico)
+                               .filter_by(projeto_nome=nome, parcela_id=None)
+                               .order_by(CicloLogistico.id.desc()).first())
+                e16 = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="16").first()
+                entregue = (_iso(card_glob.data_entrega if card_glob else None)
+                            or (_iso(e16.concluido_em)
+                                if (e16 and e16.status in mod_ciclo.STATUS_CONCLUSIVOS) else None))
+                pa_nome = {pa.id: (pa.nome_exibicao or pa.nome)
+                           for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()}
+                parcs = (db.query(ParcelaProjeto).filter_by(projeto_nome=nome)
+                           .order_by(ParcelaProjeto.ordem.asc()).all())
+                fases = []
+                if parcs:
+                    cards = {c.parcela_id: c
+                             for c in db.query(CicloLogistico)
+                                        .filter(CicloLogistico.projeto_nome == nome,
+                                                CicloLogistico.parcela_id != None).all()}  # noqa: E711
+                    for p in parcs:
+                        ambs = db.query(ParcelaAmbiente).filter_by(parcela_id=p.id).all()
+                        card = cards.get(p.id)
+                        fases.append({
+                            "id": p.id, "ordem": p.ordem, "status": p.status,
+                            "previsao": (_iso(card.prazo_entrega)
+                                         if (card and card.prazo_entrega) else previsao),
+                            "entregue_em": _iso(card.data_entrega) if card else None,
+                            "ambientes": [pa_nome.get(a.pool_ambiente_id, "") for a in ambs]})
+                else:
+                    # sem desmembramento: "fase única" com os ambientes do orçamento contratado
+                    contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                                  .order_by(Contrato.id.desc()).first())
+                    if contrato:
+                        lks = db.query(OrcamentoAmbiente).filter_by(
+                            orcamento_id=contrato.orcamento_id).all()
+                        nomes_amb = [pa_nome.get(l.pool_ambiente_id, "") for l in lks]
+                    else:
+                        nomes_amb = list(pa_nome.values())
+                    fases.append({"id": None, "ordem": 1, "status": None,
+                                  "previsao": previsao, "entregue_em": entregue,
+                                  "ambientes": [n for n in nomes_amb if n]})
+                self.send_json({"ok": True, "desmembrado": bool(parcs),
+                                "previsao": previsao, "entregue_em": entregue, "fases": fases})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/contas-a-pagar":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return
@@ -4373,6 +4438,73 @@ class Handler(BaseHTTPRequestHandler):
                     criadas.append({"id": p.id, "ordem": p.ordem, "val_cont_congelado": p.val_cont_congelado})
                 db.commit()
                 self.send_json({"ok": True, "parcelas": criadas})
+            finally:
+                db.close()
+            return
+
+        m_psub = re.match(r'^/api/projetos/([^/]+)/parcelas/(\d+)/desmembrar$', path)
+        if m_psub:
+            # Desmembramento SUCESSIVO: divide UMA fase existente em ≥2 novas (decisão pode vir
+            # depois, ex. no PE). Preserva exatamente o congelado da mãe (mod_parcelas.desmembrar_fase);
+            # a mãe é removida e as fases são renumeradas 1..N. Bloqueado se a fase já está em
+            # expedição (CicloLogistico) ou liquidada.
+            import mod_parcelas as _mpar
+            nome = unquote(m_psub.group(1)); pid = int(m_psub.group(2))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            grupos = req.get("parcelas") or []
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                mae = db.get(ParcelaProjeto, pid)
+                if mae is None or mae.projeto_nome != nome:
+                    self.send_json({"ok": False, "erro": "Fase não encontrada"}, code=404); return
+                if mae.status == "liquidada":
+                    self.send_json({"ok": False, "erro": "Fase já liquidada — não pode ser desmembrada"}, code=409); return
+                if db.query(CicloLogistico).filter_by(projeto_nome=nome, parcela_id=pid).first():
+                    self.send_json({"ok": False, "erro": "Fase já em expedição — não pode ser desmembrada"}, code=409); return
+                try:
+                    grupos = [[int(x) for x in g] for g in grupos]
+                except (TypeError, ValueError):
+                    self.send_json({"ok": False, "erro": "Ambientes inválidos"}, code=400); return
+                amb_ids = [a.pool_ambiente_id for a in
+                           db.query(ParcelaAmbiente).filter_by(parcela_id=pid).all()]
+                valores, _vc = _valores_contrato_por_ambiente(mae.orcamento_id, db)
+                ok, erro, novas = _mpar.desmembrar_fase(
+                    amb_ids, grupos, mae.val_cont_congelado, mae.fracao_val_cont, valores)
+                if not ok:
+                    self.send_json({"ok": False, "erro": erro}, code=400); return
+                criadas = []
+                # novas herdam a POSIÇÃO da mãe (ordem; desempate por id = ordem dos grupos)
+                for grupo, ng in zip(grupos, novas):
+                    p = ParcelaProjeto(projeto_nome=nome, ordem=mae.ordem, status=mae.status,
+                                       fracao_val_cont=ng["fracao_val_cont"],
+                                       val_cont_congelado=ng["val_cont_congelado"],
+                                       orcamento_id=mae.orcamento_id,
+                                       criado_por_id=(usuario.get("id") if isinstance(usuario, dict)
+                                                      else getattr(usuario, "id", None)))
+                    db.add(p); db.flush()
+                    for aid in grupo:
+                        db.add(ParcelaAmbiente(parcela_id=p.id, pool_ambiente_id=aid))
+                    criadas.append(p)
+                db.query(ParcelaAmbiente).filter_by(parcela_id=pid).delete()
+                db.delete(mae); db.flush()
+                # renumera 1..N (ordem estável: ordem antiga, depois id) — rótulo "Fase N" denso
+                todas = (db.query(ParcelaProjeto).filter_by(projeto_nome=nome)
+                           .order_by(ParcelaProjeto.ordem.asc(), ParcelaProjeto.id.asc()).all())
+                for i, p in enumerate(todas, start=1):
+                    p.ordem = i
+                db.commit()
+                self.send_json({"ok": True, "parcelas": [
+                    {"id": p.id, "ordem": p.ordem, "val_cont_congelado": p.val_cont_congelado}
+                    for p in criadas]})
             finally:
                 db.close()
             return

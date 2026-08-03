@@ -12914,6 +12914,29 @@ def _liquidos_contrato_por_ambiente(orcamento_id, db):
     return out, round(float(d.get("Val_Liq") or 0), 2)
 
 
+def _reparar_parametros_segmentados(db):
+    """Reparo ÚNICO (idempotente) do dano do bug 🔴 do E2E (2026-08-03): projetos assinados
+    ANTES do fix ficaram com parametros_json contendo SÓ a segmentação (os defaults vivos
+    foram descartados no congelamento). Restaura os defaults da loja POR BAIXO das chaves
+    existentes (a segmentação congelada prevalece). Retorna nº de projetos reparados."""
+    from mod_orcamento_params import parametros_default_loja
+    n = 0
+    for pj in db.query(Projeto).filter(Projeto.parametros_json.isnot(None)).all():
+        try:
+            par = json.loads(pj.parametros_json)
+        except ValueError:
+            continue
+        if not isinstance(par, dict) or not par:
+            continue
+        if set(par.keys()) <= {"pct_mercadoria", "pct_servico"}:
+            base = parametros_default_loja(_cfg_financeira_loja(db, pj.loja_id))
+            base.update(par)
+            pj.parametros_json = json.dumps(base, ensure_ascii=False)
+            n += 1
+    db.flush()
+    return n
+
+
 def _backfill_val_liq_fases(db):
     """Backfill ÚNICO (idempotente) do val_liq_congelado em fases legadas (NULL): melhor
     aproximação disponível = motor atual, somando o rateio líquido dos ambientes de cada fase.
@@ -13729,6 +13752,11 @@ def main():
             _dbp.commit()
             if _nsf:
                 print(f"[AGENDA] backfill subfases do PE: {_nsf} data(s) prevista(s) preenchida(s)")
+            # E2E 🔴 (2026-08-03): repara projetos assinados com parametros_json zerado.
+            _nrep = _reparar_parametros_segmentados(_dbp)
+            _dbp.commit()
+            if _nrep:
+                print(f"[NEGOCIACAO] reparo parametros_json pós-assinatura: {_nrep} projeto(s)")
         finally:
             _dbp.close()
     except Exception as _e:

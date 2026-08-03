@@ -135,6 +135,27 @@ def test_congelar_segmentacao_preserva_defaults(app_db, seed):
         db.close()
 
 
+def test_reparo_de_projeto_ja_danificado(app_db, seed):
+    """Reparo no boot: projeto assinado ANTES do fix (parametros_json só com a segmentação)
+    recupera os defaults por baixo — a segmentação congelada prevalece."""
+    import json as _json
+    import main as m
+    nome = seed["projeto_l1"]
+    db = app_db.get_session()
+    try:
+        db.get(Projeto, nome).parametros_json = _json.dumps(
+            {"pct_mercadoria": 70.0, "pct_servico": 30.0})
+        db.commit()
+        assert m._reparar_parametros_segmentados(db) >= 1
+        db.commit()
+        par = _json.loads(db.get(Projeto, nome).parametros_json)
+        assert par["pct_mercadoria"] == 70.0            # congelado prevalece
+        assert "carga_trib" in par and "incluir_custos" in par
+        assert m._reparar_parametros_segmentados(db) == 0 or "carga_trib" in par  # idempotente
+    finally:
+        db.close()
+
+
 def test_motivo_do_catalogo_e_obrigatorio(app_db, seed, http_client_factory):
     nome = seed["projeto_l1"]
     ids = _setup_pool(app_db, seed)

@@ -1524,14 +1524,24 @@ class Handler(BaseHTTPRequestHandler):
                         m["valor"] = None            # visão do papel: sem comercial (Regras §3)
                     m["data"] = m["data"].isoformat()
                     out.append(m)
-                # Fatia 3: CARGAS (catálogo de itens com valor) — só p/ visão comercial
-                cargas_out = []
+                # Fatias 3/4: CARGAS + CAPACIDADE — só p/ visão comercial (é tudo R$)
+                cargas_out, cap_out, cap_cfg = [], [], {}
                 if visao != "operacional":
                     _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
-                    for c in _mag.cargas(dados, cfg_agenda=_cfg_ag, de=de, ate=ate):
+                    _cgs = _mag.cargas(dados, cfg_agenda=_cfg_ag, de=de, ate=ate)
+                    for c in _mag.capacidade(_cgs, cfg_agenda=_cfg_ag):
+                        c["data"] = c["data"].isoformat()
+                        cap_out.append(c)
+                    for c in _cgs:
                         c["data"] = c["data"].isoformat()
                         cargas_out.append(c)
-                self.send_json({"ok": True, "marcos": out, "cargas": cargas_out, "visao": visao,
+                    cap_cfg = {"produtividade_montagem": _cfg_ag.get("produtividade_montagem_rs_dupla_dia", 7000.0),
+                               "duplas_disponiveis": _cfg_ag.get("duplas_disponiveis", 2),
+                               "produtividade_pe": _cfg_ag.get("produtividade_pe_rs_dia", 20000.0),
+                               "sabado_util": bool(_cfg_ag.get("sabado_util")),
+                               "horizonte_semanas": _cfg_ag.get("horizonte_capacidade_semanas", 6)}
+                self.send_json({"ok": True, "marcos": out, "cargas": cargas_out,
+                                "capacidade": cap_out, "capacidade_cfg": cap_cfg, "visao": visao,
                                 "setores": [{"id": s, "rotulo": r} for s, r in _mag.SETORES],
                                 "itens": [{"id": i, "rotulo": r} for i, r in _mag.ITENS_VALOR]})
             finally:

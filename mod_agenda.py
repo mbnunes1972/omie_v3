@@ -185,6 +185,33 @@ def cargas(projetos, cfg_agenda=None, de=None, ate=None):
     return out
 
 
+# ── Fatia 4: CAPACIDADE — dimensionamento diário (spec §6 rev) ───────────────────────────────
+# A janela de trabalho vem do CRONOGRAMA (cargas acima); a produtividade converte a
+# necessidade diária em recurso: Montagem em DUPLAS (⌈Σ/produtividade⌉ × disponíveis) e
+# Projeto Executivo em OCUPAÇÃO (% da produtividade diária de PE da loja).
+
+def capacidade(cargas_lista, cfg_agenda=None):
+    """[{data, montagem, duplas, pe, pe_pct}] por dia com carga de montagem/PE (ordenado)."""
+    import math
+    cfg = cfg_agenda or {}
+    prod_m = float(cfg.get("produtividade_montagem_rs_dupla_dia") or 7000.0)
+    prod_pe = float(cfg.get("produtividade_pe_rs_dia") or 20000.0)
+    por_dia = {}
+    for c in (cargas_lista or []):
+        if c.get("item") not in ("montagem", "pe"):
+            continue
+        d = por_dia.setdefault(c["data"], {"montagem": 0.0, "pe": 0.0})
+        d[c["item"]] += float(c.get("valor") or 0.0)
+    out = []
+    for data in sorted(por_dia):
+        m = round(por_dia[data]["montagem"], 2)
+        p = round(por_dia[data]["pe"], 2)
+        out.append({"data": data, "montagem": m,
+                    "duplas": (math.ceil(m / prod_m) if m > 0 else 0),
+                    "pe": p, "pe_pct": (round(p / prod_pe * 100.0, 1) if p > 0 else 0.0)})
+    return out
+
+
 def marcos(projetos, de=None, ate=None, setor=None):
     """Marcos de VÁRIOS projetos, filtrados por período [de, ate] (inclusivo) e Setor,
     ordenados por (data, projeto, etapa)."""

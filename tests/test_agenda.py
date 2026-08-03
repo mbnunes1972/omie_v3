@@ -123,6 +123,30 @@ def test_carga_filtro_de_periodo():
     assert {c["item"] for c in cs} == {"entrega", "montagem"}
 
 
+# ── Fatia 4: capacidade (duplas de montagem + ocupação do PE) ────────────────────
+
+def test_capacidade_duplas_e_ocupacao_pe():
+    cargas = [
+        {"data": date(2026, 9, 14), "item": "montagem", "valor": 9000.0},
+        {"data": date(2026, 9, 14), "item": "montagem", "valor": 6000.0},   # Σ 15k → 3 duplas
+        {"data": date(2026, 9, 14), "item": "pe", "valor": 10000.0},        # 50% de 20k
+        {"data": date(2026, 9, 15), "item": "montagem", "valor": 7000.0},   # exato → 1 dupla
+        {"data": date(2026, 9, 16), "item": "pe", "valor": 30000.0},        # 150% → estouro
+        {"data": date(2026, 9, 16), "item": "entrega", "valor": 999.0},     # ignorado
+    ]
+    cfg = {"produtividade_montagem_rs_dupla_dia": 7000.0, "produtividade_pe_rs_dia": 20000.0}
+    cap = mod_agenda.capacidade(cargas, cfg)
+    assert [(c["data"], c["duplas"], c["pe_pct"]) for c in cap] == [
+        (date(2026, 9, 14), 3, 50.0),
+        (date(2026, 9, 15), 1, 0.0),
+        (date(2026, 9, 16), 0, 150.0)]
+    assert cap[0]["montagem"] == 15000.0
+
+
+def test_capacidade_vazia_sem_cargas():
+    assert mod_agenda.capacidade([], {}) == []
+
+
 # ── offsets default das subfases do PE no cronograma ─────────────────────────────
 
 def test_cronograma_data_subfases_do_pe(app_db, seed):
@@ -215,6 +239,11 @@ def test_endpoint_agenda(app_db, seed, http_client_factory):
     assert entregas and entregas[0]["data"] == "2026-12-01" and entregas[0]["valor"] > 0
     mont = [cg for cg in d["cargas"] if cg["item"] == "montagem" and cg["projeto"] == nome]
     assert mont and mont[0]["data"] > "2026-12-01"    # montagem começa após a entrega
+    # Fatia 4: CAPACIDADE no payload (dias com carga de montagem/PE → duplas/ocupação)
+    assert d["capacidade_cfg"]["produtividade_montagem"] == 7000.0
+    dias_mont = {cg["data"] for cg in mont}
+    cap_mont = [cp for cp in d["capacidade"] if cp["data"] in dias_mont]
+    assert cap_mont and all(cp["duplas"] >= 1 for cp in cap_mont)
 
 
 def test_endpoint_agenda_isola_loja(app_db, seed, http_client_factory):

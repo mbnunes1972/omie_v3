@@ -583,7 +583,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
       <div class="nav-item" id="nav-16" onclick="goPage(16)" title="Agenda da Loja"><i class="ti ti-calendar"></i>Agenda</div>
       <div class="nav-item" id="nav-central-com" onclick="ocAbrirPagina('atend')" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="oc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
-      <div class="nav-item" id="nav-chat-cfg" onclick="goPageChat()" title="Configurações do Orizon Chat"><i class="ti ti-message-cog"></i>Config do Chat</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -3624,12 +3623,13 @@ async function cfgAgendaSalvar(lid){
 let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
 let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
 let _agVista='cal', _agSemBase=null, _agCargas=[], _agItens=[], _agSelCarga=null;
+let _agCap=[], _agCapCfg={};   // Fatia 4: capacidade (duplas de montagem + ocupação do PE)
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function _agSegunda(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function agendaVista(v){
-  if(_agVisao==='operacional' && v!=='cal') return;   // Semana/Mês são R$ — só visão comercial
+  if(_agVisao==='operacional' && v!=='cal') return;   // Semana/Mês/Capacidade são R$ — só comercial
   _agVista=v; _agSel=null; _agSelCarga=null;
-  if(v==='sem' && !_agSemBase) _agSemBase=_agSegunda(new Date());
+  if((v==='sem'||v==='cap') && !_agSemBase) _agSemBase=_agSegunda(new Date());
   agendaCarregar();
 }
 function agendaAbrir(){
@@ -3662,7 +3662,7 @@ async function agendaProjeto(v){
 }
 function agendaNav(d){
   _agSel=null; _agSelCarga=null;
-  if(_agVista==='sem'){
+  if(_agVista==='sem'||_agVista==='cap'){
     if(d===0) _agSemBase=_agSegunda(new Date());
     else _agSemBase.setDate(_agSemBase.getDate()+7*d);
   } else if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
@@ -3672,10 +3672,13 @@ function agendaNav(d){
 function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agSel=null; _agRender(); }
 function _agIso(a,m,d){ const p=n=>String(n).padStart(2,'0'); return a+'-'+p(m+1)+'-'+p(d); }
 function _agRangeAtual(){
-  // período buscado por vista: mês (cal), semana (sem) ou mês anterior+atual (mes — comparativo)
-  if(_agVista==='sem'){
+  // período buscado por vista: mês (cal), semana (sem), mês anterior+atual (mes — comparativo)
+  // ou horizonte de capacidade (cap: segunda da semana base + N semanas da config)
+  if(_agVista==='sem'||_agVista==='cap'){
     if(!_agSemBase) _agSemBase=_agSegunda(new Date());
-    const a=_agSemBase, b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+6);
+    const a=_agSemBase;
+    const nDias=_agVista==='cap' ? ((_agCapCfg.horizonte_semanas||6)*7-1) : 6;
+    const b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+nDias);
     return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
   }
   const ult=_agIso(_agAno,_agMes,new Date(_agAno,_agMes+1,0).getDate());
@@ -3695,7 +3698,11 @@ async function agendaCarregar(){
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
     _agMarcos=d.marcos||[]; _agCargas=d.cargas||[]; _agVisao=d.visao||'comercial';
     _agSetores=d.setores||[]; _agItens=d.itens||[];
-    if(_agVista==='sem') _agRenderSemana(); else if(_agVista==='mes') _agRenderMes(); else _agRender();
+    _agCap=d.capacidade||[]; _agCapCfg=d.capacidade_cfg||{};
+    if(_agVista==='sem') _agRenderSemana();
+    else if(_agVista==='mes') _agRenderMes();
+    else if(_agVista==='cap') _agRenderCap();
+    else _agRender();
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
 }
 // Cabeçalho comum das três visões: switcher · navegação ‹ período › · seletor de projeto ·
@@ -3710,7 +3717,7 @@ function _agHeader(tituloPeriodo){
     return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
   }).join('')}</div>` : '';
   return `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px">
-    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">${btn('cal','Calendário')}${btn('sem','Semana')}${btn('mes','Mês')}</div>
+    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">${btn('cal','Calendário')}${btn('sem','Semana')}${btn('mes','Mês')}${btn('cap','Capacidade')}</div>
     <div style="display:flex;align-items:center;gap:8px">
       <button class="btn btn-ghost btn-sm" onclick="agendaNav(-1)">&#x2039;</button>
       <span style="font-weight:800;color:var(--text);min-width:150px;text-align:center">${tituloPeriodo}</span>
@@ -3882,6 +3889,65 @@ function _agRenderMes(){
       <div style="font-size:10px;color:var(--muted);margin-top:8px">Volumes em <strong style="color:var(--text)">valor líquido</strong> (cargas nas janelas do cronograma; Produção e Entrega no dia). Cada item é uma lente sobre o mesmo valor — não some os cards. Clique num card para ver a composição.</div>
       <div id="agenda-carga-det" style="margin-top:12px"></div>`;
   if(_agSelCarga) _agRenderCargaDet();
+}
+// ── Fatia 4: painel CAPACIDADE — duplas de montagem × disponíveis + ocupação do PE ─────────
+// Duas faixas (o PE não fica órfão do "Gantt"): a janela vem do cronograma (cargas); a
+// produtividade da Config converte carga diária em recurso necessário. Gantt nominal = v2.
+function _agRenderCap(){
+  const box=document.getElementById('agenda-ui'); if(!box) return;
+  const [deIso,ateIso]=_agRangeAtual();
+  const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
+  // dias ÚTEIS do horizonte (dom sempre fora; sáb conforme config)
+  const dias=[];
+  for(let d=new Date(_agSemBase.getFullYear(),_agSemBase.getMonth(),_agSemBase.getDate());;d.setDate(d.getDate()+1)){
+    const iso=_agIso(d.getFullYear(),d.getMonth(),d.getDate());
+    if(iso>ateIso) break;
+    if(d.getDay()===0) continue;
+    if(d.getDay()===6 && !_agCapCfg.sabado_util) continue;
+    dias.push(iso);
+  }
+  const porDia={}; _agCap.forEach(c=>{ porDia[c.data]=c; });
+  const disp=Math.max(0,parseInt(_agCapCfg.duplas_disponiveis,10)||0);
+  const maxD=Math.max(disp,...dias.map(i=>(porDia[i]||{}).duplas||0),1)+1;
+  const rotDia=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
+  const barra=(hPct,cor,rot,topo)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px">
+      <div style="height:110px;width:100%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end">
+        ${topo?`<div style="font-size:9px;text-align:center;color:var(--muted)">${topo}</div>`:''}
+        <div style="height:${hPct}%;background:${cor};border-radius:4px 4px 0 0;min-height:${hPct>0?'3':'0'}px"></div>
+      </div><div style="font-size:9px;color:var(--muted)">${rot}</div></div>`;
+  // faixa 1 — Montagem (duplas)
+  let totalDuplasDia=0;
+  const barsM=dias.map(iso=>{
+    const c=porDia[iso]||{}; const n=c.duplas||0; totalDuplasDia+=n;
+    const cor=n>disp?'var(--status-err)':(n>0?'var(--status-ok)':'var(--border)');
+    return barra(Math.round(n/maxD*100), cor, rotDia(iso), n>0?String(n):'');
+  }).join('');
+  const linhaCap=disp>0?`<div style="position:absolute;left:0;right:0;bottom:${14+Math.round(disp/maxD*110)}px;border-top:2px dashed var(--muted);opacity:.7"></div>
+    <div style="position:absolute;right:4px;bottom:${16+Math.round(disp/maxD*110)}px;font-size:9px;color:var(--muted)">${disp} dupla(s) disponíveis</div>`:'';
+  const capTotal=disp*dias.length;
+  // faixa 2 — Projeto Executivo (ocupação %)
+  const maxP=Math.max(120,...dias.map(i=>(porDia[i]||{}).pe_pct||0));
+  let somaPe=0;
+  const barsP=dias.map(iso=>{
+    const c=porDia[iso]||{}; const p=c.pe_pct||0; somaPe+=(c.pe||0);
+    const cor=p>100?'var(--status-err)':(p>0?'var(--status-ok)':'var(--border)');
+    return barra(Math.round(p/maxP*100), cor, rotDia(iso), p>0?Math.round(p)+'%':'');
+  }).join('');
+  const linha100=`<div style="position:absolute;left:0;right:0;bottom:${14+Math.round(100/maxP*110)}px;border-top:2px dashed var(--muted);opacity:.7"></div>
+    <div style="position:absolute;right:4px;bottom:${16+Math.round(100/maxP*110)}px;font-size:9px;color:var(--muted)">100% (R$ ${_agN0(_agCapCfg.produtividade_pe||20000)}/dia)</div>`;
+  const diasPe=(_agCapCfg.produtividade_pe>0)?(somaPe/_agCapCfg.produtividade_pe):0;
+  box.innerHTML = _agHeader(`${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}`)
+    +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
+      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Montagem — duplas necessárias por dia</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''}</div>
+      <div style="position:relative"><div style="display:flex;gap:3px;align-items:flex-end">${barsM}</div>${linhaCap}</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px">
+      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Projeto Executivo — ocupação diária</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_agCapCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor</div>
+      <div style="position:relative"><div style="display:flex;gap:3px;align-items:flex-end">${barsP}</div>${linha100}</div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:8px">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades e duplas em Config → Agenda.</div>`;
 }
 function agendaCarga(item,dia){
   _agSelCarga=(_agSelCarga&&_agSelCarga.item===item&&_agSelCarga.dia===dia)?null:{item,dia};
@@ -10538,14 +10604,10 @@ function empresaTrocar(id){
 }
 
 // ── Orizon Chat — módulo de página cheia (mockup 2026-07-28) ──────────────────
-function goPageChat(){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  const pg = document.getElementById('page-chat'); if(pg) pg.classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
-  const nav = document.getElementById('nav-chat-cfg'); if(nav) nav.classList.add('active');
-  const sbParams = document.getElementById('sb-params'); if(sbParams) sbParams.style.display='none';
-  ochatIr('modelos');
-}
+// Unificação 2026-08-03 (pedido do usuário): o item "Config do Chat" do menu lateral era
+// REDUNDANTE — abria a MESMA page-chat, só aterrissando em Modelos. A página do Orizon Chat
+// tem navegação interna própria (Atendimentos · Chat Interno · Segmentos · Triagem · Modelos ·
+// Números · Consumo); a config se alcança por ela. goPageChat/nav-chat-cfg removidos.
 const _OCHAT_TOP = {
   atend:    ['Atendimentos', 'Pessoais · Grupos · Arquivadas — "Pendentes" filtra o recebido sem resposta; o segmento é etiqueta interna de roteamento, não muda o número que o cliente vê.'],
   interno:  ['Chat Interno', 'Conversas da equipe nas mesmas abas dos Atendimentos — Mural, Fóruns e Administração ficam na barra de ações. Sem canal externo.'],

@@ -582,7 +582,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="sb-nav-title">Atalhos</div>
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
       <div class="nav-item" id="nav-16" onclick="goPage(16)" title="Agenda da Loja"><i class="ti ti-calendar"></i>Agenda</div>
-      <div class="nav-item" id="nav-central-com" onclick="ocAbrirPagina('atend')" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat<span id="oc-badge" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
+      <div class="nav-item" id="nav-central-com" onclick="ocAbrirPagina('atend')" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -2038,8 +2038,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="ochat-shell">
       <div class="ochat-side">
         <div class="ochat-side-title">Comunicação</div>
-        <div class="ochat-nav" data-scr="atend" onclick="ochatIr('atend')"><i class="ti ti-message-circle-2"></i> Atendimentos</div>
-        <div class="ochat-nav" data-scr="interno" onclick="ochatIr('interno')"><i class="ti ti-users-group"></i> Chat Interno</div>
+        <div class="ochat-nav" data-scr="atend" onclick="ochatIr('atend')" style="display:flex;align-items:center"><i class="ti ti-message-circle-2"></i> Atendimentos<span id="oc-badge-atend" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
+        <div class="ochat-nav" data-scr="interno" onclick="ochatIr('interno')" style="display:flex;align-items:center"><i class="ti ti-users-group"></i> Chat Interno<span id="oc-badge-interno" style="display:none;margin-left:auto;background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 7px;min-width:16px;text-align:center"></span></div>
         <div class="ochat-side-title">Configurações do Chat</div>
         <div class="ochat-nav" data-scr="segmentos" onclick="ochatIr('segmentos')"><i class="ti ti-adjustments"></i> Segmentos</div>
         <div class="ochat-nav" data-scr="triagem" onclick="ochatIr('triagem')"><i class="ti ti-signpost"></i> Triagem</div>
@@ -10718,7 +10718,7 @@ async function chatInternoCarregar(){
   catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
-  ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
+  ocAtualizarBadges();
   _intInbox = _ocInbox.filter(c=>_INT_TIPOS.includes(c.tipo));
   const mural = _ocInbox.find(c=>c.tipo==='mural'||c.tipo==='publico');
   const mb = document.getElementById('int-mural-nl');
@@ -10806,7 +10806,7 @@ async function chatAtendCarregar(){
   catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
-  ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0));
+  ocAtualizarBadges();
   _atdInbox = _ocInbox.filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
   // Fila de TRIAGEM humana (spec 2026-07-31) — entra na aba "Novos", antes dos não-lidos.
   try{
@@ -13393,16 +13393,24 @@ function _ocRefrescar(){
 async function _ocInboxAtualizar(){
   try{
     const d = await fetch('/api/comunicacao/inbox',{credentials:'same-origin'}).then(r=>r.json());
-    if(d && d.ok){ _ocInbox = d.conversas || []; ocAtualizarBadgeTotal(_ocInbox.reduce((s,c)=>s+(c.nao_lidas||0),0)); }
+    if(d && d.ok){ _ocInbox = d.conversas || []; ocAtualizarBadges(); }
   }catch(e){}
   return _ocInbox;
 }
 
-function ocAtualizarBadgeTotal(total){
-  const b = document.getElementById('oc-badge');
-  if(!b) return;
-  if(total > 0){ b.textContent = total > 99 ? '99+' : total; b.style.display = 'inline-block'; }
-  else b.style.display = 'none';
+// Reposicionamento 2026-08-03 (pedido do usuário): o badge de não-lidas saiu da SIDEBAR
+// (número sem contexto) e vive DENTRO do Orizon Chat, por canal — Atendimentos (conversas
+// externas/projeto) e Chat Interno (equipe + Mural).
+function ocAtualizarBadges(){
+  const soma = lst => lst.reduce((s,c)=>s+(c.nao_lidas||0), 0);
+  const interno = (_ocInbox||[]).filter(c=>_INT_TIPOS.includes(c.tipo) || c.tipo==='mural' || c.tipo==='publico');
+  const atend   = (_ocInbox||[]).filter(c=>!interno.includes(c));
+  [['oc-badge-atend', soma(atend)], ['oc-badge-interno', soma(interno)]].forEach(([id,total])=>{
+    const b = document.getElementById(id);
+    if(!b) return;
+    if(total > 0){ b.textContent = total > 99 ? '99+' : total; b.style.display = 'inline-block'; }
+    else b.style.display = 'none';
+  });
 }
 async function ocPollBadge(){
   const nav = document.getElementById('nav-central-com');

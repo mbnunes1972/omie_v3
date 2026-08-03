@@ -2779,8 +2779,17 @@ faltava) · unificação do nav do Chat.
   backfills/reparos idempotentes: `val_liq_congelado`, subfases do PE e o REPARO dos
   `parametros_json` zerados pós-assinatura (importante: homolog pode ter projetos com o dano
   do bug 🔴 do E2E).
-- **Grafo MCP (Neo4j) re-ingerido** (`fonte: all`) — estava defasado desde a Sessão 134.
+- **Grafo MCP (Neo4j) re-ingerido** (`fonte: all`) — estava defasado desde a Sessão 134:
+  código 3427/3118, banco 213/142, requisitos 31, domínio 19, decisões 17.
 - Produção (`orizonone.com.br`) NÃO tocada — segue gated por OK explícito do usuário.
+
+**Rev pós-deploy (pedido do usuário): badge de não-lidas SAIU da sidebar.** O bullet numérico
+ao lado de "Orizon Chat" era o Σ de mensagens não lidas do inbox (no caso do usuário, ruído de
+conversas de teste/E2E) — número sem contexto fora do chat. REPOSICIONADO para dentro do
+Orizon Chat, POR CANAL: badges nos itens internos **Atendimentos** (conversas externas/
+projeto) e **Chat Interno** (equipe + Mural) — `ocAtualizarBadges()` substitui o total único.
+O poll de 45s segue vivo (mantém o heartbeat de presença da ponte WhatsApp). VPS A atualizada
+junto (frontend-only, sem restart); B segue na tag.
 
 ## Sessão 147 — E2E da Vera (Projeto_Vera_E2E): fluxo completo até a NF-e + 2 bugs corrigidos
 

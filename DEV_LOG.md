@@ -1369,6 +1369,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 141 (Agenda Fatia 2):** a Agenda ganhou TELA — nav "Agenda" + visão Calendário
+> (grade do mês, badges por Setor, Σ de entregas no dia, drill-down inline) sobre o novo
+> `GET /api/agenda` + `mod_agenda.py` (marcos por Setor; entrega 16 por fase). Subfases do
+> PE ganham data prevista default (frações da janela da 11). Suíte 1686 verde. Próxima:
+> Fatia 3 (cargas + Semana/Mês).
+>
 > **Sessão 140 (Agenda Fatia 1):** `parcela_projeto.val_liq_congelado` — Val_Liq congelado
 > por fase nos 5 caminhos (desmembrar, sucessivo, reter, liberar em ondas, confirmar) com
 > Σ == Val_Liq exata; helper `_liquidos_contrato_por_ambiente`; backfill idempotente no
@@ -2717,6 +2723,38 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 141 — Agenda da Loja FATIA 2: marcos + endpoint + visão Calendário (primeira TELA da Agenda)
+
+Fatia 2 do plano — a Agenda aparece na interface.
+
+- **Subfases do PE ganham data prevista default** (`mod_cronograma.SUBFASES_PE_FRACOES`):
+  frações da janela da etapa 11 no `gerar_cronograma_projeto` — 11a 20% · 11b 40% · 11c 70% ·
+  11d 85% · 11e 100%. Só preenche subfase SEM data (edição manual nunca é sobrescrita); sem
+  isso os marcos de Planta de Pontos/Revisão/assinatura do PE não existiam.
+- **`mod_agenda.py`** novo (puro, domínio ciclo): `SETOR_POR_ETAPA` (refinamento de exibição do
+  FAIXA_POR_ETAPA: medição 9-10 · pe 11a-e · expedição 12-16 · montagem 17-20 · financeiro
+  8/11d/21), `marcos_do_projeto` (executado substitui previsto; medição com fallback na
+  `previsao_medicao`; **entrega 16 POR FASE** com a prioridade da faixa de entrega: card da
+  expedição > previsão da fase > prevista da 16 > data do projeto; fase retida marcada) e
+  `marcos(projetos, de, ate, setor)` ordenado.
+- **`GET /api/agenda?de&ate&setor`**: agrega os marcos de TODOS os projetos com contrato da
+  loja (exclui `perdido`); consultor filtrado por posse (`criado_por_id`), operacional por
+  atribuição E com **valores omitidos** (`visao_do_papel`); valor do marco = Val_Liq (fase
+  congelada / orçamento contratado). Payload granular por dia — Semana/Mês (Fatia 3) consomem
+  o mesmo endpoint.
+- **Frontend:** nav "Agenda" (abaixo de Projetos) + page-16. Visão **Calendário**: grade do
+  mês (Dom–Sáb), badges por Setor com contagem, rodapé do dia com Σ das ENTREGAS (R$), hoje
+  destacado, navegação ‹ hoje › e chips de filtro por Setor; clique no dia abre o detalhamento
+  INLINE (padrão sem modal): Setor | Marco | Projeto·Cliente | Valor | Previsto/Realizado.
+  Switcher já mostra Semana/Mês desabilitados (Fatia 3).
+- **TDD** `tests/test_agenda.py` (9): motor puro (previsto/realizado, fallback da medição,
+  setores/títulos das subfases, entrega por fase com prioridade e retida, filtros), offsets do
+  PE (frações + não sobrescrever edição) e endpoint (dados, filtro de setor, isolamento de
+  loja).
+
+Suíte **1686 verde** (+9); `node --check` ok; 4 falhas pré-existentes de chat/e-mail seguem.
+Próxima: **Fatia 3** (cargas distribuídas + visões Semana/Mês).
 
 ## Sessão 140 — Agenda da Loja FATIA 1: `val_liq_congelado` por fase (unidade da Agenda)
 

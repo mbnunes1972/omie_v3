@@ -1434,6 +1434,98 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+
+        if path == "/api/agenda":
+            # ── Agenda da Loja (Fatia 2, spec 2026-08-03): marcos de TODOS os cronogramas ──
+            # DERIVADA: lê cronograma/fases/expedição e devolve marcos por dia/Setor. Escopo da
+            # LOJA; consultor filtrado por posse; visão operacional recebe marcos SEM valores.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            from urllib.parse import parse_qs
+            _qs = parse_qs(urlparse(self.path).query)
+            def _q(k):
+                return (_qs.get(k) or [None])[0]
+            def _pd(s):
+                try:
+                    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                except ValueError:
+                    return None
+            de, ate, setor = _pd(_q("de")), _pd(_q("ate")), (_q("setor") or None)
+            db = get_session()
+            try:
+                import mod_agenda as _mag
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                visao = mod_escopo.visao_do_papel(ator)
+                projs = (db.query(Projeto)
+                           .join(Contrato, Contrato.projeto_nome == Projeto.nome_safe)
+                           .filter(Projeto.loja_id == loja_id)
+                           .distinct().all())
+                if _ve_apenas_proprios_projetos(ator.get("nivel")):
+                    projs = [p for p in projs
+                             if p.criado_por_id in (None, ator.get("id"))]
+                if mod_escopo.escopo_por_atribuicao(ator):
+                    _atrib = _projetos_atribuidos_ao_usuario(db, ator.get("id"), loja_id)
+                    projs = [p for p in projs if p.nome_safe in _atrib]
+                dados = []
+                for pr in projs:
+                    if pr.status == "perdido":
+                        continue
+                    contrato = (db.query(Contrato).filter_by(projeto_nome=pr.nome_safe)
+                                  .order_by(Contrato.id.desc()).first())
+                    orc = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+                    cli = db.get(Cliente, pr.cliente_id) if pr.cliente_id else None
+                    etapas = {}
+                    for e in db.query(CicloEtapa).filter_by(projeto_nome=pr.nome_safe).all():
+                        etapas[e.etapa_codigo] = {
+                            "prevista": e.data_prevista_conclusao,
+                            "concluida_em": (e.concluido_em
+                                             if e.status in mod_ciclo.STATUS_CONCLUSIVOS else None)}
+                    parcs = (db.query(ParcelaProjeto).filter_by(projeto_nome=pr.nome_safe)
+                               .order_by(ParcelaProjeto.ordem.asc()).all())
+                    cards = {c.parcela_id: c for c in
+                             db.query(CicloLogistico)
+                               .filter(CicloLogistico.projeto_nome == pr.nome_safe,
+                                       CicloLogistico.parcela_id != None).all()}  # noqa: E711
+                    card_glob = (db.query(CicloLogistico)
+                                   .filter_by(projeto_nome=pr.nome_safe, parcela_id=None)
+                                   .order_by(CicloLogistico.id.desc()).first())
+                    fases = []
+                    for f in parcs:
+                        card = cards.get(f.id)
+                        fases.append({"ordem": f.ordem, "status": f.status,
+                                      "val_liq": f.val_liq_congelado,
+                                      "entrega_prevista": f.entrega_prevista,
+                                      "card_prazo_entrega": card.prazo_entrega if card else None,
+                                      "card_data_entrega": card.data_entrega if card else None})
+                    if not fases:
+                        _c16 = etapas.get("16") or {}
+                        fases = [{"ordem": None, "status": None,
+                                  "val_liq": (orc.valor_liquido if orc else None),
+                                  "entrega_prevista": None,
+                                  "card_prazo_entrega": card_glob.prazo_entrega if card_glob else None,
+                                  "card_data_entrega": ((card_glob.data_entrega if card_glob else None)
+                                                        or _c16.get("concluida_em"))}]
+                    dados.append({"nome_safe": pr.nome_safe,
+                                  "cliente": (cli.nome if cli else None),
+                                  "val_liq": (orc.valor_liquido if orc else None),
+                                  "previsao_medicao": pr.previsao_medicao,
+                                  "data_entrega": pr.data_entrega,
+                                  "etapas": etapas, "fases": fases})
+                out = []
+                for m in _mag.marcos(dados, de=de, ate=ate, setor=setor):
+                    if visao == "operacional":
+                        m["valor"] = None            # visão do papel: sem comercial (Regras §3)
+                    m["data"] = m["data"].isoformat()
+                    out.append(m)
+                self.send_json({"ok": True, "marcos": out, "visao": visao,
+                                "setores": [{"id": s, "rotulo": r} for s, r in _mag.SETORES]})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/contas-a-pagar":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return

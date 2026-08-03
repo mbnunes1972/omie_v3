@@ -35,10 +35,18 @@ def cronograma_padrao(cfg):
     return out
 
 
+# Subfases do PE — offsets DEFAULT como frações da janela da etapa 11 (Agenda Fatia 2, spec
+# 2026-08-03 §3): o cronograma padrão só data as etapas principais; sem isto os marcos de
+# Planta de Pontos/Revisão/assinatura do PE não existem na Agenda. Só preenche subfase SEM
+# data prevista (edição manual via modal de cronograma nunca é sobrescrita).
+SUBFASES_PE_FRACOES = [("11a", 0.20), ("11b", 0.40), ("11c", 0.70), ("11d", 0.85), ("11e", 1.00)]
+
+
 def gerar_cronograma_projeto(db, projeto_nome, cfg, d0):
     """Para cada fase do Cronograma Padrão, cria/atualiza a etapa do projeto com
     data_prevista_conclusao = d0 + Σ(durações das etapas até esta, inclusive). prazo_dias é a DURAÇÃO
-    da etapa (dias corridos). Não toca data de conclusão. Idempotente. Retorna as CicloEtapa afetadas."""
+    da etapa (dias corridos). Não toca data de conclusão. Idempotente. Retorna as CicloEtapa afetadas.
+    Subfases do PE ganham data default por fração da janela da 11 (SUBFASES_PE_FRACOES)."""
     afetadas = []
     acc = 0
     for fase in cronograma_padrao(cfg):
@@ -53,6 +61,18 @@ def gerar_cronograma_projeto(db, projeto_nome, cfg, d0):
         # Herda a FUNÇÃO responsável do padrão (v12); não sobrescreve o funcionário já escolhido.
         reg.funcao_responsavel_id = fase.get("funcao_id")
         afetadas.append(reg)
+        if fase["codigo"] == "11" and fase["prazo_dias"] > 0:
+            inicio_11 = acc - fase["prazo_dias"]
+            for cod_sf, frac in SUBFASES_PE_FRACOES:
+                sf = (db.query(CicloEtapa)
+                      .filter_by(projeto_nome=projeto_nome, etapa_codigo=cod_sf).first())
+                if sf is None:
+                    sf = CicloEtapa(projeto_nome=projeto_nome, etapa_codigo=cod_sf)
+                    db.add(sf)
+                if sf.data_prevista_conclusao is None:
+                    sf.data_prevista_conclusao = d0 + timedelta(
+                        days=inicio_11 + round(fase["prazo_dias"] * frac))
+                    afetadas.append(sf)
     db.flush()
     return afetadas
 

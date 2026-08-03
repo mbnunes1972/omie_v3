@@ -1524,8 +1524,16 @@ class Handler(BaseHTTPRequestHandler):
                         m["valor"] = None            # visão do papel: sem comercial (Regras §3)
                     m["data"] = m["data"].isoformat()
                     out.append(m)
-                self.send_json({"ok": True, "marcos": out, "visao": visao,
-                                "setores": [{"id": s, "rotulo": r} for s, r in _mag.SETORES]})
+                # Fatia 3: CARGAS (catálogo de itens com valor) — só p/ visão comercial
+                cargas_out = []
+                if visao != "operacional":
+                    _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                    for c in _mag.cargas(dados, cfg_agenda=_cfg_ag, de=de, ate=ate):
+                        c["data"] = c["data"].isoformat()
+                        cargas_out.append(c)
+                self.send_json({"ok": True, "marcos": out, "cargas": cargas_out, "visao": visao,
+                                "setores": [{"id": s, "rotulo": r} for s, r in _mag.SETORES],
+                                "itens": [{"id": i, "rotulo": r} for i, r in _mag.ITENS_VALOR]})
             finally:
                 db.close()
             return

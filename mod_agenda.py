@@ -91,6 +91,100 @@ def marcos_do_projeto(p):
     return out
 
 
+# ── Fatia 3: CARGAS — catálogo de itens com valor (spec §5 rev 2) ────────────────────────────
+# Cada item é uma LENTE sobre o Val_Liq da fase: cargas distribuídas usam a janela do
+# CRONOGRAMA espalhada em dias úteis (mod_calendario); marcos valorados caem num dia.
+# Fase RETIDA fica fora das cargas (não avança — não ocupa agenda até liberar).
+ITENS_VALOR = [("pe", "Projeto Executivo"),
+               ("conferencia", "Conferência e Implantação"),
+               ("producao", "Produção (saída da fábrica)"),
+               ("montagem", "Montagem"),
+               ("entrega", "Entrega ao cliente")]
+
+
+def _dia_seguinte_util(d, cfg):
+    import mod_calendario
+    from datetime import timedelta
+    return mod_calendario.proximo_dia_util(d + timedelta(days=1), cfg)
+
+
+def _janela_espalhada(valor, inicio, fim, cfg):
+    """Espalha `valor` nos dias úteis de [inicio, fim] (fim < inicio → tudo no inicio)."""
+    import mod_calendario
+    inicio = mod_calendario.proximo_dia_util(inicio, cfg)
+    n = mod_calendario.dias_uteis_entre(inicio, fim, cfg) if fim and fim >= inicio else 1
+    return mod_calendario.espalhar(valor, inicio, max(1, n), cfg)
+
+
+def cargas_do_projeto(p, cfg_agenda=None):
+    """Cargas de UM projeto: [{data, item, valor, projeto, fase}]. Datas do CRONOGRAMA
+    (executado substitui previsto no fim da janela)."""
+    cfg = cfg_agenda or {}
+    et = p.get("etapas") or {}
+
+    def _fim(cod):
+        e = et.get(cod) or {}
+        return _d(e.get("concluida_em")) or _d(e.get("prevista"))
+
+    e16 = et.get("16") or {}
+    val_proj = p.get("val_liq")
+    fases = p.get("fases") or [{"ordem": None, "status": None, "val_liq": val_proj,
+                                "entrega_prevista": None, "card_prazo_entrega": None,
+                                "card_data_entrega": _d(e16.get("concluida_em"))}]
+    out = []
+
+    def _add_espalhado(item, valor, inicio, fim, fase):
+        if valor is None or not inicio:
+            return
+        for dia, fatia in _janela_espalhada(valor, inicio, fim, cfg).items():
+            out.append({"data": dia, "item": item, "valor": fatia,
+                        "projeto": p.get("nome_safe"), "fase": fase})
+
+    def _add_marco(item, valor, dia, fase):
+        if valor is None or not dia:
+            return
+        out.append({"data": dia, "item": item, "valor": valor,
+                    "projeto": p.get("nome_safe"), "fase": fase})
+
+    fim10, fim11, fim12, fim13, fim17 = (_fim(c) for c in ("10", "11", "12", "13", "17"))
+    for f in fases:
+        if f.get("status") == "retido":
+            continue
+        vl = f.get("val_liq")
+        # Projeto Executivo: conclusão da 10 → prevista da 11
+        if fim10 and fim11:
+            _add_espalhado("pe", vl, _dia_seguinte_util(fim10, cfg), fim11, f.get("ordem"))
+        # Conferência e Implantação: prevista da 11 → prevista da 12
+        if fim11 and fim12:
+            _add_espalhado("conferencia", vl, _dia_seguinte_util(fim11, cfg), fim12, f.get("ordem"))
+        # Produção: marco valorado na SAÍDA da fábrica (prevista/realizada da 13)
+        _add_marco("producao", vl, fim13, f.get("ordem"))
+        # Entrega ao cliente: marco valorado na data de entrega da fase (regra da faixa)
+        entrega = (_d(f.get("card_data_entrega")) or _d(f.get("card_prazo_entrega"))
+                   or _d(f.get("entrega_prevista")) or _d(e16.get("prevista"))
+                   or _d(p.get("data_entrega")))
+        _add_marco("entrega", vl, entrega, f.get("ordem"))
+        # Montagem: dia útil seguinte à entrega da fase → prevista da 17
+        if entrega:
+            _add_espalhado("montagem", vl, _dia_seguinte_util(entrega, cfg),
+                           (fim17 if (fim17 and fim17 > entrega) else None), f.get("ordem"))
+    return out
+
+
+def cargas(projetos, cfg_agenda=None, de=None, ate=None):
+    """Cargas de VÁRIOS projetos filtradas por período, ordenadas por (data, item, projeto)."""
+    out = []
+    for p in (projetos or []):
+        for c in cargas_do_projeto(p, cfg_agenda):
+            if de and c["data"] < de:
+                continue
+            if ate and c["data"] > ate:
+                continue
+            out.append(c)
+    out.sort(key=lambda c: (c["data"], c["item"], c["projeto"] or ""))
+    return out
+
+
 def marcos(projetos, de=None, ate=None, setor=None):
     """Marcos de VÁRIOS projetos, filtrados por período [de, ate] (inclusivo) e Setor,
     ordenados por (data, projeto, etapa)."""

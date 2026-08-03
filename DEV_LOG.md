@@ -1369,6 +1369,11 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 143 (Agenda Fatia 3):** cargas do catálogo (PE · Conferência · Produção ·
+> Montagem · Entrega, lentes sobre o Val_Liq da fase; retida fora) + visões SEMANA (itens ×
+> dias, composição por clique) e MÊS (cards com comparativo vs mês anterior). Suíte 1692
+> verde. Próxima: Fatia 4 (Capacidade).
+>
 > **Sessão 142 (retenção auditável):** motivo em SELETOR (catálogo MOTIVOS_RETENCAO,
 > obrigatório) + descrição livre; data da retenção visível no form; histórico com
 > Fase(s)/motivo tipo+descrição (snapshot `fases_json`). Suíte 1687 verde.
@@ -2727,6 +2732,33 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 143 — Agenda da Loja FATIA 3: cargas do catálogo + visões SEMANA e MÊS
+
+Fatia 3 do plano, com o catálogo de itens com valor aprovado (spec §5 rev 2).
+
+- **`mod_agenda.cargas`** (puro, +5 testes): cada item é uma LENTE sobre o Val_Liq da fase —
+  **Projeto Executivo** (carga espalhada em dias úteis na janela fim da 10 → prevista da 11,
+  via `mod_calendario.espalhar` com a config da loja: sábado/feriados) · **Conferência e
+  Implantação** (janela 11 → 12) · **Produção (saída da fábrica)** (marco valorado na prevista
+  da 13) · **Montagem** (dia útil seguinte à entrega da fase → prevista da 17) · **Entrega ao
+  cliente** (marco valorado na data da entrega, regra da faixa). **Fase retida fica FORA das
+  cargas** (não avança → não ocupa agenda). Executado substitui previsto no fim das janelas.
+- **GET /api/agenda** devolve `cargas` + `itens` (visão operacional recebe `cargas: []` — tudo
+  ali é R$).
+- **Visão SEMANA**: tabela Itens × dias (Seg–Dom, navegação semanal própria no ‹ hoje ›),
+  célula = Σ do item no dia, coluna total da semana, hoje destacado; clique na célula abre a
+  COMPOSIÇÃO inline (projeto · fase · valor). **Visão MÊS**: um card por item — total do mês,
+  nº de fases e comparativo ▲▼% vs mês anterior (o fetch do Mês cobre os 2 meses); clique no
+  card abre a composição do mês. Cabeçalho unificado nas 3 visões (`_agHeader`); chips de
+  Setor só no Calendário; nota fixa "cada item é uma lente — não somar linhas/cards";
+  Semana/Mês desabilitados para visão operacional.
+- Rótulo explícito em todo valor exibido (a correção de nomenclatura da rev 2): "valor de quê"
+  agora é sempre o nome do item.
+
+Suíte **1692 verde** (+5); validação ao vivo no Norberto (PE 8 dias úteis; montagem 21 dias
+pós-entrega; produção/entrega no dia; Σ por fase exata). `node --check` ok. Próxima: **Fatia
+4** (painel Capacidade: duplas de montagem + ocupação do PE).
 
 ## Sessão 142 — Retenção AUDITÁVEL: catálogo de motivos + descrição + data do ato + fases no histórico
 

@@ -3618,12 +3618,20 @@ async function cfgAgendaSalvar(lid){
   showToast('Agenda e Capacidade salvas.');
 }
 
-// ── Agenda da Loja (Fatia 2 — visão Calendário; spec 2026-08-03) ─────────────────────────
-// Marcos por dia/Setor de todos os cronogramas da loja (GET /api/agenda). Semana/Mês e o
-// painel Capacidade entram nas Fatias 3/4. Visão operacional recebe marcos SEM valores.
+// ── Agenda da Loja (Fatias 2+3; spec 2026-08-03) ─────────────────────────────────────────
+// Calendário = marcos (datas/status). Semana/Mês = CARGAS do catálogo de itens com valor
+// (§5 rev 2) em Val_Liq. Visão operacional: marcos sem valores e sem Semana/Mês/cargas.
 let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
 let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
+let _agVista='cal', _agSemBase=null, _agCargas=[], _agItens=[], _agSelCarga=null;
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function _agSegunda(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
+function agendaVista(v){
+  if(_agVisao==='operacional' && v!=='cal') return;   // Semana/Mês são R$ — só visão comercial
+  _agVista=v; _agSel=null; _agSelCarga=null;
+  if(v==='sem' && !_agSemBase) _agSemBase=_agSegunda(new Date());
+  agendaCarregar();
+}
 function agendaAbrir(){
   if(_agAno===null){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
   fetch('/projetos',{credentials:'same-origin'}).then(r=>r.json()).then(d=>{
@@ -3632,7 +3640,7 @@ function agendaAbrir(){
   agendaCarregar();
 }
 async function agendaProjeto(v){
-  _agProjFiltro = v || null; _agSel=null;
+  _agProjFiltro = v || null; _agSel=null; _agSelCarga=null;
   if(_agProjFiltro){
     // salto para o mês relevante: 1º marco pendente a partir de hoje (senão o último marco)
     try{
@@ -3653,23 +3661,65 @@ async function agendaProjeto(v){
   agendaCarregar();
 }
 function agendaNav(d){
-  if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
+  _agSel=null; _agSelCarga=null;
+  if(_agVista==='sem'){
+    if(d===0) _agSemBase=_agSegunda(new Date());
+    else _agSemBase.setDate(_agSemBase.getDate()+7*d);
+  } else if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
   else { _agMes+=d; if(_agMes<0){_agMes=11;_agAno--;} if(_agMes>11){_agMes=0;_agAno++;} }
-  _agSel=null; agendaCarregar();
+  agendaCarregar();
 }
 function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agSel=null; _agRender(); }
 function _agIso(a,m,d){ const p=n=>String(n).padStart(2,'0'); return a+'-'+p(m+1)+'-'+p(d); }
+function _agRangeAtual(){
+  // período buscado por vista: mês (cal), semana (sem) ou mês anterior+atual (mes — comparativo)
+  if(_agVista==='sem'){
+    if(!_agSemBase) _agSemBase=_agSegunda(new Date());
+    const a=_agSemBase, b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+6);
+    return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
+  }
+  const ult=_agIso(_agAno,_agMes,new Date(_agAno,_agMes+1,0).getDate());
+  if(_agVista==='mes'){
+    const ant=new Date(_agAno,_agMes-1,1);
+    return [_agIso(ant.getFullYear(),ant.getMonth(),1), ult];
+  }
+  return [_agIso(_agAno,_agMes,1), ult];
+}
 async function agendaCarregar(){
   const box=document.getElementById('agenda-ui'); if(!box) return;
-  const ult = new Date(_agAno, _agMes+1, 0).getDate();
+  const [de,ate]=_agRangeAtual();
   try{
-    const r = await fetch('/api/agenda?de='+_agIso(_agAno,_agMes,1)+'&ate='+_agIso(_agAno,_agMes,ult)
+    const r = await fetch('/api/agenda?de='+de+'&ate='+ate
       +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):''), {credentials:'same-origin'});
     const d = await r.json();
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
-    _agMarcos=d.marcos||[]; _agVisao=d.visao||'comercial'; _agSetores=d.setores||[];
-    _agRender();
+    _agMarcos=d.marcos||[]; _agCargas=d.cargas||[]; _agVisao=d.visao||'comercial';
+    _agSetores=d.setores||[]; _agItens=d.itens||[];
+    if(_agVista==='sem') _agRenderSemana(); else if(_agVista==='mes') _agRenderMes(); else _agRender();
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
+}
+// Cabeçalho comum das três visões: switcher · navegação ‹ período › · seletor de projeto ·
+// chips de Setor (só no Calendário — Semana/Mês são organizados pelos ITENS do catálogo).
+function _agHeader(tituloPeriodo){
+  const op=_agVisao==='operacional';
+  const btn=(v,rot)=>`<button class="home-tab${_agVista===v?' ativo':''}" style="border-radius:0;${(op&&v!=='cal')?'opacity:.45;cursor:not-allowed;':''}" onclick="agendaVista('${v}')"${(op&&v!=='cal')?' title="Disponível na visão comercial"':''}>${rot}</button>`;
+  const projOpts = '<option value="">Todos os projetos</option>' + _agProjLista.map(p=>
+    `<option value="${esc(p.nome_safe)}"${_agProjFiltro===p.nome_safe?' selected':''}>${esc(p.nome_projeto||p.nome_safe)}${p.cliente_nome?' · '+esc(p.cliente_nome):''}</option>`).join('');
+  const chips = _agVista==='cal' ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${_agSetores.map(s=>{
+    const ativo=_agSetorFiltro===s.id;
+    return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
+  }).join('')}</div>` : '';
+  return `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px">
+    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">${btn('cal','Calendário')}${btn('sem','Semana')}${btn('mes','Mês')}</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="agendaNav(-1)">&#x2039;</button>
+      <span style="font-weight:800;color:var(--text);min-width:150px;text-align:center">${tituloPeriodo}</span>
+      <button class="btn btn-ghost btn-sm" onclick="agendaNav(1)">&#x203A;</button>
+      <button class="btn btn-ghost btn-sm" onclick="agendaNav(0)">hoje</button>
+    </div>
+    <select onchange="agendaProjeto(this.value)" style="${_retidoInputStyle};max-width:260px">${projOpts}</select>
+    ${chips}
+  </div>`;
 }
 // Revisão UX 2026-08-03 (feedback do usuário): a célula do dia mostra UMA LINHA POR PROJETO —
 // só o EVENTO PRINCIPAL (prioridade abaixo; ex.: Entrega no cliente engole a NF-e do mesmo
@@ -3700,20 +3750,7 @@ function _agRender(){
   const marcos = _agSetorFiltro ? _agMarcos.filter(m=>m.setor===_agSetorFiltro) : _agMarcos;
   const porDia = {};
   marcos.forEach(m=>{ (porDia[m.data]=porDia[m.data]||[]).push(m); });
-  const chips = _agSetores.map(s=>{
-    const ativo=_agSetorFiltro===s.id;
-    return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
-  }).join('');
   const legenda = Object.keys(_AG_ST_ROT).map(s=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)"><span style="width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[s]}"></span>${_AG_ST_ROT[s]}</span>`).join(' ');
-  const switcher = `<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-      <button class="home-tab ativo" style="border-radius:0">Calendário</button>
-      <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Semana</button>
-      <button class="home-tab" style="border-radius:0;opacity:.45;cursor:not-allowed" title="Em breve (Fatia 3)">Mês</button>
-    </div>`;
-  // seletor de projeto → agenda específica (visão melhorada do cronograma do projeto)
-  const projOpts = '<option value="">Todos os projetos</option>' + _agProjLista.map(p=>
-    `<option value="${esc(p.nome_safe)}"${_agProjFiltro===p.nome_safe?' selected':''}>${esc(p.nome_projeto||p.nome_safe)}${p.cliente_nome?' · '+esc(p.cliente_nome):''}</option>`).join('');
-  const seletorProj = `<select onchange="agendaProjeto(this.value)" style="${_retidoInputStyle};max-width:260px">${projOpts}</select>`;
   const prim = new Date(_agAno,_agMes,1), ultD = new Date(_agAno,_agMes+1,0).getDate();
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
   _agEntradas=[];
@@ -3754,19 +3791,8 @@ function _agRender(){
         <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div></div>`;
   }
   const cab=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(x=>`<div style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${x}</div>`).join('');
-  box.innerHTML = `
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px">
-      ${switcher}
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="btn btn-ghost btn-sm" onclick="agendaNav(-1)">&#x2039;</button>
-        <span style="font-weight:800;color:var(--text);min-width:150px;text-align:center">${_AG_MESES[_agMes]} ${_agAno}</span>
-        <button class="btn btn-ghost btn-sm" onclick="agendaNav(1)">&#x203A;</button>
-        <button class="btn btn-ghost btn-sm" onclick="agendaNav(0)">hoje</button>
-      </div>
-      ${seletorProj}
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${chips}</div>
-    </div>
-    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>
+  box.innerHTML = _agHeader(`${_AG_MESES[_agMes]} ${_agAno}`)
+    +`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cab}${cels}</div>
     <div id="agenda-dia-det" style="margin-top:14px"></div>`;
   if(_agSel) _agRenderDia();
@@ -3798,6 +3824,88 @@ function _agRenderDia(){
     : `Todos os eventos de ${_fmtDataBR(_agSel.dia)}`;
   det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${tit}</div>
     <div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Evento</th><th>Setor</th><th>Projeto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ── Fatia 3: visões SEMANA e MÊS — cargas do catálogo de itens com valor (spec §5 rev 2) ──
+// Cada item é uma LENTE sobre o Val_Liq da fase (não somar linhas/cards entre si). Fase
+// retida fica fora das cargas; visão operacional não chega aqui (switcher desabilitado).
+const _agN0 = v => v.toLocaleString('pt-BR', {maximumFractionDigits: 0});
+function _agRenderSemana(){
+  const box=document.getElementById('agenda-ui'); if(!box) return;
+  const dias=[...Array(7)].map((_,i)=>new Date(_agSemBase.getFullYear(),_agSemBase.getMonth(),_agSemBase.getDate()+i));
+  const isoDias=dias.map(d=>_agIso(d.getFullYear(),d.getMonth(),d.getDate()));
+  const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
+  const porItemDia={};
+  _agCargas.forEach(c=>{ const k=c.item+'|'+c.data; porItemDia[k]=(porItemDia[k]||0)+c.valor; });
+  const rotDia=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const head='<th style="text-align:left">Item</th>'+dias.map((d,i)=>
+    `<th style="text-align:right;${isoDias[i]===hojeIso?'color:var(--accent)':''}">${rotDia[i]}<br><span style="font-weight:400;font-size:10px">${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}</span></th>`).join('')
+    +'<th style="text-align:right">Semana</th>';
+  const rows=_agItens.map(it=>{
+    let tot=0;
+    const cels=isoDias.map(iso=>{
+      const v=porItemDia[it.id+'|'+iso]||0; tot+=v;
+      const sel=_agSelCarga&&_agSelCarga.item===it.id&&_agSelCarga.dia===iso;
+      return `<td onclick="agendaCarga('${it.id}','${iso}')" style="text-align:right;font-family:var(--font-mono);font-size:11px;cursor:${v?'pointer':'default'};${sel?'background:var(--surface-2);font-weight:700;':''}">${v?('R$ '+_agN0(v)):'<span style="color:var(--text-3)">—</span>'}</td>`;
+    }).join('');
+    return `<tr><td style="white-space:nowrap;font-weight:600">${esc(it.rotulo)}</td>${cels}
+      <td style="text-align:right;font-family:var(--font-mono);font-size:11px;font-weight:700">${tot?('R$ '+_agN0(tot)):'—'}</td></tr>`;
+  }).join('');
+  box.innerHTML = _agHeader(`${_fmtDataBR(isoDias[0])} — ${_fmtDataBR(isoDias[6])}`)
+    +`<div class="table-wrap"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:6px">Volumes em <strong style="color:var(--text)">valor líquido</strong>. Cada item é uma lente sobre o mesmo valor — não some as linhas. Clique numa célula para ver a composição.</div>
+      <div id="agenda-carga-det" style="margin-top:12px"></div>`;
+  if(_agSelCarga) _agRenderCargaDet();
+}
+function _agRenderMes(){
+  const box=document.getElementById('agenda-ui'); if(!box) return;
+  const iniMes=_agIso(_agAno,_agMes,1), fimMes=_agIso(_agAno,_agMes,new Date(_agAno,_agMes+1,0).getDate());
+  const ant=new Date(_agAno,_agMes-1,1);
+  const iniAnt=_agIso(ant.getFullYear(),ant.getMonth(),1);
+  const fimAnt=_agIso(ant.getFullYear(),ant.getMonth(),new Date(ant.getFullYear(),ant.getMonth()+1,0).getDate());
+  const cards=_agItens.map(it=>{
+    const doMes=_agCargas.filter(c=>c.item===it.id&&c.data>=iniMes&&c.data<=fimMes);
+    const doAnt=_agCargas.filter(c=>c.item===it.id&&c.data>=iniAnt&&c.data<=fimAnt);
+    const v=doMes.reduce((t,c)=>t+c.valor,0), va=doAnt.reduce((t,c)=>t+c.valor,0);
+    const fases=new Set(doMes.map(c=>c.projeto+'|'+(c.fase||''))).size;
+    const delta=(va>0)?Math.round((v-va)/va*100):null;
+    const deltaTxt=delta===null?'':` · <span style="color:${delta>=0?'var(--status-ok)':'var(--status-err)'}">${delta>=0?'▲':'▼'} ${Math.abs(delta)}%</span> vs mês anterior`;
+    const sel=_agSelCarga&&_agSelCarga.item===it.id&&!_agSelCarga.dia;
+    return `<div onclick="agendaCargaMes('${it.id}')" style="border:1px solid ${sel?'var(--accent)':'var(--border)'};border-radius:10px;padding:12px 16px;cursor:pointer;background:${sel?'var(--surface-2)':'transparent'};min-width:210px;flex:1">
+      <div style="font-size:12px;color:var(--muted);font-weight:600">${esc(it.rotulo)}</div>
+      <div style="font-size:20px;font-weight:800;color:var(--text);font-family:var(--font-mono);margin:4px 0">${v?('R$ '+_agN0(v)):'—'}</div>
+      <div style="font-size:11px;color:var(--muted)">${fases} fase(s) no mês${deltaTxt}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = _agHeader(`${_AG_MESES[_agMes]} ${_agAno}`)
+    +`<div style="display:flex;gap:10px;flex-wrap:wrap">${cards}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:8px">Volumes em <strong style="color:var(--text)">valor líquido</strong> (cargas nas janelas do cronograma; Produção e Entrega no dia). Cada item é uma lente sobre o mesmo valor — não some os cards. Clique num card para ver a composição.</div>
+      <div id="agenda-carga-det" style="margin-top:12px"></div>`;
+  if(_agSelCarga) _agRenderCargaDet();
+}
+function agendaCarga(item,dia){
+  _agSelCarga=(_agSelCarga&&_agSelCarga.item===item&&_agSelCarga.dia===dia)?null:{item,dia};
+  _agRenderSemana();
+}
+function agendaCargaMes(item){
+  const iniMes=_agIso(_agAno,_agMes,1), fimMes=_agIso(_agAno,_agMes,new Date(_agAno,_agMes+1,0).getDate());
+  _agSelCarga=(_agSelCarga&&_agSelCarga.item===item&&!_agSelCarga.dia)?null:{item,dia:null,mesIni:iniMes,mesFim:fimMes};
+  _agRenderMes();
+}
+function _agRenderCargaDet(){
+  const det=document.getElementById('agenda-carga-det'); if(!det||!_agSelCarga) return;
+  const it=(_agItens.find(x=>x.id===_agSelCarga.item)||{}).rotulo||_agSelCarga.item;
+  let lst=_agCargas.filter(c=>c.item===_agSelCarga.item);
+  if(_agSelCarga.dia) lst=lst.filter(c=>c.data===_agSelCarga.dia);
+  else if(_agSelCarga.mesIni) lst=lst.filter(c=>c.data>=_agSelCarga.mesIni&&c.data<=_agSelCarga.mesFim);
+  if(!lst.length){ det.innerHTML=''; return; }
+  const g={};
+  lst.forEach(c=>{ const k=c.projeto+'|'+(c.fase||''); (g[k]=g[k]||{projeto:c.projeto,fase:c.fase,valor:0}).valor+=c.valor; });
+  const rows=Object.values(g).sort((a,b)=>b.valor-a.valor).map(x=>`<tr>
+      <td>${esc(x.projeto||'')}</td><td>${x.fase?('Fase '+x.fase):'—'}</td>
+      <td style="text-align:right;font-family:var(--font-mono)">R$ ${fmt(x.valor)}</td></tr>`).join('');
+  det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${esc(it)} — ${_agSelCarga.dia?_fmtDataBR(_agSelCarga.dia):'composição do mês'}</div>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Projeto</th><th>Fase</th><th style="text-align:right">Valor</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // ── Config → Cronograma de Projeto Padrão (v11 prazo + v12 função responsável por fase) ──

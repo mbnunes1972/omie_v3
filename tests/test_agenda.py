@@ -75,6 +75,54 @@ def test_filtros_periodo_e_setor():
     assert [m["etapa"] for m in mod_agenda.marcos([p], setor="medicao")] == ["9"]
 
 
+# ── Fatia 3: cargas (catálogo de itens com valor, spec §5 rev 2) ─────────────────
+
+def test_carga_pe_espalhada_em_dias_uteis():
+    # 10 concluída sex 04/09 → PE começa seg 07/09; 11 prevista qui 10/09 → 4 dias úteis
+    p = _proj(etapas={"10": {"concluida_em": datetime(2026, 9, 4)},
+                      "11": {"prevista": datetime(2026, 9, 10)}})
+    pe = [c for c in mod_agenda.cargas([p]) if c["item"] == "pe"]
+    assert [c["data"] for c in pe] == [date(2026, 9, 7), date(2026, 9, 8),
+                                       date(2026, 9, 9), date(2026, 9, 10)]
+    assert round(sum(c["valor"] for c in pe), 2) == 3000.0
+    assert pe[0]["valor"] == 750.0
+
+
+def test_carga_fase_retida_fica_fora():
+    p = _proj(etapas={"10": {"concluida_em": datetime(2026, 9, 4)},
+                      "11": {"prevista": datetime(2026, 9, 10)}},
+              fases=[{"ordem": 1, "status": "retido", "val_liq": 3000.0,
+                      "entrega_prevista": None, "card_prazo_entrega": None,
+                      "card_data_entrega": None}])
+    assert mod_agenda.cargas([p]) == []
+
+
+def test_producao_e_entrega_sao_marcos_valorados():
+    p = _proj(etapas={"13": {"prevista": datetime(2026, 9, 29)}},
+              data_entrega=datetime(2026, 10, 2))
+    cs = mod_agenda.cargas([p])
+    por = {c["item"]: c for c in cs}
+    assert por["producao"]["data"] == date(2026, 9, 29) and por["producao"]["valor"] == 3000.0
+    assert por["entrega"]["data"] == date(2026, 10, 2) and por["entrega"]["valor"] == 3000.0
+
+
+def test_carga_montagem_da_entrega_ate_a_17():
+    # entrega sex 11/09 → montagem começa seg 14/09; 17 prevista qui 17/09 → 4 dias úteis
+    p = _proj(data_entrega=datetime(2026, 9, 11),
+              etapas={"17": {"prevista": datetime(2026, 9, 17)}})
+    mo = [c for c in mod_agenda.cargas([p]) if c["item"] == "montagem"]
+    assert [c["data"] for c in mo] == [date(2026, 9, 14), date(2026, 9, 15),
+                                       date(2026, 9, 16), date(2026, 9, 17)]
+    assert round(sum(c["valor"] for c in mo), 2) == 3000.0
+
+
+def test_carga_filtro_de_periodo():
+    p = _proj(etapas={"13": {"prevista": datetime(2026, 9, 29)}},
+              data_entrega=datetime(2026, 10, 2))
+    cs = mod_agenda.cargas([p], de=date(2026, 10, 1))
+    assert {c["item"] for c in cs} == {"entrega", "montagem"}
+
+
 # ── offsets default das subfases do PE no cronograma ─────────────────────────────
 
 def test_cronograma_data_subfases_do_pe(app_db, seed):
@@ -114,11 +162,13 @@ def test_cronograma_data_subfases_do_pe(app_db, seed):
 # ── endpoint GET /api/agenda ─────────────────────────────────────────────────────
 
 def _setup_projeto(app_db, seed):
+    from database import Orcamento
     nome = seed["projeto_l1"]
     db = app_db.get_session()
     try:
         db.query(ParcelaAmbiente).delete()
         db.query(ParcelaProjeto).filter_by(projeto_nome=nome).delete()
+        db.get(Orcamento, seed["orcamento_l1_id"]).valor_liquido = 3000.0   # Val_Liq do projeto
         p = db.get(Projeto, nome)
         p.data_entrega = datetime(2026, 12, 1)
         p.previsao_medicao = datetime(2026, 9, 8)
@@ -159,6 +209,12 @@ def test_endpoint_agenda(app_db, seed, http_client_factory):
     assert st == 200 and d3["marcos"] and all(m["projeto"] == nome for m in d3["marcos"])
     st, d4 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&projeto=Nao_Existe")
     assert st == 200 and d4["marcos"] == []
+    # Fatia 3: CARGAS no payload (catálogo de itens) — entrega valorada na data do projeto
+    assert {i["id"] for i in d["itens"]} == {"pe", "conferencia", "producao", "montagem", "entrega"}
+    entregas = [cg for cg in d["cargas"] if cg["item"] == "entrega" and cg["projeto"] == nome]
+    assert entregas and entregas[0]["data"] == "2026-12-01" and entregas[0]["valor"] > 0
+    mont = [cg for cg in d["cargas"] if cg["item"] == "montagem" and cg["projeto"] == nome]
+    assert mont and mont[0]["data"] > "2026-12-01"    # montagem começa após a entrega
 
 
 def test_endpoint_agenda_isola_loja(app_db, seed, http_client_factory):

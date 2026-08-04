@@ -1369,6 +1369,11 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 151 (Política de Privacidade):** `/privacidade` pública nos 3 ambientes —
+> local/A pela main, B por CHERRY-PICK sobre a tag (bd5e0d8), produção por
+> arquivo+nginx (sem tocar no app). URL p/ o Meta:
+> **https://www.orizonone.com.br/privacidade** ✅ 200 anônimo.
+>
 > **Sessão 150 (módulo OPERACIONAL):** "Montagem" → "Operacional" com abas PE · Montagem ·
 > Assistências (item Assistências saiu da sidebar; tela virou aba). PE ganhou agenda
 > própria: Gantt da janela 10→11, ocupação %/dia, conflitos de projetista e espelho com
@@ -2773,6 +2778,28 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 151 — Política de Privacidade PÚBLICA em /privacidade (cadastro do app WhatsApp no Meta)
+
+Página estática exigida pelo Meta for Developers para publicar o app "OrizonChat Inspirium"
+(URL acessível sem login). Mudança PURAMENTE ADITIVA (`c1d3818`): rota `/privacidade` (+ alias
+`/politica-privacidade`) no do_GET, ANTES da autenticação — sem tenancy/banco/módulos; serve
+`static/privacidade.html` do disco (texto = RASCUNHO do Claude, não revisado por advogado —
+substituível trocando só o HTML). Suíte **1710 verde** após a mudança.
+
+**Deploy nos 3 ambientes, sem arrastar o backlog:**
+- **Local + VPS A**: `main` normal.
+- **VPS B (homolog)**: **cherry-pick** de `c1d3818` sobre a tag `v2026.08.03-homolog`
+  (→ `bd5e0d8` detached; a B agora é tag+1 commit aditivo) + restart. ✅
+  `https://homolog.orizonone.com.br/privacidade` 200 anônimo.
+- **PRODUÇÃO**: app está na era de 25/07 (sem a âncora do diff — cherry-pick conflitaria);
+  solução de MENOR risco: arquivo em `/var/www/orizon-publico/privacidade.html` + `location`
+  no nginx (`sites-enabled/orizonone`, backup em `/root/orizonone.nginx.bak-2026-08-03`),
+  `nginx -t` + reload GRACIOSO — **zero mudança no app de produção, sem restart do serviço**.
+  A rota do app chega lá na próxima promoção por tag (aí o nginx location vira redundância
+  inofensiva). ✅ `https://www.orizonone.com.br/privacidade` 200 anônimo (e /login intacto).
+
+**URL pública para o cadastro no Meta: `https://www.orizonone.com.br/privacidade`**
 
 ## Sessão 150 — Módulo OPERACIONAL: PE · Montagem · Assistências (consolidação da sidebar)
 

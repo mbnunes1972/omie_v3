@@ -3002,6 +3002,74 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/comunicacao/janela?telefone= — Atendimentos UI (spec 2026-08-04 §11): a
+            # etapa 1/2 do Iniciar Conversa precisa saber se JÁ há janela aberta com o telefone
+            # ANTES de a conversa existir (decide se "Mensagem livre" pode ser oferecida).
+            if path == "/api/comunicacao/janela":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    from urllib.parse import parse_qs as _pq_jan
+                    tel = (_pq_jan(urlparse(self.path).query).get('telefone') or [''])[0].strip()
+                    import mod_chat_externo as _mwj
+                    self.send_json({"ok": True, **_mwj.janela_por_telefone(db, loja_id, tel)})
+                finally:
+                    db.close()
+                return
+
+            # GET /api/comunicacao/conversas/<id>/exportar?formato=txt|pdf — barra de ação
+            # (spec 2026-08-04 §7.1 item 3). Download direto (não é fetch+JSON).
+            m_exp_conv = re.match(r'^/api/comunicacao/conversas/(\d+)/exportar$', path)
+            if m_exp_conv:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    import mod_chat
+                    from database import Conversa as _CV_exp
+                    conv = db.get(_CV_exp, int(m_exp_conv.group(1)))
+                    if conv is None or conv.loja_id != loja_id:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                    if not (_adm or mod_chat.eh_participante(db, conv.id, usuario["id"])):
+                        self.send_json({"ok": False, "erro": "Você não participa desta conversa."},
+                                       code=403); return
+                    from urllib.parse import parse_qs as _pq_exp
+                    formato = (_pq_exp(urlparse(self.path).query).get('formato') or ['txt'])[0]
+                    if formato == "pdf":
+                        from weasyprint import HTML as _WeasyHTML
+                        data = _WeasyHTML(string=mod_chat.exportar_conversa_html(db, conv)).write_pdf()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/pdf")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.send_header("Content-Disposition",
+                                         'attachment; filename="conversa_%d.pdf"' % conv.id)
+                        self.end_headers()
+                        self.wfile.write(data)
+                    else:
+                        data = mod_chat.exportar_conversa_txt(db, conv).encode("utf-8")
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/plain; charset=utf-8")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.send_header("Content-Disposition",
+                                         'attachment; filename="conversa_%d.txt"' % conv.id)
+                        self.end_headers()
+                        self.wfile.write(data)
+                finally:
+                    db.close()
+                return
+
             # GET /api/comunicacao/assuntos — Orizon Chat (Fatia 2): opções do seletor "Assunto":
             # assuntos custom da loja + a lista de PROJETOS visíveis (Conversa Livre é fixa na UI).
             if path == "/api/comunicacao/assuntos":
@@ -5798,6 +5866,37 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # POST /api/comunicacao/iniciar-conversa — Atendimentos UI (spec 2026-08-04 §11): fecha o
+        # modal de 3 etapas ("Novo Contato"/"Iniciar Conversa"). Body:
+        # {contato:{cliente_id} | {nome,telefone,email?}, template_id | livre:true, valores:{}}.
+        if path == "/api/comunicacao/iniciar-conversa":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                dd = json.loads(body or b'{}')
+                try:
+                    conv = mod_chat.iniciar_conversa_externa(
+                        db, loja_id, usuario["id"], dd.get("contato") or {},
+                        template_id=dd.get("template_id"), livre=bool(dd.get("livre")),
+                        valores=dd.get("valores") or {})
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
+                db.commit()
+                self.send_json({"ok": True,
+                                "conversa": mod_chat.serializar_conversa(db, conv, usuario["id"])},
+                               code=201)
+            finally:
+                db.close()
+            return
+
         # POST /api/comunicacao/presenca — Fatia 6: heartbeat de presença (ponte WhatsApp).
         if path == "/api/comunicacao/presenca":
             usuario = get_usuario_sessao(self)
@@ -5968,6 +6067,66 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
                 db.commit()
                 self.send_json({"ok": True, "arquivada": flag})
+            finally:
+                db.close()
+            return
+
+        # POST /api/comunicacao/conversas/<id>/{transferir|urgente|concluir} — Atendimentos UI
+        # (spec 2026-08-04): transferir responsável (§7.1-A), urgência manual (§6.1) e conclusão
+        # do atendimento (§8, com notificação interna à gerência pós-commit). Participante da
+        # conversa ou gerência (ver_todas_conversas).
+        m_atd = re.match(r'^/api/comunicacao/conversas/(\d+)/(transferir|urgente|concluir)$', path)
+        if m_atd:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                import mod_chat
+                from database import Conversa as _CV_atd
+                conv = db.get(_CV_atd, int(m_atd.group(1)))
+                if conv is None or conv.loja_id != loja_id:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                _adm = perfis.pode(usuario.get("nivel"), "ver_todas_conversas")
+                if not (_adm or mod_chat.eh_participante(db, conv.id, usuario["id"])):
+                    self.send_json({"ok": False, "erro": "Você não participa desta conversa."},
+                                   code=403); return
+                dd = json.loads(body or b'{}')
+                acao = m_atd.group(2)
+                try:
+                    if acao == "transferir":
+                        u_dest = mod_chat.transferir_responsavel(db, conv, usuario["id"],
+                                                                 dd.get("usuario_id"))
+                        db.commit()
+                        self.send_json({"ok": True, "responsavel":
+                                        {"id": u_dest.id, "nome": u_dest.nome}})
+                    elif acao == "urgente":
+                        flag = mod_chat.definir_urgencia(db, conv, usuario["id"],
+                                                         bool(dd.get("on", True)))
+                        db.commit()
+                        self.send_json({"ok": True, "urgente": flag})
+                    else:   # concluir
+                        mod_chat.concluir_atendimento(db, conv, usuario["id"],
+                                                      dd.get("observacao"))
+                        db.commit()
+                        # notificação interna à gerência: best-effort PÓS-commit — falha na
+                        # notificação nunca desfaz a conclusão (padrão do aviso de montador).
+                        notificados = 0
+                        try:
+                            notificados = mod_chat.notificar_conclusao_gerencia(
+                                db, conv, usuario["id"])
+                            db.commit()
+                        except Exception:
+                            db.rollback()
+                        self.send_json({"ok": True, "status": "concluida",
+                                        "notificados": notificados})
+                except ValueError as ve:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(ve)}, code=400); return
             finally:
                 db.close()
             return

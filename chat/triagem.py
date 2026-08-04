@@ -64,6 +64,20 @@ def _aplicar_segmento(db, conversa, entrada, segmento):
         _mc.definir_segmento(db, conversa, seg)
 
 
+def _assumir_atendimento(db, conversa, usuario_id):
+    """spec 2026-08-04 §7.1-A: depois da triagem o atendimento nasce ATRIBUÍDO — quem resolve
+    assume (se a conversa ainda não tem responsável; não rouba de quem já atende) — e a origem
+    'triagem' fica registrada para a tag de fallback (§5: Triagem×Avulsa). Uma nova entrada
+    vinculada a atendimento concluído também o REABRE (§8.5)."""
+    if usuario_id and not getattr(conversa, "responsavel_usuario_id", None):
+        conversa.responsavel_usuario_id = usuario_id
+    if not getattr(conversa, "origem_entrada", None):
+        conversa.origem_entrada = "triagem"
+    from . import core as _mc
+    _mc.reabrir_se_concluida(db, conversa)
+    db.flush()
+
+
 def triagem_resolver_vincular(db, entrada, conversa, usuario_id, segmento=None):
     """Vincula a entrada a uma conversa EXISTENTE (candidata ou escolhida). Não commita."""
     if entrada.status != "pendente":
@@ -72,6 +86,7 @@ def triagem_resolver_vincular(db, entrada, conversa, usuario_id, segmento=None):
         raise ValueError("Conversa inexistente nesta loja.")
     msg = _triagem_postar_na_conversa(db, entrada, conversa, usuario_id)
     _aplicar_segmento(db, conversa, entrada, segmento)
+    _assumir_atendimento(db, conversa, usuario_id)
     _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conversa.id)
     return msg
 
@@ -98,6 +113,7 @@ def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente, segmento=None)
                           meio=entrada.meio, criado_por_id=usuario_id)
     _triagem_postar_na_conversa(db, entrada, conv, usuario_id)
     _aplicar_segmento(db, conv, entrada, segmento)
+    _assumir_atendimento(db, conv, usuario_id)
     _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conv.id)
     return conv
 

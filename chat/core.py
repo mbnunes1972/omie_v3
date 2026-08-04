@@ -201,7 +201,11 @@ def enviar_mensagem(db, conversa, autor_usuario_id, corpo, canal="interno",
     # RF-11 / §7 (carteira aditiva): a transferência de responsabilidade ADICIONA o novo responsável
     # como integrante do grupo — NUNCA remove ninguém. O Consultor original permanece.
     if natureza == "transferencia" and transferido_para_funcionario_id:
-        _adicionar_responsavel_ao_grupo(db, conversa, transferido_para_funcionario_id)
+        uid = _adicionar_responsavel_ao_grupo(db, conversa, transferido_para_funcionario_id)
+        # spec 2026-08-04 §7.1-A: o responsável ATUAL é um conceito só, com dois gatilhos —
+        # a transferência automática de etapa também atualiza o campo da conversa.
+        if uid:
+            conversa.responsavel_usuario_id = uid
     return m
 
 
@@ -997,7 +1001,8 @@ def get_or_create_direct(db, loja_id, criado_por_id, outro_usuario_id,
         if c is not None:
             return c
     c = Conversa(loja_id=loja_id, tipo="direct", criado_por_id=criado_por_id,
-                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)
+                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid,
+                 responsavel_usuario_id=criado_por_id)   # §7.1-A: quem cria começa responsável
     db.add(c); db.flush()
     db.add_all([ConversaParticipante(conversa_id=c.id, usuario_id=criado_por_id),
                 ConversaParticipante(conversa_id=c.id, usuario_id=outro_usuario_id)])
@@ -1017,7 +1022,8 @@ def criar_grupo(db, loja_id, criado_por_id, titulo, participante_ids,
     if exige_dois and len(ids) < 2:
         raise ValueError("Um grupo precisa de ao menos 2 participantes.")
     c = Conversa(loja_id=loja_id, tipo="grupo", titulo=titulo, criado_por_id=criado_por_id,
-                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid)
+                 assunto_tipo=at, projeto_nome=pnome, assunto_id=aid,
+                 responsavel_usuario_id=criado_por_id)   # §7.1-A: quem cria começa responsável
     db.add(c); db.flush()
     for uid in ids:
         db.add(ConversaParticipante(conversa_id=c.id, usuario_id=uid,
@@ -1367,6 +1373,240 @@ def arquivar_conversa(db, conversa, usuario_id, arquivar=True):
     return bool(p.arquivada)
 
 
+# ── Atendimentos UI (spec 2026-08-04): responsável · urgência · concluir/reabrir ────────────────
+
+_TIPOS_SEM_ATENDIMENTO = ("mural", "publico", "forum_loja", "forum_orizon")
+
+
+def transferir_responsavel(db, conversa, ator_id, usuario_destino_id):
+    """Transferência MANUAL do responsável atual (§7.1-A): seta o campo, ADICIONA o destino como
+    participante (carteira aditiva — nunca remove ninguém; sem participação ele nem conseguiria
+    abrir a conversa, checagem C2 do plano) e registra o evento na timeline. NÃO amarra etapa do
+    ciclo (a transferência automática de fase é o outro gatilho do MESMO campo). Sempre para uma
+    pessoa nomeada — 'Fila geral' não é opção (checagem C3). Não commita."""
+    if conversa.tipo in _TIPOS_SEM_ATENDIMENTO:
+        raise ValueError("Mural e fóruns não têm responsável.")
+    try:
+        uid = int(usuario_destino_id or 0)
+    except (TypeError, ValueError):
+        uid = 0
+    if not uid:
+        raise ValueError("Escolha quem recebe o atendimento.")
+    u = db.get(Usuario, uid)
+    if u is None or not u.ativo or (u.loja_id and u.loja_id != conversa.loja_id):
+        raise ValueError("Usuário de destino inválido nesta loja.")
+    p = (db.query(ConversaParticipante)
+           .filter_by(conversa_id=conversa.id, usuario_id=uid).first())
+    if p is None:
+        db.add(ConversaParticipante(conversa_id=conversa.id, usuario_id=uid,
+                                    papel="membro", origem="auto", removido=0))
+    elif p.removido:
+        p.removido = 0
+    conversa.responsavel_usuario_id = uid
+    ator = db.get(Usuario, ator_id) if ator_id else None
+    enviar_mensagem(db, conversa, ator_id,
+                    "Atendimento transferido para %s por %s"
+                    % (u.nome, (ator.nome if ator else "—")),
+                    evento="responsavel_transf")
+    db.flush()
+    return u
+
+
+def definir_urgencia(db, conversa, ator_id, on):
+    """Urgência MANUAL (§6.1): qualquer atendente liga/desliga; sem regra automática nesta
+    rodada. Registrada na própria conversa (evento inline = auditoria de quem/quando).
+    Idempotente. Não commita."""
+    if conversa.tipo in _TIPOS_SEM_ATENDIMENTO:
+        raise ValueError("Mural e fóruns não têm urgência.")
+    on = bool(on)
+    if bool(conversa.urgente) == on:
+        return on
+    conversa.urgente = 1 if on else 0
+    ator = db.get(Usuario, ator_id) if ator_id else None
+    enviar_mensagem(db, conversa, ator_id,
+                    "%s %s a marcação de URGENTE"
+                    % ((ator.nome if ator else "—"), ("ligou" if on else "desligou")),
+                    evento="urgencia")
+    db.flush()
+    return on
+
+
+def concluir_atendimento(db, conversa, ator_id, observacao=None):
+    """Conclusão do ATENDIMENTO (§8): ato explícito do atendente, global à conversa (≠ do
+    arquivamento pessoal). Grava quem/quando/observação e muda status → 'concluida' (a UI mostra
+    em Arquivadas com selo). A notificação à gerência é do chamador, best-effort PÓS-commit
+    (notificar_conclusao_gerencia). Não commita."""
+    if conversa.tipo in _TIPOS_SEM_ATENDIMENTO:
+        raise ValueError("Mural e fóruns não são atendimentos.")
+    if (conversa.status or "aberta") == "concluida":
+        raise ValueError("Este atendimento já está concluído.")
+    obs = (observacao or "").strip() or None
+    conversa.status = "concluida"
+    conversa.concluido_por_id = ator_id
+    conversa.concluido_em = datetime.utcnow()
+    conversa.conclusao_obs = obs
+    ator = db.get(Usuario, ator_id) if ator_id else None
+    corpo = "Atendimento concluído por %s" % (ator.nome if ator else "—")
+    if obs:
+        corpo += " — " + obs
+    enviar_mensagem(db, conversa, ator_id, corpo, evento="atend_concluido")
+    db.flush()
+    return conversa
+
+
+def reabrir_se_concluida(db, conversa):
+    """Reabertura AUTOMÁTICA (§8.5): nova mensagem do contato em atendimento concluído volta o
+    status para 'aberta' — some o selo, a conversa reaparece em Todas. Os campos concluido_*
+    ficam como histórico da última conclusão (sobrescritos na próxima). Não commita."""
+    if (getattr(conversa, "status", None) or "aberta") == "concluida":
+        conversa.status = "aberta"
+        db.flush()
+        return True
+    return False
+
+
+def _titulo_atendimento(db, conversa):
+    """Nome de exibição do atendimento p/ notificação: título do grupo, projeto, ou o contato
+    externo da conversa."""
+    if conversa.titulo:
+        return conversa.titulo
+    if conversa.projeto_nome:
+        return conversa.projeto_nome.replace("_", " ")
+    e = (db.query(ConversaParticipanteExterno)
+           .filter_by(conversa_id=conversa.id, removido=0).first())
+    return e.nome if e is not None else ("Conversa %d" % conversa.id)
+
+
+def notificar_conclusao_gerencia(db, conversa, ator_id):
+    """Notificação de conclusão (§8/§14): mensagem INTERNA do Chat (não e-mail, não push) para
+    TODO usuário Gerente/Master da loja — por PERFIL, independente do segmento do atendimento.
+    DM do concluidor para cada um (pula o próprio). Chamar PÓS-commit da conclusão, best-effort.
+    Não commita. Retorna quantos notificou."""
+    ator = db.get(Usuario, ator_id) if ator_id else None
+    quando = conversa.concluido_em or datetime.utcnow()
+    corpo = ("✅ Atendimento concluído: %s — por %s, em %s."
+             % (_titulo_atendimento(db, conversa), (ator.nome if ator else "—"),
+                quando.strftime("%d/%m/%Y %H:%M")))
+    if conversa.conclusao_obs:
+        corpo += " Observação: %s" % conversa.conclusao_obs
+    n = 0
+    for uid in _usuarios_gerencia_loja(db, conversa.loja_id):
+        if ator_id and int(uid) == int(ator_id):
+            continue
+        conv = get_or_create_direct(db, conversa.loja_id, ator_id, uid)
+        enviar_mensagem(db, conv, ator_id, corpo)
+        n += 1
+    db.flush()
+    return n
+
+
+def resolver_variaveis_conhecidas(variaveis, usuario_nome=None, contato_nome=None, loja_nome=None):
+    """Pré-preenchimento da etapa 3 do Iniciar Conversa (§11): mapeia os RÓTULOS das variáveis
+    do template ({{n}} → rótulo humano em `variaveis`) para valores que o sistema conhece —
+    atendente logado, nome do contato, nome da loja. Retorna {posicao(1-based): valor} só das
+    conhecidas; as demais ficam vazias na UI (com validação bloqueante no envio). Reutilizável
+    (mesma fonte para a tela Modelos de Mensagem — decisão §14.5)."""
+    out = {}
+    for i, rot in enumerate(variaveis or [], start=1):
+        r = (rot or "").lower()
+        if usuario_nome and ("atendente" in r or "consultor" in r or "responsavel" in r
+                             or "responsável" in r):
+            out[i] = usuario_nome
+        elif contato_nome and ("cliente" in r or "contato" in r):
+            out[i] = contato_nome
+        elif loja_nome and "loja" in r:
+            out[i] = loja_nome
+    return out
+
+
+def iniciar_conversa_externa(db, loja_id, usuario_id, contato, template_id=None,
+                             livre=False, valores=None):
+    """Fluxo 'Iniciar Conversa' (spec 2026-08-04 §11): identifica o contato (cadastro existente
+    via `cliente_id`, ou nome+telefone+email de um contato novo), reaproveita uma conversa já
+    roteável para o telefone (evita duplicar atendimento em andamento) ou cria uma nova (Lead —
+    mesmo padrão da triagem), atribui responsável+origem 'avulsa', e despacha o TEMPLATE (etapa 3
+    — bloqueante se variável vazia) ou deixa a conversa vazia p/ 'Mensagem livre' (só quando a
+    janela já está aberta — a Meta recusaria texto livre sem ela; a UI já filtra, isto é a
+    validação de servidor). Não commita. Retorna a Conversa."""
+    from . import externo as _ext
+    cliente_id = contato.get("cliente_id")
+    nome = (contato.get("nome") or "").strip()
+    telefone = (contato.get("telefone") or "").strip()
+    email = (contato.get("email") or "").strip() or None
+    if cliente_id:
+        cli = db.get(Cliente, int(cliente_id))
+        if cli is None or cli.loja_id != loja_id:
+            raise ValueError("Cliente não encontrado nesta loja.")
+        nome = cli.nome
+        telefone = (cli.whatsapp or cli.telefone or "").strip()
+        email = email or (cli.email or "").strip() or None
+    if not nome:
+        raise ValueError("Informe o nome do contato.")
+    if not telefone:
+        raise ValueError("Informe o telefone (WhatsApp) do contato.")
+    if not template_id and not livre:
+        raise ValueError("Escolha um modelo de mensagem ou mensagem livre.")
+    if livre and not _ext.janela_por_telefone(db, loja_id, telefone)["aberta"]:
+        raise ValueError("Sem janela de atendimento aberta com este contato — escolha um "
+                         "modelo aprovado pela Meta.")
+    conv, _cands = _ext._rotear_com_candidatos(db, "whatsapp", remetente=telefone)
+    if conv is None or conv.loja_id != loja_id:
+        conv = criar_grupo(db, loja_id, usuario_id, "Lead — %s" % nome, [usuario_id],
+                           exige_dois=False)
+        adicionar_externo(db, conv, nome, telefone=telefone, email=email,
+                          meio="whatsapp", criado_por_id=usuario_id)
+        conv.origem_entrada = "avulsa"
+        conv.responsavel_usuario_id = usuario_id
+    if template_id:
+        t = db.query(TemplateMensagem).filter_by(id=int(template_id), loja_id=loja_id).first()
+        if t is None:
+            raise ValueError("Modelo de mensagem não encontrado.")
+        _ext.enviar_template_conversa(db, conv, usuario_id, t, valores or {})
+    db.flush()
+    return conv
+
+
+# ── Exportar conversa (§7.1 item 3 — PDF/TXT) ────────────────────────────────────────────────
+
+def exportar_conversa_txt(db, conversa):
+    """Texto simples: cabeçalho + mensagens em ordem cronológica (autor, hora, corpo)."""
+    linhas = ["Conversa: %s" % _titulo_atendimento(db, conversa),
+             "Exportado em: %s" % datetime.utcnow().strftime("%d/%m/%Y %H:%M UTC"), ""]
+    msgs = (db.query(ConversaMensagem).filter_by(conversa_id=conversa.id)
+              .order_by(ConversaMensagem.criado_em.asc(), ConversaMensagem.id.asc()).all())
+    for m in msgs:
+        quando = m.criado_em.strftime("%d/%m/%Y %H:%M") if m.criado_em else ""
+        if m.autor_usuario_id:
+            u = db.get(Usuario, m.autor_usuario_id)
+            autor = u.nome if u else "—"
+        elif m.evento:
+            autor = "(sistema)"
+        else:
+            autor = "(contato)"
+        linhas.append("[%s] %s: %s" % (quando, autor, _corpo_visivel(m) or "(sem texto)"))
+    return "\n".join(linhas)
+
+
+def exportar_conversa_html(db, conversa):
+    """Corpo HTML mínimo (documento com anexos listados por nome) — base do PDF via WeasyPrint.
+    Sem asset externo (string simples, sem url_fetcher — nada de risco de SSRF/leitura de
+    arquivo, diferente do contrato)."""
+    import html as _html
+    texto = exportar_conversa_txt(db, conversa)
+    anexos = (db.query(MensagemAnexo)
+                .join(ConversaMensagem, MensagemAnexo.mensagem_id == ConversaMensagem.id)
+                .filter(ConversaMensagem.conversa_id == conversa.id).all())
+    bloco_anexos = ""
+    if anexos:
+        itens = "".join("<li>%s</li>" % _html.escape(a.nome or "arquivo") for a in anexos)
+        bloco_anexos = "<h3>Anexos</h3><ul>%s</ul>" % itens
+    return ("<html><head><meta charset='utf-8'><style>"
+            "body{font-family:sans-serif;padding:24px;color:#222}"
+            "pre{white-space:pre-wrap;font-family:inherit;font-size:13px}"
+            "</style></head><body><pre>%s</pre>%s</body></html>"
+            % (_html.escape(texto), bloco_anexos))
+
+
 def marcar_lido(db, conversa, usuario_id):
     """Marca a conversa como lida até a última mensagem para o usuário. Para público (sem linha de
     participante) cria a linha SÓ para guardar o marcador de leitura — não muda a audiência."""
@@ -1428,12 +1668,24 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
     previa = ""
     if ultima is not None:
         previa = MASCARA_PRIVADA if ultima.privada else (ultima.corpo or "")
+    resp = None
+    if getattr(c, "responsavel_usuario_id", None):
+        ur = db.get(Usuario, c.responsavel_usuario_id)
+        resp = {"id": c.responsavel_usuario_id, "nome": (ur.nome if ur else None)}
     return {
         "id": c.id, "tipo": c.tipo, "titulo": titulo,
         "projeto_nome": c.projeto_nome, "outro_usuario_id": outro_id,
         "assunto": _assunto_do(db, c),
         "nao_lidas": nao_lidas,
         "arquivada": bool(arquivada),
+        # Atendimentos UI (spec 2026-08-04): responsável atual (§7.1-A), urgência manual (§6.1),
+        # origem p/ tag de fallback Triagem×Avulsa (§5) e status concluída (§8).
+        "responsavel": resp,
+        "urgente": bool(getattr(c, "urgente", 0)),
+        "origem_entrada": getattr(c, "origem_entrada", None),
+        "status": (getattr(c, "status", None) or "aberta"),
+        "concluido_em": (c.concluido_em.isoformat()
+                         if getattr(c, "concluido_em", None) else None),
         "pendente": bool(ultima is not None and ultima.autor_usuario_id != viewer_id),
         "ultima_previa": previa[:120],
         "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,

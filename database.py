@@ -1119,6 +1119,18 @@ class Conversa(Base):
     # (segmento_sugerido) e a gerência pode tratar/trocar pelo seletor do thread. NULL = derivar
     # do tráfego externo (_atendimento_meta); preenchido = override que vence o derivado.
     segmento      = Column(String(20), nullable=True)
+    # Atendimentos UI (spec 2026-08-04): responsável ATUAL da conversa (§7.1-A — triagem/criação
+    # atribuem, Transferir muda, a transferência automática de etapa também atualiza); urgência
+    # MANUAL (§6.1, sem regra automática); origem de entrada (§5 — decide a tag de fallback
+    # Triagem×Avulsa quando não há segmento); status do ATENDIMENTO (§8 — concluir/reabrir,
+    # global à conversa, ≠ do arquivamento pessoal em ConversaParticipante.arquivada).
+    responsavel_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    urgente        = Column(Integer,    nullable=False, default=0)
+    origem_entrada = Column(String(12), nullable=True)    # triagem | avulsa | NULL (legado/interna)
+    status         = Column(String(12), nullable=False, default="aberta")   # aberta | concluida
+    concluido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    concluido_em   = Column(DateTime,   nullable=True)
+    conclusao_obs  = Column(Text,       nullable=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1352,6 +1364,9 @@ class EnvioExterno(Base):
     status            = Column(String(20), nullable=False, default="pendente_config")
     id_externo        = Column(Text,     nullable=True, index=True)   # id do provedor (threading)
     id_externo_ref    = Column(Text,     nullable=True)      # id citado numa resposta (decisão 14)
+    # Envio por TEMPLATE aprovado (spec 2026-08-04 §11 — ex-F3 de 28/07): aponta o template usado
+    # no payload "type":"template"; NULL = texto livre/documento.
+    template_id       = Column(Integer,  ForeignKey("template_mensagem.id"), nullable=True)
     erro              = Column(Text,     nullable=True)
     criado_em         = Column(DateTime, default=datetime.utcnow)
 
@@ -1866,6 +1881,17 @@ def _migrar_colunas_pg():
         # RF-08 triagem automática (2026-08-04): pergunta sai sem conversa → mensagem_id opcional
         "ALTER TABLE envios_externos ALTER COLUMN mensagem_id DROP NOT NULL",
         "ALTER TABLE envios_externos ADD COLUMN IF NOT EXISTS triagem_id INTEGER",
+        # Atendimentos UI (spec 2026-08-04): responsável atual + urgência manual + origem de
+        # entrada + status concluir/reabrir na conversa; template usado no envio externo.
+        # O DEFAULT backfila as linhas existentes no próprio ADD.
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS responsavel_usuario_id INTEGER",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS urgente INTEGER DEFAULT 0",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS origem_entrada VARCHAR(12)",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS status VARCHAR(12) DEFAULT 'aberta'",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS concluido_por_id INTEGER",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS concluido_em TIMESTAMP",
+        "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS conclusao_obs TEXT",
+        "ALTER TABLE envios_externos ADD COLUMN IF NOT EXISTS template_id INTEGER",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

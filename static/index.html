@@ -1998,17 +1998,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-wa-head{display:flex;align-items:center;gap:8px;padding:2px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:10px}
     .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
     .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
-    /* Fila de Atendimentos (F7/RF-12) */
-    .atd-tabs{display:flex;gap:20px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap}
-    .atd-tab{padding:7px 2px 10px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;user-select:none}
-    .atd-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
-    .atd-tab .cnt{background:var(--surface-2);color:var(--text);font-size:10px;font-weight:700;border-radius:999px;padding:1px 6px;min-width:16px;text-align:center}
-    .atd-tab.active .cnt{background:var(--accent);color:var(--btn-primary-text)}
+    /* Fila de Atendimentos (F7/RF-12; chips do redesenho 2026-08-04 — mockup §3) */
+    .atd-tabs{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
     .atd-filtro{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
     .atd-item{padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
     .atd-item:hover{background:var(--surface-2)}
     .atd-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
-    .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center}
     .atd-tempo{font-size:11px;color:var(--muted);flex:none}
     .atd-prev{font-size:12px;color:var(--muted);margin:3px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .atd-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -2018,7 +2014,33 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .atd-b-ok{background:var(--accent-tint);color:var(--accent)}
     .atd-b-warn{background:var(--warn-tint);color:var(--text)}
     .atd-b-err{background:transparent;color:var(--err);border-color:var(--err)}
+    /* Tags de fallback (spec §5 — Avulsa × Triagem) e Chat Interno (Livre × Assunto) */
+    .atd-b-orig-avulsa{background:var(--surface-2);color:var(--muted)}
+    .atd-b-orig-triagem{background:var(--warn-soft);color:var(--warn)}
+    .atd-b-livre{background:var(--surface-2);color:var(--muted)}
+    .atd-b-assunto{background:var(--info-soft);color:var(--info)}
     .atd-nl{background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center;margin-left:6px}
+    /* Ponto de urgência (spec §6.1 — 7px antes do nome, nunca no lugar da tag de segmento) */
+    .atd-urgent-dot{display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:var(--err);margin-right:6px}
+    /* Cabeçalho do chat: Responsável (grupo/projeto) + toggle de Urgência (§6.1/§7.1-A) */
+    .oc-header-right{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+    .oc-resp-line{font-size:11px;color:var(--muted);white-space:nowrap}
+    .oc-resp-line strong{color:var(--accent)}
+    .oc-urg-btn{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;font-family:inherit}
+    .oc-urg-btn.active{color:var(--err);background:var(--err-soft);border-color:var(--err)}
+    /* Barra de ação (spec §7 — Concluir/Transferir/Exportar) — largura da coluna do painel,
+       acima da composição (ver nota de escopo no plano: não é full-bleed de tela inteira, o
+       #oc-pane é compartilhado entre Atendimentos/Chat Interno e as 6 views que ele hospeda). */
+    .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 2px;margin-top:8px;border-top:1px solid var(--border)}
+    .oc-am-wrap{position:relative}
+    .oc-am-menu{display:none;position:absolute;bottom:36px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60}
+    .oc-am-menu.open{display:block}
+    .oc-am-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;padding:6px 14px}
+    .oc-am-item{padding:8px 14px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+    .oc-am-item:hover{background:var(--surface-2)}
+    .oc-am-item small{color:var(--muted)}
+    .oc-am-search{width:calc(100% - 28px);margin:0 14px 8px;height:30px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:0 10px;font-size:12px;font-family:inherit}
+    .oc-action-flash{font-size:12px;color:var(--ok)}
     /* ═══ CHAT: thread full-page (spec 2026-07-31 — unificação, elimina o modal legado) ═══ */
     .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px);min-height:420px}
     .oc-list-col{width:340px;min-width:270px;display:flex;flex-direction:column;min-height:0}
@@ -2065,7 +2087,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               <div class="oc-list-col">
                 <!-- camada de ações dos Atendimentos (padronizada com o Chat Interno) -->
                 <div class="oc-acoes">
-                  <button class="btn btn-primary btn-sm" onclick="ocContatoAbrir()"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
+                  <button class="btn btn-primary btn-sm" onclick="ocAtdNovoAbrir()"><i class="ti ti-plus"></i> Iniciar Conversa</button>
+                  <button class="btn btn-ghost btn-sm" onclick="ocContatoAbrir()"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
                 </div>
                 <div class="atd-tabs" id="atd-tabs"></div>
                 <div class="atd-filtro">
@@ -2224,9 +2247,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <span id="oc-num-chip" style="display:none;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;white-space:nowrap"></span>
                         <select id="oc-seg-sel" style="display:none;padding:3px 8px;font-family:inherit;font-size:12px" onchange="ocSegmentoSalvar(this.value)" title="Segmento do atendimento (gerência)"></select>
                       </div>
-                      <div style="display:flex;gap:8px">
-                        <button class="btn btn-ghost btn-sm" id="oc-arq-btn" style="display:none;white-space:nowrap" onclick="ocArquivarToggle()" title="Concluir/retirar da fila (reversível)"><i class="ti ti-archive"></i> <span id="oc-arq-rot">Arquivar</span></button>
-                        <button class="btn btn-ghost btn-sm" id="oc-membros-btn" style="display:none;white-space:nowrap" onclick="ocMembrosToggle()"><i class="ti ti-users"></i> Membros</button>
+                      <!-- canto superior direito (spec §6.1/§7.1-A): Responsável (grupo/projeto) + Urgência -->
+                      <div class="oc-header-right">
+                        <div class="oc-resp-line" id="oc-resp-wrap" style="display:none">Responsável: <strong id="oc-resp-nome"></strong></div>
+                        <button class="oc-urg-btn" id="oc-urg-btn" onclick="ocUrgenciaToggle()">○ Marcar urgente</button>
+                        <div style="display:flex;gap:8px">
+                          <button class="btn btn-ghost btn-sm" id="oc-arq-btn" style="display:none;white-space:nowrap" onclick="ocArquivarToggle()" title="Arquivar/retirar da fila pessoal (reversível)"><i class="ti ti-archive"></i> <span id="oc-arq-rot">Arquivar</span></button>
+                          <button class="btn btn-ghost btn-sm" id="oc-membros-btn" style="display:none;white-space:nowrap" onclick="ocMembrosToggle()"><i class="ti ti-users"></i> Membros</button>
+                        </div>
                       </div>
                     </div>
                     <div style="flex:1;display:flex;gap:10px;min-height:0">
@@ -2239,6 +2267,27 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         </div>
                         <div id="oc-membros-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
                       </div>
+                    </div>
+                    <!-- barra de ação (spec §7 — Concluir só Atendimentos; Transferir/Encaminhar + Exportar nas duas) -->
+                    <div class="oc-action-bar" id="oc-action-bar">
+                      <button class="btn btn-primary btn-sm" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
+                      <div class="oc-am-wrap">
+                        <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
+                        <div class="oc-am-menu" id="oc-transferir-menu">
+                          <div class="oc-am-label">Transferir responsável para</div>
+                          <input class="oc-am-search" id="oc-transferir-busca" placeholder="Buscar por nome ou função…" oninput="ocTransferirRenderLista()">
+                          <div id="oc-transferir-lista"></div>
+                        </div>
+                      </div>
+                      <div class="oc-am-wrap">
+                        <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-exportar-menu')"><i class="ti ti-download"></i> Exportar conversa</button>
+                        <div class="oc-am-menu" id="oc-exportar-menu">
+                          <div class="oc-am-label">Exportar como</div>
+                          <div class="oc-am-item" onclick="ocExportar('pdf')">PDF <small>documento com anexos</small></div>
+                          <div class="oc-am-item" onclick="ocExportar('txt')">TXT <small>texto simples</small></div>
+                        </div>
+                      </div>
+                      <span class="oc-action-flash" id="oc-action-flash"></span>
                     </div>
                     <div id="oc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
                       <i class="ti ti-paperclip"></i><span id="oc-anexo-nome"></span>
@@ -2301,6 +2350,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
                      2026-07-31) — Mural e Fóruns são destinos, Administração só gerência -->
                 <div class="oc-acoes">
+                  <button class="btn btn-primary btn-sm" onclick="ocIntNovoAbrir()"><i class="ti ti-plus"></i> Nova Conversa</button>
                   <button class="btn btn-ghost btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Novo Grupo</button>
                   <button class="btn btn-ghost btn-sm" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
                   <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
@@ -2317,6 +2367,98 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             </div>
           </div>
           <!-- ═══ CHAT: fim do bloco Atendimentos/Chat Interno ═══ -->
+
+          <!-- Modal: Concluir atendimento (spec 2026-08-04 §8) -->
+          <div id="modal-atd-concluir" class="modal-overlay" style="display:none">
+            <div class="modal-box" style="max-width:440px">
+              <div class="modal-hdr">
+                <div class="modal-title">Concluir atendimento</div>
+                <span class="modal-close" onclick="ocConcluirFechar()">&#x2715;</span>
+              </div>
+              <label class="field-label">Atendimento com</label>
+              <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:4px 0 12px;font-size:13px" id="atd-concl-nome">—</div>
+              <label class="field-label">Concluído por</label>
+              <input id="atd-concl-por" readonly style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 12px">
+              <label class="field-label">Observação <small style="color:var(--muted);text-transform:none">(opcional)</small></label>
+              <textarea id="atd-concl-obs" rows="3" style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;font-family:inherit;resize:vertical;margin:4px 0 12px" placeholder="Resumo do atendimento, se necessário…"></textarea>
+              <div style="font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px;display:flex;gap:6px;align-items:center">
+                <i class="ti ti-bell"></i> A gerência (Gerente/Master) será notificada automaticamente desta conclusão.
+              </div>
+              <div id="atd-concl-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+                <button class="btn btn-ghost btn-sm" onclick="ocConcluirFechar()">Cancelar</button>
+                <button class="btn btn-primary btn-sm" onclick="ocConcluirConfirmar()">Concluir atendimento</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Nova conversa interna (spec 2026-08-04 §5.1 — modal PRÓPRIO, diferente do de Atendimentos) -->
+          <div id="modal-int-novo" class="modal-overlay" style="display:none">
+            <div class="modal-box" style="max-width:440px;max-height:86vh;overflow-y:auto">
+              <div class="modal-hdr">
+                <div class="modal-title">Nova conversa interna</div>
+                <span class="modal-close" onclick="ocIntNovoFechar()">&#x2715;</span>
+              </div>
+              <label class="field-label">Buscar pessoa ou grupo</label>
+              <input id="int-novo-busca" type="search" placeholder="Nome da pessoa ou do grupo…" oninput="ocIntNovoRenderLista()" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
+              <div id="int-novo-lista" style="max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
+              <div id="int-novo-assunto-wrap">
+                <label class="field-label">Assunto <small style="color:var(--muted);text-transform:none">(opcional — sem assunto, a conversa fica "Livre")</small></label>
+                <input id="int-novo-assunto" type="text" placeholder="Ex.: Fechamento de comissões" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
+              </div>
+              <div id="int-novo-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+                <button class="btn btn-ghost btn-sm" onclick="ocIntNovoFechar()">Cancelar</button>
+                <button class="btn btn-primary btn-sm" onclick="ocIntNovoIniciar()">Iniciar conversa</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal: Iniciar Conversa por template — 3 etapas (spec 2026-08-04 §11) -->
+          <div id="modal-atd-novo" class="modal-overlay" style="display:none">
+            <div class="modal-box" style="max-width:460px;max-height:88vh;overflow-y:auto">
+              <div class="modal-hdr">
+                <div class="modal-title" id="atd-novo-titulo">Iniciar Conversa</div>
+                <span class="modal-close" onclick="ocAtdNovoFechar()">&#x2715;</span>
+              </div>
+
+              <div id="atd-novo-step1">
+                <label class="field-label">Buscar no cadastro</label>
+                <input id="atd-novo-busca" type="search" placeholder="Nome ou telefone…" oninput="ocAtdNovoBuscarDebounce()" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 8px">
+                <div id="atd-novo-resultados" style="max-height:150px;overflow-y:auto"></div>
+                <div style="display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--text-3);font-size:11px;text-transform:uppercase">
+                  <div style="flex:1;height:1px;background:var(--border)"></div>ou<div style="flex:1;height:1px;background:var(--border)"></div>
+                </div>
+                <label class="field-label">Nome <span style="color:var(--err)">*</span></label>
+                <input id="atd-novo-nome" type="text" placeholder="Nome do contato" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 8px">
+                <label class="field-label">Telefone <span style="color:var(--err)">*</span></label>
+                <input id="atd-novo-tel" type="text" placeholder="(12) 90000-0000" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 8px">
+                <label class="field-label">Email <small style="color:var(--muted);text-transform:none">(opcional)</small></label>
+                <input id="atd-novo-email" type="text" placeholder="email@exemplo.com" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
+              </div>
+
+              <div id="atd-novo-step2" style="display:none">
+                <label class="field-label">Iniciar conversa com <strong id="atd-novo-nome-ctx">—</strong> usando o modelo:</label>
+                <div id="atd-novo-janela-nota" style="font-size:12px;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 10px;margin:8px 0 12px"></div>
+                <div id="atd-novo-templates" style="display:flex;flex-direction:column;gap:8px"></div>
+              </div>
+
+              <div id="atd-novo-step3" style="display:none">
+                <label class="field-label">Revise e complete os campos do modelo</label>
+                <div id="atd-novo-campos" style="margin:6px 0 10px"></div>
+                <label class="field-label">Pré-visualização da mensagem</label>
+                <div id="atd-novo-preview" style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:13px;line-height:1.5;white-space:pre-wrap;margin-top:4px"></div>
+              </div>
+
+              <div id="atd-novo-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+                <button class="btn btn-ghost btn-sm" id="atd-novo-voltar" style="display:none" onclick="ocAtdNovoVoltar()">Voltar</button>
+                <button class="btn btn-ghost btn-sm" onclick="ocAtdNovoFechar()">Cancelar</button>
+                <button class="btn btn-primary btn-sm" id="atd-novo-primario" onclick="ocAtdNovoPrimario()">Avançar</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
             <div class="ochat-cards" id="ochat-tpl-cards"></div>
@@ -10724,8 +10866,19 @@ const _OCHAT_TOP = {
   numeros:  ['Números Conectados', 'Número de WhatsApp da loja e status do transporte Meta.'],
   consumo:  ['Consumo / Custos', 'Envios de WhatsApp por segmento — enviadas, na fila, pendentes e com erro.'],
 };
+let _ocScrAtual = 'atend';   // tela ativa do Orizon Chat — rotula os botões contextuais da barra de ação
 function ochatIr(scr){
-  if(scr==='atend' || scr==='interno') ocMontarPane(scr);   // painel de conversa único migra entre as telas
+  if(scr==='atend' || scr==='interno'){
+    ocMontarPane(scr); _ocScrAtual = scr;   // painel de conversa único migra entre as telas
+    // a thread pode continuar aberta ao trocar de tela (o pane só migra) — reetiqueta a barra
+    // de ação (Transferir×Encaminhar, Concluir) para o novo contexto, achado da verificação
+    // manual (Playwright): trocar de Atendimentos p/ Chat Interno com conversa aberta mantinha
+    // o rótulo "Transferir atendimento" em vez de "Encaminhar conversa".
+    if(_ocConvAtiva){
+      const c = (_ocInbox||[]).find(x=>x.id===_ocConvAtiva);
+      if(c) _ocSetHeaderExtras(c);
+    }
+  }
   document.querySelectorAll('#page-chat .ochat-nav[data-scr]').forEach(n=>n.classList.toggle('active', n.getAttribute('data-scr')===scr));
   document.querySelectorAll('#page-chat .ochat-scr').forEach(s=>s.classList.remove('active'));
   const el = document.getElementById('ochat-scr-'+scr); if(el) el.classList.add('active');
@@ -10742,26 +10895,42 @@ function ochatIr(scr){
 
 // ── Chat Interno (equipe) — full-page espelhando Atendimentos; thread reusa o modal ──
 let _intInbox = [];
-let _intTab = 'pessoais';
-// Abas PADRONIZADAS nos dois canais (revisão UX 2026-07-31): Pessoais (1:1) · Grupos ·
-// Arquivadas. "Pendente" (recebida sem resposta) é FILTRO, não aba nem estado — as AÇÕES do
-// funcionário (responder, transferir, arquivar/concluir) vivem no thread. Mural virou botão na
-// camada de ações do Chat Interno (com badge de não-lidos).
-const _OC_TABS = [
-  {key:'pessoais', rot:'Pessoais', icon:'ti-user'},
-  {key:'grupos', rot:'Grupos', icon:'ti-users'},
-  {key:'arquivadas', rot:'Arquivadas', icon:'ti-archive'},
+// Chips PADRONIZADOS nos dois canais (redesenho 2026-08-04, mockup §3): Todas · Grupos ·
+// Projetos (só Atendimentos) · Arquivadas · Urgentes — substituem as abas Pessoais/Grupos/
+// Arquivadas da rodada anterior. "Arquivadas" reúne arquivada-por-mim ∪ concluída (selo
+// "Concluída" — §8). "Pendente" (recebida sem resposta) segue FILTRO independente dos chips.
+// O oversight da gerência ("Todas" administrativo, ver_todas_conversas) é um TOGGLE à parte —
+// nome diferente do chip "Todas" pra não colidir (aquele é "sem filtro de categoria", este é
+// "ver every conversa da loja, inclusive as que não participo").
+const _ATD_CHIPS = [
+  {key:'all', rot:'Todas'}, {key:'grupos', rot:'Grupos'}, {key:'projetos', rot:'Projetos'},
+  {key:'arquivadas', rot:'Arquivadas'}, {key:'urgentes', rot:'Urgentes'},
 ];
+const _INT_CHIPS = [
+  {key:'all', rot:'Todas'}, {key:'grupos', rot:'Grupos'},
+  {key:'arquivadas', rot:'Arquivadas'}, {key:'urgentes', rot:'Urgentes'},
+];
+let _atdChip = 'all', _intChip = 'all';
+let _atdOversight = false, _intOversight = false;
 const _INT_TIPOROT = {direct:'Pessoal', grupo:'Grupo', mural:'Mural', publico:'Mural'};
 const _INT_TIPOS = ['direct','grupo'];   // equipe; Mural via botão; projeto vai em Atendimentos
 const _ocPend = {atd:false, int:false};  // filtro "Pendentes" por tela
-function _ocDaTab(c, tab){
-  if(tab==='arquivadas') return !!c.arquivada;
-  if(c.arquivada) return false;                      // arquivada só aparece na própria aba
-  if(tab==='pessoais') return c.tipo==='direct';
-  if(tab==='grupos') return c.tipo==='grupo' || c.tipo==='projeto';
-  return true;
+function _ocDaChip(c, chip){
+  const arqOuConcl = !!c.arquivada || c.status==='concluida';
+  if(chip==='arquivadas') return arqOuConcl;
+  if(arqOuConcl) return false;             // arquivada/concluída só aparece na própria categoria
+  if(chip==='urgentes') return !!c.urgente;
+  if(chip==='grupos') return c.tipo==='grupo';
+  if(chip==='projetos') return c.tipo==='projeto';
+  return true;                             // 'all'
 }
+function _ocChipsRow(chips, atual, fn){
+  return chips.map(c=>'<div class="oc-chip'+(c.key===atual?' active':'')+'" onclick="'+fn+'(\''+c.key+'\')">'+esc(c.rot)+'</div>').join('');
+}
+function atendChip(k){ _atdChip = k; atendRender(); }
+function intChip(k){ _intChip = k; intRender(); }
+function atendOversightToggle(){ _atdOversight = !_atdOversight; if(_atdOversight) _ocTodasCarregar(); atendRender(); }
+function intOversightToggle(){ _intOversight = !_intOversight; if(_intOversight) _ocTodasCarregar(); intRender(); }
 function ocTogglePend(qual){
   _ocPend[qual] = !_ocPend[qual];
   const b = document.getElementById(qual+'-pend');
@@ -10774,16 +10943,10 @@ function ocAbrirMural(){
   else if(typeof showToast==='function') showToast('Mural indisponível — atualize a lista.', true);
 }
 
-// ── aba "Todas" (r5): oversight da GERÊNCIA — Pessoais são as conversas DO USUÁRIO; quem tem
-// ver_todas_conversas ganha a aba Todas nos dois canais (comunicação entre funcionários no
-// Chat Interno; todos os atendimentos/projetos nos Atendimentos). Substitui o painel de
-// Administração. Abrir: normal se participa; senão SOMENTE LEITURA (o backend já barra o post).
-function _ocTabsDe(){
-  const t = _OC_TABS.slice();
-  if(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas)
-    t.push({key:'todas', rot:'Todas', icon:'ti-eye'});
-  return t;
-}
+// ── oversight da GERÊNCIA (r5 → toggle no redesenho 2026-08-04) — Pessoais/chips são as
+// conversas DO USUÁRIO; quem tem ver_todas_conversas ganha o toggle "Todas (oversight)" nos
+// dois canais (comunicação entre funcionários no Chat Interno; todos os atendimentos/projetos
+// nos Atendimentos). Abrir: normal se participa; senão SOMENTE LEITURA (o backend já barra o post).
 let _ocTodas = null;
 async function _ocTodasCarregar(force){
   if(_ocTodas && !force) return _ocTodas;
@@ -10813,6 +10976,7 @@ async function ocAbrirTodas(id){
   const c = (_ocTodas||[]).find(x=>x.id===id);
   if(!c) return;
   await ocAbrirConversaPorId(c.id, c.titulo||'Conversa', false, c.tipo, c.projeto_nome);   // oversight
+  _ocSetHeaderExtras(c);   // listar_todas_conversas não serializa responsavel/urgente/status — some/neutro
 }
 
 async function chatInternoCarregar(){
@@ -10840,39 +11004,33 @@ async function chatInternoCarregar(){
   }
   intRender();
 }
-// Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
-async function intTab(k){
-  _intTab=k;
-  if(k==='todas') await _ocTodasCarregar();
-  intRender();
-  if(_intVisiveis.length) await (k==='todas' ? ocAbrirTodas(_intVisiveis[0].id) : ocAbrirConversa(_intVisiveis[0].id));
-  else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
+let _intVisiveis = [];   // conversas visíveis na categoria atual
+function _intAssuntoTag(c){
+  const a = c.assunto;
+  if(a && a.tipo==='custom' && a.label) return '<span class="atd-badge atd-b-assunto">'+esc(a.label)+'</span>';
+  return '<span class="atd-badge atd-b-livre">Livre</span>';
 }
-let _intVisiveis = [];   // conversas visíveis na aba atual (alvo do auto-abrir)
 function intRender(){
   const tabsEl = document.getElementById('int-tabs');
   const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
-  tabsEl.innerHTML = _ocTabsDe().map(t=>{
-    const n = t.key==='todas' ? _ocTodasDoCanal('int').length : _intInbox.filter(c=>_ocDaTab(c,t.key)).length;
-    const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
-    const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
-    return '<div class="atd-tab'+(t.key===_intTab?' active':'')+'" onclick="intTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
-  }).join('');
+  const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
+  tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip')
+    + (podeOversight ? '<span class="oc-chip'+(_intOversight?' active':'')+'" style="margin-left:auto" onclick="intOversightToggle()"><i class="ti ti-eye"></i> Todas (oversight)</span>' : '');
   const box = document.getElementById('int-lista');
-  if(_intTab==='todas'){                              // oversight da gerência (r5)
+  if(_intOversight){                                   // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('int');
     if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
     _intVisiveis = todos;
     box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
     return;
   }
-  let itens = _intInbox.filter(c=>_ocDaTab(c,_intTab));
+  let itens = _intInbox.filter(c=>_ocDaChip(c,_intChip));
   if(_ocPend.int) itens = itens.filter(c=>c.pendente);
-  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')+' '+((c.assunto&&c.assunto.label)||'')).toLowerCase().includes(q));
   _intVisiveis = itens;
   let html = itens.map(_intItemHTML).join('');
-  // Pessoais: usuários da loja SEM conversa aberta aparecem abaixo — clique abre a 1:1
-  if(_intTab==='pessoais'){
+  // "Todas": usuários da loja SEM conversa aberta aparecem abaixo — clique abre a 1:1 (WhatsApp-like)
+  if(_intChip==='all'){
     const meuId = _usuarioAtual && _usuarioAtual.id;
     const jaTem = new Set(_intInbox.filter(c=>c.tipo==='direct').map(c=>c.outro_usuario_id).filter(Boolean));
     const users = _ocUsuarios.filter(u=>u.id!==meuId && !jaTem.has(u.id)
@@ -10886,23 +11044,23 @@ function intRender(){
       }).join('');
     }
   }
-  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta aba.</div>';
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta categoria.</div>';
 }
 function _intItemHTML(c){
-  const tipoBadge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
+  const tipoBadge = '<span class="atd-badge atd-b-seg">'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
+  const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
   return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
-    + '<div class="atd-top"><span class="atd-nome">'+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+tipoBadge+'</div></div>';
+    + '<div class="atd-tags">'+tipoBadge+_intAssuntoTag(c)+'</div></div>';
 }
 // (intNova/intForum/intAdmin e o painel de Administração legados foram removidos — o oversight
-//  da gerência vive na aba "Todas" dos dois canais, r5.)
+//  da gerência vive no toggle "Todas (oversight)" dos dois canais, r5.)
 
-// ── Fila de Atendimentos (F7/RF-12) — abas + selos de segmento/janela, reusa a thread do modal ──
+// ── Fila de Atendimentos (F7/RF-12) — chips + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];
-let _atdTab = 'pessoais';   // abas padronizadas com o Chat Interno (_OC_TABS)
 const _ATD_SEGROT = {comercial:'Comercial', suporte_tecnico:'Suporte Técnico', financeiro:'Financeiro',
                      logistica:'Logística', parceiros:'Projeto Executivo', compras:'Compras', sac:'SAC'};
 
@@ -10928,45 +11086,33 @@ async function chatAtendCarregar(){
   sel.value = atual;
   atendRender();
 }
-// Troca de aba abre a PRIMEIRA conversa da aba (revisão UX rodada 2 — e vice-versa).
-async function atendTab(k){
-  _atdTab=k;
-  if(k==='todas') await _ocTodasCarregar();
-  atendRender();
-  if(_atdVisiveis.length) await (k==='todas' ? ocAbrirTodas(_atdVisiveis[0].id) : ocAbrirConversa(_atdVisiveis[0].id));
-  else ocMostrarView(_ocConvAtiva ? 'oc-thread' : 'oc-vazio');
-}
-let _atdTriagem = [];    // fila de triagem: recebida SEM DONO → topo de Pessoais (sempre pendente)
-let _atdVisiveis = [];   // conversas visíveis na aba atual (alvo do auto-abrir)
+let _atdTriagem = [];    // fila de triagem: recebida SEM DONO → aparece no chip "Todas"
+let _atdVisiveis = [];   // conversas visíveis na categoria atual
 function atendRender(){
   const tabsEl = document.getElementById('atd-tabs');
   const filtroSeg = document.getElementById('atd-seg-filtro').value;
   const q = ((document.getElementById('atd-busca')||{}).value||'').trim().toLowerCase();
+  const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
   let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
-  tabsEl.innerHTML = _ocTabsDe().map(t=>{
-    const n = t.key==='todas' ? _ocTodasDoCanal('atd').length
-            : _atdInbox.filter(c=>_ocDaTab(c,t.key)).length + (t.key==='pessoais' ? _atdTriagem.length : 0);
-    const ic = t.icon ? '<i class="ti '+t.icon+'"></i> ' : '';
-    const cnt = n>0 ? '<span class="cnt">'+n+'</span>' : '';
-    return '<div class="atd-tab'+(t.key===_atdTab?' active':'')+'" onclick="atendTab(\''+t.key+'\')">'+ic+esc(t.rot)+cnt+'</div>';
-  }).join('');
+  tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip')
+    + (podeOversight ? '<span class="oc-chip'+(_atdOversight?' active':'')+'" style="margin-left:auto" onclick="atendOversightToggle()"><i class="ti ti-eye"></i> Todas (oversight)</span>' : '');
   const box = document.getElementById('atd-lista');
-  if(_atdTab==='todas'){                              // oversight da gerência (r5)
+  if(_atdOversight){                                  // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('atd');
     if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
     _atdVisiveis = todos;
     box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
     return;
   }
-  let itens = _atdInbox.filter(c=>_ocDaTab(c,_atdTab));
+  let itens = _atdInbox.filter(c=>_ocDaChip(c,_atdChip));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
   if(_ocPend.atd) itens = itens.filter(c=>c.pendente);
   if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.projeto_nome||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
   _atdVisiveis = itens;
-  let html = (_atdTab==='pessoais') ? trg.map(_atdTriagemItemHTML).join('') : '';
+  let html = (_atdChip==='all') ? trg.map(_atdTriagemItemHTML).join('') : '';
   html += itens.map(_atdItemHTML).join('');
-  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta aba.</div>';
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta categoria.</div>';
 }
 function _atdTriagemItemHTML(e){
   const badge = '<span class="atd-badge" style="border-color:var(--warn);color:var(--warn)"><i class="ti ti-signpost"></i> Triagem</span>';
@@ -11000,16 +11146,29 @@ function _atdQuando(iso){
   if(dias<30) return 'há '+dias+(dias===1?' dia':' dias');
   const meses = Math.floor(dias/30); return 'há '+meses+(meses===1?' mês':' meses');
 }
+// Tag de fallback (spec §5 — Avulsa × Triagem): só quando não há segmento definido E a
+// conversa tem FACE EXTERNA (já trocou tráfego com um contato — `janela.estado!=='na'`,
+// mesmo conceito de `_tem_face_externa` do backend). Sem isso, um DM interno puramente
+// administrativo (ex.: notificação de conclusão para a gerência) herdaria "Avulsa" por engano
+// — achado da verificação manual (Playwright): a DM de conclusão aparecia taggeada como
+// atendimento externo avulso.
+function _atdFallbackTag(c){
+  if(!c.janela || c.janela.estado === 'na') return '';
+  if(c.origem_entrada === 'triagem') return '<span class="atd-badge atd-b-orig-triagem">Triagem</span>';
+  return '<span class="atd-badge atd-b-orig-avulsa">Avulsa</span>';
+}
 function _atdItemHTML(c){
-  const seg = c.segmento ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ocSegRot(c.segmento))+'</span>' : '';
+  const seg = c.segmento ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ocSegRot(c.segmento))+'</span>' : _atdFallbackTag(c);
   const jan = _atdJanelaBadge(c.janela);
   const proj = c.projeto_nome ? '<span class="atd-badge atd-b-ok"><i class="ti ti-folder"></i> '+esc(c.projeto_nome.replace(/_/g,' '))+'</span>' : '';
+  const concl = c.status==='concluida' ? '<span class="atd-badge" style="border-color:var(--ok);color:var(--ok)">Concluída</span>' : '';
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
+  const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
   return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
-    + '<div class="atd-top"><span class="atd-nome">'+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+seg+jan+proj+'</div></div>';
+    + '<div class="atd-tags">'+seg+jan+proj+concl+'</div></div>';
 }
 // (atendAbrir é definido no bloco do painel de conversa: alias de ocAbrirConversa — thread na própria página.)
 
@@ -13296,6 +13455,9 @@ document.addEventListener('keydown', function(e){
   // Mapa ordenado do z-index mais alto para o mais baixo.
   // Cada entrada: [id, fn_cancelar]
   const ESC_MAP = [
+    ['modal-atd-novo',         ocAtdNovoFechar],
+    ['modal-int-novo',         ocIntNovoFechar],
+    ['modal-atd-concluir',     ocConcluirFechar],
     ['modal-autorizacao',      () => fecharModalAutorizacao(false)],
     ['modal-perfil-acesso',    fecharModalPerfilAcesso],
     ['modal-perfil-detalhe',   fecharModalPerfilDetalhe],
@@ -13468,6 +13630,7 @@ async function abrirConversaProjeto(){
   const it = (_ocInbox||[]).find(x=>x.id===d.conversa.id);
   _ocSetArquivarBtn(it || {tipo:'projeto', arquivada:false});
   _ocSetSegSel(it || {tipo:'projeto', segmento:''});
+  _ocSetHeaderExtras(it || {tipo:'projeto'});
 }
 
 function convTransfToggle(){
@@ -13640,8 +13803,401 @@ async function ocAbrirConversa(convId){
   await ocAbrirConversaPorId(c.id, _ocTituloComAssunto(c), podePostar, c.tipo, c.projeto_nome);
   _ocSetArquivarBtn(c);
   _ocSetSegSel(c);
+  _ocSetHeaderExtras(c);
 }
 const atendAbrir = ocAbrirConversa;
+
+// ── Responsável/Urgência/Concluir/Transferir/Exportar (spec 2026-08-04 §6.1/§7/§7.1-A/§8) ──
+// `c` é o item da inbox (pode faltar responsavel/urgente/status no caminho de oversight —
+// listar_todas_conversas não os serializa; os controles simplesmente ficam ocultos/neutros).
+function _ocSetHeaderExtras(c){
+  const grupoOuProj = (_ocConvTipo === 'grupo' || _ocConvTipo === 'projeto');
+  const ehAtendimento = !!(c && ['direct','grupo','projeto'].includes(c.tipo));
+  const respWrap = document.getElementById('oc-resp-wrap');
+  if(respWrap){
+    if(grupoOuProj && c && c.responsavel && c.responsavel.nome){
+      respWrap.style.display = '';
+      document.getElementById('oc-resp-nome').textContent = c.responsavel.nome;
+    } else respWrap.style.display = 'none';
+  }
+  const urgente = !!(c && c.urgente);
+  const urgBtn = document.getElementById('oc-urg-btn');
+  if(urgBtn){
+    urgBtn.style.display = ehAtendimento ? '' : 'none';
+    urgBtn.classList.toggle('active', urgente);
+    urgBtn.textContent = urgente ? '● Urgente' : '○ Marcar urgente';
+  }
+  const status = (c && c.status) || 'aberta';
+  // "Concluir" é conceito de ATENDIMENTO EXTERNO (§8): só para conversa com face externa (já
+  // trocou tráfego com um contato), com segmento definido (achado da Vera 2026-08-04: uma
+  // conversa nascida do fluxo "Iniciar Conversa" já tem c.segmento — herdado do canal do
+  // template — mesmo que o contato ainda não tenha respondido, então `janela.estado` ainda é
+  // 'na'; sem checar segmento aqui, Concluir ficava escondido até a 1ª resposta, embora o
+  // guard irmão `faceExterna` do seletor de segmento, duas linhas abaixo, já considerasse isso
+  // certo) ou ligada a projeto — não para um DM interno qualquer que apareça na tela (ex.: a
+  // própria notificação de conclusão para a gerência).
+  const temAtendimentoReal = !!(c && (c.projeto_nome || c.segmento || (c.janela && c.janela.estado !== 'na')));
+  const concluirBtn = document.getElementById('oc-concluir-btn');
+  if(concluirBtn) concluirBtn.style.display = (_ocScrAtual==='atend' && ehAtendimento && temAtendimentoReal && status!=='concluida') ? '' : 'none';
+  const transfLabel = document.getElementById('oc-transferir-label');
+  if(transfLabel) transfLabel.textContent = _ocScrAtual==='atend' ? 'Transferir atendimento' : 'Encaminhar conversa';
+  const actionBar = document.getElementById('oc-action-bar');
+  if(actionBar) actionBar.style.display = ehAtendimento ? '' : 'none';
+  document.querySelectorAll('.oc-am-menu.open').forEach(m=>m.classList.remove('open'));
+  const flash = document.getElementById('oc-action-flash'); if(flash) flash.textContent = '';
+}
+function _ocFlash(msg){
+  const f = document.getElementById('oc-action-flash'); if(!f) return;
+  f.textContent = msg;
+  clearTimeout(window._ocFlashTimer);
+  window._ocFlashTimer = setTimeout(()=>{ f.textContent=''; }, 3200);
+}
+function ocAmToggle(menuId){
+  document.querySelectorAll('.oc-am-menu.open').forEach(m=>{ if(m.id!==menuId) m.classList.remove('open'); });
+  const m = document.getElementById(menuId); if(!m) return;
+  const abrindo = !m.classList.contains('open');
+  m.classList.toggle('open', abrindo);
+  if(abrindo && menuId==='oc-transferir-menu'){
+    document.getElementById('oc-transferir-busca').value = '';
+    ocTransferirRenderLista();
+  }
+}
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.oc-am-wrap')) document.querySelectorAll('.oc-am-menu.open').forEach(m=>m.classList.remove('open'));
+});
+
+async function ocUrgenciaToggle(){
+  if(!_ocConvAtiva) return;
+  const btn = document.getElementById('oc-urg-btn');
+  const nowOn = !btn.classList.contains('active');
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/urgente',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({on: nowOn})}).then(r=>r.json());
+  }catch(e){ showToast('Erro de rede.', true); return; }
+  if(!d.ok){ showToast(d.erro||'Falha ao marcar urgência.', true); return; }
+  btn.classList.toggle('active', d.urgente);
+  btn.textContent = d.urgente ? '● Urgente' : '○ Marcar urgente';
+  await _ocInboxAtualizar(); _ocRefrescar();
+}
+
+async function ocTransferirRenderLista(){
+  if(!_ocUsuarios.length){
+    try{
+      const u = await fetch('/api/comunicacao/usuarios',{credentials:'same-origin'}).then(r=>r.json());
+      if(u && u.ok) _ocUsuarios = u.usuarios || [];
+    }catch(e){}
+  }
+  const q = ((document.getElementById('oc-transferir-busca')||{}).value||'').trim().toLowerCase();
+  const box = document.getElementById('oc-transferir-lista');
+  if(!box) return;
+  const lista = (_ocUsuarios||[]).filter(u=>!q || ((u.nome||'')+' '+(u.funcao_nome||'')).toLowerCase().includes(q));
+  box.innerHTML = lista.map(u=>{
+    const fn = u.funcao_nome ? '<small>'+esc(u.funcao_nome)+'</small>' : '';
+    return '<div class="oc-am-item" onclick="ocTransferirPara('+u.id+')">'+esc(u.nome)+fn+'</div>';
+  }).join('') || '<div style="padding:8px 14px;font-size:12px;color:var(--muted)">Nenhum usuário encontrado.</div>';
+}
+async function ocTransferirPara(uid){
+  if(!_ocConvAtiva) return;
+  const menu = document.getElementById('oc-transferir-menu'); if(menu) menu.classList.remove('open');
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/transferir',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({usuario_id: uid})}).then(r=>r.json());
+  }catch(e){ showToast('Erro de rede.', true); return; }
+  if(!d.ok){ showToast(d.erro||'Falha ao transferir.', true); return; }
+  _ocFlash('✓ '+(_ocScrAtual==='atend'?'Transferido':'Encaminhado')+' para '+((d.responsavel&&d.responsavel.nome)||''));
+  if(_ocConvTipo==='grupo' || _ocConvTipo==='projeto'){
+    const rw = document.getElementById('oc-resp-wrap');
+    if(rw){ rw.style.display=''; document.getElementById('oc-resp-nome').textContent = (d.responsavel&&d.responsavel.nome)||''; }
+  }
+  await _ocInboxAtualizar(); _ocRefrescar();
+  await ocCarregarMsgs();   // mostra o evento de transferência na timeline
+}
+
+function ocExportar(formato){
+  document.querySelectorAll('.oc-am-menu.open').forEach(m=>m.classList.remove('open'));
+  if(!_ocConvAtiva) return;
+  window.open('/api/comunicacao/conversas/'+_ocConvAtiva+'/exportar?formato='+formato, '_blank');
+  _ocFlash('✓ Conversa exportada ('+formato.toUpperCase()+')');
+}
+
+// ── Concluir atendimento (Fatia 3, spec §8) ────────────────────────────────────
+function ocConcluirAbrir(){
+  if(!_ocConvAtiva) return;
+  document.getElementById('atd-concl-nome').textContent = document.getElementById('oc-thread-titulo').textContent;
+  document.getElementById('atd-concl-por').value = ((_usuarioAtual && _usuarioAtual.nome) || '') + ' (você)';
+  document.getElementById('atd-concl-obs').value = '';
+  document.getElementById('atd-concl-aviso').textContent = '';
+  document.getElementById('modal-atd-concluir').style.display = 'flex';
+}
+function ocConcluirFechar(){ document.getElementById('modal-atd-concluir').style.display = 'none'; }
+async function ocConcluirConfirmar(){
+  const aviso = document.getElementById('atd-concl-aviso'); aviso.textContent = '';
+  const obs = document.getElementById('atd-concl-obs').value;
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/concluir',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({observacao: obs})}).then(r=>r.json());
+  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
+  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao concluir.'; return; }
+  ocConcluirFechar();
+  const cBtn = document.getElementById('oc-concluir-btn'); if(cBtn) cBtn.style.display = 'none';
+  _ocFlash('✓ Atendimento concluído — gerência notificada'+(d.notificados?(' ('+d.notificados+')'):''));
+  await _ocInboxAtualizar(); _ocRefrescar();
+}
+
+// ── Nova conversa interna (Fatia 4, spec §5.1 — modal próprio, sem template) ──────
+let _intNovoAlvo = null;
+function ocIntNovoAbrir(){
+  _intNovoAlvo = null;
+  document.getElementById('int-novo-busca').value = '';
+  document.getElementById('int-novo-assunto').value = '';
+  document.getElementById('int-novo-assunto-wrap').style.display = '';
+  document.getElementById('int-novo-aviso').textContent = '';
+  ocIntNovoRenderLista();
+  document.getElementById('modal-int-novo').style.display = 'flex';
+}
+function ocIntNovoFechar(){ document.getElementById('modal-int-novo').style.display = 'none'; }
+function ocIntNovoRenderLista(){
+  const q = ((document.getElementById('int-novo-busca')||{}).value||'').trim().toLowerCase();
+  const box = document.getElementById('int-novo-lista');
+  const meuId = _usuarioAtual && _usuarioAtual.id;
+  const usuarios = (_ocUsuarios||[]).filter(u=>u.id!==meuId && (!q || ((u.nome||'')+' '+(u.funcao_nome||'')).toLowerCase().includes(q)));
+  const grupos = (_intInbox||[]).filter(c=>c.tipo==='grupo' && (!q || (c.titulo||'').toLowerCase().includes(q)));
+  let html = '';
+  if(usuarios.length) html += '<div class="oc-sec">Pessoas</div>' + usuarios.map(u=>{
+    const fn = u.funcao_nome ? '<small style="color:var(--muted)"> · '+esc(u.funcao_nome)+'</small>' : '';
+    return '<div class="oc-am-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px" onclick="ocIntNovoEscolherUsuario('+u.id+')">'+esc(u.nome)+fn+'</div>';
+  }).join('');
+  if(grupos.length) html += '<div class="oc-sec">Grupos</div>' + grupos.map(c=>
+    '<div class="oc-am-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px" onclick="ocIntNovoEscolherGrupo('+c.id+')">'+esc(c.titulo||'Grupo')+'</div>').join('');
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum resultado.</div>';
+}
+function ocIntNovoEscolherUsuario(uid){
+  const u = (_ocUsuarios||[]).find(x=>x.id===uid); if(!u) return;
+  _intNovoAlvo = {tipo:'usuario', id:uid, nome:u.nome};
+  document.getElementById('int-novo-busca').value = u.nome;
+  document.getElementById('int-novo-assunto-wrap').style.display = '';
+}
+function ocIntNovoEscolherGrupo(cid){
+  _intNovoAlvo = {tipo:'grupo', id:cid};
+  document.getElementById('int-novo-busca').value = '(grupo selecionado)';
+  document.getElementById('int-novo-assunto-wrap').style.display = 'none';   // grupo já tem seu assunto
+}
+async function ocIntNovoIniciar(){
+  const aviso = document.getElementById('int-novo-aviso'); aviso.textContent = '';
+  if(!_intNovoAlvo){ aviso.textContent = 'Escolha uma pessoa ou grupo.'; return; }
+  if(_intNovoAlvo.tipo==='grupo'){
+    ocIntNovoFechar();
+    await ocAbrirConversa(_intNovoAlvo.id);
+    return;
+  }
+  const nomeAssunto = ((document.getElementById('int-novo-assunto')||{}).value||'').trim();
+  let assuntoTipo = 'livre', assuntoId = null;
+  if(nomeAssunto){
+    let da;
+    try{
+      da = await fetch('/api/comunicacao/assuntos',
+        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+         body: JSON.stringify({nome: nomeAssunto})}).then(r=>r.json());
+    }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
+    if(!da.ok){ aviso.textContent = da.erro || 'Falha ao criar o assunto.'; return; }
+    assuntoTipo = 'custom'; assuntoId = da.assunto.id;
+  }
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/conversas',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({tipo:'direct', participante_ids:[_intNovoAlvo.id],
+                             assunto_tipo: assuntoTipo, assunto_id: assuntoId})}).then(r=>r.json());
+  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
+  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao iniciar a conversa.'; return; }
+  const nomeAlvo = _intNovoAlvo.nome;
+  ocIntNovoFechar();
+  await _ocInboxAtualizar(); _ocRefrescar();
+  await ocAbrirConversa(d.conversa.id);
+  showToast('✓ Conversa iniciada com '+nomeAlvo+(nomeAssunto?(' — Assunto: '+nomeAssunto):' — Livre'));
+}
+
+// ── Iniciar Conversa por template — 3 etapas (Fatia 5, spec §11) ───────────────────
+let _atdNovoStep = 1;
+let _atdNovoContato = null;         // {cliente_id,nome,telefone} | {nome,telefone,email}
+let _atdNovoJanelaAberta = false;
+let _atdNovoTemplates = [];
+let _atdNovoTplSel = null;          // objeto do template, ou a string 'livre'
+let _atdNovoValores = {};
+let _atdNovoResultadosCache = [];
+let _atdNovoBuscaTimer = null;
+
+function ocAtdNovoAbrir(){
+  _atdNovoContato = null; _atdNovoTplSel = null; _atdNovoValores = {}; _atdNovoResultadosCache = [];
+  document.getElementById('atd-novo-busca').value = '';
+  document.getElementById('atd-novo-resultados').innerHTML = '';
+  document.getElementById('atd-novo-nome').value = '';
+  document.getElementById('atd-novo-tel').value = '';
+  document.getElementById('atd-novo-email').value = '';
+  _atdNovoMostrarStep(1);
+  document.getElementById('modal-atd-novo').style.display = 'flex';
+}
+function ocAtdNovoFechar(){ document.getElementById('modal-atd-novo').style.display = 'none'; }
+function _atdNovoMostrarStep(n){
+  _atdNovoStep = n;
+  [1,2,3].forEach(i=>{ const e = document.getElementById('atd-novo-step'+i); if(e) e.style.display = i===n?'':'none'; });
+  document.getElementById('atd-novo-voltar').style.display = n>1 ? '' : 'none';
+  const primario = document.getElementById('atd-novo-primario');
+  const titulo = document.getElementById('atd-novo-titulo');
+  if(n===1){ primario.style.display=''; primario.textContent='Avançar'; titulo.textContent='Iniciar Conversa'; }
+  else if(n===2){ primario.style.display='none'; titulo.textContent='Escolher modelo de mensagem'; }
+  else { primario.style.display=''; primario.textContent='Iniciar conversa'; titulo.textContent='Ajustar mensagem'; }
+  document.getElementById('atd-novo-aviso').textContent = '';
+}
+function ocAtdNovoVoltar(){
+  if(_atdNovoStep===3) _atdNovoMostrarStep(2);
+  else if(_atdNovoStep===2) _atdNovoMostrarStep(1);
+}
+function ocAtdNovoBuscarDebounce(){
+  clearTimeout(_atdNovoBuscaTimer);
+  _atdNovoBuscaTimer = setTimeout(ocAtdNovoBuscar, 300);
+}
+async function ocAtdNovoBuscar(){
+  const q = (document.getElementById('atd-novo-busca').value||'').trim();
+  const box = document.getElementById('atd-novo-resultados');
+  if(q.length<2){ box.innerHTML=''; _atdNovoResultadosCache=[]; return; }
+  let d;
+  try{ d = await fetch('/api/clientes?q='+encodeURIComponent(q),{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px">Erro de rede.</div>'; return; }
+  _atdNovoResultadosCache = (d && d.ok) ? (d.clientes||[]) : [];
+  box.innerHTML = _atdNovoResultadosCache.map((c,i)=>{
+    const tel = c.whatsapp || c.telefone || '';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:13px">'
+      + '<div>'+esc(c.nome)+'<br><small style="color:var(--muted)">'+esc(tel||'sem telefone')+'</small></div>'
+      + '<button class="btn btn-ghost btn-sm" onclick="ocAtdNovoSelecionarCliente('+i+')">Selecionar</button></div>';
+  }).join('') || '<div style="color:var(--muted);font-size:12px">Nenhum resultado.</div>';
+}
+async function ocAtdNovoSelecionarCliente(i){
+  const c = _atdNovoResultadosCache[i]; if(!c) return;
+  const tel = c.whatsapp || c.telefone || '';
+  if(!tel){ document.getElementById('atd-novo-aviso').textContent = 'Este cliente não tem telefone cadastrado.'; return; }
+  _atdNovoContato = {cliente_id: c.id, nome: c.nome, telefone: tel};
+  await _atdNovoAvancarParaTemplates();
+}
+async function ocAtdNovoAvancarFormulario(){
+  const nome = (document.getElementById('atd-novo-nome').value||'').trim();
+  const tel = (document.getElementById('atd-novo-tel').value||'').trim();
+  const email = (document.getElementById('atd-novo-email').value||'').trim();
+  const aviso = document.getElementById('atd-novo-aviso');
+  if(!nome || !tel){ aviso.textContent = 'Preencha Nome e Telefone.'; return; }
+  _atdNovoContato = {nome, telefone: tel, email};
+  await _atdNovoAvancarParaTemplates();
+}
+async function _atdNovoAvancarParaTemplates(){
+  const aviso = document.getElementById('atd-novo-aviso'); aviso.textContent = '';
+  let dj;
+  try{
+    dj = await fetch('/api/comunicacao/janela?telefone='+encodeURIComponent(_atdNovoContato.telefone),
+      {credentials:'same-origin'}).then(r=>r.json());
+  }catch(e){ dj = {ok:false}; }
+  _atdNovoJanelaAberta = !!(dj && dj.ok && dj.aberta);
+  let dt;
+  try{ dt = await fetch('/api/comunicacao/templates',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ dt = {ok:false}; }
+  _atdNovoTemplates = (dt && dt.ok) ? (dt.templates||[]).filter(t=>t.status==='aprovado') : [];
+  document.getElementById('atd-novo-nome-ctx').textContent = _atdNovoContato.nome;
+  const nota = document.getElementById('atd-novo-janela-nota');
+  nota.textContent = _atdNovoJanelaAberta
+    ? '🟢 Janela de atendimento aberta com este contato — mensagem livre disponível.'
+    : '🔒 Sem janela de atendimento aberta (contato novo ou sem resposta há mais de 24h) — a Meta exige um template aprovado para a primeira mensagem.';
+  const box = document.getElementById('atd-novo-templates');
+  let html = _atdNovoTemplates.map((t,i)=>
+    '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer" onclick="ocAtdNovoEscolherTemplate('+i+')">'
+    + '<div style="font-weight:600;font-size:13.5px">'+esc(t.nome_meta)+' <span style="font-size:10px;font-weight:700;color:var(--ok);background:var(--ok-soft);border-radius:4px;padding:1px 5px;margin-left:4px">✓ Meta</span></div>'
+    + '<div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((t.corpo||'').slice(0,80))+'</div></div>').join('');
+  if(_atdNovoJanelaAberta){
+    html += '<div style="border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer" onclick="ocAtdNovoEscolherLivre()">'
+      + '<div style="font-weight:600;font-size:13.5px">✏️ Mensagem livre (sem modelo)</div>'
+      + '<div style="font-size:12px;color:var(--muted)">Escrever a primeira mensagem do zero, sem modelo.</div></div>';
+  }
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px">Nenhum modelo aprovado pela Meta cadastrado ainda.</div>';
+  _atdNovoMostrarStep(2);
+}
+function ocAtdNovoEscolherLivre(){
+  _atdNovoTplSel = 'livre';
+  _iniciarConversaEnviar();
+}
+function ocAtdNovoEscolherTemplate(i){
+  _atdNovoTplSel = _atdNovoTemplates[i];
+  _atdNovoBuildCampos();
+  _atdNovoMostrarStep(3);
+}
+function _atdNovoBuildCampos(){
+  const t = _atdNovoTplSel;
+  const wrap = document.getElementById('atd-novo-campos');
+  const vars = t.variaveis || [];
+  _atdNovoValores = {};
+  const consultora = (_usuarioAtual && _usuarioAtual.nome) || '';
+  const loja = ((_usuarioAtual && _usuarioAtual.lojas)||[]).find(l=>l.id===(_lojaAtiva||(_usuarioAtual&&(_usuarioAtual.loja_ativa_id||_usuarioAtual.loja_id))));
+  const nomeLoja = (loja && loja.nome) || '';
+  wrap.innerHTML = vars.map((rot,idx)=>{
+    const n = idx+1;
+    const r = (rot||'').toLowerCase();
+    let guess = '';
+    if(r.indexOf('atendente')>=0 || r.indexOf('consultor')>=0 || r.indexOf('responsav')>=0) guess = consultora;
+    else if(r.indexOf('cliente')>=0 || r.indexOf('contato')>=0) guess = _atdNovoContato.nome;
+    else if(r.indexOf('loja')>=0) guess = nomeLoja;
+    if(guess) _atdNovoValores[n] = guess;
+    return '<div style="margin-bottom:10px"><label class="field-label">'+esc(rot)+'</label>'
+      + '<input data-var="'+n+'" value="'+esc(guess)+'" placeholder="preencher…" oninput="_atdNovoAtualizarPreview()" '
+      + 'style="width:100%;background:var(--surface-2);border:1px solid '+(guess?'var(--ok)':'var(--border)')+';border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></div>';
+  }).join('');
+  _atdNovoAtualizarPreview();
+}
+function _atdNovoAtualizarPreview(){
+  const t = _atdNovoTplSel;
+  document.querySelectorAll('#atd-novo-campos input[data-var]').forEach(inp=>{
+    _atdNovoValores[parseInt(inp.dataset.var,10)] = inp.value;
+    inp.style.borderColor = inp.value.trim() ? 'var(--ok)' : 'var(--border)';
+  });
+  let texto = t.corpo || '';
+  (t.variaveis||[]).forEach((_,idx)=>{
+    const n = idx+1;
+    texto = texto.split('{{'+n+'}}').join(_atdNovoValores[n] || '{{'+n+'}}');
+  });
+  document.getElementById('atd-novo-preview').textContent = texto;
+}
+function ocAtdNovoPrimario(){
+  if(_atdNovoStep===1) ocAtdNovoAvancarFormulario();
+  else if(_atdNovoStep===3) _iniciarConversaEnviar();
+}
+async function _iniciarConversaEnviar(){
+  const aviso = document.getElementById('atd-novo-aviso'); aviso.textContent = '';
+  if(_atdNovoTplSel !== 'livre'){
+    // validação bloqueante (espelha _render_template do backend — nunca deixa {{n}} literal)
+    for(const inp of document.querySelectorAll('#atd-novo-campos input[data-var]')){
+      if(!inp.value.trim()){ aviso.textContent = 'Preencha todos os campos do modelo antes de enviar.'; return; }
+    }
+  }
+  const payload = { contato: _atdNovoContato.cliente_id
+      ? {cliente_id: _atdNovoContato.cliente_id}
+      : {nome: _atdNovoContato.nome, telefone: _atdNovoContato.telefone, email: _atdNovoContato.email} };
+  if(_atdNovoTplSel === 'livre') payload.livre = true;
+  else { payload.template_id = _atdNovoTplSel.id; payload.valores = _atdNovoValores; }
+  let d;
+  try{
+    d = await fetch('/api/comunicacao/iniciar-conversa',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(payload)}).then(r=>r.json());
+  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
+  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao iniciar a conversa.'; return; }
+  const nomeAlvo = _atdNovoContato.nome;
+  ocAtdNovoFechar();
+  await _ocInboxAtualizar(); _ocRefrescar();
+  await ocAbrirConversa(d.conversa.id);
+  showToast('✓ Conversa iniciada com '+nomeAlvo);
+}
 
 // ── segmento como SELETOR no thread (r3/r4): SÓ atendimento com face externa (canal de
 // entrada — grupo/chat interno não tem segmento); a triagem indica; a GERÊNCIA trata/troca ──

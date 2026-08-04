@@ -2799,6 +2799,92 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 156 — Redesenho de Atendimentos/Chat Interno (mockup 04/08) + Concluir + Iniciar Conversa por template
+
+Fecha a spec `docs/superpowers/specs/comunicacao/2026-08-04-orizon-chat-atendimentos-ui-design.md`
+(orientação `.../2026-08-04-ORIENTACAO-CODE-orizon-chat-atendimentos-ui.md`), plano
+`docs/superpowers/plans/2026-08-04-atendimentos-chat-ui.md`. Também fecha a **Fatia 3 pendente do
+plano de 28/07** (envio `"type":"template"`, que estava marcada como gap). TDD nas 5 fatias de
+backend/fundação; frontend puro nas telas. Suíte **1720→1741** (+21, `tests/test_atendimentos_ui.py`).
+
+**Fatia 1 — fundação de dados (backend).** `Conversa` ganha `responsavel_usuario_id` (§7.1-A —
+setado por: quem resolve a triagem, quem cria grupo/direct, transferência automática de etapa
+*e* a nova transferência manual — **mesmo campo, dois gatilhos**, checagem C1 da spec fechada:
+não havia onde gravar responsável fora de `CicloEtapa`), `urgente` (§6.1, manual, sem regra
+automática), `origem_entrada` (`triagem`|`avulsa`|NULL — decide a tag de fallback Avulsa×Triagem
+quando não há segmento), `status`+`concluido_por_id`+`concluido_em`+`conclusao_obs` (§8).
+`EnvioExterno.template_id` aponta o modelo usado no envio. Endpoints novos: `POST
+/conversas/<id>/transferir` (seta+**adiciona participante**, aditivo — checagem C2: abrir
+conversa exige `ConversaParticipante`, então transferência sem isso deixaria o novo responsável
+sem acesso), `/urgente`, `/concluir` (concluir dispara notificação **DM interna** best-effort
+pós-commit p/ todo usuário Gerente/Master da loja via `_usuarios_gerencia_loja`, já existente).
+`chat/externo._enviar_whatsapp_template` monta `{"type":"template",...}` (payload que faltava
+desde 28/07); `_render_template` valida **bloqueante** — variável `{{n}}` vazia nunca sai
+literal. `iniciar_conversa_externa` (novo, orquestra tudo do fluxo "Iniciar Conversa"):
+identifica/cria contato, reaproveita conversa já roteável p/ o telefone (evita duplicar
+atendimento), atribui responsável+origem, despacha template ou deixa vazio p/ "Mensagem livre"
+(bloqueado no backend se a janela não estiver aberta — a UI só espelha essa regra, não é a
+única trava). `janela_por_telefone` (RF-04 antes de existir conversa) + `exportar_conversa_txt`/
+`_html` (novo — TXT/PDF via WeasyPrint, sem asset externo).
+**Checagem C3 fechada:** seletor de Transferir não oferece "Fila geral" — toda transferência
+manual vai para pessoa nomeada (campo fica nullable só p/ o legado pré-triagem).
+**Checagem C4 (pesquisa da política da Meta, 2026-08-04):** confirmado que a categoria do
+template (Marketing×Utility) é definida pelo **conteúdo**, não pelo estágio do relacionamento —
+1º contato com cliente já cadastrado (contrato/projeto) pode ser Utility se o texto for
+operacional/ancorado no contrato; tom persuasivo vira Marketing (~8× mais caro, auto-
+recategorizado pela Meta desde abr/2025). **Nenhuma trava de UI por categoria** — a UI só exige
+`status=="aprovado"`. Nota p/ o Marcelo: conferir a categoria com que cada template foi
+efetivamente aprovado no WhatsApp Manager antes de operar (é ela que define o preço, não a
+intenção declarada no cadastro).
+
+**Fatias 2-5 — frontend (`static/index.html`, `#page-chat`).** Chips (Todas/Grupos/Projetos-só-
+Atendimentos/Arquivadas/Urgentes) substituem as abas Pessoais/Grupos/Arquivadas da rodada
+anterior — reusa `.oc-chip`; o oversight da gerência ("ver todas") virou toggle separado p/ não
+colidir com o chip "Todas". Ponto de urgência (7px) na lista; tags de fallback Avulsa/Triagem
+(Atendimentos) e Livre/Assunto (Interno). Cabeçalho do thread ganhou Responsável (só grupo/
+projeto) + toggle de urgência. Barra de ação nova — Concluir (só Atendimentos)/Transferir
+("Encaminhar" no Interno, com busca de usuário Nome+Função)/Exportar (PDF/TXT) —, dentro do
+painel `#oc-pane` compartilhado entre as duas telas (**desvio de escopo assumido**: o mockup
+pede largura total de tela; reestruturar isso arriscava as 6 views que o pane hospeda — ficou
+como barra de largura da coluna do chat, registrado no plano). 3 modais novos: Concluir
+atendimento, Nova Conversa Interna (busca pessoa/grupo + Assunto — reusa
+`POST /conversas`+`POST /assuntos` já existentes), Iniciar Conversa (3 etapas — busca/cadastro
+novo → templates ✓Meta com gating por janela → campos+preview com validação bloqueante).
+
+**Verificação manual (Playwright headless, não só `node --check`)** — servidor local reiniciado
+c/ o código novo, login real, sessão dirigida por script Python (`sync_playwright`), tema claro
+E escuro. **Achou e corrigiu 4 bugs reais antes de qualquer review**: (1) tag Avulsa/Concluir
+vazando para DM interno puramente administrativo sem face externa (a própria notificação de
+conclusão aparecia como "atendimento" concluível de novo — risco de cascata de notificação);
+fix: gate por `janela.estado!=='na'` (ou `projeto_nome`) antes de mostrar Concluir/tag fallback.
+(2) variável "Nome da loja" só tinha heurística de pré-preenchimento no backend
+(`resolver_variaveis_conhecidas`), faltava no JS — replicado. (3) rótulo Transferir×Encaminhar e
+a visibilidade de Concluir não reetiquetavam ao trocar Atendimentos↔Chat Interno com uma thread
+já aberta (o pane só migra de slot, não reabre a conversa) — `ochatIr` agora rechama
+`_ocSetHeaderExtras` no destino. Suíte automatizada cobre o que dá pra testar sem browser;
+`tests/test_atendimentos_ui.py` é a fonte de verdade de regressão.
+
+**Auditoria da Vera (2026-08-04): pode promover; 1 achado 🟠 corrigido.** Sem ferramenta de
+browser na sessão dela, mas reproduziu ao vivo contra o Postgres de dev (em transação,
+`rollback()`, nada persistido) + gerou PDF real via WeasyPrint + revisou tenancy/design por
+código. **Achado:** `temAtendimentoReal` (guard do botão Concluir, `_ocSetHeaderExtras`) não
+considerava `c.segmento` — só `projeto_nome`/`janela.estado!=='na'` —, diferente do guard irmão
+`faceExterna` (seletor de segmento) duas linhas abaixo, que já acertava isso. Resultado: toda
+conversa nascida do fluxo **novo** "Iniciar Conversa" (com segmento herdado do canal do
+template) ficava **sem o botão Concluir** até o contato responder pela 1ª vez — o próprio
+recurso mais visível desta frente saía capenga. Corrigido (`temAtendimentoReal` passa a incluir
+`c.segmento`, espelhando `faceExterna`) + teste novo (`_atendimento_meta` expõe segmento antes
+de qualquer resposta) + **reverificado no navegador** (Playwright, login via cookie de sessão —
+o form de login usa `type=email` e trava submit por HTML5 quando o valor não é e-mail-shaped,
+então login automatizado por form só funciona com usuário de e-mail real ou POST direto em
+`/api/auth/login` + cookie): botão "✓ Concluir atendimento" agora aparece na conversa recém-
+criada, sem resposta do contato. Suíte segue **1741 verde**. Tenancy dos 6 endpoints novos
+revisada por código + testes automatizados, sem brecha. Resto da frente sólido (design tokens,
+modais distintos por tela, validação bloqueante do template).
+
+**Pendente antes de promover:** commit/push + deploy VPS A/B (autorizado pelo Marcelo; produção
+real 179.197.77.9 fica de fora até OK à parte).
+
 ## Sessão 155 — Nomenclatura dos segmentos + Modelos de Mensagem INICIAIS e "+ Novo Template"
 
 **Nomenclatura da triagem (pedido do teste real):** Suporte Técnico → "Montagens e Assistências";

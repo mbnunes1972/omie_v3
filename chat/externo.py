@@ -174,6 +174,97 @@ def _enviar_whatsapp(env, corpo):
     return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
 
 
+def _render_template(corpo, valores):
+    """Renderiza o corpo de um template ({{1}}..{{n}}) com os valores (dict 1-based — chaves int
+    ou str — ou lista posicional). Validação BLOQUEANTE da spec 2026-08-04 §11 etapa 3: variável
+    presente no corpo sem valor → ValueError apontando o campo pendente (nunca sai `{{n}}`
+    literal). Retorna (texto_final, params_na_ordem)."""
+    corpo = corpo or ""
+    pos = sorted({int(m) for m in re.findall(r"\{\{(\d+)\}\}", corpo)})
+    out, params = corpo, []
+    for n in pos:
+        v = None
+        if isinstance(valores, dict):
+            v = valores.get(n, valores.get(str(n)))
+        elif isinstance(valores, (list, tuple)) and n <= len(valores):
+            v = valores[n - 1]
+        v = (str(v).strip() if v is not None else "")
+        if not v:
+            raise ValueError("Preencha o campo {{%d}} do modelo antes de enviar." % n)
+        out = out.replace("{{%d}}" % n, v)
+        params.append(v)
+    return out, params
+
+
+def _enviar_whatsapp_template(env, nome_meta, idioma, params):
+    """Payload `"type":"template"` da Cloud API (spec 2026-08-04 §11 — fecha o gap G7 do plano de
+    28/07): name + language + components/body com os parâmetros posicionais {{1}}..{{n}}. É o
+    ÚNICO formato que a Meta aceita SEM janela de atendimento aberta."""
+    import json as _json
+    import urllib.request as _u
+    import urllib.error as _ue
+    token = (os.environ.get("ORIZON_WA_TOKEN") or "").strip()
+    phone = _env_por_canal("ORIZON_WA_PHONE_ID", env.canal)
+    url = "https://graph.facebook.com/v20.0/%s/messages" % phone
+    tpl = {"name": nome_meta, "language": {"code": (idioma or "pt_BR")}}
+    if params:
+        tpl["components"] = [{"type": "body",
+                              "parameters": [{"type": "text", "text": p} for p in params]}]
+    payload = {"messaging_product": "whatsapp", "to": _digitos(env.destino),
+               "type": "template", "template": tpl}
+    req = _u.Request(url, data=_json.dumps(payload).encode("utf-8"), method="POST",
+                     headers={"Authorization": "Bearer " + token,
+                              "Content-Type": "application/json"})
+    try:
+        with _u.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read() or b"{}")
+    except _ue.HTTPError as he:
+        raise RuntimeError(_erro_meta(he))
+    wamid = ((data.get("messages") or [{}])[0]).get("id")
+    return True, wamid, (None if wamid else "resposta da Meta sem id de mensagem")
+
+
+def despachar_template(env, template, params):
+    """Disparo REAL de um envio por TEMPLATE — mesmo contrato de despachar: (ok, id_externo,
+    erro), config-gated; exceção vira (False, None, erro)."""
+    if not meio_configurado("whatsapp"):
+        return False, None, "Transporte não configurado neste ambiente."
+    try:
+        return _enviar_whatsapp_template(env, template.nome_meta, template.idioma, params)
+    except Exception as e:
+        return False, None, str(e)
+
+
+def enviar_template_conversa(db, conversa, usuario_id, template, valores,
+                             destino=None, canal=None):
+    """Envia um TEMPLATE aprovado ao contato externo da conversa (spec 2026-08-04 §11): renderiza
+    {{n}} (validação bloqueante), grava a mensagem com o texto FINAL (histórico legível no chat),
+    registra o EnvioExterno apontando o template e despacha (config-gated: sem credencial nasce
+    'pendente_config'). Retorna (mensagem, envio). Não commita."""
+    from . import core as _mc
+    if (template.status or "") != "aprovado":
+        raise ValueError("Só um template APROVADO pela Meta pode ser enviado fora da janela.")
+    corpo, params = _render_template(template.corpo, valores)
+    canal = canal or template.segmento or "comercial"
+    if destino is None:
+        e = (db.query(ConversaParticipanteExterno)
+               .filter_by(conversa_id=conversa.id, meio="whatsapp", removido=0).first())
+        destino = e.telefone if e is not None else None
+    if not destino:
+        raise ValueError("A conversa não tem contato de WhatsApp para receber o modelo.")
+    msg = _mc.enviar_mensagem(db, conversa, usuario_id, corpo, canal=canal,
+                              _permitir_externo=True)
+    env = registrar_envio(db, msg, "whatsapp", canal, "cliente", None, destino)
+    env.template_id = template.id
+    if env.status == "enfileirado":
+        ok, id_ext, erro = despachar_template(env, template, params)
+        env.status = "enviado" if ok else "falhou"
+        env.id_externo = id_ext
+        env.erro = erro
+    db.flush()
+    return msg, env
+
+
 def _enviar_whatsapp_documento(env, caminho_abs, nome, mime):
     """Documento como MÍDIA pela Cloud API (2 passos): upload em /{phone}/media (multipart) →
     mensagem type=document com o media id. Config-gated pelo chamador (despachar_documento)."""
@@ -350,6 +441,9 @@ def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_extern
                       destino=remetente, status="recebido",
                       id_externo=id_externo, id_externo_ref=id_externo_ref)
     db.add(ev); db.flush()
+    # spec 2026-08-04 §8.5: nova mensagem do contato em atendimento CONCLUÍDO reabre sozinho
+    # (sai de Arquivadas/Concluída e volta para Todas).
+    _mc.reabrir_se_concluida(db, conv)
     return {"status": "roteado", "conversa_id": conv.id}
 
 
@@ -458,6 +552,31 @@ def janela_da_conversa(db, conversa):
                 "restante_seg": int(JANELA_SEG - decorrido), "excedido_seg": None}
     return {"aberta": False, "ultima_entrada": ult.isoformat(),
             "restante_seg": 0, "excedido_seg": int(decorrido - JANELA_SEG)}
+
+
+def janela_por_telefone(db, loja_id, telefone):
+    """Janela de atendimento p/ um telefone SEM conversa ainda (spec 2026-08-04 §11 — etapas 1/2
+    do Iniciar Conversa: 'Selecionar' um contato do cadastro precisa saber se já existe janela
+    aberta ANTES de a conversa ser criada). Escopada por LOJA (join até Conversa.loja_id — mesmo
+    cuidado da Vera em janela_da_conversa) para não vazar entre lojas da mesma rede com o mesmo
+    número. Retorna {aberta, ultima_entrada}."""
+    tail = _digitos(telefone)[-8:]
+    if len(tail) < 8:
+        return {"aberta": False, "ultima_entrada": None}
+    rows = (db.query(EnvioExterno.criado_em, EnvioExterno.destino)
+              .join(ConversaMensagem, EnvioExterno.mensagem_id == ConversaMensagem.id)
+              .join(Conversa, ConversaMensagem.conversa_id == Conversa.id)
+              .filter(Conversa.loja_id == loja_id,
+                      EnvioExterno.meio == "whatsapp", EnvioExterno.direcao == "entrada",
+                      (EnvioExterno.canal.is_(None)) | (EnvioExterno.canal != "interno"))
+              .order_by(EnvioExterno.criado_em.desc()).all())
+    for criado_em, destino in rows:
+        if _digitos(destino)[-8:] == tail:
+            decorrido = (datetime.utcnow() - criado_em).total_seconds()
+            if decorrido < JANELA_SEG:
+                return {"aberta": True, "ultima_entrada": criado_em.isoformat()}
+            return {"aberta": False, "ultima_entrada": criado_em.isoformat()}
+    return {"aberta": False, "ultima_entrada": None}
 
 
 def deve_notificar_usuario(db, usuario):

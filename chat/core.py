@@ -44,7 +44,7 @@ SLOTS_OBRIGATORIOS = (
     {"num": 6, "titulo": "Reengajamento/Cobrança — Financeiro","momento": "Janela fechada, aviso de pendência",          "categoria": "utility", "segmento": "financeiro"},
     {"num": 7, "titulo": "Reengajamento — Compras",            "momento": "Janela fechada, alinhamento com fornecedor",  "categoria": "utility", "segmento": "compras"},
     {"num": 8, "titulo": "Confirmação de agendamento — Logística","momento": "Entrega ou visita de montagem",             "categoria": "utility", "segmento": "logistica"},
-    {"num": 9, "titulo": "Reengajamento — Parceiros",          "momento": "Janela fechada, aviso de comissão/indicação", "categoria": "utility", "segmento": "parceiros"},
+    {"num": 9, "titulo": "Reengajamento — Projeto Executivo",  "momento": "Janela fechada, retomada de especificação técnica", "categoria": "utility", "segmento": "parceiros"},
 )
 _SLOTS_NUM = {s["num"] for s in SLOTS_OBRIGATORIOS}
 
@@ -523,10 +523,10 @@ def remover_template(db, loja_id, template_id):
 
 _TRIAGEM_ROTULOS = {
     "comercial":       "Comercial — vendas e orçamentos",
-    "suporte_tecnico": "Suporte Técnico — assistência pós-venda",
+    "suporte_tecnico": "Suporte Técnico — Montagens e Assistências",
     "financeiro":      "Financeiro — pagamentos e cobrança",
-    "logistica":       "Logística — entrega e montagem",
-    "parceiros":       "Parceiros — indicações e comissões",
+    "logistica":       "Logística — Transporte e Entrega",
+    "parceiros":       "Projeto Executivo — Especificação Técnica de Projetos",
     "sac":             "SAC / Ouvidoria — reclamações e atendimento institucional",
     "compras":         "Compras — fornecedores",
 }
@@ -573,7 +573,8 @@ def triagem_config_salvar(db, loja_id, dados):
 # ── Configuração de segmentos (RF-02) ───────────────────────────────────────────────────────────
 
 _SEGMENTO_ROTULOS = {"comercial": "Comercial", "suporte_tecnico": "Suporte Técnico",
-                     "financeiro": "Financeiro", "logistica": "Logística", "parceiros": "Parceiros",
+                     "financeiro": "Financeiro", "logistica": "Logística",
+                     "parceiros": "Projeto Executivo",   # chave legada `parceiros` — renomeado 2026-08-04
                      "compras": "Compras", "sac": "SAC"}
 _SEGMENTO_ORDEM = ("comercial", "suporte_tecnico", "financeiro", "logistica", "parceiros", "compras", "sac")
 

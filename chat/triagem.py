@@ -116,7 +116,7 @@ def triagem_descartar(db, entrada, usuario_id):
 
 _SEG_ROTULOS = {"comercial": "Comercial", "financeiro": "Financeiro", "logistica": "Logística",
                 "suporte_tecnico": "Suporte Técnico", "sac": "SAC", "compras": "Compras",
-                "parceiros": "Parceiros"}
+                "parceiros": "Projeto Executivo"}   # chave legada `parceiros` (renomeado 2026-08-04)
 
 
 def opcoes_pergunta(db, loja_id):

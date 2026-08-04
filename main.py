@@ -824,6 +824,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "text/plain")
                 self.end_headers(); self.wfile.write(challenge.encode()); return
             self.send_response(403); self.end_headers(); return
+        if path in ("/privacidade", "/politica-privacidade"):
+            # Política de Privacidade (2026-08-03): página PÚBLICA e ESTÁTICA exigida pelo
+            # cadastro do app WhatsApp no Meta for Developers (URL acessível sem login).
+            # Sem auth/tenancy/banco — só lê static/privacidade.html do disco. O texto é
+            # rascunho substituível (trocar o arquivo não exige mudança de código).
+            try:
+                _pp = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "static", "privacidade.html")
+                with open(_pp, "rb") as _f:
+                    _conteudo = _f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(_conteudo)))
+                self.end_headers()
+                self.wfile.write(_conteudo)
+            except OSError:
+                self.send_response(404); self.end_headers()
+            return
         if handle_auth_get(self, path): return
         if path == "/api/financeiro/unidades":
             # Visão unificada (PDV, spec 2026-07-22): unidades que o ator pode escolher no

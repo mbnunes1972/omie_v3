@@ -1892,6 +1892,14 @@ def _migrar_colunas_pg():
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS concluido_em TIMESTAMP",
         "ALTER TABLE conversas ADD COLUMN IF NOT EXISTS conclusao_obs TEXT",
         "ALTER TABLE envios_externos ADD COLUMN IF NOT EXISTS template_id INTEGER",
+        # Backfill (revisão visual 2026-08-04): conversas de PROJETO criadas antes do fix acima
+        # nasceram sem responsável (get_or_create_conversa_projeto não recebia criado_por_id
+        # ainda) — achado do Marcelo comparando Homolog com o mockup (cabeçalho sem nome).
+        # Idempotente: só toca quem ainda está NULL; não sobrescreve transferência já feita.
+        "UPDATE conversas SET responsavel_usuario_id = "
+        "(SELECT criado_por_id FROM projetos_meta WHERE nome_safe = conversas.projeto_nome) "
+        "WHERE tipo = 'projeto' AND responsavel_usuario_id IS NULL "
+        "AND projeto_nome IN (SELECT nome_safe FROM projetos_meta WHERE criado_por_id IS NOT NULL)",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

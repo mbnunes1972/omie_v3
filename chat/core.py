@@ -133,13 +133,21 @@ def serializar_confirmacao(reg, confirmado_por_nome=None):
 
 def get_or_create_conversa_projeto(db, loja_id, projeto_nome, cliente_id=None):
     """Conversa ÚNICA do projeto na loja (get-or-create; a primeira criada é a canônica).
-    `cliente_id` só é gravado na criação — vínculo de nascença, não sincronização."""
+    `cliente_id` só é gravado na criação — vínculo de nascença, não sincronização.
+    Responsável (§7.1-A, achado da revisão visual 2026-08-04): nasce com o CRIADOR do
+    Projeto (`Projeto.criado_por_id`) — mesma regra de direct/grupo (quem cria começa
+    responsável). Sem isso a conversa de projeto nascia sem ninguém, contrariando "toda
+    conversa tem sempre um responsável"; a transferência (automática por etapa, ou manual)
+    segue atualizando o campo normalmente dali pra frente."""
     c = (db.query(Conversa)
            .filter_by(loja_id=loja_id, projeto_nome=projeto_nome)
            .order_by(Conversa.id.asc())
            .first())
     if c is None:
-        c = Conversa(loja_id=loja_id, projeto_nome=projeto_nome, cliente_id=cliente_id)
+        from database import Projeto
+        p = db.get(Projeto, projeto_nome)
+        c = Conversa(loja_id=loja_id, projeto_nome=projeto_nome, cliente_id=cliente_id,
+                     responsavel_usuario_id=(p.criado_por_id if p else None))
         db.add(c)
         db.flush()
     return c

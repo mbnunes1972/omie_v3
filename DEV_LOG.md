@@ -2799,6 +2799,83 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 158 — Fatia 6: fidelidade visual ao mockup 04/08 (avatares, chips, barra full-width,
+## responsável de projeto, Triagem reestilizada, eventos do Ciclo) — achada em Homolog
+
+Marcelo comparou a Sessão 156 lado a lado com o mockup em Homolog (`homolog.orizonone.com.br`) e
+achou 6 diferenças reais (A-F), com uma regra clara: **nenhuma mudança de cor/paleta nesta
+rodada** — a frente de paleta é decisão maior, fica para depois. Tudo aqui é forma/estrutura,
+usando só tokens de cor JÁ existentes. **Produção real pausada** até aprovação visual de novo em
+Homolog — só B foi promovida nesta sessão. Suíte 1741→**1742** (+1,
+`test_conversa_de_projeto_nasce_com_criador_do_projeto`).
+
+**A) Avatares.** `_ocAvatarHTML(nome, tipo)` — círculo com inicial (ou "?" p/ telefone sem
+letra) p/ pessoa/direct; quadrado arredondado com 📁/👥 p/ projeto/grupo — usada nas 4 funções de
+render de lista (`_atdItemHTML`/`_intItemHTML`/`_atdTriagemItemHTML`/`_ocTodasItemHTML`). CSS
+`.oc-avatar` só com `var(--surface-2)/--border/--text` — cor única e neutra de propósito.
+
+**B) Chips numa linha só.** `.oc-chip`/`.atd-tabs` apertados (gap 8→4px, padding/font-size
+menores, `white-space:nowrap;flex-shrink:0`) — os 5 chips de Atendimentos (Todas/Grupos/
+Projetos/Arquivadas/Urgentes) cabem nos 340px da coluna de lista numa linha só; só o toggle
+"Todas (oversight)" (rótulo mais longo) quebra pra linha própria, alinhado à direita.
+
+**C) Barra de ação em largura total.** Mudança estrutural: `#oc-action-bar` saiu de dentro de
+`#oc-thread` (uma das 6 views do painel compartilhado `#oc-pane`) e virou elemento ÚNICO que
+migra entre Atendimentos/Chat Interno via `ocMontarPane` — igual ao próprio `#oc-pane` — agora
+fora de `.oc-cols`, ocupando a largura inteira da tela (list-col+chat-col juntas), como o
+mockup. **Dois achados técnicos pegos e corrigidos antes de fechar:** (1) `.oc-cols` tinha altura
+FIXA `calc(100vh-150px)` sem reservar espaço pra nada depois dela — a barra ficava "visível" no
+DOM mas empurrada pra fora da viewport (achado do próprio teste automatizado, `rect.top` maior
+que a altura da janela); fix: `.oc-cols`/`.oc-actionbar-slot` dividem um orçamento fixo de 60px,
+incondicional (evita as caixas com borda de `.oc-list-col`/`#oc-pane` parecerem "cortadas" quando
+a barra está oculta). (2) `ocMostrarView` ganhou a responsabilidade de RECONSTITUIR a barra ao
+voltar pra `oc-thread` (antes o `display:none` vinha de graça do pai; agora é explícito) —
+testado nas 6 views isoladamente antes de fechar.
+**Achado da Vera (auditoria pós-fix): caminho irmão não testado.** `ochatIr` (troca de tela
+Atendimentos↔Chat Interno) reexibia a barra incondicionalmente sempre que havia conversa ativa,
+SEM checar qual das 6 views estava realmente ativa — repro: abrir thread → Adicionar Contato →
+em vez de clicar Voltar, trocar de aba → a barra reaparecia flutuando sobre o formulário. A
+verificação manual da sessão só tinha testado os 6 `ocMostrarView` isolados e o caminho
+`ocPaneVoltar()`, não a combinação troca-de-aba-com-view-não-thread-ativa. Corrigido: `ochatIr`
+agora reaplica `ocMostrarView` na view que já está ativa (idempotente pras outras 5; reconstitui
+a barra certo quando é `oc-thread`) em vez de chamar `_ocSetHeaderExtras` direto. Reproduzido e
+confirmado o fix passo a passo (thread→contato→troca de aba→bar segue oculta→Voltar→bar volta).
+
+**D) Responsável sumia do cabeçalho de PROJETO — bug de BACKEND real, não só front.**
+`get_or_create_conversa_projeto` nunca setava `responsavel_usuario_id` na criação (diferente de
+`criar_grupo`/`get_or_create_direct`, que já setavam o criador desde a Sessão 156) — confirmado
+em Homolog: as 7 conversas de projeto reais tinham `responsavel_usuario_id` NULL. Fix: usa
+`Projeto.criado_por_id` como responsável inicial. Backfill idempotente em `_migrar_colunas_pg`
+p/ conversas já existentes (`WHERE responsavel_usuario_id IS NULL`, não sobrescreve transferência
+já feita). Confirmado no Postgres local: `criado_por_id` → `responsavel_usuario_id` bate.
+
+**E) Triagem reestilizada** (`#oc-triagem`) — cards com bordas, seções com ícone+label (Mensagem
+recebida / Segmento / Vincular a uma conversa / Ação de Triagem), candidatos de vínculo viram
+cartões em vez de `<label>` cru. Confirmado (leitura própria + Vera): zero id/onclick/onchange
+mudou — mesmo `ocTriagemResolver`, mesmo fluxo RF-08/09 da Sessão 154.
+
+**F) Eventos do Ciclo organizados** — mensagens de transferência de responsabilidade
+(`natureza='transferencia'`) na conversa de projeto agora viram um card discreto (`.oc-sysmsg`)
+em vez de parecer só mais uma mensagem; faixa de eventos automáticos (`.oc-evento`) mais compacta.
+As caixas do rodapé "E-mail (oficializar)"/"Transferência de responsabilidade" ganharam moldura
+de card. **Área sensível (Ciclo) — confirmado com rigor máximo (leitura própria linha a linha +
+Vera comparando com `git show HEAD`):** só a função `_ocRenderMsgProjeto` mudou, e só o wrapper
+visual — o cálculo de `meta` (bloqueador ativo/resolvido, link de documento, transferido-para) e
+os `onclick` de `convResolver`/`convDestravar` são bit-a-bit idênticos ao código anterior. Zero
+mudança de lógica/dados do Ciclo.
+
+**Verificação manual (Playwright, tema claro+escuro) + Vera:** suíte revisada duas vezes (própria
++ Vera, full-run vs. isolado) — achado à parte, não desta fatia: cluster de 12 erros em
+`tests/test_equipe_fonte_unica.py` só na rodada COMPLETA (zero erro isolado) — flakiness de
+isolamento entre arquivos de teste, arquivo só importa `mod_equipe`, nada a ver com `chat/`
+`database.py`(colunas de conversa)/`static/index.html` desta fatia; não investigado a fundo,
+registrado para uma frente de manutenção da suíte à parte.
+
+**Deploy:** commit + push no `main`; tag nova de homolog; `deploy_ab.sh <tag>` só na
+instância B (VPS de dev `167.88.33.121:8766`) — **A (integração) e produção real
+(`179.197.77.9`) ficam PAUSADAS** até o Marcelo aprovar visualmente de novo em Homolog. Grafo
+MCP re-ingerido.
+
 ## Sessão 157 — PROMOÇÃO GERAL da Sessão 156: Localhost = A = B = PRODUÇÃO + grafo re-ingerido
 
 **Ordem do usuário:** promover o commit `72a32c4` (Sessão 156 — redesenho Atendimentos/Chat

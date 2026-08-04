@@ -40,6 +40,28 @@ def test_criador_comeca_responsavel(app_db, seed):
         db.close()
 
 
+def test_conversa_de_projeto_nasce_com_criador_do_projeto(app_db, seed):
+    """Achado da revisão visual 2026-08-04: get_or_create_conversa_projeto não passava
+    responsável — o cabeçalho de uma conversa de projeto real (Homolog) nascia sem nome no
+    canto direito, contrariando §7.1-A ('toda conversa tem sempre um responsável')."""
+    db = app_db.get_session()
+    try:
+        crid = _uid(db, app_db, "dir_l1")
+        p = db.query(app_db.Projeto).filter_by(nome_safe=seed["projeto_l1"]).first()
+        p.criado_por_id = crid
+        db.commit()
+        conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], seed["projeto_l1"])
+        assert conv.responsavel_usuario_id == crid
+        # idempotente: chamar de novo (conversa já existe) não sobrescreve uma transferência
+        outro = _uid(db, app_db, "cons_l1")
+        conv.responsavel_usuario_id = outro
+        db.commit()
+        conv2 = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], seed["projeto_l1"])
+        assert conv2.id == conv.id and conv2.responsavel_usuario_id == outro
+    finally:
+        db.close()
+
+
 def test_transferir_seta_e_adiciona_participante(app_db, seed):
     db = app_db.get_session()
     try:

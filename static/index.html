@@ -1998,11 +1998,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-wa-head{display:flex;align-items:center;gap:8px;padding:2px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:10px}
     .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
     .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
-    /* Fila de Atendimentos (F7/RF-12; chips do redesenho 2026-08-04 — mockup §3) */
-    .atd-tabs{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    /* Fila de Atendimentos (F7/RF-12; chips do redesenho 2026-08-04 — mockup §3). gap
+       apertado (achado da revisão visual: Urgentes quebrava linha junto do toggle de
+       oversight, dentro dos 340px do .oc-list-col) — os 5 chips cabem numa linha só; só o
+       toggle "Todas (oversight)" (bem mais largo, rótulo longo) deve quebrar/comprimir. */
+    .atd-tabs{display:flex;gap:4px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
     .atd-filtro{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-    .atd-item{padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
+    .atd-item{display:flex;gap:10px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
     .atd-item:hover{background:var(--surface-2)}
+    .atd-main{flex:1;min-width:0}
+    /* Avatar da lista (mockup §4): círculo p/ pessoa/direct, quadrado arredondado p/ grupo/
+       projeto. Cor ÚNICA e NEUTRA por decisão desta rodada (forma, não cor — paleta fica p/
+       uma frente separada) — nada de --accent/--btn-primary-* aqui. */
+    .oc-avatar{width:38px;height:38px;min-width:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
+    .oc-avatar.square{border-radius:10px}
     .atd-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
     .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center}
     .atd-tempo{font-size:11px;color:var(--muted);flex:none}
@@ -2031,7 +2040,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     /* Barra de ação (spec §7 — Concluir/Transferir/Exportar) — largura da coluna do painel,
        acima da composição (ver nota de escopo no plano: não é full-bleed de tela inteira, o
        #oc-pane é compartilhado entre Atendimentos/Chat Interno e as 6 views que ele hospeda). */
-    .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 2px;margin-top:8px;border-top:1px solid var(--border)}
+    .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;margin-top:10px;border-top:1px solid var(--border)}
     .oc-am-wrap{position:relative}
     .oc-am-menu{display:none;position:absolute;bottom:36px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60}
     .oc-am-menu.open{display:block}
@@ -2042,17 +2051,35 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-am-search{width:calc(100% - 28px);margin:0 14px 8px;height:30px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:0 10px;font-size:12px;font-family:inherit}
     .oc-action-flash{font-size:12px;color:var(--ok)}
     /* ═══ CHAT: thread full-page (spec 2026-07-31 — unificação, elimina o modal legado) ═══ */
-    .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px);min-height:420px}
+    /* .oc-cols tinha altura FIXA calc(100vh-150px) pressupondo que nada viria depois dela dentro
+       de .ochat-scr (display:block, fora de um layout flex que auto-ajustaria). Ao tirar a
+       barra de ação de dentro do #oc-thread p/ largura total (achado da revisão visual
+       2026-08-04), ela passou a viver DEPOIS de .oc-cols — sem reservar espaço, ficava empurrada
+       pra fora da viewport (achado do teste automatizado: rect.top=897 numa janela de 900px de
+       altura). Fix: .oc-cols perde os mesmos ~60px SEMPRE (visível ou não a barra — evita as
+       caixas com borda de .oc-list-col/#oc-pane "cortarem" de forma diferente por tela) e
+       .oc-actionbar-slot reserva o mesmo tanto. */
+    .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px - 60px);min-height:400px}
+    .oc-actionbar-slot{min-height:60px}
     .oc-list-col{width:340px;min-width:270px;display:flex;flex-direction:column;min-height:0}
     .oc-list-col .oc-lista-scroll{flex:1;overflow-y:auto;min-height:0}
     .oc-pane-col{flex:1;min-width:0;display:flex}
     #oc-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:12px}
     .oc-view{display:none;flex:1;flex-direction:column;min-height:0}
     .oc-view.active{display:flex}
-    .oc-evento{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--muted);font-size:11px}
+    /* Eventos automáticos do sistema na timeline (achado da revisão visual 2026-08-04, item F —
+       "separar/recolher a timeline de eventos do sistema das mensagens reais, mais discreto")
+       mais compacta que antes: fonte menor, cor mais apagada — sem tirar informação nenhuma. */
+    .oc-evento{display:flex;align-items:center;gap:8px;margin:8px 0;color:var(--text-3);font-size:10px}
     .oc-evento::before,.oc-evento::after{content:"";flex:1;border-top:1px dashed var(--border)}
+    /* "Mensagem" de sistema com corpo (transferência de responsabilidade — natureza=transferencia):
+       vira um CARD recolhido/discreto, visualmente separado das mensagens reais da conversa (que
+       não têm fundo/moldura própria hoje) — em vez de parecer só mais uma mensagem qualquer. */
+    .oc-sysmsg{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+    .oc-sysmsg .oc-sysmsg-head{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3);margin-bottom:4px}
+    .oc-sysmsg .oc-sysmsg-corpo{font-size:12.5px;color:var(--text)}
     #oc-membros{display:none;width:320px;min-width:280px;border-left:1px solid var(--border);padding-left:10px;overflow-y:auto}
-    .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+    .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
     .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
     .oc-busca-wrap{position:relative;flex:1;min-width:140px;display:flex;align-items:center}
@@ -2217,25 +2244,36 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     </div>
                   </div>
                   <!-- resolução de entrada da FILA DE TRIAGEM (spec 2026-07-31) -->
+                  <!-- Triagem (item E, achado da revisão visual 2026-08-04: reestilização — mesmo
+                       padrão de cards/ícones/hierarquia do resto do redesenho de 04/08. Nenhum id
+                       mudou, nenhum comportamento mudou (segmento/vincular/criar/descartar iguais). -->
                   <div id="oc-triagem" class="oc-view" style="overflow-y:auto">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                      <div style="font-weight:800"><i class="ti ti-signpost"></i> Triagem — <span id="oc-trg-remetente"></span></div>
-                      <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()">Voltar</button>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+                      <div style="display:flex;align-items:center;gap:10px">
+                        <div class="oc-avatar" style="width:34px;height:34px;font-size:15px">?</div>
+                        <div>
+                          <div style="font-weight:800;font-size:14px">Triagem — <span id="oc-trg-remetente"></span></div>
+                          <div id="oc-trg-meta" style="font-size:11.5px;color:var(--muted)"></div>
+                        </div>
+                      </div>
+                      <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button>
                     </div>
-                    <div id="oc-trg-meta" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
-                    <div id="oc-trg-texto" style="font-size:13px;white-space:pre-wrap;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface-2);margin-bottom:12px"></div>
-                    <div style="margin-bottom:12px;max-width:340px">
-                      <label class="field-label">Segmento <span style="color:var(--muted);font-weight:400">(a triagem indica; sem segmento, a gerência trata depois)</span></label>
+                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-brand-whatsapp"></i> Mensagem recebida</div>
+                    <div id="oc-trg-texto" style="font-size:13px;white-space:pre-wrap;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface-2);margin-bottom:16px"></div>
+                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-adjustments"></i> Segmento</div>
+                    <div style="margin-bottom:16px;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+                      <label class="field-label" style="margin-top:0">Encaminhar para <span style="color:var(--muted);font-weight:400;text-transform:none">(a triagem indica; sem segmento, a gerência trata depois)</span></label>
                       <select id="oc-trg-seg" style="width:100%;padding:6px 8px"></select>
                     </div>
-                    <div id="oc-trg-candidatos-wrap" style="margin-bottom:12px">
-                      <label class="field-label">Vincular a uma conversa</label>
-                      <div id="oc-trg-candidatos" style="max-height:34vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
+                    <div id="oc-trg-candidatos-wrap" style="margin-bottom:16px">
+                      <div class="oc-sec" style="padding-left:0"><i class="ti ti-link"></i> Vincular a uma conversa</div>
+                      <div id="oc-trg-candidatos" style="display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto"></div>
                     </div>
+                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-checklist"></i> Ação de triagem</div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap">
                       <button class="btn btn-primary btn-sm" id="oc-trg-vincular-btn" onclick="ocTriagemResolver('vincular')"><i class="ti ti-link"></i> Vincular à selecionada</button>
                       <button class="btn btn-ghost btn-sm" onclick="ocTriagemResolver('criar')"><i class="ti ti-user-plus"></i> Criar novo cliente</button>
-                      <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="ocTriagemResolver('descartar')"><i class="ti ti-trash"></i> Descartar</button>
+                      <button class="btn btn-ghost btn-sm" style="color:var(--err);border-color:var(--err-line)" onclick="ocTriagemResolver('descartar')"><i class="ti ti-trash"></i> Descartar</button>
                     </div>
                     <div id="oc-trg-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
                   </div>
@@ -2268,27 +2306,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <div id="oc-membros-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
                       </div>
                     </div>
-                    <!-- barra de ação (spec §7 — Concluir só Atendimentos; Transferir/Encaminhar + Exportar nas duas) -->
-                    <div class="oc-action-bar" id="oc-action-bar">
-                      <button class="btn btn-primary btn-sm" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
-                      <div class="oc-am-wrap">
-                        <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
-                        <div class="oc-am-menu" id="oc-transferir-menu">
-                          <div class="oc-am-label">Transferir responsável para</div>
-                          <input class="oc-am-search" id="oc-transferir-busca" placeholder="Buscar por nome ou função…" oninput="ocTransferirRenderLista()">
-                          <div id="oc-transferir-lista"></div>
-                        </div>
-                      </div>
-                      <div class="oc-am-wrap">
-                        <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-exportar-menu')"><i class="ti ti-download"></i> Exportar conversa</button>
-                        <div class="oc-am-menu" id="oc-exportar-menu">
-                          <div class="oc-am-label">Exportar como</div>
-                          <div class="oc-am-item" onclick="ocExportar('pdf')">PDF <small>documento com anexos</small></div>
-                          <div class="oc-am-item" onclick="ocExportar('txt')">TXT <small>texto simples</small></div>
-                        </div>
-                      </div>
-                      <span class="oc-action-flash" id="oc-action-flash"></span>
-                    </div>
                     <div id="oc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
                       <i class="ti ti-paperclip"></i><span id="oc-anexo-nome"></span>
                       <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ocRemoverAnexo()">×</button>
@@ -2303,18 +2320,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <button class="btn btn-primary btn-sm" id="oc-enviar-btn" style="margin-left:auto" onclick="ocEnviar()"><i class="ti ti-send"></i> Enviar</button>
                       </div>
                     </div>
-                    <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail -->
-                    <label id="oc-oficializar-wrap" style="display:none;font-size:11px;color:var(--muted);cursor:pointer;margin-top:6px">
+                    <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail
+                         (item F, achado da revisão visual 2026-08-04: mesmo padrão de card dos demais
+                         controles novos — .atd-item/.oc-am-menu — em vez de um <label> solto) -->
+                    <label id="oc-oficializar-wrap" style="display:none;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);cursor:pointer;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
                       <input type="checkbox" id="oc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
                     <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
                     <div id="oc-doc-enc" style="display:none;margin-top:6px">
                       <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
                     </div>
                     <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
-                    <div id="oc-transf" style="display:none;margin-top:8px;border-top:1px dashed var(--border);padding-top:8px">
-                      <label style="font-size:12px;color:var(--text);cursor:pointer">
+                    <div id="oc-transf" style="display:none;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+                      <label style="font-size:12px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px">
                         <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
-                        Transferência de responsabilidade</label>
+                        <i class="ti ti-arrows-right-left"></i> Transferência de responsabilidade</label>
                       <div id="conv-transf-campos" style="display:none;margin-top:8px">
                         <div style="display:flex;gap:8px;flex-wrap:wrap">
                           <div style="flex:1;min-width:180px">
@@ -2342,6 +2361,35 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 </div>
               </div>
             </div>
+            <!-- barra de ação em LARGURA TOTAL da tela (spec 04/08 §2/§7 — fora de .oc-cols de
+                 propósito: mockup tem essa barra ocupando list-col+chat-col juntas. Elemento
+                 ÚNICO movido entre os slots -atend/-interno por ocMontarPane, igual ao #oc-pane;
+                 visibilidade combinada de ocMostrarView (só na view oc-thread) + _ocSetHeaderExtras
+                 (só quando a conversa é um atendimento real, §8). Achado da revisão visual
+                 2026-08-04: testado nas 6 views do #oc-pane antes de mexer (ver DEV_LOG) — só
+                 oc-thread precisa dela, as outras 5 já ficam ocultas sem ajuste extra. -->
+            <div class="oc-actionbar-slot" id="oc-actionbar-slot-atend">
+              <div class="oc-action-bar" id="oc-action-bar" style="display:none">
+                <button class="btn btn-primary btn-sm" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
+                <div class="oc-am-wrap">
+                  <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
+                  <div class="oc-am-menu" id="oc-transferir-menu">
+                    <div class="oc-am-label">Transferir responsável para</div>
+                    <input class="oc-am-search" id="oc-transferir-busca" placeholder="Buscar por nome ou função…" oninput="ocTransferirRenderLista()">
+                    <div id="oc-transferir-lista"></div>
+                  </div>
+                </div>
+                <div class="oc-am-wrap">
+                  <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-exportar-menu')"><i class="ti ti-download"></i> Exportar conversa</button>
+                  <div class="oc-am-menu" id="oc-exportar-menu">
+                    <div class="oc-am-label">Exportar como</div>
+                    <div class="oc-am-item" onclick="ocExportar('pdf')">PDF <small>documento com anexos</small></div>
+                    <div class="oc-am-item" onclick="ocExportar('txt')">TXT <small>texto simples</small></div>
+                  </div>
+                </div>
+                <span class="oc-action-flash" id="oc-action-flash"></span>
+              </div>
+            </div>
           </div>
           <!-- Chat Interno (equipe) — full-page, mesma estrutura de duas colunas -->
           <div class="ochat-scr" id="ochat-scr-interno">
@@ -2365,6 +2413,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               </div>
               <div class="oc-pane-col" id="oc-slot-interno"></div>
             </div>
+            <div class="oc-actionbar-slot" id="oc-actionbar-slot-interno"></div>
           </div>
           <!-- ═══ CHAT: fim do bloco Atendimentos/Chat Interno ═══ -->
 
@@ -10873,10 +10922,15 @@ function ochatIr(scr){
     // a thread pode continuar aberta ao trocar de tela (o pane só migra) — reetiqueta a barra
     // de ação (Transferir×Encaminhar, Concluir) para o novo contexto, achado da verificação
     // manual (Playwright): trocar de Atendimentos p/ Chat Interno com conversa aberta mantinha
-    // o rótulo "Transferir atendimento" em vez de "Encaminhar conversa".
+    // o rótulo "Transferir atendimento" em vez de "Encaminhar conversa". Achado da Vera
+    // (auditoria da Fatia 6): chamar `_ocSetHeaderExtras` direto aqui reexibia a barra mesmo
+    // com uma view NÃO-thread ativa (ex.: Adicionar Contato aberto → trocar de aba → barra
+    // reaparecia flutuando sobre o formulário) — a checagem "só mostra em oc-thread" vive em
+    // `ocMostrarView`, que este caminho não passava. Fix: reaplica `ocMostrarView` pra view
+    // que já está ativa (idempotente pras outras 5; reconstitui a barra certo quando é thread).
     if(_ocConvAtiva){
-      const c = (_ocInbox||[]).find(x=>x.id===_ocConvAtiva);
-      if(c) _ocSetHeaderExtras(c);
+      const viewAtiva = document.querySelector('.oc-view.active');
+      if(viewAtiva) ocMostrarView(viewAtiva.id);
     }
   }
   document.querySelectorAll('#page-chat .ochat-nav[data-scr]').forEach(n=>n.classList.toggle('active', n.getAttribute('data-scr')===scr));
@@ -10927,6 +10981,17 @@ function _ocDaChip(c, chip){
 function _ocChipsRow(chips, atual, fn){
   return chips.map(c=>'<div class="oc-chip'+(c.key===atual?' active':'')+'" onclick="'+fn+'(\''+c.key+'\')">'+esc(c.rot)+'</div>').join('');
 }
+// Avatar da lista (mockup §4, achado da revisão visual 2026-08-04): círculo com a inicial do
+// nome (ou "?" quando o título é só telefone, sem letra) para pessoa/direct; quadrado com
+// emoji para grupo/projeto — mesma forma do mockup. Cor única/neutra por decisão desta rodada.
+function _ocAvatarHTML(nome, tipo){
+  if(tipo==='projeto') return '<div class="oc-avatar square">📁</div>';
+  if(tipo==='grupo') return '<div class="oc-avatar square">👥</div>';
+  const limpo = (nome||'').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'').trim();
+  const c0 = limpo.charAt(0).toUpperCase();
+  const inicial = /[A-ZÀ-Ý]/.test(c0) ? c0 : '?';
+  return '<div class="oc-avatar">'+esc(inicial)+'</div>';
+}
 function atendChip(k){ _atdChip = k; atendRender(); }
 function intChip(k){ _intChip = k; intRender(); }
 function atendOversightToggle(){ _atdOversight = !_atdOversight; if(_atdOversight) _ocTodasCarregar(); atendRender(); }
@@ -10966,10 +11031,12 @@ function _ocTodasItemHTML(c){
   const badge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(tipoRot)+'</span>'
     + (c.segmento ? ' <span class="atd-badge atd-b-seg">'+esc(_ocSegRot(c.segmento))+'</span>' : '');
   return '<div class="atd-item" onclick="ocAbrirTodas('+c.id+')">'
+    + _ocAvatarHTML(c.titulo, c.tipo)
+    + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+esc(c.titulo||'Conversa')+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
     + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.participantes||[]).join(', '))+'</div>'
-    + '<div class="atd-tags">'+badge+'</div></div>';
+    + '<div class="atd-tags">'+badge+'</div></div></div>';
 }
 async function ocAbrirTodas(id){
   if((_ocInbox||[]).some(x=>x.id===id)){ await ocAbrirConversa(id); return; }   // participo → normal
@@ -11052,9 +11119,11 @@ function _intItemHTML(c){
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
   return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+    + _ocAvatarHTML(titulo, c.tipo)
+    + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+tipoBadge+_intAssuntoTag(c)+'</div></div>';
+    + '<div class="atd-tags">'+tipoBadge+_intAssuntoTag(c)+'</div></div></div>';
 }
 // (intNova/intForum/intAdmin e o painel de Administração legados foram removidos — o oversight
 //  da gerência vive no toggle "Todas (oversight)" dos dois canais, r5.)
@@ -11119,9 +11188,11 @@ function _atdTriagemItemHTML(e){
   const seg = e.segmento_sugerido ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ocSegRot(e.segmento_sugerido))+'</span>' : '';
   const cand = (e.candidatos||[]).length ? '<span class="atd-badge atd-b-warn">'+(e.candidatos.length)+' candidata(s)</span>' : '';
   return '<div class="atd-item" onclick="ocTriagemAbrir('+e.id+')">'
-    + '<div class="atd-top"><span class="atd-nome"><i class="ti ti-brand-whatsapp"></i> '+esc(_ocFmtRemetente(e.remetente))+'</span><span class="atd-tempo">'+esc(_atdQuando(e.criado_em))+'</span></div>'
+    + _ocAvatarHTML(null, 'pessoal')
+    + '<div class="atd-main">'
+    + '<div class="atd-top"><span class="atd-nome">'+esc(_ocFmtRemetente(e.remetente))+'</span><span class="atd-tempo">'+esc(_atdQuando(e.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(e.texto||'—')+'</div>'
-    + '<div class="atd-tags">'+badge+seg+cand+'</div></div>';
+    + '<div class="atd-tags">'+badge+seg+cand+'</div></div></div>';
 }
 function _ocFmtRemetente(r){
   const d = (r||'').replace(/\D/g,'');
@@ -11166,9 +11237,11 @@ function _atdItemHTML(c){
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
   return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+    + _ocAvatarHTML(titulo, c.tipo)
+    + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+seg+jan+proj+concl+'</div></div>';
+    + '<div class="atd-tags">'+seg+jan+proj+concl+'</div></div></div>';
 }
 // (atendAbrir é definido no bloco do painel de conversa: alias de ocAbrirConversa — thread na própria página.)
 
@@ -13679,6 +13752,11 @@ function ocMontarPane(scr){
   const slot = document.getElementById(scr === 'interno' ? 'oc-slot-interno' : 'oc-slot-atend');
   const pane = document.getElementById('oc-pane');
   if(slot && pane && pane.parentElement !== slot) slot.appendChild(pane);
+  // barra de ação em largura total (mockup §2/§7): elemento ÚNICO, migra igual ao #oc-pane —
+  // mas fica FORA de .oc-cols (largura da tela inteira, não só da coluna do chat).
+  const abSlot = document.getElementById(scr === 'interno' ? 'oc-actionbar-slot-interno' : 'oc-actionbar-slot-atend');
+  const ab = document.getElementById('oc-action-bar');
+  if(abSlot && ab && ab.parentElement !== abSlot) abSlot.appendChild(ab);
 }
 
 // Porta de entrada do menu lateral (e do botão do projeto): ativa o page-chat na aba pedida.
@@ -13695,6 +13773,21 @@ function ocMostrarView(view){
   ['oc-vazio','oc-nova','oc-forum','oc-thread','oc-triagem','oc-contato'].forEach(id=>{
     const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
   });
+  // a barra de ação vive FORA do #oc-pane agora (largura total) — deixou de herdar o
+  // display:none automático das outras 5 views. Fora do thread, esconde sempre. No thread,
+  // RECONSTITUI o estado a partir da conversa ativa — achado do teste automatizado: sem isso,
+  // voltar de Adicionar Contato/Triagem/Novo Grupo/Fórum (ocPaneVoltar → ocMostrarView('oc-
+  // thread')) deixava a barra escondida (o "esconder" é explícito agora, então o "mostrar de
+  // volta" também precisa ser). _ocSetHeaderExtras tolera c undefined/null (vira estado neutro).
+  const ab = document.getElementById('oc-action-bar');
+  if(view !== 'oc-thread'){
+    if(ab) ab.style.display = 'none';
+    return;
+  }
+  if(typeof _ocSetHeaderExtras === 'function'){
+    const c = _ocConvAtiva ? (_ocInbox||[]).find(x=>x.id===_ocConvAtiva) : null;
+    _ocSetHeaderExtras(c);
+  }
 }
 // Segmentos ATIVOS da loja (base + custom — r4): fonte dos seletores/badges. Cache com
 // fallback no catálogo base; invalidar (_ocSegs=null) quando a tela Segmentos mudar algo.
@@ -14368,10 +14461,17 @@ function _ocRenderMsgProjeto(m){
     } else if (m.bloqueador && m.resolvido_em) {
       meta += '<div style="font-size:10px;color:var(--ok);margin-top:3px"><i class="ti ti-lock-open"></i> bloqueador resolvido</div>';
     }
+    // Transferência de responsabilidade (item F, achado da revisão visual 2026-08-04): vira um
+    // card DISCRETO (.oc-sysmsg) em vez de parecer só mais uma mensagem — mesma informação,
+    // hierarquia visual diferente. Nenhum id/onclick dos botões (Resolver/Destravar) muda.
+    return '<div class="oc-sysmsg"><div class="oc-sysmsg-head"><i class="ti ti-arrow-forward-up"></i> '
+      + esc(m.autor_nome||'—') + ' · ' + esc((m.criado_em||'').replace('T',' ').slice(0,16)) + '</div>'
+      + (m.corpo ? '<div class="oc-sysmsg-corpo">'+esc(m.corpo)+'</div>' : '')
+      + _ocAnexosHtml(m) + meta + '</div>';
   }
   return '<div style="margin-bottom:10px">' + _ocMsgCabecalho(m)
     + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-    + _ocAnexosHtml(m) + meta + '</div>';
+    + _ocAnexosHtml(m) + '</div>';
 }
 
 let _ocArquivo = null;
@@ -14849,8 +14949,12 @@ function ocTriagemAbrir(id){
   // conversas de grupo/projeto da inbox — rádio único.
   const cand = new Set(e.candidatos||[]);
   const outras = (_ocInbox||[]).filter(c=>(c.tipo==='grupo'||c.tipo==='projeto') && !cand.has(c.id));
+  // item E (achado da revisão visual 2026-08-04): mesmo cartão da lista de conversas
+  // (borda+fundo, como .atd-item) em vez do <label> cru — só troca de moldura, o
+  // input[type=radio] (name/value/checked) segue idêntico p/ ocTriagemResolver('vincular').
   const linha = (id2, rotulo, ehCand, checked)=>
-    '<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer">'
+    '<label style="display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid '
+    + (checked?'var(--accent)':'var(--border)') + ';border-radius:10px;cursor:pointer;background:var(--surface)">'
     + '<input type="radio" name="oc-trg-alvo" value="'+id2+'"'+(checked?' checked':'')+'>'
     + '<span style="font-size:13px">'+rotulo+'</span>'
     + (ehCand?'<span class="atd-badge atd-b-warn" style="margin-left:auto">candidata</span>':'')

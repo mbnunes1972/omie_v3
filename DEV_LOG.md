@@ -2799,6 +2799,51 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 157 — PROMOÇÃO GERAL da Sessão 156: Localhost = A = B = PRODUÇÃO + grafo re-ingerido
+
+**Ordem do usuário:** promover o commit `72a32c4` (Sessão 156 — redesenho Atendimentos/Chat
+Interno + Concluir + responsável/urgência + Iniciar Conversa por template) para **todos os
+ambientes, incluindo produção real**, seguindo o runbook sem pular etapas e parando em qualquer
+verificação fora do esperado. Nenhuma parada foi necessária — os três ambientes verificaram
+limpo em cada passo.
+
+**Tags:** `v2026.08.04g-homolog` (B, já criada na promoção anterior desta mesma sessão de
+trabalho) e **`v2026.08.04b-prod`** (PRODUÇÃO — `v2026.08.04-prod` já existia apontando para
+`51fafe9`, sufixo `b` usado para não colidir). Runbook seguido à risca: checagem de drift local
+em cada ambiente ANTES de tocar (nenhum encontrado — produção estava limpa em `51fafe9`, exatamente
+o commit da tag `v2026.08.04-prod`, sem histórico divergente do GitHub) → **backup fresco do
+banco de produção** (`backup_orizon.sh`, gerado na hora — o cron das 3h já tinha rodado hoje, mas
+um snapshot imediatamente antes do deploy foi feito mesmo assim, por cautela) → deploy por tag
+(`git fetch --tags && checkout`) → restart via **systemd** (`orizon-a`/`orizon-b` no VPS de dev,
+`orizon` em produção — a instalação migrou de `screen` para systemd antes desta sessão; runbook
+textual do DEV_RULES ainda cita `screen` em alguns trechos, seguido o mecanismo real encontrado
+no servidor) → verificação pós-deploy em cada ambiente.
+
+**Verificação pós-deploy (todos limpos, nada fora do esperado):**
+- **B** (`167.88.33.121:8766`): `git describe` = `v2026.08.04g-homolog` @ `72a32c4`; `curl` local
+  → `302`; `grep` no `index.html` servido confirma o redesenho (12 ocorrências de "Concluir
+  atendimento"/`oc-chip`).
+- **A** (`167.88.33.121:8765`): `git log` = `72a32c4` (sem drift antes do reset); `curl` local →
+  `302`.
+- **Produção** (`179.197.77.9`): `git log`/`git describe` = `72a32c4` / `v2026.08.04b-prod`;
+  `systemctl status orizon` → `active (running)`, journal limpo (mesmo padrão silencioso dos
+  boots anteriores — Jul 31/Ago 3/Ago 4 00:12, nenhum deles imprime nada no stdout num boot
+  saudável, então silêncio == normal, não sinal de falha); `curl` local (`8765`) → `200`; `curl`
+  no domínio público `https://www.orizonone.com.br/login` → `200`; `grep` no `index.html` real
+  confirma o redesenho (14 ocorrências). **Migração/backfill idempotente verificada direto no
+  Postgres real** (mesmo cuidado da Sessão 152): as 7 colunas novas de `conversas`
+  (`responsavel_usuario_id`/`urgente`/`origem_entrada`/`status`/`concluido_por_id`/
+  `concluido_em`/`conclusao_obs`) existem; a única conversa real de produção backfilled
+  corretamente para `status='aberta'`.
+- **Grafo MCP (Neo4j) re-ingerido** após os três ambientes alinhados (fonte `all` — 3507 nós de
+  código, contagem idêntica ao ingest anterior desta sessão, já refletia `72a32c4`).
+
+**Achado de processo (sem impacto, registrado por transparência):** o runbook de deploy A/B tem
+duas cópias no VPS de dev — `/root/deploy_ab.sh` (cópia estável fora do repo, ficava desatualizada
+com o padrão antigo `screen`) e `/root/orizon-manager/scripts/deploy_ab.sh` (versão atual, já
+commitada, `systemd`). A cópia estável foi atualizada nesta sessão para a versão `systemd` antes
+de rodar — se alguém reusar `/root/deploy_ab.sh` no futuro, agora já reflete o mecanismo real.
+
 ## Sessão 156 — Redesenho de Atendimentos/Chat Interno (mockup 04/08) + Concluir + Iniciar Conversa por template
 
 Fecha a spec `docs/superpowers/specs/comunicacao/2026-08-04-orizon-chat-atendimentos-ui-design.md`

@@ -3353,7 +3353,7 @@ function _aterrissarPorPapel(){
   const u = _usuarioAtual || {};
   // super_admin: esconde o menu operacional (Projetos + Comunicação — sem loja não há inbox)
   if (u.pode_gerir_redes && !u.loja_id) {
-    ['nav-00', 'nav-central-com'].forEach(id => {
+    ['nav-00', 'nav-16', 'nav-central-com'].forEach(id => {   // Projetos, Agenda e Chat são OPERAÇÃO
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -11438,7 +11438,7 @@ async function adminRenderLoja(box){
     <div id="loja-panel-dados"></div>
     <div id="loja-panel-pdvs" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="loja-panel-usuarios" style="display:none">
-      <button class="btn btn-ghost btn-sm" onclick="abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:(_adminNav.loja&&_adminNav.loja.id)||(_usuarioAtual&&_usuarioAtual.loja_id), loja_nome:(_adminNav.loja&&_adminNav.loja.nome)||'', onSaved:adminUsuariosCarregar})" style="font-size:11px">+ Novo usuário</button>
+      <button class="btn btn-ghost btn-sm" onclick="abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:(_adminNav.loja&&_adminNav.loja.id)||_lojaAtiva||(_usuarioAtual&&_usuarioAtual.loja_id), loja_nome:(_adminNav.loja&&_adminNav.loja.nome)||'', onSaved:adminUsuariosCarregar})" style="font-size:11px">+ Novo usuário</button>
       <div id="admin-usuarios-lista" style="margin-top:10px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
     <div id="loja-panel-perfis" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -11587,6 +11587,9 @@ const _SB_MODULOS = {
 function sbNavRender(){
   const box = document.getElementById('sb-modulos');
   if(!box) return;
+  // super_admin é PLATAFORMA (rev 2026-08-04): sem lista de módulos — a navegação dele é
+  // Painel Orizon (redes/lojas/PDVs/gestores) e, ao "Administrar" uma loja, Admin + Config.
+  if (_usuarioAtual && _usuarioAtual.pode_gerir_redes){ box.innerHTML = ''; return; }
   const grupos = (_usuarioAtual && _usuarioAtual.hub) || null;
   if(!grupos){ box.innerHTML = ''; return; }      // sem info do hub -> nada (compat)
   const mods = grupos.flatMap(g => g.modulos || []).filter(m => m.id !== 'folha' && m.id !== 'assistencias');   // Folha = seção do Financeiro; Assistências = ABA do Operacional (rev 2026-08-03)

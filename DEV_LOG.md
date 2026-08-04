@@ -1369,6 +1369,10 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 153 (Super Admin = plataforma):** sidebar do super sem módulos e sem Agenda —
+> só Painel Orizon + (via "Administrar" loja) Admin/Config escopados; fix do "+ Novo
+> usuário" que criava usuário SEM loja no fluxo do super. Operação segue vedada.
+>
 > **Sessão 152 (PROMOÇÃO GERAL):** Localhost = A = B = PRODUÇÃO na última versão. Tags
 > `v2026.08.03b-homolog` (B) e `v2026.08.03-prod` (produção, primeira desde 25/07; backup
 > antes, migrações/backfills no boot). Grafo MCP re-ingerido.
@@ -2782,6 +2786,27 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 153 — Super Admin vira PLATAFORMA pura: sem módulos, com Config de todas as lojas
+
+**Pedido do usuário** (após o falso alarme de "produção desatualizada" — a visão do super
+confundia): o super_admin fica só com PLATAFORMA — criar/configurar Redes, Lojas, Pontos de
+Venda e o PRIMEIRO usuário da loja; acesso às CONFIGURAÇÕES das lojas (painéis + config
+financeira = percentuais/cronograma/agenda, que não expõem dado sigiloso); a OPERAÇÃO
+(projetos, valores, chat, agenda) continua fora.
+
+- **Sidebar do super_admin**: lista de módulos ELIMINADA (`sbNavRender` retorna vazio p/
+  `pode_gerir_redes`) e **Agenda (nav-16) escondida** junto de Projetos/Chat — sobram Painel
+  Orizon e, ao "Administrar" uma loja, Admin + Config escopados (fluxo `orizonAdministrarLoja`
+  que JÁ existia: fixa `_lojaAtiva`, revela nav-07/nav-cfg; voltar ao Orizon esconde).
+- **Config de todas as lojas**: já funcionava por baixo (backend god-mode + painéis resolvendo
+  `_lojaAtiva`) — o acesso agora fica alcançável via Administrar.
+- **Fix real encontrado**: o botão "+ Novo usuário" do console da loja não caía em
+  `_lojaAtiva` — super criaria usuário SEM loja (o mesmo buraco do onboarding da Sessão 152);
+  fallback adicionado. A criação do primeiro usuário (Diretor) da loja agora funciona no fluxo
+  do super.
+- Sigiloso preservado: nada de operação foi concedido (visao "nenhuma", pode_ver_projeto
+  false, chat oculto seguem).
 
 ## Sessão 152 — PROMOÇÃO GERAL: Localhost = A = B = PRODUÇÃO na última versão + grafo re-ingerido
 

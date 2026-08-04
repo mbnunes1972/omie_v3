@@ -1369,6 +1369,11 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 150 (módulo OPERACIONAL):** "Montagem" → "Operacional" com abas PE · Montagem ·
+> Assistências (item Assistências saiu da sidebar; tela virou aba). PE ganhou agenda
+> própria: Gantt da janela 10→11, ocupação %/dia, conflitos de projetista e espelho com
+> Val_Liq (endpoint generalizado `?papel=`). Suíte 1710 verde. Local + VPS A.
+>
 > **Sessão 149 (Gantt de Montagem + Mapa novo):** Capacidade→Montagem virou GANTT
 > (janelas por projeto/fase, duplas/dia no rodapé, conflitos em vermelho) + espelho de
 > atribuições com Val_Liq por ambiente; Mapa de Atribuições verticalizado (ambientes ×
@@ -2768,6 +2773,32 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 150 — Módulo OPERACIONAL: PE · Montagem · Assistências (consolidação da sidebar)
+
+**Proposta do usuário, aprovada em debate:** o módulo "Montagem" virou **"Operacional"**
+(rotulo no manifesto; id interno `montagem` preservado) com TRÊS ABAS — **Projeto Executivo ·
+Montagem · Assistências** — e o item "Assistências" saiu da sidebar (tela transplantada para a
+aba, mesmo código/ids; page-14 removida). Sidebar mais enxuta, refletindo a operação.
+
+- **PE ganhou agenda própria (a simetria que faltava):** `mod_agenda.itens_pe` (janela = dia
+  útil após o fim da 10 → prevista/realizada da 11) + endpoint `GET /api/agenda/montagem`
+  generalizado com **`?papel=montagem|projeto_executivo`** (`_montagem_itens_enriquecidos`
+  parametrizado — o espelho resolve o responsável do papel). Aba PE = Gantt das janelas de PE +
+  rodapé de **ocupação %/dia** (100% = produtividade R$ 20k/dia) + conflitos de PROJETISTA +
+  espelho por ambiente com Val_Liq. A faixa de ocupação que estava pendurada na tela de
+  Montagem foi para a casa certa.
+- **Aviso de conflito no POST de atribuição** agora cobre também `projeto_executivo` (mesmo
+  motor; mensagem parametrizada).
+- **Frontend:** shell de abas na page-18 (`opTab`/`opCarregar`/`_opRender` — render
+  GENERALIZADO por papel substitui o `_mtRender`); gating por módulo da loja preservado (aba
+  Assistências some se o módulo `assistencias` estiver desabilitado/bloqueado no hub);
+  `sbNavRender` filtra `assistencias` como já filtrava `folha`.
+- Medição anotada como candidata natural a 4ª aba futura (agenda do medidor, janela 9→10) —
+  a estrutura já nasce pronta.
+
+TDD: `itens_pe` puro + endpoint `?papel=projeto_executivo` (projetista no espelho; papel
+inválido 400). Suíte **1710 verde** (+2); `node --check` ok. Local + VPS A.
 
 ## Sessão 149 — Gantt de Montagem + Mapa de Atribuições verticalizado + notificação no Chat + conflitos
 

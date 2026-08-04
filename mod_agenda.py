@@ -235,6 +235,37 @@ def itens_montagem(projetos, cfg_agenda=None):
     return out
 
 
+def itens_pe(projetos, cfg_agenda=None):
+    """Janelas de PROJETO EXECUTIVO por projeto/fase (módulo Operacional, rev 2026-08-03):
+    dia útil seguinte ao fim da 10 (Medição) → prevista/realizada da 11. Mesmo formato de
+    itens_montagem — alimenta o Gantt/espelho do PE (papel projeto_executivo)."""
+    import mod_calendario
+    from datetime import timedelta
+    cfg = cfg_agenda or {}
+    out = []
+    for p in (projetos or []):
+        et = p.get("etapas") or {}
+        e10, e11 = et.get("10") or {}, et.get("11") or {}
+        fim10 = _d(e10.get("concluida_em")) or _d(e10.get("prevista"))
+        conc11 = _d(e11.get("concluida_em"))
+        fim11 = conc11 or _d(e11.get("prevista"))
+        if not fim10 or not fim11:
+            continue                      # cronograma sem a janela do PE definida
+        inicio = mod_calendario.proximo_dia_util(fim10 + timedelta(days=1), cfg)
+        fim = fim11 if fim11 >= inicio else inicio
+        val_proj = p.get("val_liq")
+        fases = p.get("fases") or [{"id": None, "ordem": None, "status": None,
+                                    "val_liq": val_proj}]
+        for f in fases:
+            out.append({"projeto": p.get("nome_safe"), "cliente": p.get("cliente"),
+                        "fase": f.get("ordem"), "fase_id": f.get("id"),
+                        "inicio": inicio, "fim": fim, "val_liq": f.get("val_liq"),
+                        "realizado": conc11 is not None,
+                        "retida": f.get("status") == "retido"})
+    out.sort(key=lambda i: (i["inicio"], i["projeto"] or "", i["fase"] or 0))
+    return out
+
+
 def conflitos_montagem(itens):
     """Conflitos de MONTADOR: o mesmo profissional responsável por montagens de PROJETOS
     distintos com janelas SOBREPOSTAS (montagens já realizadas ficam fora). `itens` são os de

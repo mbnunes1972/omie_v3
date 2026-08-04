@@ -1453,6 +1453,10 @@ class Handler(BaseHTTPRequestHandler):
                     return None
             de, ate = _pd(_q("de")), _pd(_q("ate"))
             proj_filtro = unquote(_q("projeto") or "") or None
+            papel_j = (_q("papel") or "montagem")
+            if papel_j not in ("montagem", "projeto_executivo"):
+                self.send_json({"ok": False, "erro": "papel deve ser montagem|projeto_executivo"},
+                               code=400); return
             db = get_session()
             try:
                 import mod_agenda as _mag
@@ -1462,7 +1466,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": _err}, code=403); return
                 visao = mod_escopo.visao_do_papel(ator)
                 _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
-                itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag, proj_filtro)
+                itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag, proj_filtro,
+                                                     papel=papel_j)
                 if de:
                     itens = [i for i in itens if i["fim"] >= de]
                 if ate:
@@ -9694,11 +9699,12 @@ class Handler(BaseHTTPRequestHandler):
                                 notificado = True
                         except Exception:
                             db.rollback()   # notificação nunca derruba a atribuição (já commitada)
-                        if papel == "montagem":
+                        if papel in ("montagem", "projeto_executivo"):
                             try:
                                 import mod_agenda as _mag
                                 _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
-                                _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag)
+                                _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag,
+                                                                      papel=papel)
                                 _chave = ("f:%d" % int(fio_id)) if fio_id else ("t:%d" % int(ter_id))
                                 _hit = next((c for c in _mag.conflitos_montagem(_itens)
                                              if c["chave"] == _chave
@@ -9706,8 +9712,11 @@ class Handler(BaseHTTPRequestHandler):
                                 if _hit:
                                     _outros = sorted({x["projeto"] for x in _hit["itens"]
                                                       if x["projeto"] != nome_safe})
-                                    aviso_conflito = ("⚠ %s já tem montagem em período sobreposto: %s."
-                                                      % (_hit["nome"] or "O profissional", ", ".join(_outros)))
+                                    _atividade = ("montagem" if papel == "montagem"
+                                                  else "projeto executivo")
+                                    aviso_conflito = ("⚠ %s já tem %s em período sobreposto: %s."
+                                                      % (_hit["nome"] or "O profissional",
+                                                         _atividade, ", ".join(_outros)))
                             except Exception:
                                 db.rollback()
                     self.send_json({"ok": True, "atribuicoes": _serializar_atribuicoes(db, nome_safe),
@@ -13010,14 +13019,16 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
     return dados
 
 
-def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None):
-    """Itens do Gantt de MONTAGEM enriquecidos: ambientes da fase com Val_Liq por ambiente
-    (referência da comissão) e o MONTADOR responsável (Mapa de Atribuições; específico do
-    ambiente prevalece sobre projeto-inteiro). Base do GET /api/agenda/montagem e do aviso de
-    conflito no POST de atribuição."""
+def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None,
+                                 papel="montagem"):
+    """Itens do Gantt do OPERACIONAL enriquecidos (papel = montagem | projeto_executivo):
+    ambientes da fase com Val_Liq por ambiente (referência da comissão) e o RESPONSÁVEL do
+    papel no Mapa (específico do ambiente prevalece sobre projeto-inteiro). Base do GET
+    /api/agenda/montagem (com ?papel=) e do aviso de conflito no POST de atribuição."""
     import mod_agenda as _mag
     dados = _agenda_dados_projetos(db, ator, loja_id, proj_filtro)
-    itens = _mag.itens_montagem(dados, cfg_agenda)
+    itens = (_mag.itens_pe(dados, cfg_agenda) if papel == "projeto_executivo"
+             else _mag.itens_montagem(dados, cfg_agenda))
     por_proj = {d["nome_safe"]: d for d in dados}
     cache_liq, cache_atr, cache_nome = {}, {}, {}
     def _nome_alvo(fid, tid):
@@ -13046,7 +13057,7 @@ def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None
             if amb_ids else {}
         ambs, montadores = [], {}
         for aid in amb_ids:
-            resp = mod_escopo.resolver_responsavel(atribs, aid, "montagem")
+            resp = mod_escopo.resolver_responsavel(atribs, aid, papel)
             m = None
             if resp:
                 chave, nome = _nome_alvo(resp.get("funcionario_id"), resp.get("terceiro_id"))

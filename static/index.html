@@ -1503,20 +1503,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   </div>
 
   <!-- PAGE 14: Assistências (Modulos_Orizon_v5 módulo 10 / Financeiro v7 §6) -->
-  <div class="page" id="page-14">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px">
-      <div>
-        <div class="page-title" style="margin:0">Assistências</div>
-        <div class="page-sub">Atendimento pós-execução. O motivo define o tipo de custo (Paga · Loja · Fábrica).</div>
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="assistNovoAbrir()">+ Novo caso</button>
-    </div>
-    <div style="height:12px"></div>
-    <div id="assist-resumo"></div>
-    <div id="assist-filtros" style="display:flex;gap:6px;margin:12px 0 14px;flex-wrap:wrap"></div>
-    <div id="assist-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
-  </div>
-
   <!-- Modal: Novo caso de assistência -->
   <div id="modal-assist-novo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
     <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;width:min(480px,92vw);max-height:90vh;overflow:auto;box-shadow:var(--shadow);animation:mIn .18s ease">
@@ -1905,11 +1891,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
   </div>
 
-  <!-- PAGE 18: módulo MONTAGEM — capacidade, Gantt e atribuições (rev 2026-08-03: saiu da Agenda) -->
+  <!-- PAGE 18: módulo OPERACIONAL (rev 2026-08-03) — Projeto Executivo · Montagem · Assistências -->
   <div class="page" id="page-18">
-    <div class="page-title" style="margin:0">Montagem</div>
-    <div class="page-sub">Gantt das montagens, capacidade de duplas e atribuições por ambiente.</div>
-    <div id="montagem-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    <div class="page-title" style="margin:0">Operacional</div>
+    <div class="page-sub">Execução pós-venda: agendas, capacidade, atribuições e assistências.</div>
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:12px 0 16px;flex-wrap:wrap">
+      <button class="home-tab ativo" id="op-tab-pe" onclick="opTab('pe')">Projeto Executivo</button>
+      <button class="home-tab" id="op-tab-mont" onclick="opTab('mont')">Montagem</button>
+      <button class="home-tab" id="op-tab-assist" onclick="opTab('assist')">Assistências</button>
+    </div>
+    <div id="op-panel-pe"><div id="op-pe-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="op-panel-mont" style="display:none"><div id="montagem-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="op-panel-assist" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--muted)">Atendimento pós-execução. O motivo define o tipo de custo (Paga · Loja · Fábrica).</div>
+        <button class="btn btn-primary btn-sm" onclick="assistNovoAbrir()">+ Novo caso</button>
+      </div>
+      <div id="assist-resumo"></div>
+      <div id="assist-filtros" style="display:flex;gap:6px;margin:12px 0 14px;flex-wrap:wrap"></div>
+      <div id="assist-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    </div>
   </div>
 
   <!-- PAGE 16: Agenda da Loja (spec 2026-08-03) — marcos e volumes dos cronogramas, por Setor -->
@@ -3891,58 +3892,78 @@ function _agRenderMes(){
       <div id="agenda-carga-det" style="margin-top:12px"></div>`;
   if(_agSelCarga) _agRenderCargaDet();
 }
-// ── Módulo MONTAGEM (page-18) — rev 2026-08-03: a gestão de capacidades SAIU da Agenda ─────
-// Gantt das montagens (janela entrega→17 por projeto/fase) + duplas/dia + conflitos de
-// montador + espelho de atribuições por ambiente (Val_Liq = referência da comissão) + faixa
-// de ocupação do PE. Dados: GET /api/agenda (capacidade) + GET /api/agenda/montagem.
-let _mtBase=null, _mtCap=[], _mtCfg={}, _mtMont={itens:[], conflitos:[]};
-function montagemAbrir(){ if(!_mtBase) _mtBase=_agSegunda(new Date()); montagemCarregar(); }
-function montagemNav(d){
-  if(d===0) _mtBase=_agSegunda(new Date()); else _mtBase.setDate(_mtBase.getDate()+7*d);
-  montagemCarregar();
+// ── Módulo OPERACIONAL (page-18) — PE · Montagem · Assistências (rev 2026-08-03) ───────────
+// Consolidação da sidebar (pedido do usuário): três frentes da execução num módulo só, cada
+// papel com sua agenda — Gantt de janelas (PE: fim da 10 → prevista da 11; Montagem: entrega
+// → prevista da 17), rodapé de capacidade (ocupação % do PE; duplas/dia na Montagem),
+// conflitos do papel e espelho de atribuições por ambiente (Val_Liq = referência da comissão).
+// Assistências = transplante da antiga page-14 (mesmo código, gated pelo módulo da loja).
+let _opTabAtual='pe';
+let _opBase=null, _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],conflitos:[]}};
+function _opModuloOk(id){
+  const mods=((_usuarioAtual&&_usuarioAtual.hub)||[]).flatMap(g=>g.modulos||[]);
+  const m=mods.find(x=>x.id===id);
+  return !!(m && !m.bloqueado);
 }
-function _mtRange(){
-  const a=_mtBase, n=((_mtCfg.horizonte_semanas||6)*7-1);
+function operacionalAbrir(){
+  if(!_opBase) _opBase=_agSegunda(new Date());
+  const ta=document.getElementById('op-tab-assist');
+  if(ta) ta.style.display=_opModuloOk('assistencias')?'':'none';   // gating por módulo da loja
+  opTab(_opTabAtual||'pe');
+}
+function opTab(qual){
+  if(qual==='assist' && !_opModuloOk('assistencias')) qual='pe';
+  _opTabAtual=qual;
+  ['pe','mont','assist'].forEach(q=>{
+    const t=document.getElementById('op-tab-'+q), pn=document.getElementById('op-panel-'+q);
+    if(t) t.classList.toggle('ativo', q===qual);
+    if(pn) pn.style.display = q===qual ? '' : 'none';
+  });
+  if(qual==='assist'){ assistenciasCarregar(); return; }
+  opCarregar(qual);
+}
+function opNav(d){
+  if(d===0) _opBase=_agSegunda(new Date()); else _opBase.setDate(_opBase.getDate()+7*d);
+  opCarregar(_opTabAtual);
+}
+function _opRange(){
+  const a=_opBase, n=((_opCfg.horizonte_semanas||6)*7-1);
   const b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+n);
   return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
 }
-async function montagemCarregar(){
-  const box=document.getElementById('montagem-ui'); if(!box) return;
-  const [de,ate]=_mtRange();
+async function opCarregar(aba){
+  const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
+  const [de,ate]=_opRange();
+  const papel=aba==='pe'?'projeto_executivo':'montagem';
   try{
     const [d,rm]=await Promise.all([
       fetch('/api/agenda?de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json()),
-      fetch('/api/agenda/montagem?de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json()),
+      fetch('/api/agenda/montagem?papel='+papel+'&de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json()),
     ]);
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
-    _mtCap=d.capacidade||[]; _mtCfg=d.capacidade_cfg||{};
-    _mtMont=(rm&&rm.ok)?rm:{itens:[],conflitos:[]};
-    _mtRender();
+    _opCap=d.capacidade||[]; _opCfg=d.capacidade_cfg||{};
+    _opDados[aba]=(rm&&rm.ok)?rm:{itens:[],conflitos:[]};
+    _opRender(aba);
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
 }
-function _mtRender(){
-  const box=document.getElementById('montagem-ui'); if(!box) return;
-  const [deIso,ateIso]=_mtRange();
+function _opRender(aba){
+  const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
+  const [deIso,ateIso]=_opRange();
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
-  // dias ÚTEIS do horizonte (dom sempre fora; sáb conforme config)
   const dias=[];
-  for(let d=new Date(_mtBase.getFullYear(),_mtBase.getMonth(),_mtBase.getDate());;d.setDate(d.getDate()+1)){
+  for(let d=new Date(_opBase.getFullYear(),_opBase.getMonth(),_opBase.getDate());;d.setDate(d.getDate()+1)){
     const iso=_agIso(d.getFullYear(),d.getMonth(),d.getDate());
     if(iso>ateIso) break;
     if(d.getDay()===0) continue;
-    if(d.getDay()===6 && !_mtCfg.sabado_util) continue;
+    if(d.getDay()===6 && !_opCfg.sabado_util) continue;
     dias.push(iso);
   }
-  const porDia={}; _mtCap.forEach(c=>{ porDia[c.data]=c; });
-  const disp=Math.max(0,parseInt(_mtCfg.duplas_disponiveis,10)||0);
+  const porDia={}; _opCap.forEach(c=>{ porDia[c.data]=c; });
   const rotDia=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
-  const barra=(hPct,cor,rot,topo)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px">
-      <div style="height:110px;width:100%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end">
-        ${topo?`<div style="font-size:9px;text-align:center;color:var(--muted)">${topo}</div>`:''}
-        <div style="height:${hPct}%;background:${cor};border-radius:4px 4px 0 0;min-height:${hPct>0?'3':'0'}px"></div>
-      </div><div style="font-size:9px;color:var(--muted)">${rot}</div></div>`;
-  // ── faixa 1 — Montagem: GANTT (rev 2026-08-03; barras de duplas viraram rodapé do Gantt) ──
-  const mont=_mtMont.itens||[], confs=_mtMont.conflitos||[];
+  const dadosAba=_opDados[aba]||{itens:[],conflitos:[]};
+  const itensG=dadosAba.itens||[], confs=dadosAba.conflitos||[];
+  const rotResp = aba==='pe' ? 'projetista' : 'montador';
+  const atividade = aba==='pe' ? 'Projeto Executivo' : 'Montagem';
   const confKeys=new Set(); confs.forEach(c=>(c.itens||[]).forEach(x=>confKeys.add(x.projeto+'|'+(x.fase||''))));
   const nDias=dias.length;
   const colGrid=`display:grid;grid-template-columns:190px repeat(${nDias},minmax(13px,1fr));gap:2px;align-items:center`;
@@ -3952,74 +3973,72 @@ function _mtRender(){
       return `<div style="font-size:8px;text-align:center;overflow:hidden;white-space:nowrap;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':(seg?'700':'400')}">${(seg||i===0||hoje)?rotDia(iso):''}</div>`;
     }).join('')}</div>`;
   let linhasG='';
-  mont.forEach(it=>{
+  itensG.forEach(it=>{
     let a=dias.findIndex(x=>x>=it.inicio);
     let b=nDias-1; while(b>=0 && dias[b]>it.fim) b--;
     if(a<0 || b<0 || a>b){ if(it.inicio<=dias[nDias-1] && it.fim>=dias[0]){ a=Math.max(a,0); b=Math.max(b,a); } else return; }
     const key=it.projeto+'|'+(it.fase||'');
     const cor=it.realizado?'var(--status-ok)':(confKeys.has(key)?'var(--status-err)':(it.retida?'var(--status-warn)':'var(--accent)'));
     const rot=esc(it.projeto)+(it.fase?' · F'+it.fase:'');
-    const tip=`${it.projeto}${it.fase?' · Fase '+it.fase:''} — ${_fmtDataBR(it.inicio)} a ${_fmtDataBR(it.fim)}${it.val_liq!=null?' · R$ '+fmt(it.val_liq):''}${it.retida?' · RETIDA':''}${confKeys.has(key)?' · ⚠ CONFLITO de montador':''}`;
+    const tip=`${it.projeto}${it.fase?' · Fase '+it.fase:''} — ${_fmtDataBR(it.inicio)} a ${_fmtDataBR(it.fim)}${it.val_liq!=null?' · R$ '+fmt(it.val_liq):''}${it.retida?' · RETIDA':''}${confKeys.has(key)?' · ⚠ CONFLITO de '+rotResp:''}`;
     linhasG+=`<div style="${colGrid};margin-bottom:2px">
       <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:6px" title="${esc(tip)}">${rot}</div>
       <div style="grid-column:${2+a} / ${3+b};height:15px;border-radius:7px;background:${cor}" title="${esc(tip)}"></div>
     </div>`;
   });
-  if(!linhasG) linhasG=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma montagem com janela no período.</div>`;
-  let totalDuplasDia=0; dias.forEach(iso=>{ totalDuplasDia+=((porDia[iso]||{}).duplas||0); });
-  const rodapeDuplas=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
-      <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Duplas/dia (${disp} disponíveis)</div>
-      ${dias.map(iso=>{ const n=(porDia[iso]||{}).duplas||0;
-        return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${n>disp?'var(--status-err)':(n?'var(--text)':'var(--text-3)')};font-weight:${n>disp?'800':'400'}">${n||''}</div>`; }).join('')}
-    </div>`;
+  if(!linhasG) linhasG=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período.</div>`;
+  let rodape='', resumo='';
+  if(aba==='mont'){
+    const disp=Math.max(0,parseInt(_opCfg.duplas_disponiveis,10)||0);
+    let totalDuplasDia=0; dias.forEach(iso=>{ totalDuplasDia+=((porDia[iso]||{}).duplas||0); });
+    const capTotal=disp*dias.length;
+    rodape=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
+        <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Duplas/dia (${disp} disponíveis)</div>
+        ${dias.map(iso=>{ const n=(porDia[iso]||{}).duplas||0;
+          return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${n>disp?'var(--status-err)':(n?'var(--text)':'var(--text-3)')};font-weight:${n>disp?'800':'400'}">${n||''}</div>`; }).join('')}
+      </div>`;
+    resumo=`Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''}`;
+  } else {
+    let somaPe=0; dias.forEach(iso=>{ somaPe+=((porDia[iso]||{}).pe||0); });
+    const diasPe=(_opCfg.produtividade_pe>0)?(somaPe/_opCfg.produtividade_pe):0;
+    rodape=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
+        <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Ocupação/dia (100% = R$ ${_agN0(_opCfg.produtividade_pe||20000)})</div>
+        ${dias.map(iso=>{ const pct=Math.round((porDia[iso]||{}).pe_pct||0);
+          return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${pct>100?'var(--status-err)':(pct?'var(--text)':'var(--text-3)')};font-weight:${pct>100?'800':'400'}">${pct?pct+'%':''}</div>`; }).join('')}
+      </div>`;
+    resumo=`Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_opCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor`;
+  }
   const confHtml=confs.length?`<div style="border:1px solid var(--status-err);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text)">
-      <strong style="color:var(--status-err)">⚠ Conflito de montador (períodos sobrepostos):</strong>
+      <strong style="color:var(--status-err)">⚠ Conflito de ${rotResp} (períodos sobrepostos):</strong>
       ${confs.map(c=>esc(c.nome||'?')+' — '+(c.itens||[]).map(x=>esc(x.projeto)+(x.fase?' F'+x.fase:'')+' ('+_fmtDataBR(x.inicio)+'–'+_fmtDataBR(x.fim)+')').join(' × ')).join('; ')}
     </div>`:'';
-  const espelho=mont.length?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-      <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:6px">Atribuições de montagem — projeto por ambiente <span style="color:var(--muted);font-weight:400;font-size:10px">(espelho do Mapa de Atribuições; valor líquido = referência da comissão)</span></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${mont.map(it=>{
+  const espelho=itensG.length?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:6px">Atribuições de ${atividade.toLowerCase()} — projeto por ambiente <span style="color:var(--muted);font-weight:400;font-size:10px">(espelho do Mapa de Atribuições; valor líquido = referência da comissão)</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${itensG.map(it=>{
         const key=it.projeto+'|'+(it.fase||'');
         return `<div style="border:1px solid ${confKeys.has(key)?'var(--status-err)':'var(--border)'};border-radius:8px;padding:10px 12px;min-width:240px;flex:1;max-width:360px">
           <div style="font-size:12px;font-weight:700;color:var(--text)">${esc(it.projeto)}${it.fase?` · Fase ${it.fase}`:''} <span style="color:var(--muted);font-weight:400;font-size:10px">${_fmtDataBR(it.inicio)}–${_fmtDataBR(it.fim)}</span></div>
           ${(it.ambientes||[]).map(a2=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--border);padding:5px 0;font-size:12px">
             <div><div style="color:var(--text)">${esc(a2.nome||('Amb '+a2.id))}</div>${a2.val_liq!=null?`<div style="font-size:10px;color:var(--muted);font-family:var(--font-mono)">R$ ${fmt(a2.val_liq)}</div>`:''}</div>
-            <div style="text-align:right;color:${a2.montador?'var(--text)':'var(--status-warn)'};font-size:11px">${a2.montador?esc(a2.montador.nome||''):'— sem montador —'}</div>
+            <div style="text-align:right;color:${a2.montador?'var(--text)':'var(--status-warn)'};font-size:11px">${a2.montador?esc(a2.montador.nome||''):'— sem '+rotResp+' —'}</div>
           </div>`).join('')||'<div style="font-size:11px;color:var(--muted);padding-top:4px">Sem ambientes.</div>'}
         </div>`;}).join('')}</div>
     </div>`:'';
-  const capTotal=disp*dias.length;
-  // faixa 2 — Projeto Executivo (ocupação %)
-  const maxP=Math.max(120,...dias.map(i=>(porDia[i]||{}).pe_pct||0));
-  let somaPe=0;
-  const barsP=dias.map(iso=>{
-    const c=porDia[iso]||{}; const p=c.pe_pct||0; somaPe+=(c.pe||0);
-    const cor=p>100?'var(--status-err)':(p>0?'var(--status-ok)':'var(--border)');
-    return barra(Math.round(p/maxP*100), cor, rotDia(iso), p>0?Math.round(p)+'%':'');
-  }).join('');
-  const linha100=`<div style="position:absolute;left:0;right:0;bottom:${14+Math.round(100/maxP*110)}px;border-top:2px dashed var(--muted);opacity:.7"></div>
-    <div style="position:absolute;right:4px;bottom:${16+Math.round(100/maxP*110)}px;font-size:9px;color:var(--muted)">100% (R$ ${_agN0(_mtCfg.produtividade_pe||20000)}/dia)</div>`;
-  const diasPe=(_mtCfg.produtividade_pe>0)?(somaPe/_mtCfg.produtividade_pe):0;
   box.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-ghost btn-sm" onclick="montagemNav(-1)">&#x2039;</button>
+      <button class="btn btn-ghost btn-sm" onclick="opNav(-1)">&#x2039;</button>
       <span style="font-weight:800;color:var(--text);min-width:200px;text-align:center">${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}</span>
-      <button class="btn btn-ghost btn-sm" onclick="montagemNav(1)">&#x203A;</button>
-      <button class="btn btn-ghost btn-sm" onclick="montagemNav(0)">hoje</button>
+      <button class="btn btn-ghost btn-sm" onclick="opNav(1)">&#x203A;</button>
+      <button class="btn btn-ghost btn-sm" onclick="opNav(0)">hoje</button>
     </div>`
     +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
-      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Montagem — Gantt do período</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada barra é a JANELA de montagem de um projeto/fase (entrega → prevista da etapa 17). Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito</div>
+      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">${atividade} — Gantt do período</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada barra é a JANELA de ${atividade.toLowerCase()} de um projeto/fase. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito</div>
       ${confHtml}
-      ${cabecalhoG}${linhasG}${rodapeDuplas}
+      ${cabecalhoG}${linhasG}${rodape}
       ${espelho}
     </div>
-    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px">
-      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Projeto Executivo — ocupação diária</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_mtCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor</div>
-      <div style="position:relative"><div style="display:flex;gap:3px;align-items:flex-end">${barsP}</div>${linha100}</div>
-    </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:8px">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades e duplas em Config → Agenda; atribuições no Mapa de Atribuições do projeto.</div>`;
+    <div style="font-size:10px;color:var(--muted)">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades em Config → Agenda; atribuições no Mapa de Atribuições do projeto.</div>`;
 }
 function agendaCarga(item,dia){
   _agSelCarga=(_agSelCarga&&_agSelCarga.item===item&&_agSelCarga.dia===dia)?null:{item,dia};
@@ -4935,16 +4954,15 @@ function goPage(n){
   if(n===11){ if(_adminNav) _adminNav.loja = null; adminFiscalCarregar(); }
   if(n===12){ if(_adminNav) _adminNav.loja = null; finTab('prov'); }   // seções no submenu da sidebar
   if(n===13) expedicaoKanbanCarregar();
-  if(n===14) assistenciasCarregar();
   if(n===15) comercialDashCarregar();   // Comercial: dashboard
   if(n===16) agendaAbrir();             // Agenda da Loja (spec 2026-08-03)
-  if(n===18) montagemAbrir();           // módulo Montagem: capacidade + Gantt + atribuições
+  if(n===18) operacionalAbrir();        // módulo OPERACIONAL: PE · Montagem · Assistências
   sbSyncActive(n);   // realça/expande o módulo correspondente no acordeão da sidebar
 }
 
 // Página -> módulo de domínio que ela representa (para realçar/expandir na sidebar).
 // page-00 (Projetos) fica com o Atalho, não realça o módulo Comercial (evita realce duplicado).
-const _PAGE_MODULO = {10:'cadastro', 11:'fiscal', 12:'financeiro', 13:'expedicao', 14:'assistencias', 15:'comercial', 18:'montagem'};
+const _PAGE_MODULO = {10:'cadastro', 11:'fiscal', 12:'financeiro', 13:'expedicao', 15:'comercial', 18:'montagem'};
 function sbSyncActive(n){
   if(n===8) { sbNavRender(); return; }   // EM CONSTRUÇÃO: mantém o módulo clicado realçado (sbModuloClick já setou)
   const mod = _PAGE_MODULO[n] || null;
@@ -11562,8 +11580,7 @@ const _SB_MODULOS = {
   fiscal:     {ic:'file-invoice',  go:()=>goPage(11)},    // folha: Emitente/NF-e
   estoque:    {ic:'packages'},                            // em construção
   expedicao:  {ic:'truck',         go:()=>goPage(13)},    // folha: Kanban de expedição
-  montagem:   {ic:'hammer',        go:()=>goPage(18)},    // Capacidade, Gantt e atribuições de montagem (rev 2026-08-03)
-  assistencias:{ic:'lifebuoy', go:()=>goPage(14)},        // casos + a-cobrar-da-fábrica (v7 §6)
+  montagem:   {ic:'hammer',        go:()=>goPage(18)},    // OPERACIONAL: PE · Montagem · Assistências (rev 2026-08-03)
   financeiro: {ic:'cash', secoes: _FIN_SECOES.map(s => ({id:s.id, lbl:s.lbl, ic:s.ic, go:()=>finIrSecao(s.id)}))},
 };
 
@@ -11572,7 +11589,7 @@ function sbNavRender(){
   if(!box) return;
   const grupos = (_usuarioAtual && _usuarioAtual.hub) || null;
   if(!grupos){ box.innerHTML = ''; return; }      // sem info do hub -> nada (compat)
-  const mods = grupos.flatMap(g => g.modulos || []).filter(m => m.id !== 'folha');   // Folha vive como SEÇÃO do Financeiro, não módulo próprio (evita aba vazia)
+  const mods = grupos.flatMap(g => g.modulos || []).filter(m => m.id !== 'folha' && m.id !== 'assistencias');   // Folha = seção do Financeiro; Assistências = ABA do Operacional (rev 2026-08-03)
   box.innerHTML = mods.map(m => {
     if(m.bloqueado){
       return '<div class="nav-item sb-mod" style="opacity:.55" title="Sem acesso — clique para liberar com senha"'

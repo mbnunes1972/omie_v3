@@ -52,6 +52,19 @@ def test_conflitos_montagem_sobreposicao_entre_projetos():
     assert mod_agenda.conflitos_montagem([a, dict(b, realizado=True)]) == []
 
 
+def test_itens_pe_janela_10_a_11():
+    p = {"nome_safe": "P1", "cliente": None, "val_liq": 3000.0, "orcamento_id": None,
+         "previsao_medicao": None, "data_entrega": None,
+         "etapas": {"10": {"concluida_em": datetime(2026, 9, 4)},     # sex → PE inicia seg 07
+                    "11": {"prevista": datetime(2026, 9, 18)}}, "fases": []}
+    its = mod_agenda.itens_pe([p])
+    assert [(i["inicio"], i["fim"], i["realizado"]) for i in its] == \
+        [(date(2026, 9, 7), date(2026, 9, 18), False)]
+    # sem a janela definida (falta 11) → fora
+    p2 = dict(p, etapas={"10": {"concluida_em": datetime(2026, 9, 4)}})
+    assert mod_agenda.itens_pe([p2]) == []
+
+
 # ── endpoint + POST em lote + notificação ────────────────────────────────────────
 
 def _setup(app_db, seed):
@@ -126,6 +139,43 @@ def test_post_lote_notifica_e_gantt_espelha(app_db, seed, http_client_factory):
     assert all(a["montador"] and a["montador"]["nome"] == "Montador L1" for a in it["ambientes"])
     assert round(sum(a["val_liq"] for a in it["ambientes"]), 2) == 3000.0   # Σ liq por ambiente
     assert g["conflitos"] == []
+
+
+def test_endpoint_papel_projeto_executivo(app_db, seed, http_client_factory):
+    """Aba PE do Operacional: mesmo endpoint com ?papel=projeto_executivo — janela 10→11 e o
+    PROJETISTA do Mapa no espelho."""
+    nome = seed["projeto_l1"]
+    ids, _func_mont, _ = _setup(app_db, seed)
+    db = app_db.get_session()
+    try:
+        for cod, dt in (("10", datetime(2026, 9, 4)), ("11", datetime(2026, 9, 18))):
+            e = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo=cod).first()
+            if not e:
+                e = CicloEtapa(projeto_nome=nome, etapa_codigo=cod); db.add(e)
+            e.data_prevista_conclusao = dt; e.status = "pendente"; e.concluido_em = None
+        f = db.query(Funcao).filter_by(loja_id=seed["loja1_id"], nome="Projetista Executivo").first()
+        if not f:
+            f = Funcao(loja_id=seed["loja1_id"], nome="Projetista Executivo", status="ativo")
+            db.add(f); db.flush()
+        proj = Funcionario(loja_id=seed["loja1_id"], nome="Projetista L1", funcao_id=f.id)
+        db.add(proj); db.flush()
+        proj_id = proj.id
+        db.commit()
+    finally:
+        db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/projetos/%s/atribuicoes" % nome,
+                   {"papel": "projeto_executivo", "pool_ambiente_ids": ids,
+                    "funcionario_id": proj_id})
+    assert st == 200 and d["ok"], (st, d)
+    st, g = c.get("/api/agenda/montagem?papel=projeto_executivo&de=2026-09-01&ate=2026-09-30")
+    assert st == 200 and g["ok"], (st, g)
+    it = next(i for i in g["itens"] if i["projeto"] == nome)
+    assert it["inicio"] == "2026-09-07" and it["fim"] == "2026-09-18"
+    assert all(a["montador"] and a["montador"]["nome"] == "Projetista L1"
+               for a in it["ambientes"])
+    st, _bad = c.get("/api/agenda/montagem?papel=invalido")
+    assert st == 400
 
 
 def test_conflito_avisado_no_post(app_db, seed, http_client_factory):

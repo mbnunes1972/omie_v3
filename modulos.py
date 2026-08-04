@@ -114,7 +114,7 @@ MODULOS = {
                     "arquivos": ["mod_expedicao.py"],
                     "tabelas": ["ciclo_logistico", "ciclo_logistico_transicao"],
                     "rotas": ["/api/expedicao"]},
-    "montagem":    {"camada": "dominio", "depende_de": ["comercial"], "rotulo": "Montagem", "faixa": "montagem",
+    "montagem":    {"camada": "dominio", "depende_de": ["comercial"], "rotulo": "Operacional", "faixa": "montagem",
                     "arquivos": [], "tabelas": [], "rotas": []},
     "folha":       {"camada": "dominio", "depende_de": ["cadastro", "comercial", "financeiro"], "rotulo": "Folha de Pagamento", "faixa": "financeiro",
                     "arquivos": ["mod_folha.py", "mod_comissao.py", "mod_adiantamento.py"],

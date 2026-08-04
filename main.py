@@ -824,7 +824,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "text/plain")
                 self.end_headers(); self.wfile.write(challenge.encode()); return
             self.send_response(403); self.end_headers(); return
-        if path in ("/privacidade", "/politica-privacidade"):
+        if path.rstrip("/") in ("/privacidade", "/politica-privacidade") and path != "/":
+            # tolerante à barra final — o crawler do Meta reportou 404 em /privacidade/ (2026-08-04)
             # Política de Privacidade (2026-08-03): página PÚBLICA e ESTÁTICA exigida pelo
             # cadastro do app WhatsApp no Meta for Developers (URL acessível sem login).
             # Sem auth/tenancy/banco — só lê static/privacidade.html do disco. O texto é

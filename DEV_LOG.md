@@ -2807,6 +2807,15 @@ dano do bug 🔴.
   existe no app).
 - **Grafo MCP (Neo4j) re-ingerido** após o deploy (fonte all).
 
+**Pós-deploy — "produção desatualizada" era FALSO alarme de PERFIL:** o servidor estava
+correto (HTML servido contém Agenda/Chat/Operacional; unit no diretório certo; tag ok). O
+usuário logou com a ÚNICA conta existente em produção — `mbn1972@gmail.com`, **super_admin sem
+loja** — que POR DESIGN não vê a operação (Projetos/Orizon Chat ocultos; módulos da sidebar
+vêm por loja → vazios) e aterrissa no Painel Admin; além disso o banco de produção está
+VIRGEM (0 projetos). Criada a conta operacional **`diretor`** (master, loja INSPIRIUM, senha
+provisória com troca forçada no 1º login) — com ela o app completo aparece. Lição p/
+onboarding: toda loja nova precisa da conta de Diretor criada junto.
+
 ## Sessão 151 — Política de Privacidade PÚBLICA em /privacidade (cadastro do app WhatsApp no Meta)
 
 Página estática exigida pelo Meta for Developers para publicar o app "OrizonChat Inspirium"

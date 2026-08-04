@@ -2803,6 +2803,13 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 espelho no GET, aviso de conflito no POST + conflito no GET. Suíte **1708 verde**; validação
 ao vivo (10 montagens no horizonte, Val_Liq por ambiente exato). `node --check` ok.
 
+**Rev (mesmo dia, correção de casa — usuário): a gestão de capacidades saiu da AGENDA e virou
+a TELA do módulo MONTAGEM da sidebar** (que era "em construção"): `_SB_MODULOS.montagem` ganhou
+`go → page-18` (`montagemAbrir`/`montagemCarregar`/`_mtRender` — transplante do antigo
+`_agRenderCap`, com navegação semanal própria e os MESMOS dados: Gantt + duplas/dia +
+conflitos + espelho + ocupação do PE). A Agenda voltou a 3 visões (Calendário · Semana · Mês)
+— botão Capacidade removido. Endpoints inalterados.
+
 ## Sessão 148 — DEPLOY A+B (tag `v2026.08.03-homolog`) + re-ingestão do grafo MCP
 
 Promoção autorizada pelo usuário do pacote das Sessões 135–147 (13 sessões locais):

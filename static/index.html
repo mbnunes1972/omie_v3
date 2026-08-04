@@ -1905,6 +1905,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
   </div>
 
+  <!-- PAGE 18: módulo MONTAGEM — capacidade, Gantt e atribuições (rev 2026-08-03: saiu da Agenda) -->
+  <div class="page" id="page-18">
+    <div class="page-title" style="margin:0">Montagem</div>
+    <div class="page-sub">Gantt das montagens, capacidade de duplas e atribuições por ambiente.</div>
+    <div id="montagem-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+  </div>
+
   <!-- PAGE 16: Agenda da Loja (spec 2026-08-03) — marcos e volumes dos cronogramas, por Setor -->
   <div class="page" id="page-16">
     <div class="page-title" style="margin:0">Agenda da Loja</div>
@@ -3623,14 +3630,12 @@ async function cfgAgendaSalvar(lid){
 let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
 let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
 let _agVista='cal', _agSemBase=null, _agCargas=[], _agItens=[], _agSelCarga=null;
-let _agCap=[], _agCapCfg={};   // Fatia 4: capacidade (duplas de montagem + ocupação do PE)
-let _agMont={itens:[], conflitos:[]};   // Gantt de montagem + espelho de atribuições
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function _agSegunda(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function agendaVista(v){
   if(_agVisao==='operacional' && v!=='cal') return;   // Semana/Mês/Capacidade são R$ — só comercial
   _agVista=v; _agSel=null; _agSelCarga=null;
-  if((v==='sem'||v==='cap') && !_agSemBase) _agSemBase=_agSegunda(new Date());
+  if(v==='sem' && !_agSemBase) _agSemBase=_agSegunda(new Date());
   agendaCarregar();
 }
 function agendaAbrir(){
@@ -3663,7 +3668,7 @@ async function agendaProjeto(v){
 }
 function agendaNav(d){
   _agSel=null; _agSelCarga=null;
-  if(_agVista==='sem'||_agVista==='cap'){
+  if(_agVista==='sem'){
     if(d===0) _agSemBase=_agSegunda(new Date());
     else _agSemBase.setDate(_agSemBase.getDate()+7*d);
   } else if(d===0){ const h=new Date(); _agAno=h.getFullYear(); _agMes=h.getMonth(); }
@@ -3673,13 +3678,10 @@ function agendaNav(d){
 function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agSel=null; _agRender(); }
 function _agIso(a,m,d){ const p=n=>String(n).padStart(2,'0'); return a+'-'+p(m+1)+'-'+p(d); }
 function _agRangeAtual(){
-  // período buscado por vista: mês (cal), semana (sem), mês anterior+atual (mes — comparativo)
-  // ou horizonte de capacidade (cap: segunda da semana base + N semanas da config)
-  if(_agVista==='sem'||_agVista==='cap'){
+  // período buscado por vista: mês (cal), semana (sem) ou mês anterior+atual (mes — comparativo)
+  if(_agVista==='sem'){
     if(!_agSemBase) _agSemBase=_agSegunda(new Date());
-    const a=_agSemBase;
-    const nDias=_agVista==='cap' ? ((_agCapCfg.horizonte_semanas||6)*7-1) : 6;
-    const b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+nDias);
+    const a=_agSemBase, b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+6);
     return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
   }
   const ult=_agIso(_agAno,_agMes,new Date(_agAno,_agMes+1,0).getDate());
@@ -3699,17 +3701,8 @@ async function agendaCarregar(){
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
     _agMarcos=d.marcos||[]; _agCargas=d.cargas||[]; _agVisao=d.visao||'comercial';
     _agSetores=d.setores||[]; _agItens=d.itens||[];
-    _agCap=d.capacidade||[]; _agCapCfg=d.capacidade_cfg||{};
-    if(_agVista==='cap'){
-      // Gantt de montagem + espelho de atribuições (rev 2026-08-03)
-      const rm = await fetch('/api/agenda/montagem?de='+de+'&ate='+ate
-        +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):''), {credentials:'same-origin'})
-        .then(r=>r.json()).catch(()=>({}));
-      _agMont = (rm && rm.ok) ? rm : {itens:[], conflitos:[]};
-    }
     if(_agVista==='sem') _agRenderSemana();
     else if(_agVista==='mes') _agRenderMes();
-    else if(_agVista==='cap') _agRenderCap();
     else _agRender();
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
 }
@@ -3725,7 +3718,7 @@ function _agHeader(tituloPeriodo){
     return `<span onclick="agendaSetor('${s.id}')" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;border:1px solid ${ativo?'var(--accent)':'var(--border)'};border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text);${ativo?'font-weight:700;':''}">${esc(s.rotulo)}</span>`;
   }).join('')}</div>` : '';
   return `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px">
-    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">${btn('cal','Calendário')}${btn('sem','Semana')}${btn('mes','Mês')}${btn('cap','Capacidade')}</div>
+    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">${btn('cal','Calendário')}${btn('sem','Semana')}${btn('mes','Mês')}</div>
     <div style="display:flex;align-items:center;gap:8px">
       <button class="btn btn-ghost btn-sm" onclick="agendaNav(-1)">&#x2039;</button>
       <span style="font-weight:800;color:var(--text);min-width:150px;text-align:center">${tituloPeriodo}</span>
@@ -3898,24 +3891,50 @@ function _agRenderMes(){
       <div id="agenda-carga-det" style="margin-top:12px"></div>`;
   if(_agSelCarga) _agRenderCargaDet();
 }
-// ── Fatia 4: painel CAPACIDADE — duplas de montagem × disponíveis + ocupação do PE ─────────
-// Duas faixas (o PE não fica órfão do "Gantt"): a janela vem do cronograma (cargas); a
-// produtividade da Config converte carga diária em recurso necessário. Gantt nominal = v2.
-function _agRenderCap(){
-  const box=document.getElementById('agenda-ui'); if(!box) return;
-  const [deIso,ateIso]=_agRangeAtual();
+// ── Módulo MONTAGEM (page-18) — rev 2026-08-03: a gestão de capacidades SAIU da Agenda ─────
+// Gantt das montagens (janela entrega→17 por projeto/fase) + duplas/dia + conflitos de
+// montador + espelho de atribuições por ambiente (Val_Liq = referência da comissão) + faixa
+// de ocupação do PE. Dados: GET /api/agenda (capacidade) + GET /api/agenda/montagem.
+let _mtBase=null, _mtCap=[], _mtCfg={}, _mtMont={itens:[], conflitos:[]};
+function montagemAbrir(){ if(!_mtBase) _mtBase=_agSegunda(new Date()); montagemCarregar(); }
+function montagemNav(d){
+  if(d===0) _mtBase=_agSegunda(new Date()); else _mtBase.setDate(_mtBase.getDate()+7*d);
+  montagemCarregar();
+}
+function _mtRange(){
+  const a=_mtBase, n=((_mtCfg.horizonte_semanas||6)*7-1);
+  const b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+n);
+  return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
+}
+async function montagemCarregar(){
+  const box=document.getElementById('montagem-ui'); if(!box) return;
+  const [de,ate]=_mtRange();
+  try{
+    const [d,rm]=await Promise.all([
+      fetch('/api/agenda?de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json()),
+      fetch('/api/agenda/montagem?de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json()),
+    ]);
+    if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
+    _mtCap=d.capacidade||[]; _mtCfg=d.capacidade_cfg||{};
+    _mtMont=(rm&&rm.ok)?rm:{itens:[],conflitos:[]};
+    _mtRender();
+  }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
+}
+function _mtRender(){
+  const box=document.getElementById('montagem-ui'); if(!box) return;
+  const [deIso,ateIso]=_mtRange();
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
   // dias ÚTEIS do horizonte (dom sempre fora; sáb conforme config)
   const dias=[];
-  for(let d=new Date(_agSemBase.getFullYear(),_agSemBase.getMonth(),_agSemBase.getDate());;d.setDate(d.getDate()+1)){
+  for(let d=new Date(_mtBase.getFullYear(),_mtBase.getMonth(),_mtBase.getDate());;d.setDate(d.getDate()+1)){
     const iso=_agIso(d.getFullYear(),d.getMonth(),d.getDate());
     if(iso>ateIso) break;
     if(d.getDay()===0) continue;
-    if(d.getDay()===6 && !_agCapCfg.sabado_util) continue;
+    if(d.getDay()===6 && !_mtCfg.sabado_util) continue;
     dias.push(iso);
   }
-  const porDia={}; _agCap.forEach(c=>{ porDia[c.data]=c; });
-  const disp=Math.max(0,parseInt(_agCapCfg.duplas_disponiveis,10)||0);
+  const porDia={}; _mtCap.forEach(c=>{ porDia[c.data]=c; });
+  const disp=Math.max(0,parseInt(_mtCfg.duplas_disponiveis,10)||0);
   const rotDia=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
   const barra=(hPct,cor,rot,topo)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:26px">
       <div style="height:110px;width:100%;max-width:34px;display:flex;flex-direction:column;justify-content:flex-end">
@@ -3923,7 +3942,7 @@ function _agRenderCap(){
         <div style="height:${hPct}%;background:${cor};border-radius:4px 4px 0 0;min-height:${hPct>0?'3':'0'}px"></div>
       </div><div style="font-size:9px;color:var(--muted)">${rot}</div></div>`;
   // ── faixa 1 — Montagem: GANTT (rev 2026-08-03; barras de duplas viraram rodapé do Gantt) ──
-  const mont=_agMont.itens||[], confs=_agMont.conflitos||[];
+  const mont=_mtMont.itens||[], confs=_mtMont.conflitos||[];
   const confKeys=new Set(); confs.forEach(c=>(c.itens||[]).forEach(x=>confKeys.add(x.projeto+'|'+(x.fase||''))));
   const nDias=dias.length;
   const colGrid=`display:grid;grid-template-columns:190px repeat(${nDias},minmax(13px,1fr));gap:2px;align-items:center`;
@@ -3979,9 +3998,15 @@ function _agRenderCap(){
     return barra(Math.round(p/maxP*100), cor, rotDia(iso), p>0?Math.round(p)+'%':'');
   }).join('');
   const linha100=`<div style="position:absolute;left:0;right:0;bottom:${14+Math.round(100/maxP*110)}px;border-top:2px dashed var(--muted);opacity:.7"></div>
-    <div style="position:absolute;right:4px;bottom:${16+Math.round(100/maxP*110)}px;font-size:9px;color:var(--muted)">100% (R$ ${_agN0(_agCapCfg.produtividade_pe||20000)}/dia)</div>`;
-  const diasPe=(_agCapCfg.produtividade_pe>0)?(somaPe/_agCapCfg.produtividade_pe):0;
-  box.innerHTML = _agHeader(`${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}`)
+    <div style="position:absolute;right:4px;bottom:${16+Math.round(100/maxP*110)}px;font-size:9px;color:var(--muted)">100% (R$ ${_agN0(_mtCfg.produtividade_pe||20000)}/dia)</div>`;
+  const diasPe=(_mtCfg.produtividade_pe>0)?(somaPe/_mtCfg.produtividade_pe):0;
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-ghost btn-sm" onclick="montagemNav(-1)">&#x2039;</button>
+      <span style="font-weight:800;color:var(--text);min-width:200px;text-align:center">${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="montagemNav(1)">&#x203A;</button>
+      <button class="btn btn-ghost btn-sm" onclick="montagemNav(0)">hoje</button>
+    </div>`
     +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
       <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Montagem — Gantt do período</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada barra é a JANELA de montagem de um projeto/fase (entrega → prevista da etapa 17). Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito</div>
@@ -3991,10 +4016,10 @@ function _agRenderCap(){
     </div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px">
       <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">Projeto Executivo — ocupação diária</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_agCapCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_mtCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor</div>
       <div style="position:relative"><div style="display:flex;gap:3px;align-items:flex-end">${barsP}</div>${linha100}</div>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:8px">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades e duplas em Config → Agenda.</div>`;
+    <div style="font-size:10px;color:var(--muted);margin-top:8px">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades e duplas em Config → Agenda; atribuições no Mapa de Atribuições do projeto.</div>`;
 }
 function agendaCarga(item,dia){
   _agSelCarga=(_agSelCarga&&_agSelCarga.item===item&&_agSelCarga.dia===dia)?null:{item,dia};
@@ -4913,12 +4938,13 @@ function goPage(n){
   if(n===14) assistenciasCarregar();
   if(n===15) comercialDashCarregar();   // Comercial: dashboard
   if(n===16) agendaAbrir();             // Agenda da Loja (spec 2026-08-03)
+  if(n===18) montagemAbrir();           // módulo Montagem: capacidade + Gantt + atribuições
   sbSyncActive(n);   // realça/expande o módulo correspondente no acordeão da sidebar
 }
 
 // Página -> módulo de domínio que ela representa (para realçar/expandir na sidebar).
 // page-00 (Projetos) fica com o Atalho, não realça o módulo Comercial (evita realce duplicado).
-const _PAGE_MODULO = {10:'cadastro', 11:'fiscal', 12:'financeiro', 13:'expedicao', 14:'assistencias', 15:'comercial'};
+const _PAGE_MODULO = {10:'cadastro', 11:'fiscal', 12:'financeiro', 13:'expedicao', 14:'assistencias', 15:'comercial', 18:'montagem'};
 function sbSyncActive(n){
   if(n===8) { sbNavRender(); return; }   // EM CONSTRUÇÃO: mantém o módulo clicado realçado (sbModuloClick já setou)
   const mod = _PAGE_MODULO[n] || null;
@@ -11536,7 +11562,7 @@ const _SB_MODULOS = {
   fiscal:     {ic:'file-invoice',  go:()=>goPage(11)},    // folha: Emitente/NF-e
   estoque:    {ic:'packages'},                            // em construção
   expedicao:  {ic:'truck',         go:()=>goPage(13)},    // folha: Kanban de expedição
-  montagem:   {ic:'hammer'},                              // NOVO — em construção
+  montagem:   {ic:'hammer',        go:()=>goPage(18)},    // Capacidade, Gantt e atribuições de montagem (rev 2026-08-03)
   assistencias:{ic:'lifebuoy', go:()=>goPage(14)},        // casos + a-cobrar-da-fábrica (v7 §6)
   financeiro: {ic:'cash', secoes: _FIN_SECOES.map(s => ({id:s.id, lbl:s.lbl, ic:s.ic, go:()=>finIrSecao(s.id)}))},
 };

@@ -1369,6 +1369,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 155 (nomenclatura + modelos iniciais):** segmentos renomeados (Suporte Técnico
+> "Montagens e Assistências", Logística "Transporte e Entrega", Parceiros → "Projeto
+> Executivo" — chave `parceiros` mantida); fallback da pergunta sem config usa o default de
+> triagem. `TEMPLATES_INICIAIS` + seed lazy dos 9 modelos (rascunho) pra loja virgem;
+> tela de modelos com "+ Novo Template", seção de adicionais e config atrás da engrenagem.
+>
 > **Sessão 154 (triagem automática RF-08/09):** WhatsApp agora RESPONDE a pergunta de
 > triagem ao contato novo (texto livre, janela 24h) e lê a escolha → `segmento_sugerido`
 > na mesma entrada + confirmação; anti-loop; `EnvioExterno.mensagem_id` nullable +
@@ -2792,6 +2798,28 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 155 — Nomenclatura dos segmentos + Modelos de Mensagem INICIAIS e "+ Novo Template"
+
+**Nomenclatura da triagem (pedido do teste real):** Suporte Técnico → "Montagens e Assistências";
+Logística → "Transporte e Entrega"; **Parceiros → "Projeto Executivo — Especificação Técnica de
+Projetos"** (a CHAVE `parceiros` fica — renomear mexeria em canal/templates/dados sem ganho; só o
+rótulo mudou em: pergunta ao cliente, fila, config de segmentos, slot 9 "Reengajamento — Projeto
+Executivo", `_ATD_SEGROT`). De brinde, o fallback do `opcoes_pergunta` SEM config salva caía no
+catálogo cru (lista curta + Compras) — agora usa o DEFAULT de triagem (rótulos longos, ordem
+própria, Compras desligado), respeitando desativações do SegmentoConfig.
+
+**Modelos iniciais (RF-16):** `TEMPLATES_INICIAIS` em `chat/core.py` — conteúdo pt-BR pronto
+({{n}}, `variaveis`, `assinatura_var` RF-17a nos reengajamentos) pros 9 slots.
+`seed_templates_iniciais` roda LAZY no GET /api/comunicacao/templates: só pra loja **virgem** de
+templates (qualquer linha, ativa ou não, bloqueia — remoção intencional não ressuscita). TDD
+`tests/test_templates_seed.py`.
+
+**Tela Modelos de Mensagem:** botão **"+ Novo Template"** (template extra, fora do checklist, com
+seletor de segmento); seção "Templates adicionais" lista os sem slot; modal reformado — **corpo em
+destaque + hint das variáveis**, e os itens de configuração (nome na Meta, categoria, idioma,
+status, segmento) ocultos atrás da **engrenagem** (novo template abre com a config visível — nome
+é obrigatório).
 
 ## Sessão 154 — Triagem AUTOMÁTICA do WhatsApp (RF-08/09) — fecha a F6 pendente desde 28/07
 

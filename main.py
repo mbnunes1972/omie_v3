@@ -3190,6 +3190,10 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     import mod_chat
                     from urllib.parse import parse_qs
+                    # Seed lazy (2026-08-04): loja VIRGEM de templates ganha os 9 modelos iniciais
+                    # (rascunho) no primeiro carregamento da tela. Idempotente — remoções não voltam.
+                    if mod_chat.seed_templates_iniciais(db, loja_id):
+                        db.commit()
                     seg = (parse_qs(urlparse(self.path).query).get("segmento") or [None])[0]
                     self.send_json({"ok": True, "slots": list(mod_chat.SLOTS_OBRIGATORIOS),
                                     "templates": mod_chat.listar_templates(db, loja_id, segmento=seg)})

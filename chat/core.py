@@ -519,6 +519,84 @@ def remover_template(db, loja_id, template_id):
     return True
 
 
+# ── Modelos INICIAIS das 9 mensagens obrigatórias (2026-08-04) ──────────────────────────────────
+# Conteúdo de partida (rascunho) por slot: a loja revisa o texto e submete à Meta pelo painel —
+# o status continua manual (rascunho → em_analise → aprovado). `assinatura_var` = posição da
+# variável do responsável real (RF-17a). Segmento/categoria vêm do SLOTS_OBRIGATORIOS.
+TEMPLATES_INICIAIS = {
+    1: {"nome_meta": "triagem_boas_vindas",
+        "corpo": "Olá, {{1}}! 👋 Bem-vindo(a) ao atendimento da {{2}}. Recebemos sua mensagem e "
+                 "nossa equipe já vai direcionar seu atendimento. Para agilizar, responda dizendo "
+                 "em poucas palavras do que você precisa.",
+        "variaveis": ["Nome do cliente", "Nome da loja"]},
+    2: {"nome_meta": "vinculo_projeto",
+        "corpo": "Olá, {{1}}! Localizamos aqui o seu projeto \"{{2}}\" na {{3}}. Vamos seguir com "
+                 "o seu atendimento por esta conversa, tudo bem? Se não for você o responsável por "
+                 "este projeto, por favor nos avise.",
+        "variaveis": ["Nome do cliente", "Nome do projeto", "Nome da loja"]},
+    3: {"nome_meta": "janela_prestes_fechar",
+        "corpo": "Olá, {{1}}! Nossa janela de conversa está prestes a se encerrar por aqui. Se "
+                 "ainda precisar de algo, basta responder esta mensagem que seguimos com o seu "
+                 "atendimento. 😊",
+        "variaveis": ["Nome do cliente"]},
+    4: {"nome_meta": "reengajamento_comercial",
+        "corpo": "Olá, {{1}}! Aqui é {{2}}, da {{3}}. Podemos retomar a conversa sobre o seu "
+                 "projeto \"{{4}}\"? Estou à disposição para dúvidas sobre a proposta e os "
+                 "próximos passos.",
+        "variaveis": ["Nome do cliente", "Nome do atendente", "Nome da loja", "Nome do projeto"],
+        "assinatura_var": 2},
+    5: {"nome_meta": "reengajamento_suporte_tecnico",
+        "corpo": "Olá, {{1}}! Aqui é {{2}}, do Suporte Técnico da {{3}}. Estamos retomando o seu "
+                 "atendimento sobre {{4}}. Pode responder por aqui para continuarmos?",
+        "variaveis": ["Nome do cliente", "Nome do atendente", "Nome da loja",
+                      "Assunto (montagem/assistência)"],
+        "assinatura_var": 2},
+    6: {"nome_meta": "cobranca_financeiro",
+        "corpo": "Olá, {{1}}! Aqui é {{2}}, do Financeiro da {{3}}. Consta em aberto a parcela "
+                 "{{4}}, com vencimento em {{5}}, do seu contrato. Pode nos retornar por aqui para "
+                 "regularizarmos ou tirar dúvidas?",
+        "variaveis": ["Nome do cliente", "Nome do atendente", "Nome da loja",
+                      "Parcela/referência", "Data de vencimento"],
+        "assinatura_var": 2},
+    7: {"nome_meta": "reengajamento_compras",
+        "corpo": "Olá, {{1}}! Aqui é {{2}}, de Compras da {{3}}. Precisamos alinhar detalhes do "
+                 "pedido {{4}}. Pode responder por aqui para seguirmos?",
+        "variaveis": ["Nome do contato", "Nome do atendente", "Nome da loja", "Pedido/referência"],
+        "assinatura_var": 2},
+    8: {"nome_meta": "agendamento_logistica",
+        "corpo": "Olá, {{1}}! Confirmando o seu agendamento com a {{2}}: {{3}} prevista para "
+                 "{{4}}, às {{5}}. Qualquer imprevisto, é só avisar por aqui.",
+        "variaveis": ["Nome do cliente", "Nome da loja", "Entrega ou visita (ex.: entrega dos "
+                      "módulos)", "Data", "Hora"]},
+    9: {"nome_meta": "reengajamento_projeto_executivo",
+        "corpo": "Olá, {{1}}! Aqui é {{2}}, do Projeto Executivo da {{3}}. Estamos retomando o "
+                 "contato sobre a especificação técnica do projeto \"{{4}}\". Pode responder por "
+                 "aqui para continuarmos?",
+        "variaveis": ["Nome do cliente", "Nome do atendente", "Nome da loja", "Nome do projeto"],
+        "assinatura_var": 2},
+}
+
+
+def seed_templates_iniciais(db, loja_id):
+    """Cria os modelos INICIAIS (rascunho) dos 9 slots para uma loja VIRGEM de templates.
+    Idempotente e conservador: se a loja já tem QUALQUER template (ativo ou não), não faz nada —
+    remoção intencional de um modelo não ressuscita no próximo carregamento (o soft-delete
+    mantém a linha). Retorna quantos criou. Não commita."""
+    if db.query(TemplateMensagem).filter_by(loja_id=loja_id).first() is not None:
+        return 0
+    por_num = {s["num"]: s for s in SLOTS_OBRIGATORIOS}
+    criados = 0
+    for num, ini in TEMPLATES_INICIAIS.items():
+        s = por_num[num]
+        criar_template(db, loja_id, {
+            "nome_meta": ini["nome_meta"], "corpo": ini["corpo"],
+            "variaveis": ini.get("variaveis"), "assinatura_var": ini.get("assinatura_var"),
+            "slot_obrigatorio": num, "segmento": s["segmento"], "categoria": s["categoria"],
+            "status": "rascunho"})
+        criados += 1
+    return criados
+
+
 # ── Configuração de triagem (RF-08, Fatia 6) ────────────────────────────────────────────────────
 
 _TRIAGEM_ROTULOS = {

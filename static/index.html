@@ -2320,7 +2320,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
             <div class="ochat-cards" id="ochat-tpl-cards"></div>
+            <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+              <button class="btn btn-primary btn-sm" onclick="tplAbrirNovo()"><i class="ti ti-plus"></i> Novo Template</button>
+            </div>
             <div id="ochat-tpl-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+            <div id="ochat-tpl-extras" style="display:none;margin-top:16px">
+              <div style="font-family:var(--font-display);font-weight:800;font-size:13px;margin-bottom:8px">Templates adicionais</div>
+              <div id="ochat-tpl-extras-lista"></div>
+            </div>
           </div>
           <!-- placeholders (mesma convenção do mockup) -->
           <div class="ochat-scr" id="ochat-scr-segmentos">
@@ -2397,24 +2404,33 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <!-- Modal: cadastro/edição de template (Modelos de Mensagem) -->
   <div id="modal-tpl" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
     <div class="modal-box" style="max-width:520px;width:94%">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px" id="tpl-modal-tit">Template</div>
-        <span onclick="document.getElementById('modal-tpl').style.display='none'" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-ghost btn-sm" id="tpl-cfg-btn" title="Configurações do template" onclick="tplToggleCfg()"><i class="ti ti-settings"></i></button>
+          <span onclick="document.getElementById('modal-tpl').style.display='none'" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
+        </div>
       </div>
       <div id="tpl-modal-sub" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
       <div style="display:flex;flex-direction:column;gap:10px">
-        <label class="field-label">Nome do template na Meta
-          <input id="tpl-nome" type="text" placeholder="ex.: reengajamento_comercial" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
-        <div style="display:flex;gap:8px">
-          <label class="field-label" style="flex:1">Categoria
-            <select id="tpl-cat" style="width:100%;padding:7px 9px"><option value="utility">Utility</option><option value="marketing">Marketing</option></select></label>
-          <label class="field-label" style="flex:1">Idioma
-            <input id="tpl-idioma" type="text" value="pt_BR" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
-          <label class="field-label" style="flex:1">Status
-            <select id="tpl-status" style="width:100%;padding:7px 9px"><option value="rascunho">Rascunho</option><option value="em_analise">Em análise na Meta</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select></label>
-        </div>
         <label class="field-label">Corpo (use {{1}}, {{2}}… para as variáveis)
-          <textarea id="tpl-corpo" rows="3" style="width:100%;box-sizing:border-box;padding:7px 9px;font-family:inherit"></textarea></label>
+          <textarea id="tpl-corpo" rows="5" style="width:100%;box-sizing:border-box;padding:7px 9px;font-family:inherit"></textarea></label>
+        <div id="tpl-vars-hint" style="font-size:11px;color:var(--muted)"></div>
+        <!-- config do template — oculta por padrão, atrás da engrenagem -->
+        <div id="tpl-cfg-bloco" style="display:none;flex-direction:column;gap:10px;border-top:1px solid var(--border2);padding-top:10px">
+          <label class="field-label">Nome do template na Meta
+            <input id="tpl-nome" type="text" placeholder="ex.: reengajamento_comercial" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
+          <div style="display:flex;gap:8px">
+            <label class="field-label" style="flex:1">Categoria
+              <select id="tpl-cat" style="width:100%;padding:7px 9px"><option value="utility">Utility</option><option value="marketing">Marketing</option></select></label>
+            <label class="field-label" style="flex:1">Idioma
+              <input id="tpl-idioma" type="text" value="pt_BR" style="width:100%;box-sizing:border-box;padding:7px 9px"></label>
+            <label class="field-label" style="flex:1">Status
+              <select id="tpl-status" style="width:100%;padding:7px 9px"><option value="rascunho">Rascunho</option><option value="em_analise">Em análise na Meta</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select></label>
+          </div>
+          <label class="field-label" id="tpl-seg-wrap" style="display:none">Segmento
+            <select id="tpl-seg" style="width:100%;padding:7px 9px"></select></label>
+        </div>
       </div>
       <div id="tpl-modal-erro" style="font-size:12px;color:var(--err);margin-top:8px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -11185,10 +11201,10 @@ async function trgSalvar(){
   setTimeout(()=>{ aviso.textContent=''; }, 2500);
 }
 
-// ── Modelos de Mensagem (RF-15/16) — checklist das 9 mensagens obrigatórias ────
-let _tplSlots = [], _tplPorSlot = {};
+// ── Modelos de Mensagem (RF-15/16) — checklist das 9 obrigatórias + templates extras ────
+let _tplSlots = [], _tplPorSlot = {}, _tplExtras = [];
 const _TPL_STATUS = {aprovado:['ok','Aprovado'], em_analise:['warn','Em análise na Meta'],
-                     rejeitado:['err','Rejeitado'], rascunho:['err','Pendente']};
+                     rejeitado:['err','Rejeitado'], rascunho:['err','Rascunho']};
 async function chatModelosCarregar(){
   const lista = document.getElementById('ochat-tpl-lista');
   const cards = document.getElementById('ochat-tpl-cards');
@@ -11197,8 +11213,8 @@ async function chatModelosCarregar(){
   catch(e){ lista.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; return; }
   if(!d.ok){ cards.innerHTML=''; lista.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Sem permissão para ver os modelos (gerência).')+'</div></div>'; return; }
   _tplSlots = d.slots||[];
-  _tplPorSlot = {};
-  (d.templates||[]).forEach(t=>{ if(t.slot_obrigatorio) _tplPorSlot[t.slot_obrigatorio]=t; });
+  _tplPorSlot = {}; _tplExtras = [];
+  (d.templates||[]).forEach(t=>{ if(t.slot_obrigatorio) _tplPorSlot[t.slot_obrigatorio]=t; else _tplExtras.push(t); });
   const config = Object.keys(_tplPorSlot).length;
   const aprov = Object.values(_tplPorSlot).filter(t=>t.status==='aprovado').length;
   cards.innerHTML =
@@ -11208,39 +11224,93 @@ async function chatModelosCarregar(){
   lista.innerHTML = _tplSlots.map(s=>{
     const t = _tplPorSlot[s.num];
     const st = t ? (_TPL_STATUS[t.status]||['err','Pendente']) : ['err','Pendente'];
-    const badge = '<span class="ochat-badge '+st[0]+'">'+esc(st[1])+'</span>';
+    const badge = '<span class="ochat-badge '+st[0]+'">'+esc(t?st[1]:'Pendente')+'</span>';
     const btn = t ? '<button class="btn btn-ghost btn-sm" onclick="tplAbrir('+s.num+')">Editar</button>'
                   : '<button class="btn btn-secondary btn-sm" onclick="tplAbrir('+s.num+')">Configurar</button>';
     return '<div class="ochat-chk"><div class="ochat-chk-num">'+s.num+'</div>'
       + '<div style="flex:1"><div class="ochat-chk-tit">'+esc(s.titulo)+'</div><div class="ochat-chk-mom">'+esc(s.momento)+'</div></div>'
       + badge + btn + '</div>';
   }).join('');
+  const exWrap = document.getElementById('ochat-tpl-extras');
+  exWrap.style.display = _tplExtras.length ? '' : 'none';
+  document.getElementById('ochat-tpl-extras-lista').innerHTML = _tplExtras.map(t=>{
+    const st = _TPL_STATUS[t.status]||['err','Pendente'];
+    return '<div class="ochat-chk"><div class="ochat-chk-num"><i class="ti ti-template"></i></div>'
+      + '<div style="flex:1"><div class="ochat-chk-tit">'+esc(t.nome_meta)+'</div>'
+      + '<div class="ochat-chk-mom">'+esc(t.segmento ? (_ATD_SEGROT[t.segmento]||t.segmento) : 'Geral')+' · '+esc(t.categoria||'utility')+'</div></div>'
+      + '<span class="ochat-badge '+st[0]+'">'+esc(st[1])+'</span>'
+      + '<button class="btn btn-ghost btn-sm" onclick="tplAbrirExtra('+t.id+')">Editar</button></div>';
+  }).join('');
 }
-let _tplSlotAtual = null;
-function tplAbrir(slotNum){
-  _tplSlotAtual = slotNum;
-  const s = _tplSlots.find(x=>x.num===slotNum) || {};
-  const t = _tplPorSlot[slotNum] || null;
-  document.getElementById('tpl-modal-tit').textContent = (t?'Editar':'Configurar')+' — '+(s.titulo||'Template');
-  document.getElementById('tpl-modal-sub').textContent = (s.momento||'') + ' · categoria sugerida: ' + (s.categoria||'utility');
+// modo do modal: {slot:n} (checklist) ou {extra:id|null} (template adicional / novo)
+let _tplModo = null;
+function tplToggleCfg(){
+  const b = document.getElementById('tpl-cfg-bloco');
+  b.style.display = (b.style.display==='none') ? 'flex' : 'none';
+}
+function _tplMontarModal(t, opts){
+  // opts: {titulo, sub, cfgAberta, segmento (mostra seletor p/ extra), catSugerida}
+  document.getElementById('tpl-modal-tit').textContent = opts.titulo;
+  document.getElementById('tpl-modal-sub').textContent = opts.sub||'';
   document.getElementById('tpl-nome').value = t ? (t.nome_meta||'') : '';
-  document.getElementById('tpl-cat').value = t ? (t.categoria||'utility') : (s.categoria||'utility');
+  document.getElementById('tpl-cat').value = t ? (t.categoria||'utility') : (opts.catSugerida||'utility');
   document.getElementById('tpl-idioma').value = t ? (t.idioma||'pt_BR') : 'pt_BR';
   document.getElementById('tpl-status').value = t ? (t.status||'rascunho') : 'rascunho';
   document.getElementById('tpl-corpo').value = t ? (t.corpo||'') : '';
+  const vars = (t && t.variaveis && t.variaveis.length)
+    ? 'Variáveis: '+t.variaveis.map((v,i)=>'{{'+(i+1)+'}} '+v).join(' · ') : '';
+  document.getElementById('tpl-vars-hint').textContent = vars;
+  const segWrap = document.getElementById('tpl-seg-wrap');
+  segWrap.style.display = opts.segmento ? '' : 'none';
+  if(opts.segmento){
+    const sel = document.getElementById('tpl-seg');
+    sel.innerHTML = '<option value="">Geral (sem segmento)</option>'
+      + Object.keys(_ATD_SEGROT).map(k=>'<option value="'+k+'">'+esc(_ATD_SEGROT[k])+'</option>').join('');
+    sel.value = (t && t.segmento) || '';
+  }
+  document.getElementById('tpl-cfg-bloco').style.display = opts.cfgAberta ? 'flex' : 'none';
   document.getElementById('tpl-remover-btn').style.display = t ? '' : 'none';
   document.getElementById('tpl-modal-erro').textContent = '';
   document.getElementById('modal-tpl').style.display = 'flex';
 }
+function tplAbrir(slotNum){
+  _tplModo = {slot: slotNum};
+  const s = _tplSlots.find(x=>x.num===slotNum) || {};
+  const t = _tplPorSlot[slotNum] || null;
+  _tplMontarModal(t, {titulo:(t?'Editar':'Configurar')+' — '+(s.titulo||'Template'),
+                      sub:(s.momento||'')+' · categoria sugerida: '+(s.categoria||'utility'),
+                      cfgAberta:false, segmento:false, catSugerida:s.categoria});
+}
+function tplAbrirNovo(){
+  _tplModo = {extra: null};
+  // novo template: config visível de cara (o nome na Meta é obrigatório)
+  _tplMontarModal(null, {titulo:'Novo Template', sub:'Template adicional (fora do checklist das 9 obrigatórias).',
+                         cfgAberta:true, segmento:true});
+}
+function tplAbrirExtra(id){
+  const t = _tplExtras.find(x=>x.id===id); if(!t) return;
+  _tplModo = {extra: id};
+  _tplMontarModal(t, {titulo:'Editar — '+t.nome_meta, sub:'Template adicional.',
+                      cfgAberta:false, segmento:true});
+}
+function _tplAtual(){
+  if(!_tplModo) return null;
+  return ('slot' in _tplModo) ? (_tplPorSlot[_tplModo.slot]||null)
+                              : (_tplModo.extra ? _tplExtras.find(x=>x.id===_tplModo.extra) : null);
+}
 async function tplSalvar(){
-  const s = _tplSlots.find(x=>x.num===_tplSlotAtual) || {};
-  const t = _tplPorSlot[_tplSlotAtual] || null;
+  const t = _tplAtual();
   const payload = {nome_meta: document.getElementById('tpl-nome').value.trim(),
                    categoria: document.getElementById('tpl-cat').value,
                    idioma: document.getElementById('tpl-idioma').value.trim() || 'pt_BR',
                    status: document.getElementById('tpl-status').value,
-                   corpo: document.getElementById('tpl-corpo').value,
-                   slot_obrigatorio: _tplSlotAtual, segmento: s.segmento || null};
+                   corpo: document.getElementById('tpl-corpo').value};
+  if('slot' in _tplModo){
+    const s = _tplSlots.find(x=>x.num===_tplModo.slot) || {};
+    payload.slot_obrigatorio = _tplModo.slot; payload.segmento = s.segmento || null;
+  } else {
+    payload.slot_obrigatorio = null; payload.segmento = document.getElementById('tpl-seg').value || null;
+  }
   const url = t ? '/api/comunicacao/templates/'+t.id : '/api/comunicacao/templates';
   const d = await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>({}));
   if(!d.ok){ document.getElementById('tpl-modal-erro').textContent = d.erro||'Falha ao salvar.'; return; }
@@ -11248,8 +11318,9 @@ async function tplSalvar(){
   showToast('Modelo salvo.'); chatModelosCarregar();
 }
 async function tplRemover(){
-  const t = _tplPorSlot[_tplSlotAtual]; if(!t) return;
-  if(!(await confirmarPopup('Remover este modelo? O slot volta a ficar pendente.', {titulo:'Modelos de Mensagem', okLabel:'Remover', cancelLabel:'Cancelar', perigo:true}))) return;
+  const t = _tplAtual(); if(!t) return;
+  const msg = ('slot' in _tplModo) ? 'Remover este modelo? O slot volta a ficar pendente.' : 'Remover este template adicional?';
+  if(!(await confirmarPopup(msg, {titulo:'Modelos de Mensagem', okLabel:'Remover', cancelLabel:'Cancelar', perigo:true}))) return;
   const d = await fetch('/api/comunicacao/templates/'+t.id+'/remover',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).catch(()=>({}));
   if(!d.ok){ document.getElementById('tpl-modal-erro').textContent = d.erro||'Falha.'; return; }
   document.getElementById('modal-tpl').style.display='none';

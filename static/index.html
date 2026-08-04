@@ -11229,7 +11229,7 @@ async function chatModelosCarregar(){
                   : '<button class="btn btn-secondary btn-sm" onclick="tplAbrir('+s.num+')">Configurar</button>';
     return '<div class="ochat-chk"><div class="ochat-chk-num">'+s.num+'</div>'
       + '<div style="flex:1"><div class="ochat-chk-tit">'+esc(s.titulo)+'</div><div class="ochat-chk-mom">'+esc(s.momento)+'</div></div>'
-      + badge + btn + '</div>';
+      + _tplColMeta(t) + badge + btn + '</div>';
   }).join('');
   const exWrap = document.getElementById('ochat-tpl-extras');
   exWrap.style.display = _tplExtras.length ? '' : 'none';
@@ -11238,9 +11238,18 @@ async function chatModelosCarregar(){
     return '<div class="ochat-chk"><div class="ochat-chk-num"><i class="ti ti-template"></i></div>'
       + '<div style="flex:1"><div class="ochat-chk-tit">'+esc(t.nome_meta)+'</div>'
       + '<div class="ochat-chk-mom">'+esc(t.segmento ? (_ATD_SEGROT[t.segmento]||t.segmento) : 'Geral')+' · '+esc(t.categoria||'utility')+'</div></div>'
-      + '<span class="ochat-badge '+st[0]+'">'+esc(st[1])+'</span>'
+      + _tplColMeta(t) + '<span class="ochat-badge '+st[0]+'">'+esc(st[1])+'</span>'
       + '<button class="btn btn-ghost btn-sm" onclick="tplAbrirExtra('+t.id+')">Editar</button></div>';
   }).join('');
+}
+// coluna "Aprovado na Meta" — só um template com status 'aprovado' pode ser ENVIADO fora da
+// janela de 24h (regra da Meta); a coluna torna esse gate visível de relance.
+function _tplColMeta(t){
+  const ok = !!(t && t.status === 'aprovado');
+  return '<span title="Aprovado na Meta? Só template aprovado pode ser enviado fora da janela de 24h."'
+    + ' style="min-width:74px;text-align:center;font-size:11px;font-weight:800;color:'
+    + (ok ? 'var(--ok)' : 'var(--err)') + '">'
+    + (ok ? '✓' : '✗') + ' Meta</span>';
 }
 // modo do modal: {slot:n} (checklist) ou {extra:id|null} (template adicional / novo)
 let _tplModo = null;

@@ -121,8 +121,9 @@ _SEG_ROTULOS = {"comercial": "Comercial", "financeiro": "Financeiro", "logistica
 
 def opcoes_pergunta(db, loja_id):
     """[{segmento, rotulo}] ATIVOS, na ordem da pergunta: TriagemConfig.itens_json quando
-    configurada; senão SegmentoConfig ativos; senão o catálogo padrão (core.SEGMENTOS)."""
-    from .core import SEGMENTOS
+    configurada; senão o DEFAULT de triagem (rótulos longos, ordem própria, Compras desligado —
+    o mesmo que a tela de config mostra), respeitando desativações do SegmentoConfig (RF-02)."""
+    from .core import _triagem_default
     from database import SegmentoConfig, TriagemConfig
     cfg = db.query(TriagemConfig).filter_by(loja_id=loja_id).first() if loja_id else None
     if cfg and cfg.itens_json:
@@ -137,12 +138,14 @@ def opcoes_pergunta(db, loja_id):
     rows = (db.query(SegmentoConfig).filter_by(loja_id=loja_id).all()) if loja_id else []
     cfg_por_seg = {r.segmento: r for r in rows}
     out = []
-    for seg in SEGMENTOS:
-        r = cfg_por_seg.get(seg)
+    for it in _triagem_default()["itens"]:
+        if not it["ativo"]:
+            continue
+        r = cfg_por_seg.get(it["segmento"])
         if r is not None and not r.ativo:
             continue
-        out.append({"segmento": seg,
-                    "rotulo": (r.rotulo if (r and r.rotulo) else _SEG_ROTULOS.get(seg, seg))})
+        out.append({"segmento": it["segmento"],
+                    "rotulo": (r.rotulo if (r and r.rotulo) else it["rotulo"])})
     return out
 
 

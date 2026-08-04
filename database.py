@@ -1339,7 +1339,10 @@ class EnvioExterno(Base):
     __tablename__ = "envios_externos"
 
     id                = Column(Integer,  primary_key=True, autoincrement=True)
-    mensagem_id       = Column(Integer,  ForeignKey("conversa_mensagens.id"), nullable=False, index=True)
+    # RF-08 (2026-08-04): NULLABLE — a pergunta automática de TRIAGEM sai ANTES de existir
+    # conversa/mensagem; nesse caso o vínculo é triagem_id.
+    mensagem_id       = Column(Integer,  ForeignKey("conversa_mensagens.id"), nullable=True, index=True)
+    triagem_id        = Column(Integer,  ForeignKey("triagem_entradas.id"), nullable=True, index=True)
     meio              = Column(String(16), nullable=False)   # email | whatsapp
     direcao           = Column(String(10), nullable=False, default="saida")   # saida | entrada
     canal             = Column(String(20), nullable=True)    # segmento comercial|financeiro|...
@@ -1860,6 +1863,9 @@ def _migrar_colunas_pg():
         "ALTER TABLE parcela_projeto ADD COLUMN IF NOT EXISTS val_liq_congelado DOUBLE PRECISION",
         # Retenção auditável (2026-08-03): catálogo de motivo (retenção é POR AMBIENTE)
         "ALTER TABLE retencao_obra ADD COLUMN IF NOT EXISTS motivo_tipo TEXT",
+        # RF-08 triagem automática (2026-08-04): pergunta sai sem conversa → mensagem_id opcional
+        "ALTER TABLE envios_externos ALTER COLUMN mensagem_id DROP NOT NULL",
+        "ALTER TABLE envios_externos ADD COLUMN IF NOT EXISTS triagem_id INTEGER",
         # Orizon Chat 2026-07-28: participante EXTERNO (contato WhatsApp/e-mail) — create_all cria a
         # tabela nova; esta linha é só o marcador (sem ADD COLUMN — a tabela nasce completa).
         # F2 (destinatário dirigido por mensagem): marcação visual "para <nome>".

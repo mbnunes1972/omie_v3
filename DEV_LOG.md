@@ -1369,6 +1369,12 @@ Spec/plano: `docs/superpowers/{specs,plans}/2026-07-06-validacao-cpf-cnpj*`.
 > vivo (403 p/ token errado), homolog.orizonone.com.br 302 e número (12) 99602-1234 mantidos.
 > Leva à homolog: fichário fases 1+2, fix do auto-save 403, aba Todas, segmentos gerenciáveis.
 >
+> **Sessão 154 (triagem automática RF-08/09):** WhatsApp agora RESPONDE a pergunta de
+> triagem ao contato novo (texto livre, janela 24h) e lê a escolha → `segmento_sugerido`
+> na mesma entrada + confirmação; anti-loop; `EnvioExterno.mensagem_id` nullable +
+> `triagem_id`. Descoberta a causa do cluster "flaky" do chat: dependência de env
+> (`ORIZON_WA_*` no .env local). Suíte 1714 verde. B em `v2026.08.04b-homolog`.
+>
 > **Sessão 153 (Super Admin = plataforma):** sidebar do super sem módulos e sem Agenda —
 > só Painel Orizon + (via "Administrar" loja) Admin/Config escopados; fix do "+ Novo
 > usuário" que criava usuário SEM loja no fluxo do super. Operação segue vedada.
@@ -2786,6 +2792,35 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Investigação "+ Novo Projeto" com duas cores (petróleo claro × verde-menta escuro):** grep completo por cor hardcoded em botão — **causa-raiz NÃO reproduz no fonte atual**. As duas instâncias (`page-00` linha 680 e modal `mceCriarProjeto` linha 1727) usam `class="btn btn-primary btn-sm"` desde 2026-06-15 (`git log -S`), e `.btn-primary{background:var(--accent)}` já é 100% token; `--accent` só é definido nos dois `:root` (escuro default / `[data-theme=light]`), sem override escopado. Os hexes `#1F4B4B`/`#5BB8AC` aparecem **só** na definição dos tokens. Conclusão: a divergência observada é **deploy defasado** (VPS atrás dos commits v8/v10), não bug de fonte — recomendado deploy.
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
+
+## Sessão 154 — Triagem AUTOMÁTICA do WhatsApp (RF-08/09) — fecha a F6 pendente desde 28/07
+
+**Achado do teste real do usuário na B:** mensagem do celular chegou, caiu na fila de triagem,
+mas o sistema NÃO respondeu a pergunta de triagem — `processar_entrada` criava a entrada e
+retornava (RF-08/09 nunca implementados; pendência F6 documentada — o `segmento_sugerido` da
+fila "já esperava esta frente"). Zero linhas em `envios_externos` confirmou: nem tentativa.
+
+**Implementado:**
+- **Schema:** `EnvioExterno.mensagem_id` virou NULLABLE + coluna `triagem_id` (a pergunta sai
+  ANTES de existir conversa; o vínculo é com a entrada da fila). Migrações idempotentes.
+- **RF-08 (pergunta):** contato novo cai na fila → `enviar_pergunta_triagem` manda de volta,
+  em TEXTO LIVRE (a janela de 24h acabou de abrir — sem template): saudação + segmentos ativos
+  numerados (`TriagemConfig.itens_json` > `SegmentoConfig` ativos > catálogo padrão; formato
+  "livre" usa a mensagem configurada). Config-gated: sem credencial nasce `pendente_config`;
+  falha vira `falhou` com o erro gravado. Best-effort — nunca derruba o webhook.
+- **RF-09 (resposta, lite):** nova mensagem de remetente JÁ pendente NÃO duplica a fila —
+  interpreta ("2", "2.", nome/rótulo sem acento) → grava `segmento_sugerido` na MESMA entrada
+  + envia confirmação ("Encaminhei você para X…"); não reconhecida → anexa o texto à entrada,
+  SEM reenviar a pergunta (anti-loop). Resolução segue HUMANA na fila.
+- **TDD** `tests/test_triagem_auto.py` (4, herméticos com `monkeypatch.delenv` das creds).
+- **💡 Causa do cluster "flaky" de chat DESCOBERTA de brinde:** `test_chat_wa`/
+  `test_comunicacao` esperam `pendente_config`, mas o `.env` LOCAL tem `ORIZON_WA_*` → o
+  transporte fica "configurado" e os testes falham/oscilam POR AMBIENTE (na Vera passaram).
+  Não é flakiness de código — é dependência de env; corrigir na frente do Chat com o mesmo
+  `delenv` hermético.
+
+Suíte **1714 verde** (+4; as 4 "flaky" agora têm causa conhecida). Deploy: local + A + **B na
+tag `v2026.08.04b-homolog`** (ambiente do teste real com a Meta).
 
 ## Sessão 153 — Super Admin vira PLATAFORMA pura: sem módulos, com Config de todas as lojas
 

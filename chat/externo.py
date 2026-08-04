@@ -315,13 +315,33 @@ def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_extern
     conv, candidatos = _rotear_com_candidatos(db, meio, id_externo_ref=id_externo_ref,
                                               remetente=remetente)
     if conv is None:
+        from . import triagem as _tri
+        _rem_norm = (_digitos(remetente) if meio == "whatsapp"
+                     else (remetente or "").strip().lower())
+        # RF-09 (2026-08-04): remetente que JÁ está na fila respondendo à pergunta de
+        # triagem — interpreta (número/nome do segmento) na MESMA entrada, sem duplicar.
+        pend = (db.query(TriagemEntrada)
+                  .filter_by(meio=meio, remetente=_rem_norm, status="pendente")
+                  .order_by(TriagemEntrada.id.desc()).first())
+        if pend is not None:
+            try:
+                seg = _tri.registrar_resposta_triagem(db, pend, texto)
+            except Exception:
+                seg = None
+            return {"status": "triagem", "conversa_id": None, "triagem_id": pend.id,
+                    "segmento_sugerido": seg}
         ent = TriagemEntrada(
             loja_id=_loja_da_entrada(db, remetente=remetente, meio=meio), meio=meio,
-            remetente=(_digitos(remetente) if meio == "whatsapp"
-                       else (remetente or "").strip().lower()),
+            remetente=_rem_norm,
             texto=texto, id_externo=id_externo, id_externo_ref=id_externo_ref,
             candidatos_json=(json.dumps(sorted(candidatos)) if candidatos else None))
         db.add(ent); db.flush()
+        # RF-08 (2026-08-04): pergunta de triagem AUTOMÁTICA de volta ao contato (texto livre
+        # — a janela de 24h acabou de abrir). Best-effort: nunca derruba o webhook.
+        try:
+            _tri.enviar_pergunta_triagem(db, ent)
+        except Exception:
+            pass
         return {"status": "triagem", "conversa_id": None, "triagem_id": ent.id}
     canal = _canal_do_thread(db, conv.id, meio, remetente)
     msg = _mc.enviar_mensagem(db, conv, None, texto or "(sem texto)", canal=canal,

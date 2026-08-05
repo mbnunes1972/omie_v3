@@ -2799,6 +2799,76 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
+
+Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de
+backend). Mesma regra: **nenhuma mudança de cor/paleta**. Marcelo trouxe 6 itens; 2 viraram
+investigação em vez de mudança direta — registrado abaixo por quê.
+
+**Item 1 — correção da largura da barra de ação: NÃO precisou de mudança.** Marcelo corrigiu uma
+instrução dele mesmo, dizendo que a barra deveria ter a largura só da coluna do chat (não da tela
+inteira), com o topbar do tamanho da coluna da lista. Antes de mexer, medi o mockup de referência
+via Playwright (`getBoundingClientRect()` real, não só leitura de CSS): `.topbar`, `.middle` e
+`.action-bar` têm **todos** `left:220→right:1440` (1220px) — a mesma largura combinada das duas
+colunas, idêntica ao que a Sessão 158 já tinha implementado. Reportado o achado com números pro
+Marcelo em vez de aplicar a correção verbal contra a evidência visual; ele confirmou manter como
+estava. Nenhum código mudou por causa deste item.
+
+**Item 2 — chips + toggle de oversight numa linha só.** Os 5 chips (Todas/Grupos/Projetos/
+Arquivadas/Urgentes) + o toggle "Todas (oversight)" não cabiam juntos nos 340px da
+`.oc-list-col` mesmo depois do aperto da Sessão 158 (medido: 353px de conteúdo pra 340px
+disponíveis). Toggle virou **ícone-só** (👁 + `title` de tooltip, classe `.oc-chip-oversight`,
+sem mais o rótulo "Todas (oversight)" por extenso) e `.oc-list-col` alargou 340→**364px** — cabe
+tudo numa linha, sem quebrar, nas duas telas.
+
+**Item 3 — ícone de projeto mais refinado.** Avatar quadrado de conversa tipo `projeto` trocou o
+emoji 📁 (cores fixas, não respeitava tema) por `<i class="ti ti-folder">` — herda
+`color:var(--text)` de `.oc-avatar`, mesma linguagem visual dos outros ícones do app, correto em
+claro e escuro. Avatar de `grupo` (👥) não mudou — só o de projeto foi citado.
+
+**Item 4 — tag "Pessoal" duplicava informação no Chat Interno.** `_intItemHTML` mostrava dois
+badges lado a lado pra conversa `direct`: tipo ("Pessoal") + assunto ("Livre"/rótulo custom) —
+visualmente pareciam duas tags competindo pela mesma informação, quando o avatar redondo já
+distingue pessoa de grupo/mural. Fix: badge de tipo só aparece quando `c.tipo !== 'direct'`
+(grupo/mural continuam mostrando os dois — lá o tipo não é óbvio só pelo avatar, mural também usa
+avatar redondo).
+
+**Item 5 — investigado e mantido como estava.** Pedido inicial: remover (não só restilizar) as
+caixas "E-mail (oficializar)" e "Transferência de responsabilidade" do compositor, por serem
+achadas "ações exclusivas do Ciclo". Investigação encontrou que são a **única interface** dessas
+duas capacidades reais do backend — `chat/core.py:oficializar_por_email` e a
+transferência/bloqueador de etapa (payload `etapa_codigo`/`transferir_para_funcao_id`/
+`bloqueador`) — confirmado pelo próprio comentário do código (`static/index.html:958-960`: "a
+transferência/bloqueador vive no `#oc-transf`"), sem UI equivalente em nenhuma tela de Ciclo/
+Etapas do Projeto. Removê-las agora apagaria a única forma de disparar essas duas ações, sem
+substituto. Reportado o achado pro Marcelo (mesmo padrão de "parar antes de tocar lógica/dados do
+Ciclo" já estabelecido na Sessão 158, item F) — decisão: manter as duas caixas como estão por ora;
+reposicionar pra dentro de "Etapas do Projeto" fica pra uma frente futura, se decidido.
+
+**Item 6 — confirmação de ambiente:** Homolog (B) e o localhost do Marcelo rodavam o mesmo commit
+(`e5a809e`) antes desta rodada começar; nenhuma divergência real, suspeita provável era cache do
+navegador.
+
+**Achado da Vera (auditoria desta rodada) — bug PRÉ-EXISTENTE, não introduzido aqui: race
+condition no toggle de oversight.** `atendOversightToggle`/`intOversightToggle` chamavam
+`_ocTodasCarregar()` (assíncrona, faz fetch) **sem `await`** antes de re-renderizar — no 1º clique
+do olho a lista mostrava "Nenhuma conversa." mesmo havendo dados reais, só corrigindo num 2º
+clique (fetch já em cache). Reproduzido pela Vera com usuário gerencial real e dados reais.
+Corrigido: as duas funções viraram `async`/`await` (`static/index.html:10999-11002`). Também
+corrigido um comentário desatualizado (`.oc-list-col` ainda citado como 340px depois do item 2
+mudar pra 364px).
+
+**Verificação:** suíte completa **1742 passed** (zero mudança de backend nesta rodada — só
+reconfirmação); subconjunto de chat/comunicação (153 testes) revalidado depois do fix da Vera;
+`node --check` no `<script>` extraído, limpo; Playwright manual nas duas telas (Atendimentos/Chat
+Interno), claro e escuro, zero erro de console; fix da race condition reproduzido e confirmado
+passo a passo (1º clique já traz a lista). Vera não encontrou regressão nos itens 1-3 nem nos
+chips/filtros fora do modo oversight.
+
+**Deploy:** commit + push no `main`; redeploy só da instância B (Homolog,
+`167.88.33.121:8766`) — **A e produção real seguem PAUSADAS** até aprovação visual de novo em
+Homolog. Grafo MCP re-ingerido.
+
 ## Sessão 158 — Fatia 6: fidelidade visual ao mockup 04/08 (avatares, chips, barra full-width,
 ## responsável de projeto, Triagem reestilizada, eventos do Ciclo) — achada em Homolog
 

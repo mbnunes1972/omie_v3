@@ -1999,10 +1999,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
     .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
     /* Fila de Atendimentos (F7/RF-12; chips do redesenho 2026-08-04 — mockup §3). gap
-       apertado (achado da revisão visual: Urgentes quebrava linha junto do toggle de
-       oversight, dentro dos 340px do .oc-list-col) — os 5 chips cabem numa linha só; só o
-       toggle "Todas (oversight)" (bem mais largo, rótulo longo) deve quebrar/comprimir. */
+       apertado pra caber nos 364px do .oc-list-col numa linha só. O toggle de oversight
+       (achado da rodada de ajuste fino: "Todas (oversight)" por extenso não cabia na mesma
+       linha dos 5 chips e quebrava) virou ícone-só (olho + title=tooltip) — cabe sempre
+       logo após "Urgentes", sem quebrar. */
     .atd-tabs{display:flex;gap:4px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+    .oc-chip-oversight{padding:3px 6px}
     .atd-filtro{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
     .atd-item{display:flex;gap:10px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
     .atd-item:hover{background:var(--surface-2)}
@@ -2061,7 +2063,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
        .oc-actionbar-slot reserva o mesmo tanto. */
     .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px - 60px);min-height:400px}
     .oc-actionbar-slot{min-height:60px}
-    .oc-list-col{width:340px;min-width:270px;display:flex;flex-direction:column;min-height:0}
+    .oc-list-col{width:364px;min-width:270px;display:flex;flex-direction:column;min-height:0}
     .oc-list-col .oc-lista-scroll{flex:1;overflow-y:auto;min-height:0}
     .oc-pane-col{flex:1;min-width:0;display:flex}
     #oc-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:12px}
@@ -10985,7 +10987,7 @@ function _ocChipsRow(chips, atual, fn){
 // nome (ou "?" quando o título é só telefone, sem letra) para pessoa/direct; quadrado com
 // emoji para grupo/projeto — mesma forma do mockup. Cor única/neutra por decisão desta rodada.
 function _ocAvatarHTML(nome, tipo){
-  if(tipo==='projeto') return '<div class="oc-avatar square">📁</div>';
+  if(tipo==='projeto') return '<div class="oc-avatar square"><i class="ti ti-folder" style="font-size:16px"></i></div>';
   if(tipo==='grupo') return '<div class="oc-avatar square">👥</div>';
   const limpo = (nome||'').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'').trim();
   const c0 = limpo.charAt(0).toUpperCase();
@@ -10994,8 +10996,10 @@ function _ocAvatarHTML(nome, tipo){
 }
 function atendChip(k){ _atdChip = k; atendRender(); }
 function intChip(k){ _intChip = k; intRender(); }
-function atendOversightToggle(){ _atdOversight = !_atdOversight; if(_atdOversight) _ocTodasCarregar(); atendRender(); }
-function intOversightToggle(){ _intOversight = !_intOversight; if(_intOversight) _ocTodasCarregar(); intRender(); }
+// Achado da Vera (auditoria do ajuste fino 2026-08-04): _ocTodasCarregar é assíncrona (fetch);
+// sem o await, o 1º clique no olho renderizava "Nenhuma conversa." antes da resposta chegar.
+async function atendOversightToggle(){ _atdOversight = !_atdOversight; if(_atdOversight) await _ocTodasCarregar(); atendRender(); }
+async function intOversightToggle(){ _intOversight = !_intOversight; if(_intOversight) await _ocTodasCarregar(); intRender(); }
 function ocTogglePend(qual){
   _ocPend[qual] = !_ocPend[qual];
   const b = document.getElementById(qual+'-pend');
@@ -11082,7 +11086,7 @@ function intRender(){
   const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
   const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
   tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip')
-    + (podeOversight ? '<span class="oc-chip'+(_intOversight?' active':'')+'" style="margin-left:auto" onclick="intOversightToggle()"><i class="ti ti-eye"></i> Todas (oversight)</span>' : '');
+    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_intOversight?' active':'')+'" title="Todas (oversight)" onclick="intOversightToggle()"><i class="ti ti-eye"></i></span>' : '');
   const box = document.getElementById('int-lista');
   if(_intOversight){                                   // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('int');
@@ -11114,7 +11118,10 @@ function intRender(){
   box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta categoria.</div>';
 }
 function _intItemHTML(c){
-  const tipoBadge = '<span class="atd-badge atd-b-seg">'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
+  // "Pessoal" ao lado de "Livre"/Assunto confundia (achado da rodada de ajuste fino: duas tags
+  // de aparência idêntica pareciam duplicar a mesma informação) — pra 1:1 o avatar redondo já
+  // distingue de grupo/mural, então o tipo só aparece como badge quando NÃO é direct.
+  const tipoBadge = c.tipo==='direct' ? '' : '<span class="atd-badge atd-b-seg">'+esc(_INT_TIPOROT[c.tipo]||c.tipo)+'</span>';
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
@@ -11165,7 +11172,7 @@ function atendRender(){
   let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
   tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip')
-    + (podeOversight ? '<span class="oc-chip'+(_atdOversight?' active':'')+'" style="margin-left:auto" onclick="atendOversightToggle()"><i class="ti ti-eye"></i> Todas (oversight)</span>' : '');
+    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_atdOversight?' active':'')+'" title="Todas (oversight)" onclick="atendOversightToggle()"><i class="ti ti-eye"></i></span>' : '');
   const box = document.getElementById('atd-lista');
   if(_atdOversight){                                  // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('atd');

@@ -36,14 +36,25 @@ def _mk_etapa(db, app_db, nome, codigo, status="pendente"):
     return e
 
 
-def _transferir(c, nome, fid, etapa=None, bloqueador=True, corpo="bloqueia"):
-    payload = {"corpo": corpo, "natureza": "transferencia",
-               "transferido_para_funcionario_id": fid, "bloqueador": bloqueador}
-    if etapa:
-        payload["etapa_codigo"] = etapa
-    st, body = c.post("/api/projetos/%s/conversa/mensagens" % nome, payload)
-    assert st == 201, body
-    return body["mensagem"]["id"]
+def _transferir(app_db, nome, login, fid, etapa=None, bloqueador=True, corpo="bloqueia"):
+    """Achado FATIA 7 (2026-08-05): "Transferência de responsabilidade"/Bloqueador saiu do
+    endpoint HTTP do Chat (decisão do usuário — o Chat é só canal de comunicação; atribuir
+    responsável por etapa tem porta própria em Etapas do Projeto). `mod_ciclo.pode_avancar`/
+    `bloqueadores_ativos`/`enviar_mensagem(natureza="transferencia", bloqueador=...)` continuam
+    existindo por baixo (é o que esta suíte cobre) — só não são mais alcançáveis via POST no
+    chat. Monta o cenário chamando mod_chat.enviar_mensagem direto, bypassando o HTTP."""
+    import mod_chat
+    db = app_db.get_session()
+    try:
+        u = db.query(app_db.Usuario).filter_by(login=login).first()
+        conv = mod_chat.get_or_create_conversa_projeto(db, u.loja_id, nome)
+        msg = mod_chat.enviar_mensagem(db, conv, u.id, corpo, natureza="transferencia",
+                                       etapa_codigo=etapa, transferido_para_funcionario_id=fid,
+                                       bloqueador=bloqueador)
+        db.commit()
+        return msg.id
+    finally:
+        db.close()
 
 
 # ── unidade: pode_avancar (backward-compat + bloqueador) ─────────────────────
@@ -88,7 +99,7 @@ def test_patch_ciclo_trava_por_bloqueador_de_etapa(http_client_factory, seed, ap
     f = _mk_func(db, app_db, seed["loja1_id"], "Medidor", "Destino Bloq")
     db.commit(); fid = f.id; db.close()
     c = _login(http_client_factory, "dir_l1")
-    mid = _transferir(c, "Proj_L1", fid, etapa="3")
+    mid = _transferir(app_db, "Proj_L1", "dir_l1", fid, etapa="3")
 
     st, body = c.patch("/api/projetos/Proj_L1/ciclo/3", {"status": "em_andamento"})
     assert st == 400, body
@@ -104,7 +115,7 @@ def test_patch_ciclo_bloqueador_global_trava_qualquer_etapa(http_client_factory,
     f = _mk_func(db, app_db, seed["loja2_id"], "Medidor", "Destino Global")
     db.commit(); fid = f.id; db.close()
     c = _login(http_client_factory, "dir_l2")
-    _transferir(c, "Proj_L2", fid, etapa=None)          # SEM etapa → '*'
+    _transferir(app_db, "Proj_L2", "dir_l2", fid, etapa=None)          # SEM etapa → '*'
     st, body = c.patch("/api/projetos/Proj_L2/ciclo/1", {"status": "em_andamento"})
     assert st == 400 and body.get("codigo") == "bloqueador_ativo", body
 
@@ -135,7 +146,7 @@ def test_resolver_so_quem_recebeu_e_libera_avanco(http_client_factory, seed, app
     db.commit(); fid, outro_id = f.id, outro.id; db.close()
 
     c = _login(http_client_factory, "dir_l2")
-    mid = _transferir(c, "Proj_L2", fid, etapa="3")
+    mid = _transferir(app_db, "Proj_L2", "dir_l2", fid, etapa="3")
 
     # dir_l2 SEM vínculo com o destinatário → 403
     st, body = c.post(f"/api/projetos/Proj_L2/conversa/mensagens/{mid}/resolver", {})
@@ -184,7 +195,7 @@ def test_destravar_emergencia(http_client_factory, seed, app_db):
     f = _mk_func(db, app_db, seed["loja1_id"], "Conferente", "Recebedor Emergencia")
     db.commit(); fid = f.id; db.close()
     c = _login(http_client_factory, "dir_l1")
-    mid = _transferir(c, "Proj_L1", fid, etapa="12")
+    mid = _transferir(app_db, "Proj_L1", "dir_l1", fid, etapa="12")
 
     # sem motivo → 400
     st, body = c.post(f"/api/projetos/Proj_L1/conversa/mensagens/{mid}/destravar-emergencia",

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """Chat do Orizon — Fatia 2 (Responsabilidade + transferência), spec seção 6 (v12).
 
-Contratos desta fatia: mensagem `natureza=transferencia` grava DIRETO em
-`CicloEtapa.responsavel_funcionario_id` (o MESMO campo do override manual do v12 — nada de
-estado paralelo); defaults automáticos por FAIXA estendem o `_ETAPA_PAPEL` (Vendas via
-Briefing.consultor_id + ponte Usuário↔Funcionário; Financeiro/Logística via Função); SAC
-resolve à parte por Função, sem etapa; e **bloqueador=True SÓ grava o flag** — o gate real
-em `pode_avancar()` é a Fatia 3 (teste de regressão aqui prova que nada travou)."""
+A transferência via CHAT foi removida na FATIA 7 (2026-08-05, decisão do usuário) — o que sobra
+aqui: defaults automáticos por FAIXA estendem o `_ETAPA_PAPEL` (Vendas via Briefing.consultor_id
++ ponte Usuário↔Funcionário; Financeiro/Logística via Função); SAC resolve à parte por Função,
+sem etapa; e **bloqueador=True SÓ grava o flag** em `mod_chat.enviar_mensagem` — o gate real em
+`pode_avancar()` é a Fatia 3 (teste de regressão aqui prova que nada travou por conta própria)."""
 import pytest
 
 
@@ -34,102 +33,33 @@ def _mk_etapa(db, app_db, nome, codigo, status="pendente"):
     return e
 
 
-# ── transferência oficial escreve no v12 ─────────────────────────────────────
+# ── transferência via Chat: REMOVIDA na FATIA 7 (2026-08-05, decisão do usuário) ─────────────
+# `test_transferencia_grava_no_v12_e_ciclo_reflete`, `test_transferencia_validacoes` e
+# `test_transferencia_sem_etapa_nao_toca_ciclo` testavam comportamento que vivia SÓ no endpoint
+# HTTP `/api/projetos/<nome>/conversa/mensagens` (extração de natureza/etapa_codigo/
+# transferido_para_funcionario_id do payload, validação de etapa/loja, e o
+# `etapa_alvo.responsavel_funcionario_id = transferido.id`) — código apagado de main.py junto
+# com a caixa do compositor, não movido. Atribuir responsável por etapa agora só existe via
+# Etapas do Projeto (`cronoResponsavelSalvar`, `POST .../ciclo/<codigo>/responsavel`), já coberto
+# por outros testes daquela tela. `mod_chat.enviar_mensagem`/`mod_ciclo.pode_avancar` em si
+# continuam existindo e testados abaixo/em test_chat_fatia3.py — só a porta HTTP do Chat sumiu.
 
-def test_transferencia_grava_no_v12_e_ciclo_reflete(http_client_factory, seed, app_db):
-    db = app_db.get_session()
-    _mk_etapa(db, app_db, "Proj_L1", "8")
-    f = _mk_func(db, app_db, seed["loja1_id"], "Gerente de Vendas", "Fulano Transferido")
-    db.commit(); fid = f.id; db.close()
-
-    c = _login(http_client_factory, "dir_l1")
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "passa a bola", "natureza": "transferencia",
-                       "etapa_codigo": "8", "transferido_para_funcionario_id": fid,
-                       "bloqueador": False})
-    assert st == 201 and body["ok"], body
-    m = body["mensagem"]
-    assert m["natureza"] == "transferencia" and m["etapa_codigo"] == "8"
-    assert m["transferido_para_funcionario_id"] == fid
-    assert m["transferido_para_nome"] == "Fulano Transferido"
-
-    db = app_db.get_session()
-    et = db.query(app_db.CicloEtapa).filter_by(projeto_nome="Proj_L1", etapa_codigo="8").first()
-    assert et.responsavel_funcionario_id == fid          # v12: MESMO campo do override manual
-    db.close()
-
-    st, body = c.get("/api/projetos/Proj_L1/ciclo")
-    e8 = next(e for e in body["ciclo"] if e["etapa_codigo"] == "8")
-    assert e8["responsavel_efetivo_id"] == fid           # precedência 1: transferência vence
-    assert e8["responsavel_efetivo_nome"] == "Fulano Transferido"
-
-
-def test_transferencia_validacoes(http_client_factory, seed, app_db):
-    db = app_db.get_session()
-    f = _mk_func(db, app_db, seed["loja1_id"], "Conferente", "Pessoa L1")
-    f2 = _mk_func(db, app_db, seed["loja2_id"], "Conferente", "Pessoa L2")
-    db.commit(); fid, fid_l2 = f.id, f2.id; db.close()
-    c = _login(http_client_factory, "dir_l1")
-    # transferência sem destinatário
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "transferencia"})
-    assert st == 400, body
-    # etapa que não existe no ciclo do projeto
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "transferencia", "etapa_codigo": "99",
-                       "transferido_para_funcionario_id": fid})
-    assert st == 400 and "não existe" in (body.get("erro") or ""), body
-    # destinatário de OUTRA loja
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "transferencia",
-                       "transferido_para_funcionario_id": fid_l2})
-    assert st == 400, body
-    # interação NÃO aceita campos de transferência
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "interacao",
-                       "transferido_para_funcionario_id": fid})
-    assert st == 400, body
-    # natureza desconhecida
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "delegacao"})
-    assert st == 400, body
-
-
-def test_transferencia_sem_etapa_nao_toca_ciclo(http_client_factory, seed, app_db):
-    """Transferência sem etapa_codigo é válida (ex.: assunto fora do ciclo) — registra a
-    mensagem mas não escreve em CicloEtapa nenhum."""
-    db = app_db.get_session()
-    f = _mk_func(db, app_db, seed["loja1_id"], "Montador", "Sem Etapa")
-    antes = {e.etapa_codigo: e.responsavel_funcionario_id
-             for e in db.query(app_db.CicloEtapa).filter_by(projeto_nome="Proj_L1").all()}
-    db.commit(); fid = f.id; db.close()
-    c = _login(http_client_factory, "dir_l1")
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "x", "natureza": "transferencia",
-                       "transferido_para_funcionario_id": fid})
-    assert st == 201, body
-    db = app_db.get_session()
-    depois = {e.etapa_codigo: e.responsavel_funcionario_id
-              for e in db.query(app_db.CicloEtapa).filter_by(projeto_nome="Proj_L1").all()}
-    assert depois == antes
-    db.close()
-
-
-# ── bloqueador: SÓ flag nesta fatia (gate real = Fatia 3) ────────────────────
-
-def test_bloqueador_grava_flag_e_nao_trava_pode_avancar(http_client_factory, seed, app_db):
-    import mod_ciclo
+def test_bloqueador_grava_flag_e_nao_trava_pode_avancar(app_db, seed):
+    """Continua chamando mod_chat.enviar_mensagem direto (a função em si não mudou) — só não
+    passa mais pelo endpoint HTTP do Chat, que foi removido."""
+    import mod_chat, mod_ciclo
     db = app_db.get_session()
     _mk_etapa(db, app_db, "Proj_L1", "2", status="concluido")
     _mk_etapa(db, app_db, "Proj_L1", "3", status="pendente")
     f = _mk_func(db, app_db, seed["loja1_id"], "Medidor", "Bloqueador Humano")
-    db.commit(); fid = f.id; db.close()
-    c = _login(http_client_factory, "dir_l1")
-    st, body = c.post("/api/projetos/Proj_L1/conversa/mensagens",
-                      {"corpo": "trava tudo", "natureza": "transferencia", "etapa_codigo": "3",
-                       "transferido_para_funcionario_id": fid, "bloqueador": True})
-    assert st == 201 and body["mensagem"]["bloqueador"] is True, body
-    assert body["mensagem"]["resolvido_em"] is None
+    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
+    conv = mod_chat.get_or_create_conversa_projeto(db, u.loja_id, "Proj_L1")
+    msg = mod_chat.enviar_mensagem(db, conv, u.id, "trava tudo", natureza="transferencia",
+                                   etapa_codigo="3", transferido_para_funcionario_id=f.id,
+                                   bloqueador=True)
+    db.commit()
+    assert bool(msg.bloqueador) is True    # coluna crua é int (0/1), não bool Python
+    assert msg.resolvido_em is None
     # REGRESSÃO (contrato da Fatia 2): pode_avancar NÃO conhece o bloqueador — comportamento
     # idêntico ao de antes, com e sem mensagem bloqueadora gravada.
     assert mod_ciclo.pode_avancar("3", {"2": "concluido"}) is True

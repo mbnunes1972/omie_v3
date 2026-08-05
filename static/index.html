@@ -956,8 +956,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — histórico interno + nova mensagem -->
     <!-- Orizon Chat do projeto no FULL-PAGE #page-chat (spec 2026-07-31): o botão do projeto
-         abre a conversa (tipo=projeto) no painel da página; a transferência/bloqueador vive
-         no #oc-transf. O modal legado #modal-central-com foi eliminado. -->
+         abre a conversa (tipo=projeto) no painel da página. O modal legado #modal-central-com
+         foi eliminado. Transferência de responsabilidade/Bloqueador saiu do Chat na FATIA 7
+         (2026-08-05) — atribuir responsável por etapa é feito na tela de Etapas do Projeto. -->
 
     <!-- Grupo de Acompanhamento — contatos de comunicação (decisão 13 da spec de chat).
          z-index acima do _popupOverlay (99999): como este painel é o gate que dispara DENTRO
@@ -1958,7 +1959,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <!-- ===== Orizon Chat — módulo de página cheia (mockup 2026-07-28) ===== -->
   <style>
     #page-chat{padding:0}
-    .ochat-shell{display:flex;height:calc(100vh - 0px);min-height:520px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface)}
+    /* FATIA 7 (2026-08-05): único ponto de altura fixa de todo o módulo (mockup faz o mesmo —
+       `.app{height:calc(100vh-78px)}` — um anchor no topo, nada em cascata). 48px = padding
+       vertical de `.content` (24px top + 24px bottom, .content{padding:24px 28px} — a página do
+       chat vive dentro dele, não tem header próprio acima). Sem isso, `.ochat-shell` calculava a
+       partir de 100vh inteiro e ultrapassava a viewport em exatamente esses 48px — achado desta
+       rodada ao trocar os hacks de altura internos (calc(100vh-150px-60px) etc.) por flexbox de
+       verdade: a barra de ação parou de "sumir" (era cortada, não escondida) só depois deste fix. */
+    .ochat-shell{display:flex;height:calc(100vh - 48px);min-height:520px;border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface)}
     .ochat-side{width:214px;min-width:214px;background:var(--surface-2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:10px 8px}
     .ochat-side-title{font-size:9px;letter-spacing:1.4px;color:var(--text-3);text-transform:uppercase;padding:0 10px;margin:14px 0 6px}
     .ochat-nav{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-2);margin-bottom:2px}
@@ -1969,8 +1977,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-top{padding:14px 22px;border-bottom:1px solid var(--border)}
     .ochat-top h2{font-family:var(--font-display);font-size:var(--fs-h1);font-weight:700;color:var(--text);margin:0}
     .ochat-top p{font-size:var(--fs-sm);color:var(--text-2);margin:2px 0 0}
-    .ochat-body{flex:1;overflow-y:auto;padding:20px 22px}
+    .ochat-top.oc-hidden{display:none}
+    .ochat-body{flex:1;min-height:0;overflow-y:auto;padding:20px 22px}
+    /* FATIA 7 (reconstrução decisiva 2026-08-05): Atendimentos/Chat Interno passam a ser telas
+       "full-flex" que preenchem 100% da altura disponível, sem scroll de página — igual ao
+       mockup (`.app{height:calc(100vh-78px)}` → `.screen{flex:1}` → `.middle{flex:1;min-height:0}`).
+       Isso elimina de vez a classe de bug que motivou esta rodada ("barra de ação sumiu"): a v6
+       reservava um orçamento de altura FIXO em px (`calc(100vh - 150px - 60px)`) pra tudo que
+       viesse depois do .oc-cols — qualquer variação de viewport/conteúdo acima (ex.: descrição
+       de 2 linhas no título) furava a conta e empurrava a barra pra fora da tela. Com flexbox
+       de verdade (flex:1/min-height:0 em cadeia, um único ponto de altura no topo em
+       `.ochat-shell`), não existe mais orçamento fixo pra furar. */
+    .ochat-body.oc-fullflex{display:flex;flex-direction:column;overflow:hidden;padding:0}
     .ochat-scr{display:none}
+    .ochat-scr.oc-fullflex.active{display:flex;flex-direction:column;flex:1;min-height:0}
     .ochat-scr.active{display:block}
     .ochat-cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
     .ochat-card{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px}
@@ -1998,22 +2018,53 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .ochat-wa-head{display:flex;align-items:center;gap:8px;padding:2px 2px 12px;border-bottom:1px solid var(--border);margin-bottom:10px}
     .ochat-wa-av{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--btn-primary-text);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
     .ochat-wa-bubble{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--text);white-space:pre-wrap}
-    /* Fila de Atendimentos (F7/RF-12; chips do redesenho 2026-08-04 — mockup §3). gap
-       apertado pra caber nos 364px do .oc-list-col numa linha só. O toggle de oversight
-       (achado da rodada de ajuste fino: "Todas (oversight)" por extenso não cabia na mesma
-       linha dos 5 chips e quebrava) virou ícone-só (olho + title=tooltip) — cabe sempre
-       logo após "Urgentes", sem quebrar. */
-    .atd-tabs{display:flex;gap:4px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
-    .oc-chip-oversight{padding:3px 6px}
-    .atd-filtro{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-    .atd-item{display:flex;gap:10px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
+    /* ═══ FATIA 7 — reconstrução decisiva (2026-08-05), estrutura copiada literalmente do
+       mockup docs/superpowers/specs/comunicacao/mockups/2026-08-04-orizon-chat-atendimentos-
+       ui-mockup.html: .topbar/.middle/.action-bar/.compose-bar são filhos-flex DIRETOS da tela
+       (não aninhados dentro da coluna da lista), list-col+chat-col sem gap com borda
+       compartilhada. Ver #ochat-scr-atend/#ochat-scr-interno no HTML. ═══ */
+    .oc-topbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0}
+    .oc-newbtn{flex-shrink:0;width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--accent);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit;line-height:1;padding:0}
+    .oc-newbtn:hover{background:var(--accent-tint)}
+    .oc-topbar .btn.btn-sm{padding:7px 11px;font-size:12.5px;white-space:nowrap}
+    .oc-topbar-divider{width:1px;height:18px;background:var(--border);margin:0 2px;flex-shrink:0}
+    /* "Pílulas" coloridas (mockup .mural-btn/.create-group-btn — achado FATIA 7 rodada 2: os
+       botões da 2ª linha usavam .btn.btn-ghost genérico cinza; o mockup dá destaque de cor a
+       Mural/Criar Grupo). Famílias semânticas existentes, sem cor nova. */
+    .oc-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;font-family:inherit}
+    .oc-pill-amber{color:var(--chat-amber);background:var(--chat-amber-soft);border-color:var(--chat-amber)}
+    .oc-pill-purple{color:var(--chat-purple);background:var(--chat-purple-soft);border-color:var(--chat-purple)}
+    /* "Concluir atendimento" (mockup .conclude-btn é verde — ação positiva/de encerramento,
+       --ok já é exatamente essa semântica) em vez do primário neutro genérico do app. */
+    .oc-btn-ok{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--chat-green);background:var(--chat-green-soft);border:1px solid var(--chat-green);border-radius:8px;padding:7px 12px;cursor:pointer;font-family:inherit}
+    .oc-btn-ok:hover{opacity:.85}
+    /* Chips + toggle de oversight: agora vivem na topbar de largura total (não mais espremidos
+       na coluna da lista) — cabem numa linha só com sobra, oversight sempre por último. */
+    .atd-tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .oc-chip-oversight{padding:3px 9px}
+    .atd-filtro{display:flex;gap:6px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
+    /* Linhas da lista (mockup .conv-row): SEM card/borda própria — linha reta com borda inferior
+       só, igual ao mockup; “selecionada” ganha friso à esquerda + fundo, não uma cor nova. */
+    .atd-item{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer}
     .atd-item:hover{background:var(--surface-2)}
+    .atd-item.selected{background:var(--accent-tint);border-left:3px solid var(--accent);padding-left:11px}
     .atd-main{flex:1;min-width:0}
     /* Avatar da lista (mockup §4): círculo p/ pessoa/direct, quadrado arredondado p/ grupo/
-       projeto. Cor ÚNICA e NEUTRA por decisão desta rodada (forma, não cor — paleta fica p/
-       uma frente separada) — nada de --accent/--btn-primary-* aqui. */
+       projeto. Cor ÚNICA e NEUTRA por decisão do usuário (forma, não cor — paleta fica p/ uma
+       frente separada) — nada de --accent/--btn-primary-* aqui. Ícone de projeto (FATIA 7,
+       achado do usuário: "quadrado com 📁 não ficou bom") em tom mais sutil (--text-2, não
+       --text) — refinamento sobre o ti-folder já trocado na rodada anterior. */
     .oc-avatar{width:38px;height:38px;min-width:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
     .oc-avatar.square{border-radius:10px}
+    .oc-avatar.square:has(.ti-folder){background:var(--chat-amber-soft)}
+    .oc-avatar .ti-folder{color:var(--chat-amber);font-size:16px}
+    /* Cor por contato (FATIA 7 rodada 2) — mesmas famílias semânticas dos badges, sem borda
+       (a cor de fundo já basta pra separar do restante da lista). */
+    .oc-avatar.c-blue{background:var(--chat-blue-soft);color:var(--chat-blue);border-color:transparent}
+    .oc-avatar.c-purple{background:var(--chat-purple-soft);color:var(--chat-purple);border-color:transparent}
+    .oc-avatar.c-green{background:var(--chat-green-soft);color:var(--chat-green);border-color:transparent}
+    .oc-avatar.c-red{background:var(--chat-red-soft);color:var(--chat-red);border-color:transparent}
+    .oc-avatar.c-teal{background:var(--chat-teal-soft);color:var(--chat-teal);border-color:transparent}
     .atd-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
     .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center}
     .atd-tempo{font-size:11px;color:var(--muted);flex:none}
@@ -2030,6 +2081,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .atd-b-orig-triagem{background:var(--warn-soft);color:var(--warn)}
     .atd-b-livre{background:var(--surface-2);color:var(--muted)}
     .atd-b-assunto{background:var(--info-soft);color:var(--info)}
+    /* Cor por SEGMENTO (achado FATIA 7 rodada 2: mockup tem tag colorida por categoria — Comercial
+       azul, Pós-venda roxo, Financeiro verde, Triagem âmbar — a implementação usava só cinza pra
+       todas. Mapeado nas famílias semânticas JÁ existentes em orizon-tokens.css (não é cor nova
+       nem hex literal — "1 accent por tela" continua valendo, isso é categorização, não destaque
+       de ação) via _ocSegClasse(). */
+    .atd-b-seg-comercial{background:var(--chat-blue-soft);color:var(--chat-blue)}
+    .atd-b-seg-suporte_tecnico{background:var(--chat-teal-soft);color:var(--chat-teal)}
+    .atd-b-seg-financeiro{background:var(--chat-green-soft);color:var(--chat-green)}
+    .atd-b-seg-logistica{background:var(--chat-red-soft);color:var(--chat-red)}
+    .atd-b-seg-parceiros{background:var(--chat-purple-soft);color:var(--chat-purple)}
+    .atd-b-seg-compras{background:var(--chat-amber-soft);color:var(--chat-amber)}
+    .atd-b-seg-sac{background:var(--chat-blue-soft);color:var(--chat-blue)}
     .atd-nl{background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center;margin-left:6px}
     /* Ponto de urgência (spec §6.1 — 7px antes do nome, nunca no lugar da tag de segmento) */
     .atd-urgent-dot{display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:var(--err);margin-right:6px}
@@ -2039,12 +2102,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-resp-line strong{color:var(--accent)}
     .oc-urg-btn{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;font-family:inherit}
     .oc-urg-btn.active{color:var(--err);background:var(--err-soft);border-color:var(--err)}
-    /* Barra de ação (spec §7 — Concluir/Transferir/Exportar) — largura da coluna do painel,
-       acima da composição (ver nota de escopo no plano: não é full-bleed de tela inteira, o
-       #oc-pane é compartilhado entre Atendimentos/Chat Interno e as 6 views que ele hospeda). */
-    .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;margin-top:10px;border-top:1px solid var(--border)}
+    /* Barra de ação (Concluir/Transferir/Exportar) — filho-flex direto da tela, largura TOTAL
+       (mockup: .action-bar é irmã de .middle, não filha de .chat-col — medido/confirmado por
+       leitura literal do HTML/CSS do mockup, 3ª confirmação nesta mesma discussão). */
+    .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
     .oc-am-wrap{position:relative}
-    .oc-am-menu{display:none;position:absolute;bottom:36px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60}
+    .oc-am-menu{display:none;position:absolute;bottom:44px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60}
     .oc-am-menu.open{display:block}
     .oc-am-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em;padding:6px 14px}
     .oc-am-item{padding:8px 14px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
@@ -2053,20 +2116,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-am-search{width:calc(100% - 28px);margin:0 14px 8px;height:30px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);padding:0 10px;font-size:12px;font-family:inherit}
     .oc-action-flash{font-size:12px;color:var(--ok)}
     /* ═══ CHAT: thread full-page (spec 2026-07-31 — unificação, elimina o modal legado) ═══ */
-    /* .oc-cols tinha altura FIXA calc(100vh-150px) pressupondo que nada viria depois dela dentro
-       de .ochat-scr (display:block, fora de um layout flex que auto-ajustaria). Ao tirar a
-       barra de ação de dentro do #oc-thread p/ largura total (achado da revisão visual
-       2026-08-04), ela passou a viver DEPOIS de .oc-cols — sem reservar espaço, ficava empurrada
-       pra fora da viewport (achado do teste automatizado: rect.top=897 numa janela de 900px de
-       altura). Fix: .oc-cols perde os mesmos ~60px SEMPRE (visível ou não a barra — evita as
-       caixas com borda de .oc-list-col/#oc-pane "cortarem" de forma diferente por tela) e
-       .oc-actionbar-slot reserva o mesmo tanto. */
-    .oc-cols{display:flex;gap:16px;align-items:stretch;height:calc(100vh - 150px - 60px);min-height:400px}
-    .oc-actionbar-slot{min-height:60px}
-    .oc-list-col{width:364px;min-width:270px;display:flex;flex-direction:column;min-height:0}
-    .oc-list-col .oc-lista-scroll{flex:1;overflow-y:auto;min-height:0}
-    .oc-pane-col{flex:1;min-width:0;display:flex}
-    #oc-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:12px}
+    .oc-middle{display:flex;flex:1;min-height:0}
+    .oc-list-col{width:380px;min-width:270px;border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;flex-shrink:0}
+    .oc-lista-scroll{flex:1;overflow-y:auto;min-height:0}
+    .oc-pane-col{flex:1;min-width:0;min-height:0;display:flex}
+    #oc-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--surface);padding:14px 18px}
     .oc-view{display:none;flex:1;flex-direction:column;min-height:0}
     .oc-view.active{display:flex}
     /* Eventos automáticos do sistema na timeline (achado da revisão visual 2026-08-04, item F —
@@ -2083,8 +2137,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     #oc-membros{display:none;width:320px;min-width:280px;border-left:1px solid var(--border);padding-left:10px;overflow-y:auto}
     .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
-    .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-    .oc-busca-wrap{position:relative;flex:1;min-width:140px;display:flex;align-items:center}
+    .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .oc-busca-wrap{position:relative;flex:0 1 320px;min-width:180px;display:flex;align-items:center}
     .oc-busca-wrap>i{position:absolute;left:10px;color:var(--muted);font-size:14px;pointer-events:none}
     .oc-busca{width:100%;padding:7px 10px;padding-left:32px !important;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;appearance:none;-webkit-appearance:none}
     .oc-busca::placeholder{color:var(--muted)}
@@ -2092,6 +2146,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-sec{font-size:10px;letter-spacing:1.2px;color:var(--text-3);text-transform:uppercase;font-weight:700;padding:10px 2px 6px}
     .oc-user{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;cursor:pointer;background:var(--surface)}
     .oc-user:hover{background:var(--surface-2)}
+    .oc-cliente-item{padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer;background:var(--surface)}
+    .oc-cliente-item:hover{background:var(--surface-2);border-color:var(--field-border-hover)}
   </style>
   <div class="page" id="page-chat">
     <div class="ochat-shell">
@@ -2109,22 +2165,27 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="ochat-main">
         <div class="ochat-top" id="ochat-top"><h2>Modelos de Mensagem</h2><p>Checklist de configuração inicial — as 9 mensagens obrigatórias precisam de um template aprovado pela Meta para o WhatsApp operar em produção.</p></div>
         <div class="ochat-body">
-          <!-- ═══ CHAT: início — Atendimentos + Chat Interno + painel de conversa (spec 2026-07-31) ═══ -->
+          <!-- ═══ CHAT: início — Atendimentos + Chat Interno + painel de conversa (spec 2026-07-31,
+               reestruturado FATIA 7 2026-08-05 — cópia literal do mockup: topbar (busca+chips) e
+               barra de ação são filhos-flex DIRETOS da tela, largura total; "Adicionar Contato"/
+               "Pendentes"/segmento são extras reais do app sem equivalente no mockup simplificado,
+               vivem numa 2ª linha (.atd-filtro) pra não poluir a composição do mockup) ═══ -->
           <!-- Atendimentos (fila, F7/RF-12) — lista à esquerda, thread à direita (padrão HuntPilot) -->
-          <div class="ochat-scr" id="ochat-scr-atend">
-            <div class="oc-cols">
+          <div class="ochat-scr oc-fullflex" id="ochat-scr-atend">
+            <div class="oc-topbar">
+              <button class="oc-newbtn" onclick="ocAtdNovoAbrir()" title="Iniciar Conversa"><i class="ti ti-plus"></i></button>
+              <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar por nome, assunto ou palavra-chave…" oninput="atendRender()"></span>
+              <button class="oc-pill oc-pill-amber" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Criar Grupo</button>
+              <div class="oc-topbar-divider"></div>
+              <div class="atd-tabs" id="atd-tabs"></div>
+            </div>
+            <div class="atd-filtro">
+              <button class="btn btn-ghost btn-sm" onclick="ocContatoAbrir()"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
+              <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
+              <select id="atd-seg-filtro" onchange="atendRender()" title="Segmento" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
+            </div>
+            <div class="oc-middle">
               <div class="oc-list-col">
-                <!-- camada de ações dos Atendimentos (padronizada com o Chat Interno) -->
-                <div class="oc-acoes">
-                  <button class="btn btn-primary btn-sm" onclick="ocAtdNovoAbrir()"><i class="ti ti-plus"></i> Iniciar Conversa</button>
-                  <button class="btn btn-ghost btn-sm" onclick="ocContatoAbrir()"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
-                </div>
-                <div class="atd-tabs" id="atd-tabs"></div>
-                <div class="atd-filtro">
-                  <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar atendimento…" oninput="atendRender()"></span>
-                  <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
-                  <select id="atd-seg-filtro" onchange="atendRender()" title="Segmento" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
-                </div>
                 <div class="oc-lista-scroll" id="atd-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
               </div>
               <div class="oc-pane-col" id="oc-slot-atend">
@@ -2156,7 +2217,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <input id="oc-busca-user" type="search" placeholder="buscar por nome…" oninput="ocFiltrarUsuarios()" style="width:100%;margin-bottom:6px">
                         <div id="oc-users" style="max-height:32vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px"></div>
                         <div id="oc-externos-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
-                        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="ocAddExterno()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button>
+                        <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+                          <button class="btn btn-ghost btn-sm" onclick="ocAddExterno()"><i class="ti ti-brand-whatsapp"></i> + contato externo (WhatsApp)</button>
+                          <button class="btn btn-ghost btn-sm" onclick="ocAddClienteAbrir()"><i class="ti ti-user-search"></i> + cliente cadastrado</button>
+                        </div>
+                        <!-- Busca de cliente cadastrado (pedido do usuário 2026-08-05 — 3ª fonte de
+                             membro do grupo, ao lado de usuário do sistema e contato externo). -->
+                        <div id="oc-cliente-picker" style="display:none;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--surface-2)">
+                          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                            <label class="field-label" style="margin:0">Buscar cliente cadastrado</label>
+                            <button class="btn btn-ghost btn-sm" style="padding:1px 8px" onclick="ocAddClienteFechar()">×</button>
+                          </div>
+                          <input id="oc-cliente-busca" type="search" placeholder="nome ou CPF…" oninput="ocClienteBuscarDebounce()" style="width:100%;margin-bottom:6px">
+                          <div id="oc-cliente-resultados" style="max-height:26vh;overflow-y:auto"></div>
+                        </div>
                       </div>
                       <div style="display:flex;gap:8px;margin-top:12px">
                         <button class="btn btn-primary btn-sm" id="oc-iniciar-btn" onclick="ocCriar()">Criar grupo</button>
@@ -2322,57 +2396,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <button class="btn btn-primary btn-sm" id="oc-enviar-btn" style="margin-left:auto" onclick="ocEnviar()"><i class="ti ti-send"></i> Enviar</button>
                       </div>
                     </div>
-                    <!-- E-mail (oficializar): encaminha a mensagem/documento a todos os integrantes por e-mail
-                         (item F, achado da revisão visual 2026-08-04: mesmo padrão de card dos demais
-                         controles novos — .atd-item/.oc-am-menu — em vez de um <label> solto) -->
-                    <label id="oc-oficializar-wrap" style="display:none;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);cursor:pointer;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px">
-                      <input type="checkbox" id="oc-oficializar"> <i class="ti ti-mail-forward"></i> E-mail (oficializar) — encaminha esta mensagem a <b>todos os integrantes</b> pelo e-mail cadastrado</label>
                     <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
                     <div id="oc-doc-enc" style="display:none;margin-top:6px">
                       <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
-                    </div>
-                    <!-- Transferência de responsabilidade + Bloqueador — só em conversa de PROJETO (ciclo) -->
-                    <div id="oc-transf" style="display:none;margin-top:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
-                      <label style="font-size:12px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px">
-                        <input type="checkbox" id="conv-transf-chk" onchange="convTransfToggle()">
-                        <i class="ti ti-arrows-right-left"></i> Transferência de responsabilidade</label>
-                      <div id="conv-transf-campos" style="display:none;margin-top:8px">
-                        <div style="display:flex;gap:8px;flex-wrap:wrap">
-                          <div style="flex:1;min-width:180px">
-                            <label class="field-label">Etapa do ciclo (opcional)</label>
-                            <select id="conv-transf-etapa" style="width:100%;padding:6px 8px"></select>
-                          </div>
-                          <div style="flex:1;min-width:180px">
-                            <label class="field-label">Transferir para</label>
-                            <select id="conv-transf-func" style="width:100%;padding:6px 8px"></select>
-                          </div>
-                          <div style="flex:1;min-width:180px">
-                            <label class="field-label">Anexar documento (opcional)</label>
-                            <select id="conv-transf-doc" style="width:100%;padding:6px 8px"></select>
-                          </div>
-                        </div>
-                        <label style="font-size:12px;color:var(--text);cursor:pointer;display:block;margin-top:8px">
-                          <input type="checkbox" id="conv-transf-bloq" onchange="document.getElementById('conv-bloq-aviso').style.display=this.checked?'':'none'">
-                          Bloqueador</label>
-                        <div id="conv-bloq-aviso" style="display:none;font-size:11px;color:var(--warn);margin-top:4px">
-                          &#9888; O bloqueador TRAVA o avanço do ciclo até quem recebeu resolver a transferência
-                          (ou a gerência destravar em emergência). Sem etapa selecionada, trava o ciclo INTEIRO.</div>
-                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-            <!-- barra de ação em LARGURA TOTAL da tela (spec 04/08 §2/§7 — fora de .oc-cols de
-                 propósito: mockup tem essa barra ocupando list-col+chat-col juntas. Elemento
-                 ÚNICO movido entre os slots -atend/-interno por ocMontarPane, igual ao #oc-pane;
+            <!-- barra de ação, filho-flex direto da tela (largura total, como .action-bar no
+                 mockup — irmã de .middle, fora de .oc-middle de propósito). Elemento ÚNICO
+                 movido entre os slots -atend/-interno por ocMontarPane, igual ao #oc-pane;
                  visibilidade combinada de ocMostrarView (só na view oc-thread) + _ocSetHeaderExtras
-                 (só quando a conversa é um atendimento real, §8). Achado da revisão visual
-                 2026-08-04: testado nas 6 views do #oc-pane antes de mexer (ver DEV_LOG) — só
-                 oc-thread precisa dela, as outras 5 já ficam ocultas sem ajuste extra. -->
+                 (só quando a conversa é um atendimento real, §8). Testado nas 6 views do #oc-pane
+                 antes de fechar a frente (ver DEV_LOG) — só oc-thread precisa dela. -->
             <div class="oc-actionbar-slot" id="oc-actionbar-slot-atend">
               <div class="oc-action-bar" id="oc-action-bar" style="display:none">
-                <button class="btn btn-primary btn-sm" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
+                <button class="oc-btn-ok" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
                 <div class="oc-am-wrap">
                   <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
                   <div class="oc-am-menu" id="oc-transferir-menu">
@@ -2394,23 +2434,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             </div>
           </div>
           <!-- Chat Interno (equipe) — full-page, mesma estrutura de duas colunas -->
-          <div class="ochat-scr" id="ochat-scr-interno">
-            <div class="oc-cols">
+          <div class="ochat-scr oc-fullflex" id="ochat-scr-interno">
+            <div class="oc-topbar">
+              <button class="oc-newbtn" onclick="ocIntNovoAbrir()" title="Nova Conversa"><i class="ti ti-plus"></i></button>
+              <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="int-busca" class="oc-busca" placeholder="Buscar por pessoa, grupo ou assunto…" oninput="intRender()"></span>
+              <div class="oc-topbar-divider"></div>
+              <div class="atd-tabs" id="int-tabs"></div>
+            </div>
+            <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
+                 2026-07-31) — Mural e Fóruns são destinos, Administração só gerência. Sem
+                 equivalente no mockup simplificado, ficam na 2ª linha (igual Atendimentos). -->
+            <div class="atd-filtro">
+              <button class="oc-pill oc-pill-amber" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Novo Grupo</button>
+              <button class="oc-pill oc-pill-purple" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
+              <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
+              <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
+              <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
+            </div>
+            <div class="oc-middle">
               <div class="oc-list-col">
-                <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
-                     2026-07-31) — Mural e Fóruns são destinos, Administração só gerência -->
-                <div class="oc-acoes">
-                  <button class="btn btn-primary btn-sm" onclick="ocIntNovoAbrir()"><i class="ti ti-plus"></i> Nova Conversa</button>
-                  <button class="btn btn-ghost btn-sm" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Novo Grupo</button>
-                  <button class="btn btn-ghost btn-sm" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
-                  <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
-                  <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
-                </div>
-                <div class="atd-tabs" id="int-tabs"></div>
-                <div class="atd-filtro">
-                  <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="int-busca" class="oc-busca" placeholder="Buscar conversa ou usuário…" oninput="intRender()"></span>
-                  <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
-                </div>
                 <div class="oc-lista-scroll" id="int-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
               </div>
               <div class="oc-pane-col" id="oc-slot-interno"></div>
@@ -10938,7 +10980,15 @@ function ochatIr(scr){
   document.querySelectorAll('#page-chat .ochat-nav[data-scr]').forEach(n=>n.classList.toggle('active', n.getAttribute('data-scr')===scr));
   document.querySelectorAll('#page-chat .ochat-scr').forEach(s=>s.classList.remove('active'));
   const el = document.getElementById('ochat-scr-'+scr); if(el) el.classList.add('active');
-  const t = _OCHAT_TOP[scr]; const top = document.getElementById('ochat-top');
+  // Atendimentos/Chat Interno são "full-flex" (cópia literal do mockup: tela preenche 100% da
+  // altura, sem título de página nem scroll de página — só a lista/mensagens rolam). As demais
+  // telas de configuração mantêm o título + scroll normal de página.
+  const fullFlex = (scr === 'atend' || scr === 'interno');
+  const top = document.getElementById('ochat-top');
+  const body = document.querySelector('#page-chat .ochat-body');
+  if(top) top.classList.toggle('oc-hidden', fullFlex);
+  if(body) body.classList.toggle('oc-fullflex', fullFlex);
+  const t = _OCHAT_TOP[scr];
   if(t && top) top.innerHTML = '<h2>'+esc(t[0])+'</h2><p>'+esc(t[1])+'</p>';
   if(scr==='modelos') chatModelosCarregar();
   if(scr==='triagem') chatTriagemCarregar();
@@ -10983,16 +11033,26 @@ function _ocDaChip(c, chip){
 function _ocChipsRow(chips, atual, fn){
   return chips.map(c=>'<div class="oc-chip'+(c.key===atual?' active':'')+'" onclick="'+fn+'(\''+c.key+'\')">'+esc(c.rot)+'</div>').join('');
 }
-// Avatar da lista (mockup §4, achado da revisão visual 2026-08-04): círculo com a inicial do
-// nome (ou "?" quando o título é só telefone, sem letra) para pessoa/direct; quadrado com
-// emoji para grupo/projeto — mesma forma do mockup. Cor única/neutra por decisão desta rodada.
+// Avatar da lista (mockup §4): círculo com a inicial do nome (ou "?" quando o título é só
+// telefone, sem letra) para pessoa/direct; quadrado com ícone/emoji para grupo/projeto — mesma
+// forma do mockup. Cor por CONTATO (achado FATIA 7 rodada 2 — mockup varia a cor do avatar por
+// pessoa; a implementação usava só cinza pra todos) via hash determinístico do nome, na paleta
+// --chat-* (tokens dedicados, valores literais do mockup — ver orizon-tokens.css).
+const _OC_AVATAR_CORES = ['c-blue','c-purple','c-green','c-red','c-teal'];
+function _ocAvatarCor(nome){
+  const s = (nome||'?');
+  let h = 0;
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return _OC_AVATAR_CORES[h % _OC_AVATAR_CORES.length];
+}
 function _ocAvatarHTML(nome, tipo){
-  if(tipo==='projeto') return '<div class="oc-avatar square"><i class="ti ti-folder" style="font-size:16px"></i></div>';
+  if(tipo==='projeto') return '<div class="oc-avatar square"><i class="ti ti-folder"></i></div>';
   if(tipo==='grupo') return '<div class="oc-avatar square">👥</div>';
   const limpo = (nome||'').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'').trim();
   const c0 = limpo.charAt(0).toUpperCase();
   const inicial = /[A-ZÀ-Ý]/.test(c0) ? c0 : '?';
-  return '<div class="oc-avatar">'+esc(inicial)+'</div>';
+  const cor = inicial==='?' ? '' : (' '+_ocAvatarCor(limpo));
+  return '<div class="oc-avatar'+cor+'">'+esc(inicial)+'</div>';
 }
 function atendChip(k){ _atdChip = k; atendRender(); }
 function intChip(k){ _intChip = k; intRender(); }
@@ -11033,7 +11093,7 @@ function _ocTodasDoCanal(qual){
 function _ocTodasItemHTML(c){
   const tipoRot = c.tipo==='projeto' ? 'Projeto' : (_INT_TIPOROT[c.tipo]||c.tipo);
   const badge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(tipoRot)+'</span>'
-    + (c.segmento ? ' <span class="atd-badge atd-b-seg">'+esc(_ocSegRot(c.segmento))+'</span>' : '');
+    + (c.segmento ? ' <span class="'+_ocSegClasse(c.segmento)+'">'+esc(_ocSegRot(c.segmento))+'</span>' : '');
   return '<div class="atd-item" onclick="ocAbrirTodas('+c.id+')">'
     + _ocAvatarHTML(c.titulo, c.tipo)
     + '<div class="atd-main">'
@@ -11086,7 +11146,7 @@ function intRender(){
   const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
   const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
   tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip')
-    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_intOversight?' active':'')+'" title="Todas (oversight)" onclick="intOversightToggle()"><i class="ti ti-eye"></i></span>' : '');
+    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_intOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="intOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('int-lista');
   if(_intOversight){                                   // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('int');
@@ -11125,7 +11185,8 @@ function _intItemHTML(c){
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
-  return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+  const sel = c.id===_ocConvAtiva ? ' selected' : '';
+  return '<div class="atd-item'+sel+'" onclick="atendAbrir('+c.id+')">'
     + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
@@ -11139,6 +11200,10 @@ function _intItemHTML(c){
 let _atdInbox = [];
 const _ATD_SEGROT = {comercial:'Comercial', suporte_tecnico:'Suporte Técnico', financeiro:'Financeiro',
                      logistica:'Logística', parceiros:'Projeto Executivo', compras:'Compras', sac:'SAC'};
+// Cor por segmento (achado FATIA 7 rodada 2 — mockup tem tag colorida por categoria, a
+// implementação usava só uma cor cinza pra todos). Classes .atd-b-seg-* mapeadas nas famílias
+// semânticas já existentes em orizon-tokens.css — sem cor nova.
+function _ocSegClasse(seg){ return seg && _ATD_SEGROT[seg] ? ('atd-badge atd-b-seg-'+seg) : 'atd-badge atd-b-seg'; }
 
 async function chatAtendCarregar(){
   const box = document.getElementById('atd-lista');
@@ -11172,7 +11237,7 @@ function atendRender(){
   let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
   tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip')
-    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_atdOversight?' active':'')+'" title="Todas (oversight)" onclick="atendOversightToggle()"><i class="ti ti-eye"></i></span>' : '');
+    + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_atdOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="atendOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('atd-lista');
   if(_atdOversight){                                  // oversight da gerência (r5)
     let todos = _ocTodasDoCanal('atd');
@@ -11192,7 +11257,7 @@ function atendRender(){
 }
 function _atdTriagemItemHTML(e){
   const badge = '<span class="atd-badge" style="border-color:var(--warn);color:var(--warn)"><i class="ti ti-signpost"></i> Triagem</span>';
-  const seg = e.segmento_sugerido ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ocSegRot(e.segmento_sugerido))+'</span>' : '';
+  const seg = e.segmento_sugerido ? '<span class="'+_ocSegClasse(e.segmento_sugerido)+'"><span class="dot" style="background:currentColor"></span>'+esc(_ocSegRot(e.segmento_sugerido))+'</span>' : '';
   const cand = (e.candidatos||[]).length ? '<span class="atd-badge atd-b-warn">'+(e.candidatos.length)+' candidata(s)</span>' : '';
   return '<div class="atd-item" onclick="ocTriagemAbrir('+e.id+')">'
     + _ocAvatarHTML(null, 'pessoal')
@@ -11236,14 +11301,15 @@ function _atdFallbackTag(c){
   return '<span class="atd-badge atd-b-orig-avulsa">Avulsa</span>';
 }
 function _atdItemHTML(c){
-  const seg = c.segmento ? '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(_ocSegRot(c.segmento))+'</span>' : _atdFallbackTag(c);
+  const seg = c.segmento ? '<span class="'+_ocSegClasse(c.segmento)+'"><span class="dot" style="background:currentColor"></span>'+esc(_ocSegRot(c.segmento))+'</span>' : _atdFallbackTag(c);
   const jan = _atdJanelaBadge(c.janela);
   const proj = c.projeto_nome ? '<span class="atd-badge atd-b-ok"><i class="ti ti-folder"></i> '+esc(c.projeto_nome.replace(/_/g,' '))+'</span>' : '';
   const concl = c.status==='concluida' ? '<span class="atd-badge" style="border-color:var(--ok);color:var(--ok)">Concluída</span>' : '';
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const dot = c.urgente ? '<span class="atd-urgent-dot" title="Urgente"></span>' : '';
-  return '<div class="atd-item" onclick="atendAbrir('+c.id+')">'
+  const sel = c.id===_ocConvAtiva ? ' selected' : '';
+  return '<div class="atd-item'+sel+'" onclick="atendAbrir('+c.id+')">'
     + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
@@ -13713,36 +13779,6 @@ async function abrirConversaProjeto(){
   _ocSetHeaderExtras(it || {tipo:'projeto'});
 }
 
-function convTransfToggle(){
-  const on = document.getElementById('conv-transf-chk').checked;
-  document.getElementById('conv-transf-campos').style.display = on ? '' : 'none';
-  if (on) _convCarregarSeletoresTransf();
-}
-
-async function _convCarregarSeletoresTransf(){
-  const projNome = _ocConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
-  const selE = document.getElementById('conv-transf-etapa');
-  const selF = document.getElementById('conv-transf-func');
-  const selD = document.getElementById('conv-transf-doc');
-  selE.innerHTML = '<option value="">— sem etapa (geral) —</option>'
-    + ETAPAS_CICLO.map(e => '<option value="'+esc(e.codigo)+'">'+esc(e.codigo+' — '+e.nome)+'</option>').join('');
-  if (!selF.options.length) {
-    const d = await fetch('/api/funcionarios?status=ativo',{credentials:'same-origin'})
-      .then(r=>r.json()).catch(()=>({}));
-    selF.innerHTML = '<option value="">— escolha —</option>'
-      + (d.itens||[]).map(f => '<option value="'+f.id+'">'+esc(f.nome)+'</option>').join('');
-  }
-  // Fatia 5: documentos do projeto — o GET /ciclo/pe já devolve TODOS os CicloDocumento
-  // (com tenancy/auth), apesar do nome da rota.
-  const dp = await fetch(`/api/projetos/${encodeURIComponent(projNome)}/ciclo/pe`,
-                         {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
-  selD.innerHTML = '<option value="">— sem documento —</option>'
-    + (dp.documentos||[]).map(d => {
-        const dt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
-        return '<option value="'+d.id+'">'+esc(d.nome_original+' ('+d.tipo+' · et. '+d.etapa_codigo+(dt?' · '+dt:'')+')')+'</option>';
-      }).join('');
-}
-
 // ── estado do painel de conversa ──────────────────────────────────────────────
 let _ocInbox = [];        // conversas da inbox (dados canônicos das listas/grupos/badge)
 let _ocUsuarios = [];     // usuários da loja (seletor "Para")
@@ -13868,6 +13904,13 @@ function _ocTituloComAssunto(c){
 async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   _ocConvAtiva = id; _ocConvTipo = tipo || null;
   _ocConvProjeto = projetoNome || null;
+  // Linha "selecionada" na lista (mockup .conv-row.selected — friso + fundo, achado da FATIA 7):
+  // atualização direta no DOM em vez de re-render completo, pra não mexer em filtro/scroll.
+  document.querySelectorAll('.oc-list-col .atd-item.selected').forEach(el=>el.classList.remove('selected'));
+  const onclickAttr = 'atendAbrir('+id+')';
+  document.querySelectorAll('.oc-list-col .atd-item').forEach(el=>{
+    if(el.getAttribute('onclick')===onclickAttr) el.classList.add('selected');
+  });
   ocMostrarView('oc-thread');
   if(typeof ocRemoverAnexo === 'function') ocRemoverAnexo();   // limpa anexo pendente ao trocar
   document.getElementById('oc-compositor').style.display = podePostar ? 'flex' : 'none';
@@ -13877,17 +13920,8 @@ async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   const ab = document.getElementById('oc-arq-btn'); if(ab) ab.style.display = 'none'; // ligado por _ocSetArquivarBtn
   const ss = document.getElementById('oc-seg-sel'); if(ss) ss.style.display = 'none'; // ligado por _ocSetSegSel
   const pm = document.getElementById('oc-membros'); if(pm) pm.style.display = 'none'; // fecha painel ao trocar
-  const tr = document.getElementById('oc-transf');               // transferência/bloqueador só no projeto
-  if(tr) tr.style.display = _ocConvProjeto ? '' : 'none';
   const de = document.getElementById('oc-doc-enc');              // encaminhar documento só no projeto
   if(de) de.style.display = _ocConvProjeto ? '' : 'none';
-  const tchk = document.getElementById('conv-transf-chk');       // reseta a composição de transferência
-  if(tchk){ tchk.checked = false; if(typeof convTransfToggle==='function') convTransfToggle(); }
-  // Caixa "E-mail (oficializar)": só gerência, em grupo/projeto.
-  const grupoOuProj = (_ocConvTipo === 'grupo' || _ocConvTipo === 'projeto');
-  const ofic = document.getElementById('oc-oficializar-wrap');
-  if(ofic) ofic.style.display = (grupoOuProj && _podeAutorizarFront()) ? '' : 'none';
-  const ofc = document.getElementById('oc-oficializar'); if(ofc) ofc.checked = false;
   _ocNumeroChip();
   await ocCarregarMsgs();
   if(podePostar) setTimeout(()=>{ const t=document.getElementById('oc-texto'); if(t) t.focus(); }, 60);
@@ -14494,14 +14528,6 @@ function ocRemoverAnexo(){
   const fi = document.getElementById('oc-file'); if(fi) fi.value = '';
   document.getElementById('oc-anexo-chip').style.display = 'none';
 }
-function _ocOficializar(){ const c=document.getElementById('oc-oficializar'); return !!(c&&c.checked); }
-function _ocToastEmail(e){
-  if(!e) return;
-  if(e.enviados) showToast('📧 E-mail oficial enviado a '+e.enviados+' integrante(s).');
-  else if(e.total) showToast('📧 E-mail oficial registrado — '+e.pendentes+' pendente(s) (canal de e-mail não configurado).');
-  else showToast('Nenhum integrante com e-mail cadastrado.', true);
-}
-
 async function ocEnviar(){
   if(!_ocConvAtiva) return;
   const ta = document.getElementById('oc-texto');
@@ -14518,35 +14544,18 @@ async function ocEnviar(){
       d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/anexos',
         {method:'POST', credentials:'same-origin', body: fd}).then(r=>r.json());   // sem Content-Type: o browser põe o boundary
     } else if(_ocConvProjeto){
-      // Conversa de PROJETO: endpoint do projeto (ciclo-aware + transferência/bloqueador).
-      const payload = {corpo, oficializar_email: _ocOficializar()};
-      const tchk = document.getElementById('conv-transf-chk');
-      const ehTransf = tchk && tchk.checked;
-      if(ehTransf){
-        const fid = document.getElementById('conv-transf-func').value;
-        if(!fid){ showToast('Escolha quem recebe a transferência.', true); return; }
-        payload.natureza = 'transferencia';
-        payload.transferido_para_funcionario_id = parseInt(fid,10);
-        const et = document.getElementById('conv-transf-etapa').value; if(et) payload.etapa_codigo = et;
-        const doc = document.getElementById('conv-transf-doc').value; if(doc) payload.documento_ref_id = parseInt(doc,10);
-        payload.bloqueador = document.getElementById('conv-transf-bloq').checked;
-      }
+      // Conversa de PROJETO: endpoint do projeto (espelha pra fora, sem lógica de Ciclo — a
+      // Transferência de responsabilidade/Bloqueador saiu do Chat, ver nota em main.py).
       d = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/conversa/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify(payload)}).then(r=>r.json());
-      if(d && d.ok && ehTransf){
-        if(tchk) tchk.checked = false; convTransfToggle();
-        if(typeof carregarCiclo === 'function') carregarCiclo();   // tag "com a bola" / estado do ciclo
-      }
+         body: JSON.stringify({corpo})}).then(r=>r.json());
     } else {
       d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/mensagens',
         {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({corpo, oficializar_email: _ocOficializar()})}).then(r=>r.json());
+         body: JSON.stringify({corpo})}).then(r=>r.json());
     }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
-    _ocToastEmail(d.email);
     ta.value = ''; ocRemoverAnexo();
-    const _of = document.getElementById('oc-oficializar'); if(_of) _of.checked = false;
     await ocCarregarMsgs();
     _ocRefrescar();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }
@@ -14636,12 +14645,13 @@ function ocMembroAdd(){
 
 // ── novo GRUPO (a conversa 1:1 abre direto pelo clique no usuário — modelo WhatsApp) ──
 function ocNovaAbrir(){
-  ocMontarPane('interno');
+  ocMontarPane(_ocScrAtual);   // pode ser chamado de Atendimentos ou Chat Interno (FATIA 7)
   ocMostrarView('oc-nova');
   document.getElementById('oc-nova-aviso').textContent = '';
   document.getElementById('oc-grupo-nome').value = '';
   document.getElementById('oc-busca-user').value = '';
   _ocSel = new Set(); _ocExternos = []; ocRenderExternos();
+  ocAddClienteFechar();
   document.getElementById('oc-projeto-nota').style.display = 'none';
   document.getElementById('oc-para-bloco').style.display = 'block';
   document.getElementById('oc-para-hint').textContent = '(selecione um ou mais)';
@@ -14668,10 +14678,49 @@ async function ocAbrirUsuario(uid){
 async function ocAddExterno(){
   const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'})) || '').trim();
   if(!nome) return;
-  const tel = ((await promptPopup('Telefone (WhatsApp) com DDD:', {titulo:'Contato externo — '+nome, placeholder:'ex.: 11 91234-5678', okLabel:'Adicionar'})) || '').trim();
+  const tel = ((await promptPopup('Telefone (WhatsApp) com DDD:', {titulo:'Contato externo — '+nome, placeholder:'ex.: 11 91234-5678', okLabel:'Próximo'})) || '').trim();
   if(!tel) return;
-  _ocExternos.push({nome, telefone: tel, meio:'whatsapp'});
+  // E-mail é OPCIONAL (pedido do usuário 2026-08-05) — não bloqueia se vazio/cancelado.
+  const email = ((await promptPopup('E-mail (opcional):', {titulo:'Contato externo — '+nome, placeholder:'email@exemplo.com', okLabel:'Adicionar'})) || '').trim();
+  _ocExternos.push({nome, telefone: tel, email: email || undefined, meio:'whatsapp'});
   ocRenderExternos();
+}
+// "Cliente cadastrado" (pedido do usuário 2026-08-05): busca na base de clientes (mesma fonte
+// de /api/clientes já usada em Adicionar Contato) e adiciona como externo — reaproveita
+// _ocExternos/adicionar_externo, sem endpoint novo (main.py já lê ex.get("email")).
+async function ocAddClienteAbrir(){
+  document.getElementById('oc-cliente-busca').value = '';
+  document.getElementById('oc-cliente-resultados').innerHTML = '';
+  document.getElementById('oc-cliente-picker').style.display = 'block';
+  document.getElementById('oc-cliente-busca').focus();
+}
+function ocAddClienteFechar(){
+  document.getElementById('oc-cliente-picker').style.display = 'none';
+}
+let _ocClienteBuscaTimer = null;
+function ocClienteBuscarDebounce(){ clearTimeout(_ocClienteBuscaTimer); _ocClienteBuscaTimer = setTimeout(ocClienteBuscar, 300); }
+async function ocClienteBuscar(){
+  const q = (document.getElementById('oc-cliente-busca').value||'').trim();
+  const box = document.getElementById('oc-cliente-resultados');
+  if(!q){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Buscando…</div>';
+  let d;
+  try{ d = await fetch('/api/clientes?q='+encodeURIComponent(q),{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ box.innerHTML = '<div style="color:var(--err);font-size:12px;padding:6px">Erro de rede.</div>'; return; }
+  const itens = (d && d.ok && d.clientes) || [];
+  if(!itens.length){ box.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum cliente encontrado.</div>'; return; }
+  box.innerHTML = itens.slice(0,20).map(c=>{
+    const tel = c.whatsapp || c.telefone || '';
+    return '<div class="oc-cliente-item" onclick="ocAddClienteSelecionar('+c.id+',\''+esc(c.nome).replace(/'/g,"\\'")+'\',\''+esc(tel)+'\',\''+esc(c.email||'')+'\')">'
+      + '<div style="font-weight:600;font-size:13px">'+esc(c.nome)+'</div>'
+      + '<div style="font-size:11px;color:var(--muted)">'+esc(tel||'sem telefone')+(c.email?' · '+esc(c.email):'')+'</div></div>';
+  }).join('');
+}
+function ocAddClienteSelecionar(id, nome, telefone, email){
+  if(!telefone){ showToast('Este cliente não tem telefone/WhatsApp cadastrado.', true); return; }
+  _ocExternos.push({nome, telefone, email: email || undefined, meio:'whatsapp', cliente_id:id});
+  ocRenderExternos();
+  ocAddClienteFechar();
 }
 function ocRemoverExternoSel(i){ _ocExternos.splice(i,1); ocRenderExternos(); }
 function ocRenderExternos(){
@@ -14679,7 +14728,7 @@ function ocRenderExternos(){
   if(!box) return;
   box.innerHTML = _ocExternos.map((e,i)=>
     '<span style="display:inline-flex;align-items:center;gap:5px;background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:14px;padding:2px 8px;font-size:12px">'
-    + '<i class="ti ti-brand-whatsapp"></i> '+esc(e.nome)+' · '+esc(e.telefone)
+    + '<i class="ti '+(e.cliente_id?'ti-user-check':'ti-brand-whatsapp')+'"></i> '+esc(e.nome)+' · '+esc(e.telefone)+(e.email?' · '+esc(e.email):'')
     + ' <span onclick="ocRemoverExternoSel('+i+')" style="cursor:pointer;font-weight:800">×</span></span>').join('');
 }
 

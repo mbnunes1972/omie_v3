@@ -6389,11 +6389,6 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
-                resumo_email = None
-                if dd.get("oficializar_email") and (perfis.pode(usuario.get("nivel"), "autorizar")
-                                                     or perfis.pode(usuario.get("nivel"), "aprovar_financeiro")):
-                    # "Oficializar por e-mail" é ato formal — só gerência/diretoria (decisão do lojista).
-                    resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 db.commit()
                 try:
                     import mod_chat_externo as _mce
@@ -6402,7 +6397,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     db.rollback()   # ponte WhatsApp best-effort — nunca quebra a mensagem
                 nome = (db.get(Usuario, usuario["id"]).nome if usuario.get("id") else None)
-                self.send_json({"ok": True, "email": resumo_email,
+                self.send_json({"ok": True,
                                 "mensagem": mod_chat.serializar_mensagem(msg, autor_nome=nome)},
                                code=201)
             finally:
@@ -6467,80 +6462,34 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat
                 dd = json.loads(body or b'{}')
                 p_meta = db.query(Projeto).filter_by(nome_safe=nome).first()
-                # Fatia 2: campos de natureza/transferência + validações de VÍNCULO (as de
-                # forma moram no mod_chat.enviar_mensagem).
-                natureza = (dd.get("natureza") or "interacao").strip()
-                etapa_codigo = (str(dd.get("etapa_codigo") or "").strip() or None)
-                transf_raw = dd.get("transferido_para_funcionario_id")
-                try:
-                    transf_id = int(transf_raw) if transf_raw not in (None, "") else None
-                except (TypeError, ValueError):
-                    self.send_json({"ok": False, "erro": "Destinatário inválido."}, code=400)
-                    return
-                doc_raw = dd.get("documento_ref_id")
-                try:
-                    doc_ref = int(doc_raw) if doc_raw not in (None, "") else None
-                except (TypeError, ValueError):
-                    doc_ref = None
-                bloqueador = bool(dd.get("bloqueador"))
-                etapa_alvo = None
-                transferido = None
-                documento = None
-                if natureza == "transferencia":
-                    transferido = db.get(Funcionario, transf_id) if transf_id else None
-                    if transferido is None or transferido.loja_id != loja_id:
-                        self.send_json({"ok": False, "erro": "Destinatário da transferência "
-                                        "inválido — escolha um funcionário desta loja."},
-                                       code=400); return
-                    if etapa_codigo:
-                        etapa_alvo = (db.query(CicloEtapa)
-                                        .filter_by(projeto_nome=nome, etapa_codigo=etapa_codigo)
-                                        .first())
-                        if etapa_alvo is None:
-                            self.send_json({"ok": False, "erro": "Etapa %s não existe no ciclo "
-                                            "deste projeto." % etapa_codigo}, code=400); return
-                    if doc_ref:
-                        # Fatia 5: documento tramitado tem que ser do MESMO projeto — não
-                        # vaza referência de documento de outro projeto/loja.
-                        documento = db.get(CicloDocumento, doc_ref)
-                        if documento is None or documento.projeto_nome != nome:
-                            self.send_json({"ok": False, "erro": "Documento inválido — anexe "
-                                            "um documento deste projeto."}, code=400); return
+                # "Transferência de responsabilidade"/Bloqueador via Chat foi REMOVIDA (decisão do
+                # usuário, FATIA 7 2026-08-05): o Chat é só canal de comunicação; atribuir
+                # responsável por etapa já tem porta própria — cronoResponsavelSalvar() na tela de
+                # Etapas do Projeto, POST /api/projetos/<nome>/ciclo/<codigo>/responsavel, MESMO
+                # campo CicloEtapa.responsavel_funcionario_id (v12) que a transferência escrevia.
+                # Bloqueador de verdade (travar operação) é a Retenção (mod_retido.py, botão
+                # dedicado nas etapas 9/10/11/17) — mecanismo diferente, não tocado aqui. A
+                # mensageria automática de passagem de fase (mod_chat.mensagem_passagem_fase)
+                # continua usando natureza="transferencia" internamente, sem passar por este
+                # payload de usuário.
                 try:
                     conv = mod_chat.get_or_create_conversa_projeto(
                         db, loja_id, nome,
                         cliente_id=(p_meta.cliente_id if p_meta else None))
                     msg = mod_chat.enviar_mensagem(
                         db, conv, usuario.get("id"), dd.get("corpo"),
-                        natureza=natureza, etapa_codigo=etapa_codigo,
-                        transferido_para_funcionario_id=transf_id,
-                        documento_ref_id=doc_ref, bloqueador=bloqueador,
                         destinatario_usuario_id=dd.get("destinatario_usuario_id"))
                 except ValueError as ve:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(ve)}, code=400); return
-                if etapa_alvo is not None and transferido is not None:
-                    # Transferência oficial ESCREVE NO v12: mesmo campo do override manual da
-                    # tela do Ciclo — chat e tela são a mesma operação por baixo (seção 6).
-                    # A restrição por Função do painel NÃO se aplica aqui de propósito:
-                    # transferir ENTRE faixas é a razão de existir da transferência.
-                    etapa_alvo.responsavel_funcionario_id = transferido.id
-                resumo_email = None
-                if dd.get("oficializar_email") and (perfis.pode(usuario.get("nivel"), "autorizar")
-                                                     or perfis.pode(usuario.get("nivel"), "aprovar_financeiro")):
-                    # "Oficializar por e-mail" é ato formal — só gerência/diretoria (decisão do lojista).
-                    resumo_email = mod_chat.oficializar_por_email(db, conv, msg, autor_nome=usuario.get("nome"))
                 try:
                     import mod_chat_externo as _mce
                     _mce.espelhar_para_externos(db, conv, msg, autor_nome=usuario.get("nome"))
                 except Exception:
                     pass   # best-effort: espelho externo nunca quebra a mensagem interna
                 db.commit()
-                self.send_json({"ok": True, "email": resumo_email,
-                                "mensagem": mod_chat.serializar_mensagem(
-                                    msg, usuario.get("nome"),
-                                    transferido.nome if transferido else None,
-                                    documento=documento)},
+                self.send_json({"ok": True,
+                                "mensagem": mod_chat.serializar_mensagem(msg, usuario.get("nome"))},
                                code=201)
             except Exception as e:
                 db.rollback()

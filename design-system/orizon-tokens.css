@@ -100,6 +100,20 @@
   --info-soft: #E4EFF7;
   --info-line: #A9C3D8;
 
+  /* CHAT — paleta LITERAL do mockup de referência (docs/superpowers/specs/comunicacao/mockups/
+     2026-08-04-orizon-chat-atendimentos-ui-mockup.html), tokens DEDICADOS pro módulo Chat
+     (Fatia 7 rodada 2 — achado do usuário: cor remapeada pros semânticos gerais não batia
+     exatamente com o mockup). Escuro = valores literais do mockup; claro = mesmo matiz,
+     escurecido pra contraste em fundo branco (o mockup não tem tema claro de referência).
+     Não mexe em --accent/--btn-primary-* (identidade cobre do app inteiro, intocada) — só
+     variedade decorativa de avatar/tag/pill dentro do Chat. */
+  --chat-blue:        #2E6DA4; --chat-blue-soft:   rgba(91,155,213,.14);
+  --chat-purple:      #7A54B8; --chat-purple-soft: rgba(165,134,214,.16);
+  --chat-green:       #1D7A4A; --chat-green-soft:  rgba(95,191,143,.16);
+  --chat-red:         #A83338; --chat-red-soft:    rgba(224,102,106,.14);
+  --chat-teal:        #146B7A; --chat-teal-soft:   rgba(79,184,201,.14);
+  --chat-amber:       #7A5420; --chat-amber-soft:  rgba(202,161,93,.16);
+
   /* Sombras */
   --shadow:    0 1px 3px rgba(0,0,0,.08);
   --shadow-md: 0 4px 12px rgba(0,0,0,.10);
@@ -163,6 +177,15 @@
   --info:      #8BA6BD;   /* azul empoeirado */
   --info-soft: rgba(139,166,189,.12);
   --info-line: #3C5468;
+
+  /* CHAT — paleta LITERAL do mockup (ver nota completa no bloco claro acima). Valores EXATOS
+     do mockup — o mockup só tem tema escuro, então esses são os literais mesmo. */
+  --chat-blue:        #5b9bd5; --chat-blue-soft:   rgba(91,155,213,.14);
+  --chat-purple:      #a586d6; --chat-purple-soft: rgba(165,134,214,.14);
+  --chat-green:       #5fbf8f; --chat-green-soft:  rgba(95,191,143,.14);
+  --chat-red:         #e0666a; --chat-red-soft:    rgba(224,102,106,.14);
+  --chat-teal:        #4fb8c9; --chat-teal-soft:   rgba(79,184,201,.14);
+  --chat-amber:       #caa15d; --chat-amber-soft:  rgba(202,161,93,.12);
 
   --shadow:    0 1px 3px rgba(0,0,0,.35);
   --shadow-md: 0 6px 16px rgba(0,0,0,.45);

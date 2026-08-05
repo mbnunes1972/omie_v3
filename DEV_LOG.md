@@ -2799,6 +2799,172 @@ Fecha a lacuna de largura do Campo de Entrada (v7 só padronizou fundo/borda/alt
 **Regra nova implementada (v9 §4):** o botão **Primário** ganha contraste por **sombra + borda sutil 1px no mesmo matiz do accent, ~15% mais escura** — `.btn-primary{…;border:1px solid color-mix(in srgb, var(--accent) 85%, #000)}`. Theme-adaptive (resolve por tema sozinho), sem cor literal. `box-sizing:border-box` global absorve a borda (sem shift de layout).
 **Dourado → accent nos botões de ação (decisão do usuário: converter p/ primário, com "1 primário por tela"):** o `.btn-ciclo` acabou sendo um **componente compartilhado de ~30 botões** (Baixar/Carregar/Consultar/Emitir/Cancelar + as ações principais), não só 16 Aprovar/Confirmar. Correção **na origem** (como o v9 recomenda): (a) `.btn-ciclo` redefinido como **secundário token-based** (`--surface-2`/`--muted`/`--border`/`--shadow`, hover accent) — utilitários viram secundários; (b) `.btn-amber` (o "Aprovar" da Negociação, referenciado pelo JS — nome preservado) vira **primário accent**; (c) as ações "fecham o negócio" de cada etapa/tela (Confirmar medidor, Liberar, Registrar parecer, Produção Concluída, Concluir Relatório, peConcluir, concluirAprovacaoFinanceira, revisa, gerarContrato, sig-ok, data-act ok, encaminhar Pedidos) trocaram o dourado literal (`#b8960c`/`#1a1200`) e o `var(--dalm-gold)`-como-fundo por **`var(--accent)`+texto branco** — 1 primário por painel de etapa. `--dalm-gold` **mantido** onde é marca legítima (cabeçalhos de documento/seção, bordas de tab — permitido pelo v9). Verificação: CSS 310/310, **scan JS delta zero** (HEAD=CURRENT `(7,4)`), nenhum `<button>` com `b8960c`. _(Fora de escopo, anotado: banners de aviso `#1a1200` e as caixas de modal "Aprovar Orçamento"/"signatário" com borda/heading dourado literal — não são botões; ficam p/ um passe de chrome dedicado.)_
 
+## Sessão 160 — FATIA 7: reconstrução decisiva do Chat (mockup como fonte literal)
+
+**Por que esta rodada é diferente das anteriores.** Sessões 158/159 corrigiram item a item, mas
+cada correção pontual regredia outra (chips voltavam a quebrar, barra de ação sumia, avatar de
+projeto continuava feio) — sintoma de a UI estar sendo reconstruída por **interpretação/memória**
+a cada rodada em vez de **copiada literalmente** do mockup
+(`docs/superpowers/specs/comunicacao/mockups/2026-08-04-orizon-chat-atendimentos-ui-mockup.html`).
+Esta rodada leu o mockup por inteiro (HTML+CSS+JS, ~1000 linhas) como fonte de verdade e
+reconstruiu a estrutura de `static/index.html` pra bater com ele estrutural/proporcionalmente —
+não só os 6 itens pontuais, mas o modelo de layout inteiro. Backend da Fatia 1 (responsável,
+urgente, concluir, transferir-atendimento, iniciar-conversa por template) **não foi tocado**,
+como pedido.
+
+**Mudança estrutural de base (raiz do "a barra de ação sumiu de novo"):** `.ochat-scr`
+(Atendimentos/Chat Interno) virou **full-flex** — preenche 100% da altura disponível com
+`flex:1;min-height:0` em cadeia (igual ao mockup: `.app{height:calc(100vh-78px)}` →
+`.screen{flex:1}` → `.middle{flex:1;min-height:0}`) — no lugar da cadeia de
+`calc(100vh - 150px - 60px)` em pixels fixos que a Sessão 158 introduziu e que qualquer variação
+de conteúdo acima furava. Dois bugs de layout achados e corrigidos nesse processo:
+1. Faltava `min-height:0` em `.ochat-body`/`.oc-pane-col` — sem isso, um item flex não encolhe
+   abaixo do tamanho do conteúdo, e a página estourava a viewport por baixo (a barra de ação
+   ficava cortada, não escondida).
+2. `.ochat-shell{height:calc(100vh - 0px)}` não descontava os **48px de padding vertical** do
+   `.content` pai (24px topo + 24px base, regra global do app) — a régua inteira do chat
+   calculava a partir do viewport cheio e transbordava exatamente 48px por baixo. Único ponto de
+   altura fixa que sobrou no módulo inteiro (igual ao mockup ter exatamente UM anchor no topo,
+   não vários em cascata).
+
+**Checklist item a item** (prints em
+`docs/superpowers/specs/comunicacao/screenshots/2026-08-05-fatia7/`, mockup vs. implementação,
+mesma resolução 1440×900):
+
+1. **Duas barras (topo/ação) — RESOLVIDO, com uma correção ao Marcelo.** O usuário reafirmou
+   "barra do topo do tamanho da coluna da lista, barra de ação do tamanho da coluna do chat" —
+   mas a leitura LITERAL do HTML/CSS do mockup mostra o oposto: `.topbar` e `.action-bar` são
+   **irmãs de `.middle`** (não filhas de `.list-col`/`.chat-col`), ambas com a largura TOTAL da
+   tela (list-col+chat-col juntas) — confirmado 3× nesta discussão (leitura de código + medição
+   real via Playwright, duas rodadas atrás). Mantido full-width como já estava — o problema real
+   era a barra estar CORTADA pelo bug de altura acima, não a largura errada. Reportado com os
+   números antes de mudar qualquer coisa.
+2. **Chips numa linha só + oversight rotulado — RESOLVIDO.** Com a topbar agora em largura
+   total (não mais espremida nos 340-380px da coluna da lista), os 5 chips (Todas/Grupos/
+   Projetos/Arquivadas/Urgentes) + o toggle "Oversight" (ícone de olho + rótulo curto, não só o
+   ícone da Sessão 159) cabem numa linha só com folga — problema resolvido na raiz (espaço), não
+   mais um ajuste fino de padding/fonte.
+3. **Avatar de projeto — RESOLVIDO.** `ti-folder` (trocado na Sessão 159) ganhou
+   `color:var(--text-2)` — mais sutil que `--text` cheio, sem mexer em paleta geral.
+4. **Remoção de "E-mail (oficializar)" e "Transferência de responsabilidade"/Bloqueador do
+   Chat — RESOLVIDO, com investigação em 2 rounds.** "E-mail (oficializar)" — investigado e
+   removido de cara: `chat/core.py:oficializar_por_email` não tinha nenhum acoplamento com
+   Ciclo, backend+frontend+2 testes removidos sem sobra. "Transferência/Bloqueador" foi mais
+   delicado: 1ª investigação achou que o checkbox "Bloqueador" do compositor era a ÚNICA porta de
+   entrada de `mod_ciclo.pode_avancar`'s gate — reportei e o Marcelo contestou, certo: ele lembrava
+   de "Bloqueador de projeto" como o botão **Retenção** (`mod_retido.py`, etapas 9/10/11/17,
+   trava operação por ambiente/parcela), não a Transferência do chat. 2ª investigação confirmou:
+   são dois mecanismos **totalmente independentes no código** — Retenção não tem nenhuma relação
+   com `pode_avancar`/`bloqueadores_ativos` nem passa pelo Chat. Com o quadro completo, o Marcelo
+   confirmou remover as duas coisas do Chat mesmo assim (Retenção continua 100% intacta). Também
+   achado nessa investigação: atribuir responsável por etapa já tem porta própria e mais antiga —
+   `cronoResponsavelSalvar()`/`POST .../ciclo/<codigo>/responsavel` na tela de Etapas do Projeto
+   (o "override manual do v12" citado no docstring da Fatia 2) — a transferência via chat era
+   **redundante** com isso, não a única via. Removido: `#oc-transf` (HTML+JS), a leitura de
+   `natureza`/`etapa_codigo`/`transferido_para_funcionario_id`/`documento_ref_id`/`bloqueador`
+   do payload em `main.py` (dois endpoints de mensagem). **Não tocado** (por decisão de escopo):
+   `mod_chat.enviar_mensagem`/`mod_ciclo.pode_avancar`/`bloqueadores_ativos`/`/resolver`/
+   `/destravar-emergencia` continuam existindo — usados internamente por
+   `mensagem_passagem_fase` (mensagens automáticas de transição de fase, que é como o
+   acompanhamento do Ciclo aparece no grupo do projeto hoje) e testados via chamada direta a
+   `mod_chat.enviar_mensagem` (bypass do HTTP) em `test_chat_fatia3.py`/`test_chat_fatia2.py`.
+   3 testes de `test_chat_fatia2.py` que testavam validação/write-through **do endpoint
+   removido** (não da função em si) foram deletados, não adaptados; `test_chat_fatia5.py`
+   inteiro (3 testes, "Documento compartilhável") também deletado — 100% do arquivo testava o
+   campo `documento_ref_id`, que só existia dentro da UI de Transferência removida.
+   "Encaminhar documento (WhatsApp)" (`#oc-doc-enc`) é feature DIFERENTE, não tocada.
+5. **Tela de Triagem — investigada, MANTIDA (não é reestilização, é confirmação de
+   necessidade).** RF-08/09 (Sessão 154) só PRÉ-CLASSIFICA segmento pela automação do WhatsApp;
+   nunca resolve sozinha vincular/criar/descartar. Cenários reais que ainda passam por decisão
+   manual: número desconhecido, projetos ambíguos (2+ candidatos), projeto encerrado/arquivado,
+   entrada por e-mail (sem menu automático), resposta não reconhecida ao menu. 12 testes em
+   `test_triagem_fila.py` cobrem exatamente esses casos. Já estava reestilizada (cards/ícones) da
+   Sessão 158; nenhuma mudança de código nesta rodada.
+6. **Tag "Pessoal" × "Livre" no Chat Interno — já resolvido na Sessão 159, confirmado
+   intacto** — `direct` só mostra o badge de assunto, `grupo`/`mural` mostram os dois.
+
+**Extra (fidelidade ao mockup, não pedido explicitamente mas natural com a topbar já
+reconstruída):** linha "selecionada" na lista de conversas — friso esquerdo + fundo, igual
+`.conv-row.selected` do mockup — não existia em nenhuma rodada anterior.
+
+**Achado operacional (não é bug de código):** rodar a suíte completa em paralelo com a auditoria
+da Vera (ela também roda pytest) corrompeu as duas rodadas com dezenas de erros falsos de
+"relation does not exist" — os dois processos batem no MESMO `orizon_test`, que faz
+`DROP SCHEMA CASCADE` por módulo (nota já existente no CLAUDE.md sobre não apontar pro banco
+errado, mas nunca tinha surgido o caso de dois pytest **próprios** concorrentes). Rodada solo deu
+limpa. Fica registrado como cuidado pra próximas vezes que Vera e o rodada principal quiserem
+confirmar a suíte ao mesmo tempo.
+
+**Verificação:** suíte completa **1734 passed** (solo, sem contenção), `node --check` limpo nos
+dois arquivos JS extraídos, `python3 -c "import ast"` limpo em `main.py`/`chat/core.py`. Todas as
+6 views do `#oc-pane` (vazio/nova/fórum/contato/triagem/thread) testadas manualmente via
+Playwright — barra de ação esconde/reaparece certo entre elas. Comparação visual sistemática
+mockup×implementação, claro e escuro, prints anexados nesta pasta.
+
+---
+
+## FATIA 7 rodada 2 (mesmo dia) — paleta de cor EXATA + "+Criar Grupo" em Atendimentos
+
+Depois de reportar a rodada 1 como pronta, o Marcelo comparou lado a lado com o mockup real
+(inclusive um arquivo `mockup-atendimentos_1.html` no Downloads dele — **confirmado byte a byte
+idêntico** ao do repo, então não era um problema de arquivo/versão errada) e achou que ainda
+estava "muito diferente". Duas causas raiz reais, achadas nesta rodada:
+
+**1) Cor.** A rodada 1 tinha ficado deliberadamente neutra (decisão de rodadas anteriores: "sem
+mexer em paleta"). Comparando com cuidado, a maior parte da diferença visual era exatamente
+cor: o mockup usa âmbar/azul/roxo/verde vívidos; a implementação usava só cinza. O Marcelo
+liberou cor nesta rodada — mas **não dava pra copiar os hex do mockup direto pros componentes**:
+`design-system/orizon-tokens.css` tem uma regra travada por pre-commit hook ("nenhum componente
+declara cor em hex literal — sempre var(--token)") e o app inteiro já tem uma identidade cromática
+própria (cobre/bronze, `--accent`), diferente do âmbar do mockup. Resolvido com uma **3ª tentativa
+mais precisa que a 2ª**: a 1ª tentativa (não documentada acima, descartada) remapeou pros tokens
+semânticos GERAIS existentes (`--info`/`--ok`/`--warn`/`--err`) — mais seguro, mas os hex não
+batiam exatos com o mockup (ex.: Mural saiu azul em vez do roxo real do mockup — erro pego pelo
+próprio Marcelo). Corrigido criando tokens **NOVOS e dedicados** ao Chat em
+`orizon-tokens.css` — `--chat-blue/--chat-purple/--chat-green/--chat-red/--chat-teal/--chat-amber`
+(+ `-soft`) — com os valores **literais** do mockup no tema escuro (mockup só tem escuro) e
+versões escurecidas equivalentes no claro. `--accent`/`--btn-primary-*` (identidade cobre do app
+inteiro) **não foram tocados** — os tokens novos são só variedade decorativa dentro do Chat
+(avatar por contato via hash do nome, tag de segmento, botões Mural/Criar Grupo/Concluir).
+**Achado da Vera:** 3 das 6 cores do tema claro (`--chat-green`/`--chat-teal`/`--chat-amber`)
+ficavam abaixo de WCAG AA (4.5:1) medido contra o próprio fundo `-soft` que usam — 3.4 a 3.7:1.
+Escurecidos os 3 (+ o vermelho, que estava só 4.5:1 no limite) — recalculado com a fórmula de
+luminância relativa real (não só "parece melhor"): todos os 6 do tema claro agora ficam entre
+4.73 e 5.95:1. O vermelho do tema **escuro** ficou em 4.38:1 (levemente abaixo) — decisão
+consciente de manter, é o valor **literal** do mockup, usado só em badge pequeno/negrito (mais
+perto do limiar de "texto grande" da WCAG), e mudar quebraria a fidelidade exata que era o
+objetivo desta rodada.
+
+**2) Funcionalidade real faltando, não só visual — "+Criar Grupo" em Atendimentos.** O Marcelo
+esclareceu que esse botão do mockup não é só estética: em Atendimentos, hoje só existe "Adicionar
+Contato" (cadastro) e "Iniciar Conversa" (1:1), sem forma de criar um GRUPO com pessoas externas.
+Confirmado como funcionalidade real (endpoint+modal), não CSS — mas descoberta boa: **80% da
+infra já existia**. O modal "Novo Grupo" do Chat Interno (`ocNovaAbrir`/`ocCriar`) já suportava
+usuários do sistema + contato externo ad-hoc (nome+telefone). Faltava só: (a) o modal não abria
+a partir de Atendimentos (`ocMontarPane` tinha `'interno'` fixo — trocado para `_ocScrAtual`,
+que já existia rastreando a tela ativa); (b) e-mail no contato externo ad-hoc (**zero mudança de
+backend** — `main.py` já lia `ex.get("email")` e `mod_chat.adicionar_externo` já aceitava o
+parâmetro; só o frontend não perguntava/mandava); (c) uma 3ª fonte de membro, "cliente
+cadastrado" — busca em `/api/clientes?q=` (endpoint que já existia, reusado sem mudança) e
+adiciona como participante externo com nome/telefone/e-mail copiados do cadastro. Testado ponta
+a ponta com dado real (busca "Antonio" → seleciona → cria grupo → thread abre) e limpo depois.
+**Achado da Vera (informativo, não bloqueia):** o `cliente_id` do cliente escolhido é capturado
+no frontend mas descartado no caminho até o banco — `ConversaParticipanteExterno` não tem coluna
+pra isso, então o vínculo com o cadastro não sobrevive (se o telefone do cliente mudar depois, o
+participante do chat não acompanha). Registrado como pendência consciente pra uma iteração
+futura, não é regressão (o "+ contato externo" manual sempre foi só nome/telefone/e-mail, sem
+vínculo nenhum).
+
+**Verificação da rodada 2:** suíte solo **1734 passed** de novo (zero regressão do pente-fino de
+cor + feature nova), `node --check` limpo, contraste recalculado e corrigido (ver acima). Vera
+confirmou: `.ochat-shell` aparece uma única vez no arquivo (não vaza pra outras telas), zero
+resíduo de `oficializar_email`/`conv-transf` em todo o repo, `mod_ciclo.py`/`mod_retido.py`
+zero diff (confirmando mais uma vez que a Retenção não foi tocada), nenhuma cor hex fora dos
+tokens novos (declarados corretamente nos dois temas).
+
+**Deploy:** commit + push no `main`; redeploy só da instância B (Homolog); **A e produção real
+seguem PAUSADAS** até aprovação visual do Marcelo. Grafo MCP re-ingerido.
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

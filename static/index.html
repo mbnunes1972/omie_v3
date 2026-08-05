@@ -2110,6 +2110,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
        (mockup: .action-bar é irmã de .middle, não filha de .chat-col — medido/confirmado por
        leitura literal do HTML/CSS do mockup, 3ª confirmação nesta mesma discussão). */
     .oc-action-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+    /* Faixa de escrita (mockup .compose-bar — achado 2026-08-05 rodada 5: presa dentro do painel
+       direito, agora largura total, sibling de .oc-middle). Uma linha por padrão (padrão
+       WhatsApp), cresce com o conteúdo até um teto (ver ocAutoResizeTexto). */
+    #oc-compositor{background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+    #oc-compositor>div{padding-left:16px;padding-right:16px}
+    .oc-compose-row{display:flex;align-items:flex-end;gap:10px;padding-top:10px;padding-bottom:10px}
+    .oc-compose-input{flex:1;box-sizing:border-box;min-height:40px;max-height:120px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:20px;padding:9px 16px;font-size:13.5px;line-height:1.3;font-family:inherit;resize:none;overflow-y:auto}
+    .oc-compose-input:focus{border-color:var(--accent);outline:none}
+    .oc-mic-btn{flex-shrink:0;width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:var(--btn-primary-text);font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit;padding:0}
+    .oc-mic-btn:hover{opacity:.88}
     .oc-am-wrap{position:relative}
     .oc-am-menu{display:none;position:absolute;bottom:44px;left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:6px 0;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:60}
     .oc-am-menu.open{display:block}
@@ -2400,54 +2410,59 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                         <div id="oc-membros-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
                       </div>
                     </div>
-                    <div id="oc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
-                      <i class="ti ti-paperclip"></i><span id="oc-anexo-nome"></span>
-                      <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ocRemoverAnexo()">×</button>
-                    </div>
-                    <div id="oc-compositor" style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-                      <input type="file" id="oc-file" style="display:none" onchange="ocArquivoSelecionado(this)">
-                      <textarea id="oc-texto" rows="3" placeholder="Escreva uma mensagem…  (Enter envia · Shift+Enter quebra linha)"
-                                style="width:100%;box-sizing:border-box;min-height:78px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;font-size:.9rem;line-height:1.4;font-family:inherit;resize:vertical"
-                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ocEnviar();}"></textarea>
-                      <div style="display:flex;gap:8px;align-items:center">
-                        <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('oc-file').click()"><i class="ti ti-paperclip"></i> Anexar</button>
-                        <button class="btn btn-primary btn-sm" id="oc-enviar-btn" style="margin-left:auto" onclick="ocEnviar()"><i class="ti ti-send"></i> Enviar</button>
-                      </div>
-                    </div>
-                    <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
-                    <div id="oc-doc-enc" style="display:none;margin-top:6px">
-                      <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
-                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            <!-- barra de ação, filho-flex direto da tela (largura total, como .action-bar no
-                 mockup — irmã de .middle, fora de .oc-middle de propósito). Elemento ÚNICO
-                 movido entre os slots -atend/-interno por ocMontarPane, igual ao #oc-pane;
-                 visibilidade combinada de ocMostrarView (só na view oc-thread) + _ocSetHeaderExtras
-                 (só quando a conversa é um atendimento real, §8). Testado nas 6 views do #oc-pane
-                 antes de fechar a frente (ver DEV_LOG) — só oc-thread precisa dela. -->
-            <div class="oc-actionbar-slot" id="oc-actionbar-slot-atend">
-              <div class="oc-action-bar" id="oc-action-bar" style="display:none">
-                <button class="oc-btn-ok" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
-                <div class="oc-am-wrap">
-                  <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
-                  <div class="oc-am-menu" id="oc-transferir-menu">
-                    <div class="oc-am-label">Transferir responsável para</div>
-                    <input class="oc-am-search" id="oc-transferir-busca" placeholder="Buscar por nome ou função…" oninput="ocTransferirRenderLista()">
-                    <div id="oc-transferir-lista"></div>
-                  </div>
+            <!-- faixa de escrita + barra de ação, filhos-flex diretos da tela (largura total,
+                 desde a borda esquerda da lista até o extremo direito — achado 2026-08-05 rodada 5:
+                 o campo de mensagem vivia PRESO dentro de #oc-pane, largura só do painel direito;
+                 igual ao #oc-pane/#oc-action-bar, migrados entre os slots -atend/-interno por
+                 ocMontarPane. Ordem pedida pelo usuário: campo de escrita primeiro, botões
+                 (Concluir/Anexar/Transferir/Exportar, todos alinhados) logo abaixo. -->
+            <div class="oc-composer-slot" id="oc-composer-slot-atend">
+              <div id="oc-compositor" style="display:none">
+                <div id="oc-anexo-chip" style="display:none;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:5px 10px">
+                  <i class="ti ti-paperclip"></i><span id="oc-anexo-nome"></span>
+                  <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:1px 8px" onclick="ocRemoverAnexo()">×</button>
                 </div>
-                <div class="oc-am-wrap">
-                  <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-exportar-menu')"><i class="ti ti-download"></i> Exportar conversa</button>
-                  <div class="oc-am-menu" id="oc-exportar-menu">
-                    <div class="oc-am-label">Exportar como</div>
-                    <div class="oc-am-item" onclick="ocExportar('pdf')">PDF <small>documento com anexos</small></div>
-                    <div class="oc-am-item" onclick="ocExportar('txt')">TXT <small>texto simples</small></div>
-                  </div>
+                <input type="file" id="oc-file" style="display:none" onchange="ocArquivoSelecionado(this)">
+                <!-- faixa única (padrão WhatsApp): 1 linha por padrão, cresce com o conteúdo até um
+                     teto (ocAutoResizeTexto) — Enter envia, Shift+Enter quebra linha. -->
+                <div class="oc-compose-row">
+                  <textarea id="oc-texto" rows="1" class="oc-compose-input" placeholder="Escreva uma mensagem…"
+                            oninput="ocAutoResizeTexto(this);ocAtualizarBotaoEnviar()"
+                            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ocEnviar();}"></textarea>
+                  <button class="oc-mic-btn" id="oc-send-btn" title="Enviar" onclick="ocMicOuEnviar()"><i class="ti ti-microphone" id="oc-send-ic"></i></button>
                 </div>
-                <span class="oc-action-flash" id="oc-action-flash"></span>
+                <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
+                <div id="oc-doc-enc" style="display:none;margin-top:6px">
+                  <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
+                </div>
+                <!-- barra de ação: Concluir + Anexar + Transferir + Exportar, todos alinhados na
+                     mesma linha (achado 2026-08-05 rodada 5 — viviam espalhados em 2 lugares/
+                     estilos diferentes). -->
+                <div class="oc-action-bar" id="oc-action-bar" style="display:none">
+                  <button class="oc-btn-ok" id="oc-concluir-btn" style="display:none" onclick="ocConcluirAbrir()"><i class="ti ti-circle-check"></i> Concluir atendimento</button>
+                  <button class="btn btn-ghost btn-sm" title="Anexar foto/arquivo" onclick="document.getElementById('oc-file').click()"><i class="ti ti-paperclip"></i> Anexar</button>
+                  <div class="oc-am-wrap">
+                    <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-transferir-menu')"><i class="ti ti-arrows-right-left"></i> <span id="oc-transferir-label">Transferir atendimento</span></button>
+                    <div class="oc-am-menu" id="oc-transferir-menu">
+                      <div class="oc-am-label">Transferir responsável para</div>
+                      <input class="oc-am-search" id="oc-transferir-busca" placeholder="Buscar por nome ou função…" oninput="ocTransferirRenderLista()">
+                      <div id="oc-transferir-lista"></div>
+                    </div>
+                  </div>
+                  <div class="oc-am-wrap">
+                    <button class="btn btn-ghost btn-sm" onclick="ocAmToggle('oc-exportar-menu')"><i class="ti ti-download"></i> Exportar conversa</button>
+                    <div class="oc-am-menu" id="oc-exportar-menu">
+                      <div class="oc-am-label">Exportar como</div>
+                      <div class="oc-am-item" onclick="ocExportar('pdf')">PDF <small>documento com anexos</small></div>
+                      <div class="oc-am-item" onclick="ocExportar('txt')">TXT <small>texto simples</small></div>
+                    </div>
+                  </div>
+                  <span class="oc-action-flash" id="oc-action-flash"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -2475,7 +2490,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               </div>
               <div class="oc-pane-col" id="oc-slot-interno"></div>
             </div>
-            <div class="oc-actionbar-slot" id="oc-actionbar-slot-interno"></div>
+            <div class="oc-composer-slot" id="oc-composer-slot-interno"></div>
           </div>
           <!-- ═══ CHAT: fim do bloco Atendimentos/Chat Interno ═══ -->
 
@@ -2488,6 +2503,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
               </div>
               <label class="field-label">Atendimento com</label>
               <div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:4px 0 12px;font-size:13px" id="atd-concl-nome">—</div>
+              <label class="field-label">Mensagem de encerramento <small style="color:var(--muted);text-transform:none">(modelo aprovado pela Meta, enviado ao contato)</small></label>
+              <select id="atd-concl-tpl" onchange="_atdConclEscolherTemplate()" style="width:100%;padding:6px 8px;margin:4px 0 10px"><option value="">— sem mensagem de encerramento —</option></select>
+              <div id="atd-concl-campos"></div>
+              <div id="atd-concl-preview-wrap" style="display:none">
+                <label class="field-label">Pré-visualização</label>
+                <div id="atd-concl-preview" style="font-size:12.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;white-space:pre-wrap;margin:4px 0 12px"></div>
+              </div>
               <label class="field-label">Concluído por</label>
               <input id="atd-concl-por" readonly style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 12px">
               <label class="field-label">Observação <small style="color:var(--muted);text-transform:none">(opcional)</small></label>
@@ -13810,11 +13832,12 @@ function ocMontarPane(scr){
   const slot = document.getElementById(scr === 'interno' ? 'oc-slot-interno' : 'oc-slot-atend');
   const pane = document.getElementById('oc-pane');
   if(slot && pane && pane.parentElement !== slot) slot.appendChild(pane);
-  // barra de ação em largura total (mockup §2/§7): elemento ÚNICO, migra igual ao #oc-pane —
+  // faixa de escrita + barra de ação em largura total (mockup §2/§7): elemento ÚNICO (o
+  // #oc-action-bar migra junto, aninhado dentro de #oc-compositor), migra igual ao #oc-pane —
   // mas fica FORA de .oc-cols (largura da tela inteira, não só da coluna do chat).
-  const abSlot = document.getElementById(scr === 'interno' ? 'oc-actionbar-slot-interno' : 'oc-actionbar-slot-atend');
-  const ab = document.getElementById('oc-action-bar');
-  if(abSlot && ab && ab.parentElement !== abSlot) abSlot.appendChild(ab);
+  const cpSlot = document.getElementById(scr === 'interno' ? 'oc-composer-slot-interno' : 'oc-composer-slot-atend');
+  const cp = document.getElementById('oc-compositor');
+  if(cpSlot && cp && cp.parentElement !== cpSlot) cpSlot.appendChild(cp);
 }
 
 // Porta de entrada do menu lateral (e do botão do projeto): ativa o page-chat na aba pedida.
@@ -13831,15 +13854,17 @@ function ocMostrarView(view){
   ['oc-vazio','oc-nova','oc-forum','oc-thread','oc-triagem','oc-contato'].forEach(id=>{
     const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
   });
-  // a barra de ação vive FORA do #oc-pane agora (largura total) — deixou de herdar o
-  // display:none automático das outras 5 views. Fora do thread, esconde sempre. No thread,
-  // RECONSTITUI o estado a partir da conversa ativa — achado do teste automatizado: sem isso,
-  // voltar de Adicionar Contato/Triagem/Novo Grupo/Fórum (ocPaneVoltar → ocMostrarView('oc-
+  // a faixa de escrita + barra de ação vivem FORA do #oc-pane agora (largura total) — deixaram
+  // de herdar o display:none automático das outras 5 views. Fora do thread, escondem sempre. No
+  // thread, RECONSTITUI o estado a partir da conversa ativa — achado do teste automatizado: sem
+  // isso, voltar de Adicionar Contato/Triagem/Novo Grupo/Fórum (ocPaneVoltar → ocMostrarView('oc-
   // thread')) deixava a barra escondida (o "esconder" é explícito agora, então o "mostrar de
   // volta" também precisa ser). _ocSetHeaderExtras tolera c undefined/null (vira estado neutro).
   const ab = document.getElementById('oc-action-bar');
+  const cp = document.getElementById('oc-compositor');
   if(view !== 'oc-thread'){
     if(ab) ab.style.display = 'none';
+    if(cp) cp.style.display = 'none';
     return;
   }
   if(typeof _ocSetHeaderExtras === 'function'){
@@ -13928,7 +13953,10 @@ async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   });
   ocMostrarView('oc-thread');
   if(typeof ocRemoverAnexo === 'function') ocRemoverAnexo();   // limpa anexo pendente ao trocar
-  document.getElementById('oc-compositor').style.display = podePostar ? 'flex' : 'none';
+  document.getElementById('oc-compositor').style.display = podePostar ? 'block' : 'none';
+  const _ta = document.getElementById('oc-texto');
+  if(_ta){ _ta.value = ''; ocAutoResizeTexto(_ta); }
+  ocAtualizarBotaoEnviar();
   document.getElementById('oc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
   const mb = document.getElementById('oc-membros-btn');
   if(mb) mb.style.display = (tipo === 'projeto' || tipo === 'grupo') ? '' : 'none';   // membros em projeto e grupo
@@ -14074,29 +14102,97 @@ function ocExportar(formato){
 }
 
 // ── Concluir atendimento (Fatia 3, spec §8) ────────────────────────────────────
-function ocConcluirAbrir(){
+let _atdConclTemplates = [];
+let _atdConclTplSel = null;
+let _atdConclValores = {};
+async function ocConcluirAbrir(){
   if(!_ocConvAtiva) return;
-  document.getElementById('atd-concl-nome').textContent = document.getElementById('oc-thread-titulo').textContent;
+  const nomeConv = document.getElementById('oc-thread-titulo').textContent;
+  document.getElementById('atd-concl-nome').textContent = nomeConv;
   document.getElementById('atd-concl-por').value = ((_usuarioAtual && _usuarioAtual.nome) || '') + ' (você)';
   document.getElementById('atd-concl-obs').value = '';
   document.getElementById('atd-concl-aviso').textContent = '';
+  _atdConclTplSel = null; _atdConclValores = {};
+  document.getElementById('atd-concl-campos').innerHTML = '';
+  document.getElementById('atd-concl-preview-wrap').style.display = 'none';
+  const sel = document.getElementById('atd-concl-tpl');
+  sel.innerHTML = '<option value="">— sem mensagem de encerramento —</option>';
   document.getElementById('modal-atd-concluir').style.display = 'flex';
+  // modelo de ENCERRAMENTO (pedido do usuário 2026-08-05): reaproveita a MESMA biblioteca de
+  // templates aprovados pela Meta do fluxo "Iniciar Conversa" — filtra pelo segmento da conversa
+  // quando houver, mas não obriga (a lista mostra todos os aprovados, escolha livre do atendente).
+  const c = (_ocInbox||[]).find(x=>x.id===_ocConvAtiva);
+  let dt;
+  try{ dt = await fetch('/api/comunicacao/templates',{credentials:'same-origin'}).then(r=>r.json()); }
+  catch(e){ dt = {ok:false}; }
+  _atdConclTemplates = (dt && dt.ok) ? (dt.templates||[]).filter(t=>t.status==='aprovado') : [];
+  if(_atdConclTemplates.length){
+    const segAtual = c && c.segmento;
+    sel.innerHTML += _atdConclTemplates.map((t,i)=>
+      '<option value="'+i+'"'+(t.segmento && t.segmento===segAtual ? ' selected':'')+'>'
+      +esc(t.nome_meta)+(t.segmento?(' — '+esc(_ocSegRot(t.segmento))):'')+'</option>').join('');
+    if(segAtual && _atdConclTemplates.some(t=>t.segmento===segAtual)) _atdConclEscolherTemplate();
+  }
 }
 function ocConcluirFechar(){ document.getElementById('modal-atd-concluir').style.display = 'none'; }
+function _atdConclEscolherTemplate(){
+  const i = document.getElementById('atd-concl-tpl').value;
+  _atdConclTplSel = i!=='' ? _atdConclTemplates[parseInt(i,10)] : null;
+  const camposWrap = document.getElementById('atd-concl-campos');
+  const prevWrap = document.getElementById('atd-concl-preview-wrap');
+  if(!_atdConclTplSel){ camposWrap.innerHTML=''; prevWrap.style.display='none'; return; }
+  const t = _atdConclTplSel;
+  const vars = t.variaveis || [];
+  _atdConclValores = {};
+  const atendente = (_usuarioAtual && _usuarioAtual.nome) || '';
+  const nomeCliente = document.getElementById('atd-concl-nome').textContent || '';
+  const loja = ((_usuarioAtual && _usuarioAtual.lojas)||[]).find(l=>l.id===(_lojaAtiva||(_usuarioAtual&&(_usuarioAtual.loja_ativa_id||_usuarioAtual.loja_id))));
+  const nomeLoja = (loja && loja.nome) || '';
+  camposWrap.innerHTML = vars.map((rot,idx)=>{
+    const n = idx+1;
+    const r = (rot||'').toLowerCase();
+    let guess = '';
+    if(r.indexOf('atendente')>=0 || r.indexOf('consultor')>=0 || r.indexOf('responsav')>=0) guess = atendente;
+    else if(r.indexOf('cliente')>=0 || r.indexOf('contato')>=0) guess = nomeCliente;
+    else if(r.indexOf('loja')>=0) guess = nomeLoja;
+    if(guess) _atdConclValores[n] = guess;
+    return '<div style="margin-bottom:10px"><label class="field-label">'+esc(rot)+'</label>'
+      + '<input data-var="'+n+'" value="'+esc(guess)+'" placeholder="preencher…" oninput="_atdConclAtualizarPreview()" '
+      + 'style="width:100%;background:var(--surface-2);border:1px solid '+(guess?'var(--ok)':'var(--border)')+';border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></div>';
+  }).join('');
+  prevWrap.style.display = '';
+  _atdConclAtualizarPreview();
+}
+function _atdConclAtualizarPreview(){
+  const t = _atdConclTplSel; if(!t) return;
+  document.querySelectorAll('#atd-concl-campos input[data-var]').forEach(inp=>{
+    _atdConclValores[parseInt(inp.dataset.var,10)] = inp.value;
+    inp.style.borderColor = inp.value.trim() ? 'var(--ok)' : 'var(--border)';
+  });
+  let texto = t.corpo || '';
+  (t.variaveis||[]).forEach((_,idx)=>{
+    const n = idx+1;
+    texto = texto.split('{{'+n+'}}').join(_atdConclValores[n] || '{{'+n+'}}');
+  });
+  document.getElementById('atd-concl-preview').textContent = texto;
+}
 async function ocConcluirConfirmar(){
   const aviso = document.getElementById('atd-concl-aviso'); aviso.textContent = '';
   const obs = document.getElementById('atd-concl-obs').value;
+  const payload = {observacao: obs};
+  if(_atdConclTplSel){ payload.template_id = _atdConclTplSel.id; payload.valores = _atdConclValores; }
   let d;
   try{
     d = await fetch('/api/comunicacao/conversas/'+_ocConvAtiva+'/concluir',
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({observacao: obs})}).then(r=>r.json());
+       body: JSON.stringify(payload)}).then(r=>r.json());
   }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
   if(!d.ok){ aviso.textContent = d.erro || 'Falha ao concluir.'; return; }
   ocConcluirFechar();
   const cBtn = document.getElementById('oc-concluir-btn'); if(cBtn) cBtn.style.display = 'none';
   _ocFlash('✓ Atendimento concluído — gerência notificada'+(d.notificados?(' ('+d.notificados+')'):''));
   await _ocInboxAtualizar(); _ocRefrescar();
+  await ocCarregarMsgs();
 }
 
 // ── Nova conversa interna (Fatia 4, spec §5.1 — modal próprio, sem template) ──────
@@ -14557,7 +14653,7 @@ async function ocEnviar(){
   const ta = document.getElementById('oc-texto');
   const corpo = ta.value.trim();
   if(!corpo && !_ocArquivo) return;   // precisa de texto OU anexo
-  const btn = document.getElementById('oc-enviar-btn');
+  const btn = document.getElementById('oc-send-btn');
   btn.disabled = true;
   try{
     let d;
@@ -14580,10 +14676,39 @@ async function ocEnviar(){
     }
     if(!d.ok){ showToast(d.erro||'Falha ao enviar.', true); return; }
     ta.value = ''; ocRemoverAnexo();
+    ocAutoResizeTexto(ta); ocAtualizarBotaoEnviar();
     await ocCarregarMsgs();
     _ocRefrescar();
   }catch(e){ showToast('Erro de rede ao enviar.', true); }
   finally{ btn.disabled = false; ta.focus(); }
+}
+// Faixa de escrita de 1 linha que cresce com o conteúdo (padrão WhatsApp — achado 2026-08-05
+// rodada 5, era uma textarea fixa de 3 linhas). Teto de 120px (~6 linhas), depois rola dentro.
+function ocAutoResizeTexto(ta){
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+}
+// Botão único mic↔enviar (mockup .send-btn): 🎤 quando o campo está vazio, ➤ quando há texto —
+// mesmo padrão do WhatsApp. Sem gravação em navegador (MediaRecorder) implementada ainda; o
+// microfone abre o seletor de arquivo já existente filtrado a áudio (grava no chip de anexo,
+// mesmo caminho de upload real). Faltava o botão (pedido do usuário) — isto o torna funcional,
+// não decorativo.
+function ocAtualizarBotaoEnviar(){
+  const ta = document.getElementById('oc-texto');
+  const ic = document.getElementById('oc-send-ic');
+  if(!ta || !ic) return;
+  const temTexto = ta.value.trim().length > 0;
+  ic.className = temTexto ? 'ti ti-send' : 'ti ti-microphone';
+  document.getElementById('oc-send-btn').title = temTexto ? 'Enviar' : 'Gravar/anexar áudio';
+}
+function ocMicOuEnviar(){
+  const ta = document.getElementById('oc-texto');
+  if(ta && ta.value.trim()){ ocEnviar(); return; }
+  const fi = document.getElementById('oc-file');
+  if(!fi) return;
+  fi.setAttribute('accept', 'audio/*');
+  fi.click();
+  setTimeout(()=>fi.removeAttribute('accept'), 0);
 }
 
 // ── membros da conversa (painel LATERAL — substitui o popup legado) ───────────

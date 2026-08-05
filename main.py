@@ -6110,6 +6110,18 @@ class Handler(BaseHTTPRequestHandler):
                         db.commit()
                         self.send_json({"ok": True, "urgente": flag})
                     else:   # concluir
+                        tpl_id = dd.get("template_id")
+                        if tpl_id:
+                            from database import TemplateMensagem as _TM_concl
+                            import mod_chat_externo as _ext_concl
+                            t = db.query(_TM_concl).filter_by(id=int(tpl_id),
+                                                               loja_id=loja_id).first()
+                            if t is None:
+                                self.send_json({"ok": False,
+                                                "erro": "Modelo de mensagem não encontrado."},
+                                               code=400); return
+                            _ext_concl.enviar_template_conversa(db, conv, usuario["id"], t,
+                                                                 dd.get("valores") or {})
                         mod_chat.concluir_atendimento(db, conv, usuario["id"],
                                                       dd.get("observacao"))
                         db.commit()

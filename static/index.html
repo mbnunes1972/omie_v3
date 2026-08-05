@@ -2023,15 +2023,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
        ui-mockup.html: .topbar/.middle/.action-bar/.compose-bar são filhos-flex DIRETOS da tela
        (não aninhados dentro da coluna da lista), list-col+chat-col sem gap com borda
        compartilhada. Ver #ochat-scr-atend/#ochat-scr-interno no HTML. ═══ */
-    .oc-topbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;flex-shrink:0}
-    .oc-newbtn{flex-shrink:0;width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--accent);font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-family:inherit;line-height:1;padding:0}
-    .oc-newbtn:hover{background:var(--accent-tint)}
-    .oc-topbar .btn.btn-sm{padding:7px 11px;font-size:12.5px;white-space:nowrap}
+    /* Pedido 2026-08-05: todos os botões numa linha só — Chat Interno (busca + Novo Grupo +
+       Mural + Fórum da Loja + Fórum Orizon + chips) é o caso mais cheio; `nowrap` + scroll
+       horizontal em vez de quebrar pra 2ª linha (`overflow-x:auto` só entra em telas realmente
+       estreitas — em 1440px cabe tudo sem barra). */
+    .oc-topbar{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:nowrap;flex-shrink:0;overflow-x:auto}
+    .oc-topbar .btn.btn-sm{padding:7px 11px;font-size:12.5px;white-space:nowrap;flex-shrink:0}
+    /* Contraste dos botões secundários do Chat (pedido 2026-08-05): a regra global
+       ([data-theme="dark"] .btn-ghost{border-color:transparent}) deixa os botões cinza
+       genéricos quase sem contorno no escuro — aqui ganham um tom de cor (--accent-line,
+       já usado como "filete de realce" no resto do app) em vez de cinza apagado. */
+    #page-chat .btn-ghost{border-color:var(--accent-line)}
+    #page-chat .btn-ghost:hover{background:var(--accent-tint)}
     .oc-topbar-divider{width:1px;height:18px;background:var(--border);margin:0 2px;flex-shrink:0}
     /* "Pílulas" coloridas (mockup .mural-btn/.create-group-btn — achado FATIA 7 rodada 2: os
        botões da 2ª linha usavam .btn.btn-ghost genérico cinza; o mockup dá destaque de cor a
        Mural/Criar Grupo). Famílias semânticas existentes, sem cor nova. */
-    .oc-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;font-family:inherit}
+    .oc-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;border:1px solid transparent;font-family:inherit;flex-shrink:0}
     .oc-pill-amber{color:var(--chat-amber);background:var(--chat-amber-soft);border-color:var(--chat-amber)}
     .oc-pill-purple{color:var(--chat-purple);background:var(--chat-purple-soft);border-color:var(--chat-purple)}
     /* "Concluir atendimento" (mockup .conclude-btn é verde — ação positiva/de encerramento,
@@ -2040,7 +2048,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-btn-ok:hover{opacity:.85}
     /* Chips + toggle de oversight: agora vivem na topbar de largura total (não mais espremidos
        na coluna da lista) — cabem numa linha só com sobra, oversight sempre por último. */
-    .atd-tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+    .atd-tabs{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;flex-shrink:0}
     .oc-chip-oversight{padding:3px 9px}
     .atd-filtro{display:flex;gap:6px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
     /* Linhas da lista (mockup .conv-row): SEM card/borda própria — linha reta com borda inferior
@@ -2056,8 +2064,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
        --text) — refinamento sobre o ti-folder já trocado na rodada anterior. */
     .oc-avatar{width:38px;height:38px;min-width:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;flex-shrink:0}
     .oc-avatar.square{border-radius:10px}
-    .oc-avatar.square:has(.ti-folder){background:var(--chat-amber-soft)}
-    .oc-avatar .ti-folder{color:var(--chat-amber);font-size:16px}
+    /* Achado 2026-08-05: amber deixava o ícone com cara de pasta clássica do Windows —
+       voltou neutro (mesmo --text-2 das outras formas de avatar). */
+    /* sem color aqui de propósito (2026-08-05): herda de .oc-avatar/.oc-avatar.c-* — o mesmo
+       hash de cor do avatar de pessoa agora também colore o ícone de pasta. */
+    .oc-avatar .ti-folder{font-size:16px}
     /* Cor por contato (FATIA 7 rodada 2) — mesmas famílias semânticas dos badges, sem borda
        (a cor de fundo já basta pra separar do restante da lista). */
     .oc-avatar.c-blue{background:var(--chat-blue-soft);color:var(--chat-blue);border-color:transparent}
@@ -2097,6 +2108,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .atd-b-seg-parceiros{background:var(--chat-purple-soft);color:var(--chat-purple)}
     .atd-b-seg-compras{background:var(--chat-amber-soft);color:var(--chat-amber)}
     .atd-b-seg-sac{background:var(--chat-blue-soft);color:var(--chat-blue)}
+    /* Triagem (2026-08-05): selo próprio, não um dos 7 do catálogo — reusa --warn (mesma família
+       do badge antigo .atd-b-orig-triagem), sem cor nova. */
+    .atd-b-seg-triagem{background:var(--warn-soft);color:var(--warn)}
     .atd-nl{background:var(--accent);color:var(--btn-primary-text);font-size:10px;font-weight:800;border-radius:9px;padding:1px 6px;min-width:15px;text-align:center;margin-left:6px}
     /* Ponto de urgência (spec §6.1 — 7px antes do nome, nunca no lugar da tag de segmento) */
     .atd-urgent-dot{display:inline-block;width:7px;height:7px;min-width:7px;border-radius:50%;background:var(--err);margin-right:6px}
@@ -2106,6 +2120,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-resp-line strong{color:var(--accent)}
     .oc-urg-btn{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:3px 10px;cursor:pointer;white-space:nowrap;font-family:inherit}
     .oc-urg-btn.active{color:var(--err);background:var(--err-soft);border-color:var(--err)}
+    /* Atalho de transferência ao lado do nome (pedido 2026-08-05 — "como o de encaminhar do
+       WhatsApp"): só o ícone, compacto, mesmo destino do botão "Transferir atendimento". */
+    .oc-transf-ico{width:22px;height:22px;flex-shrink:0;border:1px solid var(--border);background:var(--surface-2);color:var(--accent);border-radius:7px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;padding:0}
+    .oc-transf-ico:hover{background:var(--accent-tint);border-color:var(--accent)}
     /* Barra de ação (Concluir/Transferir/Exportar) — filho-flex direto da tela, largura TOTAL
        (mockup: .action-bar é irmã de .middle, não filha de .chat-col — medido/confirmado por
        leitura literal do HTML/CSS do mockup, 3ª confirmação nesta mesma discussão). */
@@ -2166,7 +2184,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
     .oc-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .oc-busca-wrap{position:relative;flex:0 1 320px;min-width:180px;display:flex;align-items:center}
+    .oc-busca-wrap{position:relative;flex:0 1 260px;min-width:140px;display:flex;align-items:center}
     .oc-busca-wrap>i{position:absolute;left:10px;color:var(--muted);font-size:14px;pointer-events:none}
     .oc-busca{width:100%;padding:7px 10px;padding-left:32px !important;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;appearance:none;-webkit-appearance:none}
     .oc-busca::placeholder{color:var(--muted)}
@@ -2342,51 +2360,36 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       <div id="oc-ct-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
                     </div>
                   </div>
-                  <!-- resolução de entrada da FILA DE TRIAGEM (spec 2026-07-31) -->
-                  <!-- Triagem (item E, achado da revisão visual 2026-08-04: reestilização — mesmo
-                       padrão de cards/ícones/hierarquia do resto do redesenho de 04/08. Nenhum id
-                       mudou, nenhum comportamento mudou (segmento/vincular/criar/descartar iguais). -->
-                  <div id="oc-triagem" class="oc-view" style="overflow-y:auto">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-                      <div style="display:flex;align-items:center;gap:10px">
-                        <div class="oc-avatar" style="width:34px;height:34px;font-size:15px">?</div>
-                        <div>
-                          <div style="font-weight:800;font-size:14px">Triagem — <span id="oc-trg-remetente"></span></div>
-                          <div id="oc-trg-meta" style="font-size:11.5px;color:var(--muted)"></div>
-                        </div>
-                      </div>
-                      <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button>
-                    </div>
-                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-brand-whatsapp"></i> Mensagem recebida</div>
-                    <div class="oc-bubble-row in" style="margin-bottom:16px"><div class="oc-bubble" id="oc-trg-texto"></div></div>
-                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-adjustments"></i> Segmento</div>
-                    <div style="margin-bottom:16px;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
-                      <label class="field-label" style="margin-top:0">Encaminhar para <span style="color:var(--muted);font-weight:400;text-transform:none">(a triagem indica; sem segmento, a gerência trata depois)</span></label>
-                      <select id="oc-trg-seg" style="width:100%;padding:6px 8px"></select>
-                    </div>
-                    <div id="oc-trg-candidatos-wrap" style="margin-bottom:16px">
-                      <div class="oc-sec" style="padding-left:0"><i class="ti ti-link"></i> Vincular a uma conversa</div>
-                      <div id="oc-trg-candidatos" style="display:flex;flex-direction:column;gap:6px;max-height:34vh;overflow-y:auto"></div>
-                    </div>
-                    <div class="oc-sec" style="padding-left:0"><i class="ti ti-checklist"></i> Ação de triagem</div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                      <button class="btn btn-primary btn-sm" id="oc-trg-vincular-btn" onclick="ocTriagemResolver('vincular')"><i class="ti ti-link"></i> Vincular à selecionada</button>
-                      <button class="btn btn-ghost btn-sm" onclick="ocTriagemResolver('criar')"><i class="ti ti-user-plus"></i> Criar novo cliente</button>
-                      <button class="btn btn-ghost btn-sm" style="color:var(--err);border-color:var(--err-line)" onclick="ocTriagemResolver('descartar')"><i class="ti ti-trash"></i> Descartar</button>
-                    </div>
-                    <div id="oc-trg-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
-                  </div>
                   <!-- thread -->
                   <div id="oc-thread" class="oc-view">
-                    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 2px 8px;gap:8px;flex-wrap:wrap">
-                      <div style="display:flex;align-items:center;gap:8px;min-width:0">
-                        <div id="oc-thread-titulo" style="font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
-                        <span id="oc-num-chip" style="display:none;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;white-space:nowrap"></span>
-                        <select id="oc-seg-sel" style="display:none;padding:3px 8px;font-family:inherit;font-size:12px" onchange="ocSegmentoSalvar(this.value)" title="Segmento do atendimento (gerência)"></select>
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:0 2px 8px;gap:8px;flex-wrap:wrap">
+                      <!-- avatar FORA da coluna de texto (achado 2026-08-05: "R" de Responsável
+                           precisa alinhar com a 1ª letra do nome — só dá se os dois ficarem na
+                           MESMA coluna, com o avatar do lado de fora dos dois). -->
+                      <div style="display:flex;align-items:flex-start;gap:8px;min-width:0">
+                        <div id="oc-thread-avatar" style="flex-shrink:0"></div>
+                        <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                          <div style="display:flex;align-items:center;gap:6px;min-width:0">
+                            <div id="oc-thread-titulo" style="font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></div>
+                            <!-- atalho de transferência (pedido 2026-08-05, ao lado do nome — como
+                                 o ícone de encaminhar do WhatsApp): mesmo menu do botão de baixo,
+                                 só reposicionado perto de quem clicou (ver ocAmToggle). -->
+                            <span class="oc-am-wrap">
+                              <button class="oc-transf-ico" id="oc-transf-ico-btn" style="display:none" title="Transferir atendimento" onclick="ocAmToggle('oc-transferir-menu', this)"><i class="ti ti-corner-up-right"></i></button>
+                            </span>
+                            <span id="oc-num-chip" style="display:none;font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:1px 9px;white-space:nowrap"></span>
+                            <select id="oc-seg-sel" style="display:none;padding:3px 8px;font-family:inherit;font-size:12px;max-width:150px;flex-shrink:0" onchange="ocSegmentoSalvar(this.value)" title="Segmento do atendimento (gerência)"></select>
+                          </div>
+                          <!-- Responsável (spec §7.1-A) — achado 2026-08-05: saiu do canto superior
+                               direito (ficava perdido, sem contexto de QUEM tem o nome logo acima) e
+                               virou subtítulo do contato; some de responsável nunca mais (fallback
+                               "SAC" — quem cai da triagem cai pro SAC até alguém assumir, ver
+                               chat.triagem.triagem_materializar). -->
+                          <div class="oc-resp-line" id="oc-resp-wrap" style="display:none">Responsável: <strong id="oc-resp-nome"></strong></div>
+                        </div>
                       </div>
-                      <!-- canto superior direito (spec §6.1/§7.1-A): Responsável (grupo/projeto) + Urgência -->
+                      <!-- canto superior direito (spec §6.1): só Urgência/Arquivar/Membros agora -->
                       <div class="oc-header-right">
-                        <div class="oc-resp-line" id="oc-resp-wrap" style="display:none">Responsável: <strong id="oc-resp-nome"></strong></div>
                         <button class="oc-urg-btn" id="oc-urg-btn" onclick="ocUrgenciaToggle()">○ Marcar urgente</button>
                         <div style="display:flex;gap:8px">
                           <button class="btn btn-ghost btn-sm" id="oc-arq-btn" style="display:none;white-space:nowrap" onclick="ocArquivarToggle()" title="Arquivar/retirar da fila pessoal (reversível)"><i class="ti ti-archive"></i> <span id="oc-arq-rot">Arquivar</span></button>
@@ -2430,10 +2433,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ocEnviar();}"></textarea>
                   <button class="oc-mic-btn" id="oc-send-btn" title="Enviar" onclick="ocMicOuEnviar()"><i class="ti ti-microphone" id="oc-send-ic"></i></button>
                 </div>
-                <!-- Encaminhar documento do ciclo ao cliente (WhatsApp) — só PROJETO (spec 2026-07-31) -->
-                <div id="oc-doc-enc" style="display:none;margin-top:6px">
-                  <button class="btn btn-ghost btn-sm" onclick="ocDocEncaminhar()"><i class="ti ti-file-export"></i> Encaminhar documento (WhatsApp)</button>
-                </div>
                 <!-- barra de ação: Concluir + Anexar + Transferir + Exportar, todos alinhados na
                      mesma linha (achado 2026-08-05 rodada 5 — viviam espalhados em 2 lugares/
                      estilos diferentes). -->
@@ -2463,21 +2462,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
           <!-- Chat Interno (equipe) — full-page, mesma estrutura de duas colunas -->
           <div class="ochat-scr oc-fullflex" id="ochat-scr-interno">
+            <!-- Achado 2026-08-05: o "+" (Nova Conversa) não fazia sentido — mesma razão que
+                 já tinha tirado o "+" de Atendimentos (r6): a busca já inicia a conversa com
+                 pessoa/grupo achado. Novo Grupo/Mural/Fóruns saem da 2ª linha e entram na MESMA
+                 linha do topbar (mesmo padrão de Atendimentos: busca + botões + chips, 1 linha só). -->
             <div class="oc-topbar">
-              <button class="oc-newbtn" onclick="ocIntNovoAbrir()" title="Nova Conversa"><i class="ti ti-plus"></i></button>
               <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="int-busca" class="oc-busca" placeholder="Buscar por pessoa, grupo ou assunto…" oninput="intRender()"></span>
-              <div class="oc-topbar-divider"></div>
-              <div class="atd-tabs" id="int-tabs"></div>
-            </div>
-            <!-- camada de ações do Chat Interno: componentes exclusivos do canal (revisão UX
-                 2026-07-31) — Mural e Fóruns são destinos, Administração só gerência. Sem
-                 equivalente no mockup simplificado, ficam na 2ª linha (igual Atendimentos). -->
-            <div class="atd-filtro">
               <button class="oc-pill oc-pill-amber" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Novo Grupo</button>
               <button class="oc-pill oc-pill-purple" onclick="ocAbrirMural()"><i class="ti ti-speakerphone"></i> Mural<span id="int-mural-nl" class="atd-nl" style="display:none"></span></button>
               <button class="btn btn-ghost btn-sm" onclick="ocForumAbrir('loja')"><i class="ti ti-building-store"></i> Fórum da Loja</button>
               <button class="btn btn-ghost btn-sm" id="int-forum-orizon" style="display:none" onclick="ocForumAbrir('orizon')"><i class="ti ti-world"></i> Fórum Orizon</button>
-              <button class="oc-chip" id="int-pend" onclick="ocTogglePend('int')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
+              <div class="oc-topbar-divider"></div>
+              <div class="atd-tabs" id="int-tabs"></div>
             </div>
             <div class="oc-middle">
               <div class="oc-list-col">
@@ -2520,27 +2516,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             </div>
           </div>
 
-          <!-- Modal: Nova conversa interna (spec 2026-08-04 §5.1 — modal PRÓPRIO, diferente do de Atendimentos) -->
-          <div id="modal-int-novo" class="modal-overlay" style="display:none">
-            <div class="modal-box" style="max-width:440px;max-height:86vh;overflow-y:auto">
-              <div class="modal-hdr">
-                <div class="modal-title">Nova conversa interna</div>
-                <span class="modal-close" onclick="ocIntNovoFechar()">&#x2715;</span>
-              </div>
-              <label class="field-label">Buscar pessoa ou grupo</label>
-              <input id="int-novo-busca" type="search" placeholder="Nome da pessoa ou do grupo…" oninput="ocIntNovoRenderLista()" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
-              <div id="int-novo-lista" style="max-height:220px;overflow-y:auto;margin-bottom:10px"></div>
-              <div id="int-novo-assunto-wrap">
-                <label class="field-label">Assunto <small style="color:var(--muted);text-transform:none">(opcional — sem assunto, a conversa fica "Livre")</small></label>
-                <input id="int-novo-assunto" type="text" placeholder="Ex.: Fechamento de comissões" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
-              </div>
-              <div id="int-novo-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
-              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-                <button class="btn btn-ghost btn-sm" onclick="ocIntNovoFechar()">Cancelar</button>
-                <button class="btn btn-primary btn-sm" onclick="ocIntNovoIniciar()">Iniciar conversa</button>
-              </div>
-            </div>
-          </div>
+          <!-- (modal "Nova conversa interna" removido em 2026-08-05 — o "+" que o abria não
+               fazia sentido, mesma razão do "+" de Atendimentos (r6): a busca já inicia a
+               conversa com quem for encontrado, pessoa ou grupo.) -->
 
           <!-- Modal: Iniciar Conversa por template — 3 etapas (spec 2026-08-04 §11) -->
           <div id="modal-atd-novo" class="modal-overlay" style="display:none">
@@ -11055,11 +11033,11 @@ let _atdChip = 'all', _intChip = 'all';
 let _atdOversight = false, _intOversight = false;
 const _INT_TIPOROT = {direct:'Pessoal', grupo:'Grupo', mural:'Mural', publico:'Mural'};
 const _INT_TIPOS = ['direct','grupo'];   // equipe; Mural via botão; projeto vai em Atendimentos
-const _ocPend = {atd:false, int:false};  // filtro "Pendentes" por tela
 function _ocDaChip(c, chip){
   const arqOuConcl = !!c.arquivada || c.status==='concluida';
   if(chip==='arquivadas') return arqOuConcl;
   if(arqOuConcl) return false;             // arquivada/concluída só aparece na própria categoria
+  if(chip==='pendentes') return !!c.pendente;
   if(chip==='urgentes') return !!c.urgente;
   if(chip==='grupos') return c.tipo==='grupo';
   if(chip==='projetos') return c.tipo==='projeto';
@@ -11070,9 +11048,13 @@ function _ocChipsRow(chips, atual, fn){
 }
 // "Pendentes" é um FILTRO de mensagens como os demais chips (achado 2026-08-05 rodada 6: vivia
 // solto numa 2ª linha, separado de Urgentes) — agora entra na mesma faixa de chips, logo antes
-// de Oversight.
+// de Oversight. Acoplado ao MESMO estado de seleção única do chip de categoria (achado
+// 2026-08-05: Pendentes fazia AND com o chip ativo — "Grupos + Pendentes" ao mesmo tempo não
+// faz sentido: se é Pendente não é Todas/Grupos/Urgentes, e vice-versa), por isso a "ativa"
+// checa `_atdChip`/`_intChip` em vez de um estado próprio.
 function _ocPendChip(qual){
-  return '<span class="oc-chip'+(_ocPend[qual]?' active':'')+'" id="'+qual+'-pend" onclick="ocTogglePend(\''+qual+'\')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</span>';
+  const on = (qual==='atd' ? _atdChip : _intChip) === 'pendentes';
+  return '<span class="oc-chip'+(on?' active':'')+'" id="'+qual+'-pend" onclick="ocTogglePend(\''+qual+'\')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</span>';
 }
 // Avatar da lista (mockup §4): círculo com a inicial do nome (ou "?" quando o título é só
 // telefone, sem letra) para pessoa/direct; quadrado com ícone/emoji para grupo/projeto — mesma
@@ -11087,8 +11069,11 @@ function _ocAvatarCor(nome){
   return _OC_AVATAR_CORES[h % _OC_AVATAR_CORES.length];
 }
 function _ocAvatarHTML(nome, tipo){
-  if(tipo==='projeto') return '<div class="oc-avatar square"><i class="ti ti-folder"></i></div>';
-  if(tipo==='grupo') return '<div class="oc-avatar square">👥</div>';
+  // Padrão de forma (pedido 2026-08-05): quadrado com bordas arredondadas pra projeto/grupo,
+  // círculo pra 1:1. Cor: hash do NOME (mesma função de sempre) em vez de neutro/amber fixo —
+  // dá variedade sem ficar com cara de pasta do Windows (achado 2026-08-05 anterior).
+  if(tipo==='projeto') return '<div class="oc-avatar square '+_ocAvatarCor(nome)+'"><i class="ti ti-folder"></i></div>';
+  if(tipo==='grupo') return '<div class="oc-avatar square '+_ocAvatarCor(nome)+'">👥</div>';
   const limpo = (nome||'').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'').trim();
   const c0 = limpo.charAt(0).toUpperCase();
   const inicial = /[A-ZÀ-Ý]/.test(c0) ? c0 : '?';
@@ -11102,10 +11087,8 @@ function intChip(k){ _intChip = k; intRender(); }
 async function atendOversightToggle(){ _atdOversight = !_atdOversight; if(_atdOversight) await _ocTodasCarregar(); atendRender(); }
 async function intOversightToggle(){ _intOversight = !_intOversight; if(_intOversight) await _ocTodasCarregar(); intRender(); }
 function ocTogglePend(qual){
-  _ocPend[qual] = !_ocPend[qual];
-  const b = document.getElementById(qual+'-pend');
-  if(b) b.classList.toggle('active', _ocPend[qual]);
-  if(qual==='atd') atendRender(); else intRender();
+  if(qual==='atd'){ _atdChip = (_atdChip==='pendentes') ? 'all' : 'pendentes'; atendRender(); }
+  else { _intChip = (_intChip==='pendentes') ? 'all' : 'pendentes'; intRender(); }
 }
 function ocAbrirMural(){
   const m = (_ocInbox||[]).find(c=>c.tipo==='mural'||c.tipo==='publico');
@@ -11133,12 +11116,13 @@ function _ocTodasDoCanal(qual){
 }
 function _ocTodasItemHTML(c){
   const tipoRot = c.tipo==='projeto' ? 'Projeto' : (_INT_TIPOROT[c.tipo]||c.tipo);
+  const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
   const badge = '<span class="atd-badge atd-b-seg"><span class="dot" style="background:var(--accent)"></span>'+esc(tipoRot)+'</span>'
     + (c.segmento ? ' <span class="'+_ocSegClasse(c.segmento)+'">'+esc(_ocSegRot(c.segmento))+'</span>' : '');
   return '<div class="atd-item" onclick="ocAbrirTodas('+c.id+')">'
-    + _ocAvatarHTML(c.titulo, c.tipo)
+    + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
-    + '<div class="atd-top"><span class="atd-nome">'+esc(c.titulo||'Conversa')+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
+    + '<div class="atd-top"><span class="atd-nome">'+esc(titulo)+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
     + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
     + '<div style="font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.participantes||[]).join(', '))+'</div>'
     + '<div class="atd-tags">'+badge+'</div></div></div>';
@@ -11147,7 +11131,8 @@ async function ocAbrirTodas(id){
   if((_ocInbox||[]).some(x=>x.id===id)){ await ocAbrirConversa(id); return; }   // participo → normal
   const c = (_ocTodas||[]).find(x=>x.id===id);
   if(!c) return;
-  await ocAbrirConversaPorId(c.id, c.titulo||'Conversa', false, c.tipo, c.projeto_nome);   // oversight
+  const _titAtd = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
+  await ocAbrirConversaPorId(c.id, _titAtd, false, c.tipo, c.projeto_nome);   // oversight
   _ocSetHeaderExtras(c);   // listar_todas_conversas não serializa responsavel/urgente/status — some/neutro
 }
 
@@ -11162,7 +11147,11 @@ async function chatInternoCarregar(){
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
   ocAtualizarBadges();
-  _intInbox = _ocInbox.filter(c=>_INT_TIPOS.includes(c.tipo));
+  // Achado 2026-08-05: filtro velho (_INT_TIPOS.includes) misturava 'grupo' de ATENDIMENTO
+  // (segmento definido — externo) no Chat Interno, trazendo junto o seletor de segmento pro
+  // header (sem sentido pra comunicação interna). Mesma partição já usada no Oversight
+  // (_ocTodasDoCanal): interno = direct/grupo SEM segmento.
+  _intInbox = _ocInbox.filter(c=>_INT_TIPOS.includes(c.tipo) && !c.segmento);
   const mural = _ocInbox.find(c=>c.tipo==='mural'||c.tipo==='publico');
   const mb = document.getElementById('int-mural-nl');
   if(mb){ const n = mural ? (mural.nao_lidas||0) : 0;
@@ -11189,20 +11178,18 @@ function intRender(){
   tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip') + _ocPendChip('int')
     + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_intOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="intOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('int-lista');
-  if(_intOversight){                                   // oversight da gerência (r5)
-    let todos = _ocTodasDoCanal('int');
-    if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
-    _intVisiveis = todos;
-    box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
-    return;
-  }
-  let itens = _intInbox.filter(c=>_ocDaChip(c,_intChip));
-  if(_ocPend.int) itens = itens.filter(c=>c.pendente);
-  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')+' '+((c.assunto&&c.assunto.label)||'')).toLowerCase().includes(q));
+  // Oversight (r5) troca a FONTE (minhas conversas → todas da loja) mas segue os MESMOS
+  // chip/Pendentes/busca (achado 2026-08-05: antes ele IGNORAVA os outros filtros por
+  // completo em vez de combinar — Oversight pode empilhar com outro filtro, Pendentes não).
+  const base = _intOversight ? _ocTodasDoCanal('int') : _intInbox;
+  let itens = base.filter(c=>_ocDaChip(c,_intChip));
+  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.ultima_previa||'')+' '+((c.assunto&&c.assunto.label)||'')
+    +(_intOversight?(' '+(c.participantes||[]).join(' ')):'')).toLowerCase().includes(q));
   _intVisiveis = itens;
-  let html = itens.map(_intItemHTML).join('');
+  let html = itens.map(_intOversight ? _ocTodasItemHTML : _intItemHTML).join('');
   // "Todas": usuários da loja SEM conversa aberta aparecem abaixo — clique abre a 1:1 (WhatsApp-like)
-  if(_intChip==='all'){
+  // (só faz sentido fora do Oversight — ali a fonte já é "todo mundo", não uma pessoa específica)
+  if(!_intOversight && _intChip==='all'){
     const meuId = _usuarioAtual && _usuarioAtual.id;
     const jaTem = new Set(_intInbox.filter(c=>c.tipo==='direct').map(c=>c.outro_usuario_id).filter(Boolean));
     const users = _ocUsuarios.filter(u=>u.id!==meuId && !jaTem.has(u.id)
@@ -11216,7 +11203,8 @@ function intRender(){
       }).join('');
     }
   }
-  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa nesta categoria.</div>';
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa'+(_intOversight?'.':' nesta categoria.')+'</div>';
+  _ocFecharSeForaDoFiltro(_intVisiveis, 'interno');
 }
 function _intItemHTML(c){
   // "Pessoal" ao lado de "Livre"/Assunto confundia (achado da rodada de ajuste fino: duas tags
@@ -11239,7 +11227,10 @@ function _intItemHTML(c){
 // ── Fila de Atendimentos (F7/RF-12) — chips + selos de segmento/janela, reusa a thread do modal ──
 let _atdInbox = [];
 const _ATD_SEGROT = {comercial:'Comercial', suporte_tecnico:'Suporte Técnico', financeiro:'Financeiro',
-                     logistica:'Logística', parceiros:'Projeto Executivo', compras:'Compras', sac:'SAC'};
+                     logistica:'Logística', parceiros:'Projeto Executivo', compras:'Compras', sac:'SAC',
+                     // selo próprio (2026-08-05): triagem sem resposta reconhecida em 2min —
+                     // não é um dos 7 do catálogo, cai pro SAC distribuir (chat.triagem.SEGMENTO_TRIAGEM)
+                     triagem:'Triagem'};
 // Cor por segmento (achado FATIA 7 rodada 2 — mockup tem tag colorida por categoria, a
 // implementação usava só uma cor cinza pra todos). Classes .atd-b-seg-* mapeadas nas famílias
 // semânticas já existentes em orizon-tokens.css — sem cor nova.
@@ -11253,12 +11244,12 @@ async function chatAtendCarregar(){
   if(!d.ok){ box.innerHTML='<div class="ochat-ph"><i class="ti ti-lock"></i><div>'+esc(d.erro||'Erro.')+'</div></div>'; return; }
   _ocInbox = d.conversas || [];   // dados canônicos do painel (abrir conversa, grupos, badge)
   ocAtualizarBadges();
-  _atdInbox = _ocInbox.filter(c=>c.tipo!=='mural' && c.tipo!=='publico');
-  // Fila de TRIAGEM humana (spec 2026-07-31) — entra na aba "Novos", antes dos não-lidos.
-  try{
-    const f = await fetch('/api/comunicacao/triagem/fila',{credentials:'same-origin'}).then(r=>r.json());
-    _atdTriagem = (f && f.ok) ? (f.fila||[]) : [];
-  }catch(e){ _atdTriagem = []; }
+  // Achado 2026-08-05: filtro velho (só excluía mural/publico) deixava DM interna (tipo=direct,
+  // sempre usuário↔usuário — ver criar_conversa_direct) vazar pra Atendimentos, sem segmento/
+  // projeto pra ancorar (daí sem Concluir — o gate de temAtendimentoReal já tava certo, o
+  // vazamento é que trazia gente errada pra lista). Mesma partição do Oversight
+  // (_ocTodasDoCanal): atendimento = projeto OU grupo COM segmento.
+  _atdInbox = _ocInbox.filter(c=>c.tipo==='projeto' || (c.tipo==='grupo' && c.segmento));
   // Seletor de segmento DINÂMICO (r4): todos os ativos da loja (base + custom).
   await _ocSegsCarregar();
   const sel = document.getElementById('atd-seg-filtro'), atual = sel.value;
@@ -11267,48 +11258,39 @@ async function chatAtendCarregar(){
   sel.value = atual;
   atendRender();
 }
-let _atdTriagem = [];    // fila de triagem: recebida SEM DONO → aparece no chip "Todas"
 let _atdVisiveis = [];   // conversas visíveis na categoria atual
 function atendRender(){
   const tabsEl = document.getElementById('atd-tabs');
   const filtroSeg = document.getElementById('atd-seg-filtro').value;
   const q = ((document.getElementById('atd-busca')||{}).value||'').trim().toLowerCase();
   const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
-  let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
-  if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
   tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip') + _ocPendChip('atd')
     + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_atdOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="atendOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('atd-lista');
-  if(_atdOversight){                                  // oversight da gerência (r5)
-    let todos = _ocTodasDoCanal('atd');
-    if(q) todos = todos.filter(c=>((c.titulo||'')+' '+(c.participantes||[]).join(' ')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
-    _atdVisiveis = todos;
-    box.innerHTML = todos.map(_ocTodasItemHTML).join('') || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhuma conversa.</div>';
-    return;
-  }
-  let itens = _atdInbox.filter(c=>_ocDaChip(c,_atdChip));
+  // Oversight (r5) troca a FONTE (meus atendimentos → todos da loja) mas segue os MESMOS
+  // chip/segmento/Pendentes/busca (achado 2026-08-05: antes ignorava tudo isso e sempre
+  // mostrava a lista inteira — Oversight pode empilhar com outro filtro, Pendentes não).
+  const base = _atdOversight ? _ocTodasDoCanal('atd') : _atdInbox;
+  let itens = base.filter(c=>_ocDaChip(c,_atdChip));
   if(filtroSeg) itens = itens.filter(c=>c.segmento===filtroSeg);
-  if(_ocPend.atd) itens = itens.filter(c=>c.pendente);
-  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.projeto_nome||'')+' '+(c.ultima_previa||'')).toLowerCase().includes(q));
+  if(q) itens = itens.filter(c=>((c.titulo||'')+' '+(c.projeto_nome||'')+' '+(c.ultima_previa||'')
+    +(_atdOversight?(' '+(c.participantes||[]).join(' ')):'')).toLowerCase().includes(q));
   _atdVisiveis = itens;
-  let html = (_atdChip==='all') ? trg.map(_atdTriagemItemHTML).join('') : '';
-  html += itens.map(_atdItemHTML).join('');
-  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento nesta categoria.</div>';
+  let html = itens.map(_atdOversight ? _ocTodasItemHTML : _atdItemHTML).join('');
+  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum atendimento'+(_atdOversight?'.':' nesta categoria.')+'</div>';
+  _ocFecharSeForaDoFiltro(_atdVisiveis, 'atend');
 }
-function _atdTriagemItemHTML(e){
-  const badge = '<span class="atd-badge" style="border-color:var(--warn);color:var(--warn)"><i class="ti ti-signpost"></i> Triagem</span>';
-  const seg = e.segmento_sugerido ? '<span class="'+_ocSegClasse(e.segmento_sugerido)+'"><span class="dot" style="background:currentColor"></span>'+esc(_ocSegRot(e.segmento_sugerido))+'</span>' : '';
-  const cand = (e.candidatos||[]).length ? '<span class="atd-badge atd-b-warn">'+(e.candidatos.length)+' candidata(s)</span>' : '';
-  return '<div class="atd-item" onclick="ocTriagemAbrir('+e.id+')">'
-    + _ocAvatarHTML(null, 'pessoal')
-    + '<div class="atd-main">'
-    + '<div class="atd-top"><span class="atd-nome">'+esc(_ocFmtRemetente(e.remetente))+'</span><span class="atd-tempo">'+esc(_atdQuando(e.criado_em))+'</span></div>'
-    + '<div class="atd-bottom"><div class="atd-prev">'+esc(e.texto||'—')+'</div><div class="atd-tags">'+badge+seg+cand+'</div></div></div></div>';
-}
-function _ocFmtRemetente(r){
-  const d = (r||'').replace(/\D/g,'');
-  if(d.length>=10){ const dd=d.slice(-11); return '('+dd.slice(0,2)+') '+dd.slice(2,-4)+'-'+dd.slice(-4); }
-  return r||'—';
+// Achado 2026-08-05: trocar de filtro (chip/segmento/pendentes/busca) com uma conversa aberta
+// que já não faz mais parte do resultado deixava a thread velha "grudada" na tela — o usuário
+// olhava um filtro novo mas via a mensagem de outra categoria. Fecha pra tela vazia (mais
+// seguro que abrir a 1ª sozinho — não marca like/lido em nome do usuário sem ele pedir).
+function _ocFecharSeForaDoFiltro(visiveis, scr){
+  if(_ocScrAtual !== scr || !_ocConvAtiva) return;
+  if(!(visiveis||[]).some(c=>c.id===_ocConvAtiva)){
+    _ocConvAtiva = null;
+    document.querySelectorAll('.oc-list-col .atd-item.selected').forEach(el=>el.classList.remove('selected'));
+    ocMostrarView('oc-vazio');
+  }
 }
 function _atdHoras(seg){ seg=seg||0; const h=Math.floor(seg/3600), m=Math.floor((seg%3600)/60); return h>0?(h+'h'+(m>0?(' '+m+'min'):'')):(m+'min'); }
 function _atdJanelaBadge(j){
@@ -11340,9 +11322,11 @@ function _atdFallbackTag(c){
   return '<span class="atd-badge atd-b-orig-avulsa">Avulsa</span>';
 }
 function _atdItemHTML(c){
+  // Achado 2026-08-05: o nome do grupo/projeto já É o nome do projeto (linha de cima) — repetir
+  // num badge "📁 Projeto X" ao lado do segmento era redundante, tirado. `.atd-tags` já fica
+  // justificado à direita (`.atd-bottom{justify-content:space-between}` + `.atd-prev{flex:1}`).
   const seg = c.segmento ? '<span class="'+_ocSegClasse(c.segmento)+'"><span class="dot" style="background:currentColor"></span>'+esc(_ocSegRot(c.segmento))+'</span>' : _atdFallbackTag(c);
   const jan = _atdJanelaBadge(c.janela);
-  const proj = c.projeto_nome ? '<span class="atd-badge atd-b-ok"><i class="ti ti-folder"></i> '+esc(c.projeto_nome.replace(/_/g,' '))+'</span>' : '';
   const concl = c.status==='concluida' ? '<span class="atd-badge" style="border-color:var(--ok);color:var(--ok)">Concluída</span>' : '';
   const nl = (c.nao_lidas||0)>0 ? '<span class="atd-nl">'+(c.nao_lidas>99?'99+':c.nao_lidas)+'</span>' : '';
   const titulo = (c.titulo||'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u,'');
@@ -11352,7 +11336,7 @@ function _atdItemHTML(c){
     + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
-    + '<div class="atd-bottom"><div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div><div class="atd-tags">'+seg+jan+proj+concl+'</div></div></div></div>';
+    + '<div class="atd-bottom"><div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div><div class="atd-tags">'+seg+jan+concl+'</div></div></div></div>';
 }
 // (atendAbrir é definido no bloco do painel de conversa: alias de ocAbrirConversa — thread na própria página.)
 
@@ -13640,7 +13624,6 @@ document.addEventListener('keydown', function(e){
   // Cada entrada: [id, fn_cancelar]
   const ESC_MAP = [
     ['modal-atd-novo',         ocAtdNovoFechar],
-    ['modal-int-novo',         ocIntNovoFechar],
     ['modal-atd-concluir',     ocConcluirFechar],
     ['modal-autorizacao',      () => fecharModalAutorizacao(false)],
     ['modal-perfil-acesso',    fecharModalPerfilAcesso],
@@ -13852,7 +13835,7 @@ function ocAbrirPagina(scr){
 }
 
 function ocMostrarView(view){
-  ['oc-vazio','oc-nova','oc-forum','oc-thread','oc-triagem','oc-contato'].forEach(id=>{
+  ['oc-vazio','oc-nova','oc-forum','oc-thread','oc-contato'].forEach(id=>{
     const e = document.getElementById(id); if(e) e.classList.toggle('active', id === view);
   });
   // a faixa de escrita + barra de ação vivem FORA do #oc-pane agora (largura total) — deixaram
@@ -13871,6 +13854,11 @@ function ocMostrarView(view){
   if(typeof _ocSetHeaderExtras === 'function'){
     const c = _ocConvAtiva ? (_ocInbox||[]).find(x=>x.id===_ocConvAtiva) : null;
     _ocSetHeaderExtras(c);
+    // achado 2026-08-05: _ocSetSegSel só era chamada ao ABRIR a conversa — trocar de tela com
+    // a thread aberta (o pane migra, ver ocMontarPane) reconstituía Responsável/Concluir/barra
+    // via _ocSetHeaderExtras acima, mas o seletor de segmento ficava com o estado da tela
+    // anterior (vazava pro Chat Interno). Mesmo `c`, re-executa o gate com o _ocScrAtual novo.
+    if(typeof _ocSetSegSel === 'function') _ocSetSegSel(c);
   }
 }
 // Segmentos ATIVOS da loja (base + custom — r4): fonte dos seletores/badges. Cache com
@@ -13934,8 +13922,10 @@ async function ocPollBadge(){
 setInterval(ocPollBadge, 45000);   // badge de não-lidos ~ ao vivo (guarda: só com usuário/loja)
 
 function _ocTituloComAssunto(c){
-  const t = c.titulo || 'Conversa';
-  // Projeto: o título já é "📁 <projeto>"; NÃO repetir o assunto (era a duplicação "Norberto · Norberto").
+  // Achado 2026-08-05: o emoji embutido no título ("📁 Projeto X") duplicava o ícone do avatar
+  // (que já mostra a forma certa, colorida, no cabeçalho) — some daqui, o avatar basta.
+  const t = (c.titulo || 'Conversa').replace(/^\s*[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]\s*/u, '');
+  // Projeto: o título já é o nome do projeto; NÃO repetir o assunto (era a duplicação "Norberto · Norberto").
   if(c.tipo === 'projeto') return t;
   const a = (c.assunto && c.assunto.tipo === 'custom' && c.assunto.label) ? c.assunto.label : null;
   return a ? (t + '  ·  ' + a) : t;
@@ -13959,13 +13949,13 @@ async function ocAbrirConversaPorId(id, titulo, podePostar, tipo, projetoNome){
   if(_ta){ _ta.value = ''; ocAutoResizeTexto(_ta); }
   ocAtualizarBotaoEnviar();
   document.getElementById('oc-thread-titulo').textContent = titulo + (podePostar ? '' : '  (somente leitura)');
+  const _tav = document.getElementById('oc-thread-avatar');
+  if(_tav) _tav.innerHTML = _ocAvatarHTML(titulo, tipo);
   const mb = document.getElementById('oc-membros-btn');
   if(mb) mb.style.display = (tipo === 'projeto' || tipo === 'grupo') ? '' : 'none';   // membros em projeto e grupo
   const ab = document.getElementById('oc-arq-btn'); if(ab) ab.style.display = 'none'; // ligado por _ocSetArquivarBtn
   const ss = document.getElementById('oc-seg-sel'); if(ss) ss.style.display = 'none'; // ligado por _ocSetSegSel
   const pm = document.getElementById('oc-membros'); if(pm) pm.style.display = 'none'; // fecha painel ao trocar
-  const de = document.getElementById('oc-doc-enc');              // encaminhar documento só no projeto
-  if(de) de.style.display = _ocConvProjeto ? '' : 'none';
   _ocNumeroChip();
   await ocCarregarMsgs();
   if(podePostar) setTimeout(()=>{ const t=document.getElementById('oc-texto'); if(t) t.focus(); }, 60);
@@ -13991,11 +13981,15 @@ const atendAbrir = ocAbrirConversa;
 function _ocSetHeaderExtras(c){
   const grupoOuProj = (_ocConvTipo === 'grupo' || _ocConvTipo === 'projeto');
   const ehAtendimento = !!(c && ['direct','grupo','projeto'].includes(c.tipo));
+  // Achado 2026-08-05: com responsável VAZIO o rótulo simplesmente sumia — sem responsável
+  // explícito, quem trata é o SAC até a transferência (mesma regra de
+  // chat.triagem.triagem_materializar), então o rótulo mostra "SAC" em vez de sumir. Só faz
+  // sentido em Atendimentos (Chat Interno não tem "responsável pelo atendimento").
   const respWrap = document.getElementById('oc-resp-wrap');
   if(respWrap){
-    if(grupoOuProj && c && c.responsavel && c.responsavel.nome){
+    if(grupoOuProj && _ocScrAtual==='atend'){
       respWrap.style.display = '';
-      document.getElementById('oc-resp-nome').textContent = c.responsavel.nome;
+      document.getElementById('oc-resp-nome').textContent = (c && c.responsavel && c.responsavel.nome) || 'SAC';
     } else respWrap.style.display = 'none';
   }
   const urgente = !!(c && c.urgente);
@@ -14019,6 +14013,10 @@ function _ocSetHeaderExtras(c){
   if(concluirBtn) concluirBtn.style.display = (_ocScrAtual==='atend' && ehAtendimento && temAtendimentoReal && status!=='concluida') ? '' : 'none';
   const transfLabel = document.getElementById('oc-transferir-label');
   if(transfLabel) transfLabel.textContent = _ocScrAtual==='atend' ? 'Transferir atendimento' : 'Encaminhar conversa';
+  // Atalho de transferência ao lado do nome (pedido 2026-08-05) — só em Atendimentos, mesmo
+  // escopo do botão "Transferir atendimento" (não "Encaminhar conversa" do Chat Interno).
+  const transfIco = document.getElementById('oc-transf-ico-btn');
+  if(transfIco) transfIco.style.display = (_ocScrAtual==='atend' && ehAtendimento) ? '' : 'none';
   const actionBar = document.getElementById('oc-action-bar');
   if(actionBar) actionBar.style.display = ehAtendimento ? '' : 'none';
   document.querySelectorAll('.oc-am-menu.open').forEach(m=>m.classList.remove('open'));
@@ -14030,11 +14028,25 @@ function _ocFlash(msg){
   clearTimeout(window._ocFlashTimer);
   window._ocFlashTimer = setTimeout(()=>{ f.textContent=''; }, 3200);
 }
-function ocAmToggle(menuId){
+function ocAmToggle(menuId, btnEl){
   document.querySelectorAll('.oc-am-menu.open').forEach(m=>{ if(m.id!==menuId) m.classList.remove('open'); });
   const m = document.getElementById(menuId); if(!m) return;
   const abrindo = !m.classList.contains('open');
   m.classList.toggle('open', abrindo);
+  // `btnEl` (2026-08-05): o atalho ao lado do nome fica longe do wrap original do menu (que
+  // vive fixo no rodapé, `.oc-am-menu{position:absolute;bottom:44px}`) — reposiciona perto de
+  // quem abriu. Sem `btnEl` (botões do rodapé, comportamento de sempre), CSS de sempre vale.
+  if(btnEl){
+    if(abrindo){
+      const r = btnEl.getBoundingClientRect();
+      m.style.position = 'fixed';
+      m.style.bottom = 'auto';
+      m.style.top = (r.bottom + 6) + 'px';
+      m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 260)) + 'px';
+    } else {
+      m.style.position = ''; m.style.top = ''; m.style.left = ''; m.style.bottom = '';
+    }
+  }
   if(abrindo && menuId==='oc-transferir-menu'){
     document.getElementById('oc-transferir-busca').value = '';
     ocTransferirRenderLista();
@@ -14196,78 +14208,9 @@ async function ocConcluirConfirmar(){
   await ocCarregarMsgs();
 }
 
-// ── Nova conversa interna (Fatia 4, spec §5.1 — modal próprio, sem template) ──────
-let _intNovoAlvo = null;
-function ocIntNovoAbrir(){
-  _intNovoAlvo = null;
-  document.getElementById('int-novo-busca').value = '';
-  document.getElementById('int-novo-assunto').value = '';
-  document.getElementById('int-novo-assunto-wrap').style.display = '';
-  document.getElementById('int-novo-aviso').textContent = '';
-  ocIntNovoRenderLista();
-  document.getElementById('modal-int-novo').style.display = 'flex';
-}
-function ocIntNovoFechar(){ document.getElementById('modal-int-novo').style.display = 'none'; }
-function ocIntNovoRenderLista(){
-  const q = ((document.getElementById('int-novo-busca')||{}).value||'').trim().toLowerCase();
-  const box = document.getElementById('int-novo-lista');
-  const meuId = _usuarioAtual && _usuarioAtual.id;
-  const usuarios = (_ocUsuarios||[]).filter(u=>u.id!==meuId && (!q || ((u.nome||'')+' '+(u.funcao_nome||'')).toLowerCase().includes(q)));
-  const grupos = (_intInbox||[]).filter(c=>c.tipo==='grupo' && (!q || (c.titulo||'').toLowerCase().includes(q)));
-  let html = '';
-  if(usuarios.length) html += '<div class="oc-sec">Pessoas</div>' + usuarios.map(u=>{
-    const fn = u.funcao_nome ? '<small style="color:var(--muted)"> · '+esc(u.funcao_nome)+'</small>' : '';
-    return '<div class="oc-am-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px" onclick="ocIntNovoEscolherUsuario('+u.id+')">'+esc(u.nome)+fn+'</div>';
-  }).join('');
-  if(grupos.length) html += '<div class="oc-sec">Grupos</div>' + grupos.map(c=>
-    '<div class="oc-am-item" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px" onclick="ocIntNovoEscolherGrupo('+c.id+')">'+esc(c.titulo||'Grupo')+'</div>').join('');
-  box.innerHTML = html || '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhum resultado.</div>';
-}
-function ocIntNovoEscolherUsuario(uid){
-  const u = (_ocUsuarios||[]).find(x=>x.id===uid); if(!u) return;
-  _intNovoAlvo = {tipo:'usuario', id:uid, nome:u.nome};
-  document.getElementById('int-novo-busca').value = u.nome;
-  document.getElementById('int-novo-assunto-wrap').style.display = '';
-}
-function ocIntNovoEscolherGrupo(cid){
-  _intNovoAlvo = {tipo:'grupo', id:cid};
-  document.getElementById('int-novo-busca').value = '(grupo selecionado)';
-  document.getElementById('int-novo-assunto-wrap').style.display = 'none';   // grupo já tem seu assunto
-}
-async function ocIntNovoIniciar(){
-  const aviso = document.getElementById('int-novo-aviso'); aviso.textContent = '';
-  if(!_intNovoAlvo){ aviso.textContent = 'Escolha uma pessoa ou grupo.'; return; }
-  if(_intNovoAlvo.tipo==='grupo'){
-    ocIntNovoFechar();
-    await ocAbrirConversa(_intNovoAlvo.id);
-    return;
-  }
-  const nomeAssunto = ((document.getElementById('int-novo-assunto')||{}).value||'').trim();
-  let assuntoTipo = 'livre', assuntoId = null;
-  if(nomeAssunto){
-    let da;
-    try{
-      da = await fetch('/api/comunicacao/assuntos',
-        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-         body: JSON.stringify({nome: nomeAssunto})}).then(r=>r.json());
-    }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
-    if(!da.ok){ aviso.textContent = da.erro || 'Falha ao criar o assunto.'; return; }
-    assuntoTipo = 'custom'; assuntoId = da.assunto.id;
-  }
-  let d;
-  try{
-    d = await fetch('/api/comunicacao/conversas',
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({tipo:'direct', participante_ids:[_intNovoAlvo.id],
-                             assunto_tipo: assuntoTipo, assunto_id: assuntoId})}).then(r=>r.json());
-  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
-  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao iniciar a conversa.'; return; }
-  const nomeAlvo = _intNovoAlvo.nome;
-  ocIntNovoFechar();
-  await _ocInboxAtualizar(); _ocRefrescar();
-  await ocAbrirConversa(d.conversa.id);
-  showToast('✓ Conversa iniciada com '+nomeAlvo+(nomeAssunto?(' — Assunto: '+nomeAssunto):' — Livre'));
-}
+// (o "+"/modal "Nova conversa interna" foi removido em 2026-08-05 — a busca da lista já
+// inicia a conversa com quem for encontrado: pessoa nova via `ocAbrirUsuario`, grupo
+// existente por clique direto na lista.)
 
 // ── Iniciar Conversa por template — 3 etapas (Fatia 5, spec §11) ───────────────────
 let _atdNovoStep = 1;
@@ -14450,8 +14393,12 @@ async function _iniciarConversaEnviar(){
 async function _ocSetSegSel(c){
   const sel = document.getElementById('oc-seg-sel');
   if(!sel) return;
+  // Achado 2026-08-05: a thread é um painel COMPARTILHADO que migra entre Atendimentos/Chat
+  // Interno (spec 2026-07-31 Parte 5) — sem checar a tela atual, um atendimento com segmento
+  // deixado aberto continuava mostrando o seletor mesmo depois de trocar pra Chat Interno
+  // (que não trata segmento). Mesmo gate já usado em Concluir/Responsável/Transferir.
   const faceExterna = !!(c && (c.segmento || (c.janela && c.janela.estado !== 'na')));
-  const ok = faceExterna && _podeAutorizarFront();
+  const ok = faceExterna && _podeAutorizarFront() && _ocScrAtual==='atend';
   sel.style.display = ok ? '' : 'none';
   if(ok){ await _ocSegsCarregar(); sel.innerHTML = _ocSegOptions(c.segmento||'', '— sem segmento —'); }
 }
@@ -15099,114 +15046,12 @@ async function convDestravar(mid){
     await ocCarregarMsgs(); carregarCiclo();
   }catch(e){ await avisoPopup('Erro de rede.', {titulo:'Destravar (emergência)'}); }
 }
-// ── Encaminhar documento do ciclo ao cliente por WhatsApp (spec 2026-07-31, decisão 3) ──
-async function ocDocEncaminhar(){
-  if(!_ocConvProjeto) return;
-  const dp = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/ciclo/pe',
-                         {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
-  const docs = dp.documentos||[];
-  if(!docs.length){ showToast('O projeto ainda não tem documentos no ciclo.', true); return; }
-  const opts = docs.map(d=>{
-    const dt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
-    return '<option value="'+d.id+'">'+esc(d.nome_original+' ('+d.tipo+' · et. '+d.etapa_codigo+(dt?' · '+dt:'')+')')+'</option>';
-  }).join('');
-  const ov = _popupOverlay('<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Encaminhar documento ao cliente</h4>'
-    + '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">O arquivo segue por WhatsApp aos contatos externos da conversa. Só é permitido com a janela de 24h aberta (regra da Meta).</div>'
-    + '<select id="oc-doc-enc-sel" style="width:100%;padding:6px 8px">'+opts+'</select>'
-    + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">'
-    + '<button data-act="cancelar" class="btn btn-ghost btn-sm">Cancelar</button>'
-    + '<button data-act="enviar" class="btn btn-primary btn-sm"><i class="ti ti-send"></i> Encaminhar</button></div>');
-  ov.querySelector('[data-act="cancelar"]').onclick = ()=>ov.remove();
-  ov.querySelector('[data-act="enviar"]').onclick = async ()=>{
-    const id = document.getElementById('oc-doc-enc-sel').value;
-    if(!id) return;
-    let d;
-    try{
-      d = await fetch('/api/projetos/'+encodeURIComponent(_ocConvProjeto)+'/conversa/documento/'+id+'/encaminhar',
-        {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
-    }catch(e){ showToast('Erro de rede.', true); return; }
-    if(!d.ok){ showToast(d.erro||'Falha ao encaminhar.', true); return; }
-    ov.remove();
-    const pend = (d.envios||[]).filter(e=>e.status==='pendente_config').length;
-    showToast(pend ? 'Encaminhamento registrado — '+pend+' pendente(s) de transporte.' : 'Documento encaminhado.');
-    await ocCarregarMsgs();
-  };
-}
+// (o botão "Encaminhar documento (WhatsApp)" foi removido da UI em 2026-08-05 — endpoint
+// POST .../conversa/documento/<id>/encaminhar segue no backend, só sem gatilho na tela.)
 
-// ── Fila de triagem — resolução humana na F7 (spec 2026-07-31) ────────────────
-let _ocTrgAtiva = null;   // entrada da fila aberta no painel
-function ocTriagemAbrir(id){
-  const e = (_atdTriagem||[]).find(x=>x.id===id);
-  if(!e) return;
-  _ocTrgAtiva = e;
-  ocMontarPane('atend');
-  ocMostrarView('oc-triagem');
-  document.getElementById('oc-trg-remetente').textContent = _ocFmtRemetente(e.remetente);
-  document.getElementById('oc-trg-meta').textContent =
-    (e.meio==='whatsapp'?'WhatsApp':'E-mail') + ' · recebida ' + _atdQuando(e.criado_em)
-    + (e.segmento_sugerido ? (' · segmento sugerido: ' + _ocSegRot(e.segmento_sugerido)) : '');
-  document.getElementById('oc-trg-texto').textContent = e.texto || '(sem texto)';
-  document.getElementById('oc-trg-aviso').textContent = '';
-  _ocSegsCarregar().then(()=>{ document.getElementById('oc-trg-seg').innerHTML = _ocSegOptions(e.segmento_sugerido||'', '— sem segmento (gerência trata) —'); });
-  // alvo do vínculo: candidatas primeiro (o que o roteador calculou), depois as demais
-  // conversas de grupo/projeto da inbox — rádio único.
-  const cand = new Set(e.candidatos||[]);
-  const outras = (_ocInbox||[]).filter(c=>(c.tipo==='grupo'||c.tipo==='projeto') && !cand.has(c.id));
-  // item E (achado da revisão visual 2026-08-04): mesmo cartão da lista de conversas
-  // (borda+fundo, como .atd-item) em vez do <label> cru — só troca de moldura, o
-  // input[type=radio] (name/value/checked) segue idêntico p/ ocTriagemResolver('vincular').
-  // Avatar (achado da rodada 2026-08-05 — item flagrado pelo usuário: painel de triagem ficou
-  // visualmente pra trás do resto do redesenho): mesma linguagem de avatar da lista principal,
-  // em vez de card só-texto.
-  const linha = (id2, rotulo, tipo, ehCand, checked)=>
-    '<label style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid '
-    + (checked?'var(--accent)':'var(--border)') + ';border-radius:10px;cursor:pointer;background:var(--surface)">'
-    + '<input type="radio" name="oc-trg-alvo" value="'+id2+'"'+(checked?' checked':'')+'>'
-    + _ocAvatarHTML(rotulo, tipo)
-    + '<span style="font-size:13px;flex:1;min-width:0">'+esc(rotulo)+'</span>'
-    + (ehCand?'<span class="atd-badge atd-b-warn">candidata</span>':'')
-    + '</label>';
-  const tituloDe = (cid)=>{
-    const c = (_ocInbox||[]).find(x=>x.id===cid);
-    return c ? {titulo:_ocTituloComAssunto(c), tipo:c.tipo} : {titulo:'Conversa #'+cid, tipo:null};
-  };
-  let html = [...cand].map((cid,i)=>{ const c = tituloDe(cid); return linha(cid, c.titulo, c.tipo, true, i===0); }).join('');
-  html += outras.map(c=>linha(c.id, _ocTituloComAssunto(c), c.tipo, false, false)).join('');
-  document.getElementById('oc-trg-candidatos').innerHTML =
-    html || '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhuma conversa na inbox — use "Criar novo cliente".</div>';
-}
-async function ocTriagemResolver(acao){
-  if(!_ocTrgAtiva) return;
-  const aviso = document.getElementById('oc-trg-aviso'); aviso.textContent = '';
-  const payload = {acao, segmento: (document.getElementById('oc-trg-seg')||{}).value || ''};
-  if(acao === 'vincular'){
-    const sel = document.querySelector('input[name=oc-trg-alvo]:checked');
-    if(!sel){ aviso.textContent = 'Escolha a conversa de destino.'; return; }
-    payload.conversa_id = parseInt(sel.value,10);
-  }
-  if(acao === 'criar'){
-    const nome = ((await promptPopup('Nome do novo cliente:', {titulo:'Lead novo por WhatsApp', okLabel:'Criar'}))||'').trim();
-    if(!nome) return;
-    payload.nome_cliente = nome;
-  }
-  if(acao === 'descartar'){
-    if(!(await confirmarPopup('Descartar esta entrada (spam/engano)? O registro fica auditável.',
-        {titulo:'Descartar entrada', okLabel:'Descartar', cancelLabel:'Voltar'}))) return;
-  }
-  let d;
-  try{
-    d = await fetch('/api/comunicacao/triagem/fila/'+_ocTrgAtiva.id+'/resolver',
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify(payload)}).then(r=>r.json());
-  }catch(e){ aviso.textContent = 'Erro de rede.'; return; }
-  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao resolver.'; return; }
-  const convId = d.entrada && d.entrada.conversa_id;
-  _ocTrgAtiva = null;
-  showToast(acao==='descartar' ? 'Entrada descartada.' : 'Entrada vinculada.');
-  await _ocInboxAtualizar(); _ocRefrescar();
-  if(convId) await ocAbrirConversa(convId);
-  else ocMostrarView('oc-vazio');
-}
+// (a fila humana de triagem — painel Segmento/Vincular/Ação — foi removida em 2026-08-05: a
+// resolução é sempre automática agora, ver chat/triagem.py:triagem_materializar. "Triagem" virou
+// um selo de segmento igual aos outros — _ATD_SEGROT/_ocSegClasse — e o SAC distribui/transfere.)
 // ═══ CHAT: fim do bloco JS do painel de conversa ═══
 
 // ── Confirmação de contatos na fase de contrato (decisão 13, mini-frente 2026-07-25) ─────

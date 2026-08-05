@@ -1,12 +1,31 @@
 # -*- coding: utf-8 -*-
-"""Fila de triagem persistente (spec _geral/2026-07-31-triagem-pipeline-entrada-design.md).
+"""Buffer de triagem (spec _geral/2026-07-31-triagem-pipeline-entrada-design.md, revisão
+2026-08-05: resolução SEMPRE automática — o painel humano de vincular/criar/descartar foi
+removido).
 
 Regra de ouro: mensagem nenhuma é descartada em silêncio — o que a automação não roteia
 cai numa TriagemEntrada `pendente`, idempotente por `id_externo` (a Meta reentrega 5-6x).
-Cobre os casos obrigatórios da seção 4 da spec."""
+Cobre os casos obrigatórios da seção 4 da spec + a materialização automática (segmento
+reconhecido ou sweep de 2min → SEGMENTO_TRIAGEM, SAC como responsável inicial)."""
 import json
 
 import pytest
+
+
+def _mk_func(db, app_db, loja_id, nome_funcao, nome_pessoa, com_login=None):
+    fn = db.query(app_db.Funcao).filter_by(loja_id=loja_id, nome=nome_funcao).first()
+    if fn is None:
+        fn = app_db.Funcao(loja_id=loja_id, nome=nome_funcao)
+        db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja_id, nome=nome_pessoa, funcao_id=fn.id, status="ativo")
+    db.add(f); db.flush()
+    if com_login:
+        u = app_db.Usuario(nome=nome_pessoa, login=com_login, nivel="operador",
+                           loja_id=loja_id, ativo=1)
+        u.set_senha("senha123")
+        db.add(u); db.flush()
+        f.usuario_id = u.id; db.flush()
+    return f
 
 
 def _login(f, who):
@@ -176,106 +195,128 @@ def test_projeto_concluido_cai_na_fila(app_db, seed):
     db.close()
 
 
-# ── resolução humana: vincular · criar · descartar ───────────────────────────
+# ── resolução automática (2026-08-05): materializa na hora, SAC como responsável ─────────
 
-def test_resolver_vincular_posta_mensagem_e_evento(app_db, seed):
+def test_segmento_reconhecido_materializa_com_sac_responsavel(app_db, seed):
+    """Resposta reconhecida no menu → conversa nasce JÁ com esse segmento (não mais
+    'segmento_sugerido' esperando humano); SAC (se configurado) vira responsável/criador."""
     import mod_chat_externo as ext
-    from database import ConversaMensagem
+    from database import Conversa, ConversaMensagem
     db = app_db.get_session()
-    conv = _conversa_com_saida(db, app_db, seed["loja1_id"], "Proj_L1",
-                               seed["cliente_l1_id"], "(12) 90000-8888")
-    _c2 = _conversa_com_saida(db, app_db, seed["loja1_id"], "Proj_Dois",
-                              seed["cliente_l1_id"], "(12) 90000-8888")
-    res = ext.processar_entrada(db, "whatsapp", remetente="(12) 90000-8888",
-                                texto="mensagem ambígua", id_externo="wamid.VINC")
+    sac = _mk_func(db, app_db, seed["loja1_id"], "SAC", "Pessoa do SAC", com_login="sac_l1")
     db.commit()
-    ent = db.get(app_db.TriagemEntrada, res["triagem_id"])
-    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
-    ext.triagem_resolver_vincular(db, ent, conv, u.id)
+    r1 = ext.processar_entrada(db, "whatsapp", remetente="(11) 95555-0001",
+                               texto="quero móveis planejados", id_externo="wamid.LEAD1")
     db.commit()
-    assert ent.status == "resolvido" and ent.conversa_id == conv.id
-    assert ent.resolvido_por_id == u.id and ent.resolvido_em is not None
-    corpos = [m.corpo for m in db.query(ConversaMensagem)
-              .filter_by(conversa_id=conv.id).order_by(ConversaMensagem.id).all()]
-    assert "mensagem ambígua" in corpos             # o texto original entrou na conversa
-    ev = (db.query(ConversaMensagem)
-            .filter(ConversaMensagem.conversa_id == conv.id,
-                    ConversaMensagem.evento.isnot(None)).first())
-    assert ev is not None and ev.evento == "triagem_vinculo"
-    assert "Diretor L1" in (ev.corpo or "")
-    # a idempotência acompanha: o wamid agora está no EnvioExterno da conversa
-    r2 = ext.processar_entrada(db, "whatsapp", remetente="(12) 90000-8888",
-                               texto="mensagem ambígua", id_externo="wamid.VINC")
-    assert r2["status"] == "roteado" and r2["conversa_id"] == conv.id
-    db.close()
-
-
-def test_resolver_criar_lead_novo(app_db, seed):
-    import mod_chat_externo as ext
-    db = app_db.get_session()
-    res = ext.processar_entrada(db, "whatsapp", remetente="(11) 95555-0001",
-                                texto="quero móveis planejados", id_externo="wamid.LEAD")
+    assert r1["status"] == "triagem" and r1["triagem_id"]
+    r2 = ext.processar_entrada(db, "whatsapp", remetente="(11) 95555-0001",
+                               texto="1", id_externo="wamid.LEAD2")   # "1" = comercial
     db.commit()
-    ent = db.get(app_db.TriagemEntrada, res["triagem_id"])
-    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
-    conv = ext.triagem_resolver_criar(db, ent, u.id, "Lead Novo da Silva")
-    db.commit()
-    assert ent.status == "resolvido" and ent.conversa_id == conv.id
-    cli = db.query(app_db.Cliente).filter_by(nome="Lead Novo da Silva").first()
-    assert cli is not None and cli.loja_id == seed["loja1_id"]
-    assert "955550001" in (cli.whatsapp or "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+    assert r2["status"] == "roteado" and r2["conversa_id"]
+    ent = db.get(app_db.TriagemEntrada, r1["triagem_id"])
+    assert ent.status == "resolvido" and ent.conversa_id == r2["conversa_id"]
+    conv = db.get(Conversa, r2["conversa_id"])
+    assert conv.segmento == "comercial"
+    assert conv.responsavel_usuario_id == sac.usuario_id
+    assert conv.origem_entrada == "triagem"
+    cli = db.query(app_db.Cliente).filter_by(loja_id=seed["loja1_id"]).filter(
+        app_db.Cliente.whatsapp.contains("955550001")).first()
+    assert cli is not None                            # lead virou Cliente (decisão 12)
     ext_part = (db.query(app_db.ConversaParticipanteExterno)
                   .filter_by(conversa_id=conv.id).first())
-    assert ext_part is not None                     # o contato espelha por WhatsApp
-    # a próxima mensagem do número roteia sozinha para a conversa nova
-    r2 = ext.processar_entrada(db, "whatsapp", remetente="(11) 95555-0001",
-                               texto="e o prazo?", id_externo="wamid.LEAD2")
+    assert ext_part is not None                        # contato espelha por WhatsApp
+    corpos = [m.corpo for m in db.query(ConversaMensagem)
+              .filter_by(conversa_id=conv.id).order_by(ConversaMensagem.id).all()]
+    assert "quero móveis planejados" in corpos          # texto original entrou na conversa
+    # próxima mensagem do número roteia sozinha pra conversa já materializada
+    r3 = ext.processar_entrada(db, "whatsapp", remetente="(11) 95555-0001",
+                               texto="e o prazo?", id_externo="wamid.LEAD3")
     db.commit()
-    assert r2["status"] == "roteado" and r2["conversa_id"] == conv.id
+    assert r3["status"] == "roteado" and r3["conversa_id"] == conv.id
     db.close()
 
 
-def test_descartar_registra_sem_apagar(app_db, seed):
+def test_sem_sac_configurado_materializa_sem_responsavel(app_db, seed):
+    """Loja sem ninguém na Função 'SAC' (loja 2 — a 1 ganha SAC no teste anterior, `seed` é
+    module-scoped): a conversa nasce mesmo assim (sem travar), só sem responsável/criador —
+    visível via Oversight até alguém assumir."""
     import mod_chat_externo as ext
+    from database import Conversa
     db = app_db.get_session()
-    res = ext.processar_entrada(db, "whatsapp", remetente="(11) 94444-0001",
-                                texto="spam", id_externo="wamid.SPAM")
+    # âncora a entrada na loja 2 por Cliente já cadastrado (mais específico que o fallback de
+    # NumeroConectado/1ª loja — ver _loja_da_entrada) sem depender de haver só 1 NumeroConectado
+    db.add(app_db.Cliente(nome="Cliente Loja 2 Novo", loja_id=seed["loja2_id"],
+                          whatsapp="(31) 95555-0099"))
     db.commit()
-    ent = db.get(app_db.TriagemEntrada, res["triagem_id"])
-    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
-    ext.triagem_descartar(db, ent, u.id)
+    r1 = ext.processar_entrada(db, "whatsapp", remetente="(31) 95555-0099",
+                               texto="oi", id_externo="wamid.NOSAC1")
     db.commit()
-    assert ent.status == "descartado" and ent.resolvido_por_id == u.id
-    assert db.get(app_db.TriagemEntrada, ent.id) is not None   # registro fica (não é delete)
+    assert db.get(app_db.TriagemEntrada, r1["triagem_id"]).loja_id == seed["loja2_id"]
+    r2 = ext.processar_entrada(db, "whatsapp", remetente="(31) 95555-0099",
+                               texto="1", id_externo="wamid.NOSAC2")
+    db.commit()
+    assert r2["status"] == "roteado"
+    conv = db.get(Conversa, r2["conversa_id"])
+    assert conv.segmento == "comercial"
+    assert conv.responsavel_usuario_id is None and conv.criado_por_id is None
     db.close()
 
 
-# ── 8. endpoints + tenancy: a fila é da loja (404/403 cross-loja) ────────────
-
-def test_fila_endpoint_e_tenancy(http_client_factory, app_db, seed):
+def test_sweep_materializa_com_segmento_triagem_apos_2min(app_db, seed):
+    """Sem resposta reconhecida (ninguém respondeu, ou número ambíguo) → depois de 2min o
+    sweep preguiçoso materializa com o selo 'triagem' (SAC distribui)."""
+    import datetime as _dt
     import mod_chat_externo as ext
+    from chat import triagem as tri
+    from database import Conversa
     db = app_db.get_session()
-    res = ext.processar_entrada(db, "whatsapp", remetente="(11) 93333-0001",
-                                texto="para a loja 1", id_externo="wamid.TEN")
-    db.commit(); tid = res["triagem_id"]; db.close()
+    r1 = ext.processar_entrada(db, "whatsapp", remetente="(11) 92222-0001",
+                               texto="alô?", id_externo="wamid.SWEEP1")
+    db.commit()
+    ent = db.get(app_db.TriagemEntrada, r1["triagem_id"])
+    ent.criado_em = _dt.datetime.utcnow() - _dt.timedelta(minutes=3)
+    db.commit()
+    # antes do sweep, ninguém carregou o inbox ainda: segue pendente
+    ainda = db.get(app_db.TriagemEntrada, ent.id)
+    assert ainda.status == "pendente"
+    tri.varrer_triagem_vencida(db, seed["loja1_id"])
+    db.commit()
+    ent2 = db.get(app_db.TriagemEntrada, ent.id)
+    assert ent2.status == "resolvido" and ent2.conversa_id is not None
+    conv = db.get(Conversa, ent2.conversa_id)
+    assert conv.segmento == tri.SEGMENTO_TRIAGEM
+    db.close()
 
-    c1 = _login(http_client_factory, "dir_l1")
-    st, body = c1.get("/api/comunicacao/triagem/fila")
-    assert st == 200 and body["ok"]
-    assert any(e["id"] == tid for e in body["fila"])
 
-    c2 = _login(http_client_factory, "dir_l2")
-    st, body = c2.get("/api/comunicacao/triagem/fila")
-    assert st == 200 and body["ok"]
-    assert not any(e["id"] == tid for e in body["fila"])   # loja 2 não vê a fila da loja 1
-
-    st, body = c2.post("/api/comunicacao/triagem/fila/%d/resolver" % tid,
-                       {"acao": "descartar"})
-    assert st in (403, 404)                                # nem resolve cross-loja
-
-    st, body = c1.post("/api/comunicacao/triagem/fila/%d/resolver" % tid,
-                       {"acao": "descartar"})
-    assert st == 200 and body["ok"]
+def test_sweep_ignora_entrada_recente(app_db, seed):
+    import mod_chat_externo as ext
+    from chat import triagem as tri
     db = app_db.get_session()
-    assert db.get(app_db.TriagemEntrada, tid).status == "descartado"
+    r1 = ext.processar_entrada(db, "whatsapp", remetente="(11) 92222-0002",
+                               texto="alô?", id_externo="wamid.RECENTE1")
+    db.commit()
+    tri.varrer_triagem_vencida(db, seed["loja1_id"])
+    db.commit()
+    ent = db.get(app_db.TriagemEntrada, r1["triagem_id"])
+    assert ent.status == "pendente"                     # ainda dentro dos 2min, não venceu
+    db.close()
+
+
+def test_nome_do_lead_prioriza_cadastro_sobre_meta(app_db, seed):
+    """Nome do lead: Cliente já cadastrado com esse telefone > perfil do WhatsApp (Meta) >
+    o próprio remetente, nessa ordem (pedido 2026-08-05)."""
+    import mod_chat_externo as ext
+    from database import Conversa
+    db = app_db.get_session()
+    cli = app_db.Cliente(nome="Fulano do Cadastro", loja_id=seed["loja1_id"],
+                         whatsapp="(11) 91111-2222")
+    db.add(cli); db.commit()
+    r1 = ext.processar_entrada(db, "whatsapp", remetente="(11) 91111-2222",
+                               texto="oi", id_externo="wamid.NOME1", nome="Nome da Meta")
+    db.commit()
+    r2 = ext.processar_entrada(db, "whatsapp", remetente="(11) 91111-2222",
+                               texto="1", id_externo="wamid.NOME2")
+    db.commit()
+    conv = db.get(Conversa, r2["conversa_id"])
+    assert "Fulano do Cadastro" in (conv.titulo or "")   # cadastro vence o perfil da Meta
     db.close()

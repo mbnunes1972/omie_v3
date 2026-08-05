@@ -1372,12 +1372,14 @@ class EnvioExterno(Base):
 
 
 class TriagemEntrada(Base):
-    """Fila de TRIAGEM humana (spec _geral/2026-07-31-triagem-pipeline-entrada-design.md):
-    entrada externa que a automação NÃO roteou — primeiro contato de número desconhecido,
-    número ambíguo (2+ conversas candidatas) ou projeto concluído. Regra de ouro: mensagem
-    nenhuma é descartada em silêncio. Idempotente por `id_externo` (wamid — a Meta reentrega
-    o mesmo webhook 5-6x até o 200). Resolução humana na aba Novos da F7: vincular a conversa,
-    criar Cliente novo (lead por WhatsApp) ou descartar — descartar é registro, não delete."""
+    """Buffer de TRIAGEM automática (revisão 2026-08-05 — substitui a fila humana da spec
+    _geral/2026-07-31-triagem-pipeline-entrada-design.md): entrada externa que a automação
+    ainda NÃO roteou — primeiro contato de número desconhecido, número ambíguo (2+ conversas
+    candidatas) ou projeto concluído. Regra de ouro: mensagem nenhuma é descartada em silêncio.
+    Idempotente por `id_externo` (wamid — a Meta reentrega o mesmo webhook 5-6x até o 200).
+    Resolução é SEMPRE automática (chat.triagem.triagem_materializar): resposta reconhecida no
+    menu → materializa na hora com o segmento escolhido; sem resposta reconhecida em 2min →
+    materializa com segmento='triagem' (selo próprio, tratamento cai pro SAC distribuir)."""
     __tablename__ = "triagem_entradas"
 
     id               = Column(Integer,  primary_key=True, autoincrement=True)
@@ -1387,9 +1389,10 @@ class TriagemEntrada(Base):
     texto            = Column(Text,     nullable=True)
     id_externo       = Column(Text,     nullable=True, unique=True, index=True)  # wamid (idempotência)
     id_externo_ref   = Column(Text,     nullable=True)     # id citado (reply), se houver
-    status           = Column(String(12), nullable=False, default="pendente")   # pendente|resolvido|descartado
+    status           = Column(String(12), nullable=False, default="pendente")   # pendente|resolvido
     candidatos_json  = Column(Text,     nullable=True)     # [conversa_id, …] quando ambíguo
     segmento_sugerido = Column(String(20), nullable=True)  # resposta do menu de triagem automática
+    nome_whatsapp    = Column(String(150), nullable=True)  # nome de perfil da Meta (fallback do lead)
     conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=True)
     resolvido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     resolvido_em     = Column(DateTime, nullable=True)
@@ -1919,6 +1922,9 @@ def _migrar_colunas_pg():
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_status",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_erro",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_at",
+        # Triagem automática (2026-08-05): nome do perfil do WhatsApp (Meta), usado como fallback
+        # de nome do lead quando o telefone não bate com nenhum Cliente já cadastrado.
+        "ALTER TABLE triagem_entradas ADD COLUMN IF NOT EXISTS nome_whatsapp VARCHAR(150)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

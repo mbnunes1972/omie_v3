@@ -53,20 +53,29 @@ def test_mural_nao_arquiva_e_nao_participante_erro(app_db, seed):
     db.close()
 
 
-def test_pendente_e_filtro_de_recebida_sem_resposta(app_db, seed):
+def test_pendente_e_cliente_sem_resposta_independente_do_viewer(app_db, seed):
+    """pendente (revisão 2026-08-05): reflete o ATENDIMENTO — última mensagem SEM autor
+    interno (veio de fora) —, não mais "não fui eu que mandei" por viewer. Mensagem entre
+    dois usuários internos nunca é pendente (não tem cliente esperando); mensagem externa é
+    pendente pros DOIS lados até alguém da loja responder."""
     import mod_chat
     db = app_db.get_session()
     conv, ua, ub = _direct(db, app_db, seed["loja1_id"], "dir_l1", "cons_l1")
     mod_chat.enviar_mensagem(db, conv, ua.id, "oi, tudo bem?"); db.commit()
-    # para o REMETENTE a conversa não está pendente; para quem RECEBEU, está
     item_a = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ua.id) if x["id"] == conv.id][0]
     item_b = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ub.id) if x["id"] == conv.id][0]
-    assert item_a["pendente"] is False and item_b["pendente"] is True
-    # o outro respondeu → inverte
+    assert item_a["pendente"] is False and item_b["pendente"] is False
+    # mensagem EXTERNA (autor_usuario_id NULL) → pendente pros dois lados, sem depender de quem olha
+    mod_chat.enviar_mensagem(db, conv, None, "mensagem de fora", canal="comercial",
+                             _permitir_externo=True); db.commit()
+    item_a = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ua.id) if x["id"] == conv.id][0]
+    item_b = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ub.id) if x["id"] == conv.id][0]
+    assert item_a["pendente"] is True and item_b["pendente"] is True
+    # qualquer um da loja responde → deixa de ser pendente pros dois
     mod_chat.enviar_mensagem(db, conv, ub.id, "tudo!"); db.commit()
     item_a = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ua.id) if x["id"] == conv.id][0]
     item_b = [x for x in mod_chat.listar_inbox(db, seed["loja1_id"], ub.id) if x["id"] == conv.id][0]
-    assert item_a["pendente"] is True and item_b["pendente"] is False
+    assert item_a["pendente"] is False and item_b["pendente"] is False
     db.close()
 
 

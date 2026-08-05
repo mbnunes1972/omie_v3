@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """RF-08/09 — triagem AUTOMÁTICA (2026-08-04): contato novo no WhatsApp recebe a PERGUNTA de
 triagem de volta (texto livre — janela de 24h recém-aberta; sem template) e a RESPOSTA dele
-(número/nome do segmento) preenche `segmento_sugerido` na MESMA entrada da fila + envia a
-confirmação. Sem credencial Meta o envio nasce `pendente_config` (a rede nunca é tocada em
-teste). A resolução segue HUMANA na fila."""
+(número/nome do segmento) preenche `segmento_sugerido` + envia a confirmação. Sem credencial
+Meta o envio nasce `pendente_config` (a rede nunca é tocada em teste). A resolução é sempre
+AUTOMÁTICA (2026-08-05): resposta reconhecida materializa a conversa na hora
+(chat.triagem.triagem_materializar) — não fica mais esperando humano na fila."""
 import mod_chat_externo as wa
 from chat import triagem as tri
 from database import EnvioExterno, TriagemEntrada
@@ -47,14 +48,14 @@ def _limpar(app_db, remetente):
         db.close()
 
 
-def test_contato_novo_recebe_pergunta_e_resposta_sugere_segmento(app_db, seed, monkeypatch):
+def test_contato_novo_recebe_pergunta_e_resposta_materializa_conversa(app_db, seed, monkeypatch):
     monkeypatch.delenv("ORIZON_WA_TOKEN", raising=False)      # hermético: sem transporte real
     monkeypatch.delenv("ORIZON_WA_PHONE_ID", raising=False)
     tel = "5512999990001"
     _limpar(app_db, tel)
     db = app_db.get_session()
     try:
-        # 1ª mensagem: cai na fila E dispara a pergunta (pendente_config sem credencial)
+        # 1ª mensagem: cai no buffer E dispara a pergunta (pendente_config sem credencial)
         r1 = wa.processar_entrada(db, "whatsapp", tel, "Oi, preciso de um orçamento",
                                   id_externo="wamid.auto.1")
         db.commit()
@@ -64,23 +65,20 @@ def test_contato_novo_recebe_pergunta_e_resposta_sugere_segmento(app_db, seed, m
         assert len(envs) == 1
         assert envs[0].status == "pendente_config"      # sem ORIZON_WA_* no teste
         assert envs[0].mensagem_id is None              # ainda não há conversa
-        # 2ª mensagem: escolha "1" → MESMA entrada ganha segmento_sugerido + confirmação
+        # 2ª mensagem: escolha "1" → segmento reconhecido MATERIALIZA a conversa na hora
         r2 = wa.processar_entrada(db, "whatsapp", tel, "1", id_externo="wamid.auto.2")
         db.commit()
-        assert r2["triagem_id"] == r1["triagem_id"]     # não duplica na fila
-        assert r2["segmento_sugerido"] == "comercial"
+        assert r2["status"] == "roteado" and r2["conversa_id"]
         ent = db.get(TriagemEntrada, r1["triagem_id"])
-        assert ent.segmento_sugerido == "comercial" and ent.status == "pendente"
-        envs = db.query(EnvioExterno).filter_by(triagem_id=ent.id, direcao="saida").all()
-        assert len(envs) == 2                           # pergunta + confirmação
-        # 3ª mensagem: texto livre depois da escolha → anexa na entrada, sem novo envio
-        wa.processar_entrada(db, "whatsapp", tel, "é para uma cozinha",
-                             id_externo="wamid.auto.3")
+        assert ent.status == "resolvido" and ent.conversa_id == r2["conversa_id"]
+        from database import Conversa
+        conv = db.get(Conversa, r2["conversa_id"])
+        assert conv.segmento == "comercial"
+        # 3ª mensagem: já roteia normal pra conversa materializada (não é mais "anexa no buffer")
+        r3 = wa.processar_entrada(db, "whatsapp", tel, "é para uma cozinha",
+                                  id_externo="wamid.auto.3")
         db.commit()
-        ent = db.get(TriagemEntrada, r1["triagem_id"])
-        assert "cozinha" in ent.texto
-        assert db.query(EnvioExterno).filter_by(triagem_id=ent.id,
-                                                direcao="saida").count() == 2
+        assert r3["status"] == "roteado" and r3["conversa_id"] == conv.id
     finally:
         db.close()
 

@@ -3021,6 +3021,115 @@ tratamento).
 **Deploy:** commit + push no `main`; redeploy só da instância B (Homolog); **A e produção real
 seguem PAUSADAS** até aprovação visual do Marcelo. Grafo MCP re-ingerido.
 
+## Sessão 161 — Pendentes×Oversight mutuamente exclusivos + Triagem 100% automática (SAC distribui) + auditoria visual pós-deploy do Chat (16 achados)
+
+Três frentes na mesma sessão, todas em cima do estado da Sessão 160 (Homolog). Suíte
+completa **1734 → 1736 passed**; zero mudança de backend na 3ª frente (só `static/index.html`).
+
+**(1) Pendentes deixou de ser filtro-AND, Oversight passou a COMBINAR (não substituir).**
+Achado: "Pendentes" fazia AND com o chip de categoria ativo (dava pra ter "Grupos + Pendentes"
+ao mesmo tempo, sem sentido — se é pendente não é Todas/Grupos/Urgentes); Oversight fazia o
+oposto do esperado — ao ligar, **ignorava** chip/segmento/Pendentes/busca por completo em vez
+de empilhar com eles (`atendRender`/`intRender` tinham um `return` antecipado). Fix: "Pendentes"
+entra no MESMO grupo de seleção única dos chips (`_ocDaChip` ganha o case `'pendentes'`,
+`ocTogglePend` alterna `_atdChip`/`_intChip` entre `'pendentes'`/`'all'` — sem estado próprio).
+Oversight virou troca de FONTE (`_ocTodasDoCanal` no lugar de `_atdInbox`/`_intInbox`) mantendo
+os MESMOS filtros por cima — pra isso, `pendente` (backend, `chat/core.py:serializar_conversa`)
+deixou de comparar com `viewer_id` ("não fui eu que mandei" inflava pendente quando um COLEGA já
+tinha respondido) e virou "última mensagem sem autor interno" (`autor_usuario_id IS NULL` —
+sinal que já existia pra msg externa), viewer-independent, e passou a ser serializado também em
+`listar_todas_conversas` (junto de `urgente`/`status`, que faltavam lá). 1 teste reescrito
+(`test_chat_arquivar.py`) pra nova semântica.
+
+**(2) Triagem: resolução deixou de ser humana — SAC recebe tudo e distribui (decisão do
+usuário, revisão da spec 2026-07-31).** O painel "Segmento/Vincular a uma conversa/Ação de
+Triagem" (Sessão 118-130) foi investigado e **removido por completo** (HTML+JS+3 endpoints:
+`GET .../triagem/fila`, `POST .../fila/<id>/resolver`) — não existe mais fila pra humano
+decidir. Fluxo novo, sempre automático (`chat/triagem.py:triagem_materializar`, substitui
+`triagem_resolver_vincular/criar/descartar`):
+- Cliente responde o menu automático (RF-08, já existia) com um segmento reconhecido →
+  materializa NA HORA (`chat/externo.py:processar_entrada`): cria o Cliente (se o telefone/
+  e-mail não bate com nenhum já cadastrado) + conversa de grupo, segmento = o escolhido.
+- Sem resposta reconhecida (silêncio, ambíguo — 2+ projetos candidatos —, ou não reconhecida)
+  → **sweep preguiçoso** de 2min (`varrer_triagem_vencida`, sem job em background — mesmo
+  padrão da janela de 24h do WhatsApp: só vence quando alguém carrega o inbox de novo,
+  hookado no `GET /api/comunicacao/inbox`) materializa com o selo **`triagem`** (novo, não é
+  um dos 7 segmentos do catálogo — entra em `_ATD_SEGROT`/`.atd-b-seg-triagem`, cor `--warn`).
+- **Responsável inicial = SAC** (`_sac_usuario_id`, via Função "SAC" → `Funcionario.usuario_id`;
+  sem SAC configurado, a conversa nasce sem responsável — visível só por Oversight, não trava).
+  SAC distribui por transferência (`transferir_responsavel`, já existia) — a transferência
+  resolve, sem mudança nesse mecanismo.
+- **Nome do lead:** cadastro (Cliente por telefone/e-mail) vence; sem cadastro, nome de perfil
+  do WhatsApp (`iter_mensagens_whatsapp` passou a capturar `value.contacts[]`, campo novo
+  `TriagemEntrada.nome_whatsapp`); sem os dois, o próprio remetente.
+- Migração `triagem_entradas.nome_whatsapp` (idempotente); `TriagemEntrada.status` perde o
+  valor `descartado` (não existe mais descarte manual). `_loja_da_entrada` refatorado pra
+  reusar `_cliente_por_telefone`/`_cliente_por_email` (extraídos, mesma lógica de antes).
+  Testes: `test_triagem_fila.py` (3 removidos — vincular/criar/descartar humanos —, 5 novos:
+  segmento reconhecido+SAC responsável, sem SAC configurado, sweep após 2min, sweep ignora
+  entrada recente, prioridade de nome cadastro×Meta), `test_triagem_auto.py` e
+  `test_atendimentos_ui.py`/`test_chat_contato_segmento.py` com 1 teste cada reescrito pra
+  materialização automática.
+
+**(3) Auditoria visual pós-deploy — 16 achados do usuário testando Homolog/localhost real,
+todos investigados e corrigidos (frontend puro):**
+- Avatar sumido no cabeçalho da thread → adicionado (`_ocAvatarHTML` ao lado do nome).
+- "Atendimento sem Concluir" → causa raiz: DM interna usuário↔usuário (`tipo=direct`, só
+  existe por esse caminho — confirmado no código) vazava pra dentro de Atendimentos por um
+  filtro velho (`tipo !== mural/publico`, sem excluir `direct`); e "grupo" de atendimento
+  (com segmento) vazava pro Chat Interno, trazendo o seletor de segmento junto (sem sentido lá).
+  Fix: `_atdInbox`/`_intInbox` passam a usar a MESMA partição que o Oversight já usava
+  (`_ocTodasDoCanal`) — atendimento = projeto OU grupo COM segmento; interno = direct/grupo
+  SEM segmento. `_ocSetSegSel` ganhou gate por `_ocScrAtual==='atend'` (só reforça: o seletor
+  não deve aparecer fora de Atendimentos mesmo com a thread migrando de tela — achado que só
+  apareceu ao trocar de aba com uma conversa de atendimento já aberta).
+- Ícone de pasta "cara de Windows" → era `ti-folder` em âmbar fixo (decisão da FATIA 7 rodada 2);
+  neutralizado, e depois recolorido com o MESMO hash de cor que avatar de pessoa já usava (5
+  tons, sem âmbar) — variedade sem parecer ícone de SO.
+- "Pendentes" duplicado no Chat Interno → botão estático esquecido no HTML (`#int-pend`) de
+  antes da rodada 6 (que já tinha virado chip dinâmico); removido.
+- Responsável: saiu do canto superior direito (perdido, sem contexto) e virou subtítulo do
+  nome — nunca mais some (fallback "SAC" quando não há responsável explícito); "R" alinhado
+  com a 1ª letra do nome (avatar saiu de dentro da coluna de texto pra fora dela, os dois — 
+  título e "Responsável:" — ficam na mesma coluna).
+  Bônus achado depurando o avatar: título truncava ("Pro...") porque o `<select>` de segmento
+  tinha até 308px (rótulo longo do catálogo) sem `max-width` — travado em 150px, título ganhou
+  `flex:1;min-width:0`.
+- Nome do projeto duplicado ao lado da tag de segmento (`📁 Projeto X` badge redundante com o
+  título, que já É o nome do projeto) → removido; a tag de segmento já ficava justificada à
+  direita (`.atd-bottom{justify-content:space-between}` + `.atd-prev{flex:1}`), só sobrava o
+  badge no caminho.
+- Trocar de filtro com uma conversa aberta que sai do resultado deixava a thread "grudada" →
+  `_ocFecharSeForaDoFiltro` fecha pra tela vazia quando `_ocConvAtiva` não está mais em
+  `_atdVisiveis`/`_intVisiveis` depois do render.
+- Emoji 📁 embutido no TEXTO do título (`serializar_conversa` prepend, diferente do ícone do
+  avatar) renderizava colorido no cabeçalho — duplicava o ícone; stripado em
+  `_ocTituloComAssunto`/`_ocTodasItemHTML`/`ocAbrirTodas` (mesma regex já usada em outros
+  lugares pra emoji de Mural/Triagem).
+- "Encaminhar documento (WhatsApp)" removido da UI (endpoint segue no backend, só sem gatilho).
+- "+"/modal "Nova conversa interna" do Chat Interno removido por completo (HTML+CSS+~70 linhas
+  de JS) — não fazia sentido, mesma razão do "+" de Atendimentos (rodada 6): a busca já inicia
+  a conversa com quem for encontrado (`ocAbrirUsuario` pra pessoa nova, clique direto pra
+  grupo existente).
+- Botões do Chat Interno consolidados numa linha só (busca + Novo Grupo + Mural + Fórum da
+  Loja + Fórum Orizon + chips) — `.oc-topbar` virou `nowrap` + `overflow-x:auto` (cabe sem
+  rolagem em telas largas, 1920px+; rola horizontal em janelas mais estreitas, ~1440px, em vez
+  de quebrar pra 2ª linha).
+- Botão de transferência ao lado do nome (ícone só, `ti-corner-up-right`, como o de encaminhar
+  do WhatsApp) — reusa o mesmo menu do "Transferir atendimento" do rodapé; `ocAmToggle` ganhou
+  `btnEl` opcional pra reposicionar o menu perto de quem clicou (sem isso, o menu — fixo por
+  CSS perto do botão original no rodapé — abriria longe do ícone novo).
+- Contraste dos botões secundários do Chat aumentado (`--accent-line`, já usado como "filete de
+  realce" no resto do app, em vez do cinza quase invisível que a regra global
+  `[data-theme="dark"] .btn-ghost{border-color:transparent}` deixava) — escopado a `#page-chat`,
+  não mexe no resto do app.
+- `.oc-newbtn` (CSS órfã do "+" já removido antes) também limpa.
+
+**Verificação:** suíte completa **1736 passed**, `node --check` limpo, cada achado confirmado
+visualmente com Playwright (login real, dados reais do dev local) antes/depois — não só
+julgamento visual. Nenhum deploy feito ainda nesta sessão (A/B/produção seguem no estado da
+Sessão 160 até o usuário aprovar).
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

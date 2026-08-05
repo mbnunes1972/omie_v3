@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
-"""chat/triagem.py — resolução humana da FILA DE TRIAGEM (spec
-_geral/2026-07-31-triagem-pipeline-entrada-design.md). A persistência da fila acontece em
-externo.processar_entrada (idempotente por wamid); aqui vivem a listagem (tenancy por loja)
-e as 3 saídas: vincular · criar (lead novo) · descartar (registro, não delete)."""
+"""chat/triagem.py — resolução SEMPRE AUTOMÁTICA da triagem (revisão 2026-08-05, substitui a
+fila humana da spec _geral/2026-07-31-triagem-pipeline-entrada-design.md: não existe mais
+painel de vincular/criar/descartar). A persistência do buffer acontece em
+externo.processar_entrada (idempotente por wamid); aqui vive a materialização: resposta
+reconhecida no menu → conversa nasce com esse segmento; sem resposta em 2min
+(varrer_triagem_vencida) → nasce com segmento='triagem' (selo próprio) e cai pro SAC
+distribuir — SAC transfere pra quem deve atender, e a transferência resolve."""
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from database import EnvioExterno, Cliente, Usuario, TriagemEntrada
+from database import EnvioExterno, Cliente, Conversa, Funcionario, TriagemEntrada
 
-from .externo import _canal_do_thread, registrar_envio  # noqa: F401  (canal do fio externo)
+from .externo import (_canal_do_thread, _cliente_por_telefone, _cliente_por_email,
+                      registrar_envio)  # noqa: F401  (canal do fio externo)
+
+SEGMENTO_TRIAGEM = "triagem"   # selo próprio (não é um dos 7 de SEGMENTOS) — SAC distribui
+MINUTOS_SWEEP = 2
 
 
 def serializar_triagem(e):
@@ -21,24 +28,24 @@ def serializar_triagem(e):
 
 
 def triagem_listar(db, loja_id, status="pendente"):
-    """Entradas da fila da LOJA (tenancy), mais antigas primeiro (ordem de chegada)."""
+    """Entradas do buffer da LOJA (tenancy), mais antigas primeiro (ordem de chegada) — uso
+    interno/depuração; não tem mais tela própria (a resolução é automática)."""
     q = db.query(TriagemEntrada).filter_by(loja_id=loja_id)
     if status:
         q = q.filter(TriagemEntrada.status == status)
     return [serializar_triagem(e) for e in q.order_by(TriagemEntrada.id.asc()).all()]
 
 
-def _triagem_marcar(db, entrada, status, usuario_id, conversa_id=None):
-    entrada.status = status
-    entrada.resolvido_por_id = usuario_id
+def _triagem_marcar(db, entrada, conversa_id):
+    entrada.status = "resolvido"
     entrada.resolvido_em = datetime.utcnow()
     entrada.conversa_id = conversa_id
     db.flush()
 
 
-def _triagem_postar_na_conversa(db, entrada, conversa, usuario_id):
+def _triagem_postar_na_conversa(db, entrada, conversa):
     """Entrega a mensagem original na conversa (autor NULL = externa) + EnvioExterno de entrada
-    com o wamid (mantém idempotência e janela) + EVENTO inline do vínculo (decisão 5)."""
+    com o wamid (mantém idempotência e janela). Não commita."""
     from . import core as _mc
     canal = _canal_do_thread(db, conversa.id, entrada.meio, entrada.remetente)
     msg = _mc.enviar_mensagem(db, conversa, None, entrada.texto or "(sem texto)", canal=canal,
@@ -46,89 +53,85 @@ def _triagem_postar_na_conversa(db, entrada, conversa, usuario_id):
     db.add(EnvioExterno(mensagem_id=msg.id, meio=entrada.meio, direcao="entrada", canal=canal,
                         destino=entrada.remetente, status="recebido",
                         id_externo=entrada.id_externo, id_externo_ref=entrada.id_externo_ref))
-    u = db.get(Usuario, usuario_id) if usuario_id else None
-    corpo_ev = "Contato %s vinculado por %s via triagem" % (
-        entrada.remetente, (u.nome if u else "—"))
-    _mc.enviar_mensagem(db, conversa, usuario_id, corpo_ev, evento="triagem_vinculo")
     db.flush()
     return msg
 
 
-def _aplicar_segmento(db, conversa, entrada, segmento):
-    """r3: o segmento escolhido na resolução (ou o indicado pela triagem automática —
-    `segmento_sugerido`) vira o segmento MANUAL da conversa. Sem nenhum dos dois, fica sem
-    segmento — a gerência trata depois pelo seletor do thread."""
+def _sac_usuario_id(db, loja_id):
+    """Usuário (conta de login) do Funcionário com Função 'SAC' da loja — responsável inicial
+    de todo atendimento que sai da triagem automática (2026-08-05: SAC recebe e DISTRIBUI;
+    quem recebe a transferência assume de verdade). None se ninguém tem essa Função na loja,
+    ou tem mas sem conta de login — a conversa nasce sem responsável (só Oversight enxerga até
+    alguém assumir manualmente), não trava a materialização."""
     from . import core as _mc
-    seg = (segmento or "").strip() or entrada.segmento_sugerido
-    if seg:
-        _mc.definir_segmento(db, conversa, seg)
+    fid = _mc.responsavel_sac(db, loja_id)
+    if not fid:
+        return None
+    f = db.get(Funcionario, fid)
+    return f.usuario_id if f else None
 
 
-def _assumir_atendimento(db, conversa, usuario_id):
-    """spec 2026-08-04 §7.1-A: depois da triagem o atendimento nasce ATRIBUÍDO — quem resolve
-    assume (se a conversa ainda não tem responsável; não rouba de quem já atende) — e a origem
-    'triagem' fica registrada para a tag de fallback (§5: Triagem×Avulsa). Uma nova entrada
-    vinculada a atendimento concluído também o REABRE (§8.5)."""
-    if usuario_id and not getattr(conversa, "responsavel_usuario_id", None):
-        conversa.responsavel_usuario_id = usuario_id
-    if not getattr(conversa, "origem_entrada", None):
-        conversa.origem_entrada = "triagem"
-    from . import core as _mc
-    _mc.reabrir_se_concluida(db, conversa)
-    db.flush()
-
-
-def triagem_resolver_vincular(db, entrada, conversa, usuario_id, segmento=None):
-    """Vincula a entrada a uma conversa EXISTENTE (candidata ou escolhida). Não commita."""
+def triagem_materializar(db, entrada, segmento):
+    """Resolução ÚNICA e sempre automática: cria o Cliente (se o telefone/e-mail não bate com
+    nenhum já cadastrado — decisão 12, contato vira cadastro) + uma conversa de grupo com o
+    SAC como responsável inicial + o contato como participante externo. `segmento` é o
+    escolhido pelo cliente no menu (já validado em interpretar_resposta_triagem) OU
+    SEGMENTO_TRIAGEM quando ninguém respondeu a tempo. Nome do lead: cadastro > perfil do
+    WhatsApp (Meta) > o próprio remetente, nessa ordem (pedido 2026-08-05). Não commita."""
     if entrada.status != "pendente":
         raise ValueError("Esta entrada já foi resolvida.")
-    if conversa is None or conversa.loja_id != entrada.loja_id:
-        raise ValueError("Conversa inexistente nesta loja.")
-    msg = _triagem_postar_na_conversa(db, entrada, conversa, usuario_id)
-    _aplicar_segmento(db, conversa, entrada, segmento)
-    _assumir_atendimento(db, conversa, usuario_id)
-    _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conversa.id)
-    return msg
-
-
-def triagem_resolver_criar(db, entrada, usuario_id, nome_cliente, segmento=None):
-    """Lead NOVO por WhatsApp: cria o Cliente (contato no cadastro — decisão 12) + uma conversa
-    de GRUPO com o resolvedor dentro e o contato como participante EXTERNO (as respostas da
-    equipe espelham pelo transporte). A mensagem original entra na conversa. Não commita."""
     from . import core as _mc
-    if entrada.status != "pendente":
-        raise ValueError("Esta entrada já foi resolvida.")
-    nome_cliente = (nome_cliente or "").strip()
-    if not nome_cliente:
-        raise ValueError("Dê um nome ao novo cliente.")
-    cli = Cliente(nome=nome_cliente, loja_id=entrada.loja_id,
-                  whatsapp=(entrada.remetente if entrada.meio == "whatsapp" else None),
-                  email=(entrada.remetente if entrada.meio == "email" else None))
-    db.add(cli); db.flush()
-    conv = _mc.criar_grupo(db, entrada.loja_id, usuario_id, "Lead — %s" % nome_cliente,
-                           [usuario_id], exige_dois=False)
-    _mc.adicionar_externo(db, conv, nome_cliente,
+    cli = (_cliente_por_telefone(db, entrada.remetente) if entrada.meio == "whatsapp"
+           else _cliente_por_email(db, entrada.remetente))
+    nome = (cli.nome if cli else None) or entrada.nome_whatsapp or entrada.remetente
+    if cli is None:
+        cli = Cliente(nome=nome, loja_id=entrada.loja_id,
+                      whatsapp=(entrada.remetente if entrada.meio == "whatsapp" else None),
+                      email=(entrada.remetente if entrada.meio == "email" else None))
+        db.add(cli); db.flush()
+    sac_uid = _sac_usuario_id(db, entrada.loja_id)
+    if sac_uid:
+        conv = _mc.criar_grupo(db, entrada.loja_id, sac_uid, "Lead — %s" % nome, [sac_uid],
+                               exige_dois=False)
+    else:
+        conv = Conversa(loja_id=entrada.loja_id, tipo="grupo", titulo="Lead — %s" % nome)
+        db.add(conv); db.flush()
+    _mc.adicionar_externo(db, conv, nome,
                           telefone=(entrada.remetente if entrada.meio == "whatsapp" else None),
                           email=(entrada.remetente if entrada.meio == "email" else None),
-                          meio=entrada.meio, criado_por_id=usuario_id)
-    _triagem_postar_na_conversa(db, entrada, conv, usuario_id)
-    _aplicar_segmento(db, conv, entrada, segmento)
-    _assumir_atendimento(db, conv, usuario_id)
-    _triagem_marcar(db, entrada, "resolvido", usuario_id, conversa_id=conv.id)
+                          meio=entrada.meio, criado_por_id=sac_uid)
+    _triagem_postar_na_conversa(db, entrada, conv)
+    conv.segmento = segmento
+    conv.origem_entrada = "triagem"
+    db.flush()
+    _triagem_marcar(db, entrada, conv.id)
     return conv
 
 
-def triagem_descartar(db, entrada, usuario_id):
-    """Descarta (spam/engano) — é REGISTRO, não delete: a entrada fica auditável. Não commita."""
-    if entrada.status != "pendente":
-        raise ValueError("Esta entrada já foi resolvida.")
-    _triagem_marcar(db, entrada, "descartado", usuario_id)
-    return entrada
+def varrer_triagem_vencida(db, loja_id, minutos=MINUTOS_SWEEP):
+    """Checagem PREGUIÇOSA (sem job em background — mesmo padrão da janela de 24h): entradas
+    pendentes há mais de `minutos` sem segmento reconhecido materializam com
+    SEGMENTO_TRIAGEM (cliente não respondeu / resposta não reconhecida / número ambíguo —
+    qualquer caso sem resolução direta cai pro SAC distribuir). Chamada no GET do inbox, então
+    "2 minutos" é best-effort (só vence quando alguém carrega a tela de novo), não um timer de
+    verdade — aceito pelo pedido original. Não commita; o chamador decide. Best-effort: uma
+    entrada problemática não derruba a leitura do inbox de todo mundo."""
+    limite = datetime.utcnow() - timedelta(minutes=minutos)
+    pendentes = (db.query(TriagemEntrada)
+                   .filter(TriagemEntrada.loja_id == loja_id,
+                           TriagemEntrada.status == "pendente",
+                           TriagemEntrada.criado_em < limite).all())
+    for ent in pendentes:
+        try:
+            triagem_materializar(db, ent, SEGMENTO_TRIAGEM)
+        except Exception:
+            pass
+
 
 # ── RF-08/09 — triagem AUTOMÁTICA (2026-08-04): pergunta ao contato + leitura da resposta ────
 # O contato acabou de escrever → janela de 24h ABERTA → a pergunta sai como texto livre (sem
-# template). A resolução continua HUMANA na fila; a resposta do cliente só preenche
-# `segmento_sugerido` (o campo esperava esta frente desde a spec 2026-07-31).
+# template). A resolução é sempre automática (2026-08-05, triagem_materializar acima): resposta
+# reconhecida → materializa na hora com o segmento; sem resposta em 2min → SEGMENTO_TRIAGEM.
 
 _SEG_ROTULOS = {"comercial": "Comercial", "financeiro": "Financeiro", "logistica": "Logística",
                 "suporte_tecnico": "Suporte Técnico", "sac": "SAC", "compras": "Compras",

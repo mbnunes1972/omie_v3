@@ -187,17 +187,25 @@ def test_nova_entrada_reabre_atendimento_concluido(app_db, seed, monkeypatch):
 # ── Origem triagem × avulsa (§5) + responsável na resolução ───────────────────
 
 def test_resolucao_de_triagem_assume_e_marca_origem(app_db, seed, monkeypatch):
+    """Resolução SEMPRE automática (2026-08-05, triagem_materializar): quem assume não é mais
+    'quem resolveu' (não existe mais humano na fila) — é o SAC (Função 'SAC' da loja)."""
     monkeypatch.delenv("ORIZON_WA_TOKEN", raising=False)
     monkeypatch.delenv("ORIZON_WA_PHONE_ID", raising=False)
     db = app_db.get_session()
     try:
-        resolvedor = _uid(db, app_db, "cons_l1")
+        sac_uid = _uid(db, app_db, "cons_l1")
+        fn = app_db.Funcao(loja_id=seed["loja1_id"], nome="SAC")
+        db.add(fn); db.flush()
+        func = app_db.Funcionario(nome="Pessoa do SAC", loja_id=seed["loja1_id"],
+                                  funcao_id=fn.id, usuario_id=sac_uid, status="ativo")
+        db.add(func); db.flush()
         ent = TriagemEntrada(loja_id=seed["loja1_id"], meio="whatsapp",
                              remetente="5512999990202", texto="oi")
         db.add(ent); db.flush()
-        conv = tri.triagem_resolver_criar(db, ent, resolvedor, "Lead Triagem X"); db.commit()
-        assert conv.responsavel_usuario_id == resolvedor    # quem resolve ASSUME (§7.1-A)
+        conv = tri.triagem_materializar(db, ent, tri.SEGMENTO_TRIAGEM); db.commit()
+        assert conv.responsavel_usuario_id == sac_uid       # SAC ASSUME (2026-08-05)
         assert conv.origem_entrada == "triagem"             # tag de fallback correta (§5)
+        assert conv.segmento == tri.SEGMENTO_TRIAGEM
         assert ent.status == "resolvido"
     finally:
         db.close()

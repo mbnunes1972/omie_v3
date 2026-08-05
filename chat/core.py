@@ -1018,7 +1018,10 @@ def listar_todas_conversas(db, loja_id, participante_id=None,
     """OVERSIGHT (ver_todas_conversas — aba "Todas" da gerência, r5): TODAS as conversas
     direct/grupo/PROJETO da loja — a comunicação entre os funcionários E os atendimentos —
     com filtro opcional por participante e por assunto. Leitura; postar segue as regras
-    normais (DM alheia é somente leitura). `assunto_ref` = projeto_nome ou id (custom)."""
+    normais (DM alheia é somente leitura). `assunto_ref` = projeto_nome ou id (custom).
+    `urgente`/`status`/`pendente` (achado 2026-08-05): mesmos campos do serializer da inbox
+    pessoal, pra Oversight poder combinar com os MESMOS chips de categoria no frontend em vez
+    de substituí-los — `pendente` já é independente de viewer, então vale igual aqui."""
     q = (db.query(Conversa)
            .filter(Conversa.loja_id == loja_id,
                    Conversa.tipo.in_(("direct", "grupo", "projeto"))))
@@ -1045,6 +1048,9 @@ def listar_todas_conversas(db, loja_id, participante_id=None,
             "id": c.id, "tipo": c.tipo, "titulo": titulo,
             "projeto_nome": c.projeto_nome,
             "segmento": c.segmento,               # r5: separa atendimentos × internas na aba Todas
+            "urgente": bool(getattr(c, "urgente", 0)),
+            "status": (getattr(c, "status", None) or "aberta"),
+            "pendente": bool(ultima is not None and ultima.autor_usuario_id is None),
             "participantes": nomes, "assunto": _assunto_do(db, c),
             "ultima_previa": (("" if ultima is None else
                                (MASCARA_PRIVADA if ultima.privada else (ultima.corpo or "")))[:120]),
@@ -1620,8 +1626,10 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
                         arquivada=False):
     """Item da inbox: id/tipo/título de exibição + prévia da última mensagem. Para direct, o
     'titulo' de exibição é o nome do OUTRO participante (visto pelo `viewer_id`).
-    `pendente` (revisão UX 2026-07-31): última mensagem NÃO é do viewer → recebida sem
-    resposta — é FILTRO na fila, não estado do atendimento. `arquivada` é POR USUÁRIO
+    `pendente` (revisão UX 2026-08-05): última mensagem SEM autor interno (veio de fora) →
+    cliente esperando resposta — é FILTRO na fila, não estado do atendimento; independente de
+    QUEM está olhando (antes comparava com `viewer_id`, o que inflava pendente quando um colega
+    já tinha respondido). `arquivada` é POR USUÁRIO
     (flag no ConversaParticipante)."""
     titulo = c.titulo
     outro_id = None
@@ -1666,7 +1674,11 @@ def serializar_conversa(db, c, viewer_id, ultima=None, participantes=None, nao_l
         "status": (getattr(c, "status", None) or "aberta"),
         "concluido_em": (c.concluido_em.isoformat()
                          if getattr(c, "concluido_em", None) else None),
-        "pendente": bool(ultima is not None and ultima.autor_usuario_id != viewer_id),
+        # `pendente` (achado 2026-08-05: era "última msg não fui eu" — inflava pendente quando
+        # um COLEGA já tinha respondido ao cliente). Agora é do PONTO DE VISTA DO ATENDIMENTO,
+        # não do viewer: última mensagem sem autor interno (autor_usuario_id NULL = veio de
+        # fora, ver ConversaMensagem) = cliente esperando resposta de alguém da loja.
+        "pendente": bool(ultima is not None and ultima.autor_usuario_id is None),
         "ultima_previa": previa[:120],
         "ultima_em": ultima.criado_em.isoformat() if (ultima and ultima.criado_em) else None,
         "criado_em": c.criado_em.isoformat() if c.criado_em else None,

@@ -29,28 +29,27 @@ def test_segmento_manual_vence_derivado(app_db, seed):
     db.close()
 
 
-def test_triagem_aplica_segmento_indicado_ou_escolhido(app_db, seed):
+def test_triagem_materializar_aplica_o_segmento_passado(app_db, seed):
+    """triagem_materializar (resolução SEMPRE automática, 2026-08-05): o segmento da conversa
+    nova é exatamente o passado — o reconhecido no menu, ou SEGMENTO_TRIAGEM no timeout."""
     import mod_chat_externo as ext
+    from chat import triagem as tri
     from database import Conversa
     db = app_db.get_session()
     r = ext.processar_entrada(db, "whatsapp", remetente="(11) 92222-0001",
                               texto="quero falar do boleto", id_externo="wamid.SEG1")
     db.commit()
     ent = db.get(app_db.TriagemEntrada, r["triagem_id"])
-    ent.segmento_sugerido = "financeiro"; db.commit()   # a triagem automática INDICOU
-    u = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
-    conv = ext.triagem_resolver_criar(db, ent, u.id, "Cliente do Boleto")
+    conv = tri.triagem_materializar(db, ent, "financeiro")
     db.commit()
     assert db.get(Conversa, conv.id).segmento == "financeiro"
-    # escolhido na resolução VENCE o indicado
     r2 = ext.processar_entrada(db, "whatsapp", remetente="(11) 92222-0002",
                                texto="segunda entrada", id_externo="wamid.SEG2")
     db.commit()
     ent2 = db.get(app_db.TriagemEntrada, r2["triagem_id"])
-    ent2.segmento_sugerido = "comercial"; db.commit()
-    conv2 = ext.triagem_resolver_criar(db, ent2, u.id, "Outro Lead", segmento="sac")
+    conv2 = tri.triagem_materializar(db, ent2, tri.SEGMENTO_TRIAGEM)
     db.commit()
-    assert db.get(Conversa, conv2.id).segmento == "sac"
+    assert db.get(Conversa, conv2.id).segmento == tri.SEGMENTO_TRIAGEM
     db.close()
 
 

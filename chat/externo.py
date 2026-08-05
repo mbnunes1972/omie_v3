@@ -359,24 +359,43 @@ def _canal_do_thread(db, conversa_id, meio, remetente):
     return "comercial"
 
 
+def _cliente_por_telefone(db, remetente):
+    """Cliente cadastrado cujo whatsapp/telefone bate com o remetente (últimos 8 dígitos —
+    tolera DDI/DDD divergente). None se não achar. Usado pra loja da entrada E pra dar nome
+    ao lead automático da triagem (2026-08-05) sem depender só do perfil da Meta."""
+    tail = _digitos(remetente)[-8:]
+    if len(tail) != 8:
+        return None
+    for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
+        for campo in (c.whatsapp, c.telefone):
+            d = _digitos(campo)
+            if len(d) >= 8 and d[-8:] == tail:
+                return c
+    return None
+
+
+def _cliente_por_email(db, remetente):
+    alvo = (remetente or "").strip().lower()
+    if not alvo:
+        return None
+    for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
+        if (c.email or "").strip().lower() == alvo:
+            return c
+    return None
+
+
 def _loja_da_entrada(db, remetente=None, meio="whatsapp"):
     """Loja da entrada externa: (1) o remetente é um Cliente cadastrado → a loja dele (mais
     específico); (2) NumeroConectado ÚNICO na instalação → a loja do número; (3) primeira loja.
     Multi-número por loja fica p/ quando o webhook repassar o phone_number_id do payload."""
     if remetente and meio == "whatsapp":
-        tail = _digitos(remetente)[-8:]
-        if len(tail) == 8:
-            for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
-                for campo in (c.whatsapp, c.telefone):
-                    d = _digitos(campo)
-                    if len(d) >= 8 and d[-8:] == tail:
-                        return c.loja_id
+        cli = _cliente_por_telefone(db, remetente)
+        if cli is not None:
+            return cli.loja_id
     elif remetente and meio == "email":
-        alvo = remetente.strip().lower()
-        if alvo:
-            for c in db.query(Cliente).filter(Cliente.loja_id.isnot(None)).all():
-                if (c.email or "").strip().lower() == alvo:
-                    return c.loja_id
+        cli = _cliente_por_email(db, remetente)
+        if cli is not None:
+            return cli.loja_id
     from database import NumeroConectado
     nums = db.query(NumeroConectado).all()
     if len(nums) == 1:
@@ -385,13 +404,16 @@ def _loja_da_entrada(db, remetente=None, meio="whatsapp"):
     return l.id if l else None
 
 
-def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_externo=None):
+def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_externo=None,
+                      nome=None):
     """Recebe uma resposta EXTERNA já normalizada (o webhook faz o parse específico do provedor)
-    e a persiste na conversa certa — ou na FILA DE TRIAGEM (spec 2026-07-31: mensagem nenhuma é
-    descartada em silêncio). Idempotente por `id_externo` (a Meta reentrega o mesmo webhook até
+    e a persiste na conversa certa — ou no BUFFER de triagem (spec 2026-07-31: mensagem nenhuma
+    é descartada em silêncio). Idempotente por `id_externo` (a Meta reentrega o mesmo webhook até
     o 200): reentrega de mensagem já roteada OU já enfileirada é no-op que devolve o mesmo
     resultado. Retorna {status: 'roteado'|'triagem', conversa_id, [triagem_id]}. Autor NULL =
-    veio de fora. NÃO commita (o chamador decide)."""
+    veio de fora. `nome` (2026-08-05): perfil do WhatsApp (Meta) — usado só como FALLBACK do
+    nome do lead quando o telefone não bate com nenhum Cliente já cadastrado (cadastro vence).
+    NÃO commita (o chamador decide)."""
     from . import core as _mc
     if id_externo:
         ja = (db.query(EnvioExterno)
@@ -400,16 +422,16 @@ def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_extern
             m0 = db.get(ConversaMensagem, ja.mensagem_id)
             return {"status": "roteado", "conversa_id": m0.conversa_id if m0 else None}
         ent_ja = db.query(TriagemEntrada).filter_by(id_externo=id_externo).first()
-        if ent_ja is not None:                    # reentrega de entrada já na FILA
-            return {"status": "triagem", "conversa_id": ent_ja.conversa_id,
-                    "triagem_id": ent_ja.id}
+        if ent_ja is not None:                    # reentrega de entrada já no BUFFER
+            return {"status": ("roteado" if ent_ja.status == "resolvido" else "triagem"),
+                    "conversa_id": ent_ja.conversa_id, "triagem_id": ent_ja.id}
     conv, candidatos = _rotear_com_candidatos(db, meio, id_externo_ref=id_externo_ref,
                                               remetente=remetente)
     if conv is None:
         from . import triagem as _tri
         _rem_norm = (_digitos(remetente) if meio == "whatsapp"
                      else (remetente or "").strip().lower())
-        # RF-09 (2026-08-04): remetente que JÁ está na fila respondendo à pergunta de
+        # RF-09 (2026-08-04): remetente que JÁ está no buffer respondendo à pergunta de
         # triagem — interpreta (número/nome do segmento) na MESMA entrada, sem duplicar.
         pend = (db.query(TriagemEntrada)
                   .filter_by(meio=meio, remetente=_rem_norm, status="pendente")
@@ -419,11 +441,20 @@ def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_extern
                 seg = _tri.registrar_resposta_triagem(db, pend, texto)
             except Exception:
                 seg = None
+            if seg:
+                # 2026-08-05: segmento definido pela triagem → materializa NA HORA, sem
+                # esperar humano — nasce com o segmento escolhido, SAC como responsável
+                # inicial (ele distribui).
+                conv2 = _tri.triagem_materializar(db, pend, seg)
+                return {"status": "roteado", "conversa_id": conv2.id}
             return {"status": "triagem", "conversa_id": None, "triagem_id": pend.id,
                     "segmento_sugerido": seg}
+        cli = (_cliente_por_telefone(db, remetente) if meio == "whatsapp"
+               else _cliente_por_email(db, remetente))
+        nome_resolvido = (cli.nome if cli else None) or nome
         ent = TriagemEntrada(
             loja_id=_loja_da_entrada(db, remetente=remetente, meio=meio), meio=meio,
-            remetente=_rem_norm,
+            remetente=_rem_norm, nome_whatsapp=nome_resolvido,
             texto=texto, id_externo=id_externo, id_externo_ref=id_externo_ref,
             candidatos_json=(json.dumps(sorted(candidatos)) if candidatos else None))
         db.add(ent); db.flush()
@@ -449,16 +480,21 @@ def processar_entrada(db, meio, remetente, texto, id_externo_ref=None, id_extern
 
 def iter_mensagens_whatsapp(payload):
     """Extrai as mensagens de um payload de entrada da Meta WhatsApp Cloud API, normalizadas em
-    {from, texto, id, ref}. Tolerante à forma aninhada (entry[].changes[].value.messages[])."""
+    {from, texto, id, ref, nome}. Tolerante à forma aninhada (entry[].changes[].value.messages[]).
+    `nome` (2026-08-05): perfil do contato que a Meta manda em `value.contacts[]` (wa_id→nome) —
+    fallback de nome do lead automático quando o telefone não bate com nenhum Cliente cadastrado."""
     for entry in (payload or {}).get("entry", []) or []:
         for change in entry.get("changes", []) or []:
             val = change.get("value", {}) or {}
+            nomes = {c.get("wa_id"): ((c.get("profile") or {}).get("name"))
+                     for c in (val.get("contacts") or []) if c.get("wa_id")}
             for msg in val.get("messages", []) or []:
                 yield {"from": msg.get("from", ""),
                        "texto": ((msg.get("text") or {}).get("body")
                                  or "(mensagem sem texto)"),
                        "id": msg.get("id"),
-                       "ref": (msg.get("context") or {}).get("id")}
+                       "ref": (msg.get("context") or {}).get("id"),
+                       "nome": nomes.get(msg.get("from"))}
 
 
 # ═══ Ponte WhatsApp do funcionário (Fatia 6) ═════════════════════════════════
@@ -808,5 +844,4 @@ def rotear_entrada(db, meio, id_externo_ref=None, remetente=None):
 
 # Re-export de compatibilidade: a fila de triagem vive em chat/triagem.py (spec de portas).
 from .triagem import (serializar_triagem, triagem_listar,            # noqa: E402,F401
-                      triagem_resolver_vincular, triagem_resolver_criar,
-                      triagem_descartar)
+                      triagem_materializar, varrer_triagem_vencida)

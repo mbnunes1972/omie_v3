@@ -2134,6 +2134,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .oc-sysmsg{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px}
     .oc-sysmsg .oc-sysmsg-head{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text-3);margin-bottom:4px}
     .oc-sysmsg .oc-sysmsg-corpo{font-size:12.5px;color:var(--text)}
+    /* Balão de mensagem (mockup .bubble-row/.bubble.in/.bubble.out — achado do diff automatizado
+       2026-08-05: a área de mensagens NUNCA teve tratamento de balão, era só texto corrido sem
+       distinguir "eu"/"o outro lado" — o maior buraco visual que sobrava, maior área da tela.
+       "out" = autor sou eu (autor_usuario_id === usuário logado); resto (contato externo OU
+       colega) = "in". --accent-tint pro meu lado (mesma identidade cobre do resto do app, não
+       cor nova) vs --surface-2 neutro pro lado de fora — mesmo padrão do mockup, tokens do app. */
+    .oc-bubble-row{display:flex;margin-bottom:8px}
+    .oc-bubble-row.out{justify-content:flex-end}
+    .oc-bubble{max-width:66%;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.4;background:var(--surface-2)}
+    .oc-bubble-row.in .oc-bubble{border-top-left-radius:2px}
+    .oc-bubble-row.out .oc-bubble{background:var(--accent-tint);border-top-right-radius:2px}
+    .oc-bubble-autor{font-size:10.5px;font-weight:700;color:var(--accent);margin-bottom:2px}
+    .oc-bubble-corpo{white-space:pre-wrap;word-break:break-word}
+    .oc-bubble-meta{font-size:10px;color:var(--muted);margin-top:4px;text-align:right}
     #oc-membros{display:none;width:320px;min-width:280px;border-left:1px solid var(--border);padding-left:10px;overflow-y:auto}
     .oc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:999px;padding:3px 7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0}
     .oc-chip.active{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
@@ -14464,10 +14478,6 @@ function _ocAnexosHtml(m){
     return '<div style="margin-top:5px"><a href="'+a.url+'" target="_blank" rel="noopener" style="color:var(--accent);font-size:12px;text-decoration:none"><i class="ti ti-file"></i> '+esc(a.nome)+'</a></div>';
   }).join('');
 }
-function _ocMsgCabecalho(m){
-  const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
-  return '<div style="font-size:11px;color:var(--muted)"><b>'+esc(m.autor_nome||'—')+'</b>'+seg+' · '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</div>';
-}
 // Evento inline (spec 2026-07-31 módulo/portas): mensagem de sistema vira FAIXA na timeline.
 function _ocEventoFaixa(m){
   const doc = (m.documento_ref_id && _ocConvProjeto)
@@ -14477,11 +14487,26 @@ function _ocEventoFaixa(m){
   return '<div class="oc-evento"><span><i class="ti ti-timeline-event"></i> '+esc(m.corpo||'')+doc
     + ' <span style="opacity:.7">· '+esc((m.criado_em||'').replace('T',' ').slice(0,16))+'</span></span></div>';
 }
+// Balão (mockup .bubble-row/.bubble.in/.bubble.out — achado do diff automatizado 2026-08-05).
+// "out" = eu mandei (autor_usuario_id bate com o usuário logado); tudo mais (contato externo
+// OU colega) = "in", com o nome do autor visível (útil em grupo; num 1:1 externo o nome real
+// já aparece no cabeçalho da conversa, mas não atrapalha repetir aqui).
+function _ocBubbleHTML(m){
+  const meu = !!(m.autor_usuario_id && _usuarioAtual && m.autor_usuario_id === _usuarioAtual.id);
+  const hora = (m.criado_em||'').replace('T',' ').slice(11,16);
+  const seg = m.canal_segmento ? ' · <span style="color:var(--accent)">'+esc(m.canal_segmento)+'</span>' : '';
+  const autor = (!meu && m.autor_nome && m.autor_nome !== '—')
+    ? '<div class="oc-bubble-autor">'+esc(m.autor_nome)+seg+'</div>' : '';
+  return '<div class="oc-bubble-row '+(meu?'out':'in')+'"><div class="oc-bubble">'
+    + autor
+    + (m.corpo ? '<div class="oc-bubble-corpo">'+esc(m.corpo)+'</div>' : '')
+    + _ocAnexosHtml(m)
+    + '<div class="oc-bubble-meta">'+esc(hora)+'</div>'
+    + '</div></div>';
+}
 function _ocRenderMsg(m){
   if(m.evento) return _ocEventoFaixa(m);
-  return '<div style="margin-bottom:10px">' + _ocMsgCabecalho(m)
-    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-    + _ocAnexosHtml(m) + '</div>';
+  return _ocBubbleHTML(m);
 }
 function _ocRenderMsgProjeto(m){
   if(m.evento) return _ocEventoFaixa(m);
@@ -14510,9 +14535,7 @@ function _ocRenderMsgProjeto(m){
       + (m.corpo ? '<div class="oc-sysmsg-corpo">'+esc(m.corpo)+'</div>' : '')
       + _ocAnexosHtml(m) + meta + '</div>';
   }
-  return '<div style="margin-bottom:10px">' + _ocMsgCabecalho(m)
-    + (m.corpo ? '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.corpo)+'</div>' : '')
-    + _ocAnexosHtml(m) + '</div>';
+  return _ocBubbleHTML(m);
 }
 
 let _ocArquivo = null;
@@ -15008,19 +15031,23 @@ function ocTriagemAbrir(id){
   // item E (achado da revisão visual 2026-08-04): mesmo cartão da lista de conversas
   // (borda+fundo, como .atd-item) em vez do <label> cru — só troca de moldura, o
   // input[type=radio] (name/value/checked) segue idêntico p/ ocTriagemResolver('vincular').
-  const linha = (id2, rotulo, ehCand, checked)=>
-    '<label style="display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid '
+  // Avatar (achado da rodada 2026-08-05 — item flagrado pelo usuário: painel de triagem ficou
+  // visualmente pra trás do resto do redesenho): mesma linguagem de avatar da lista principal,
+  // em vez de card só-texto.
+  const linha = (id2, rotulo, tipo, ehCand, checked)=>
+    '<label style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid '
     + (checked?'var(--accent)':'var(--border)') + ';border-radius:10px;cursor:pointer;background:var(--surface)">'
     + '<input type="radio" name="oc-trg-alvo" value="'+id2+'"'+(checked?' checked':'')+'>'
-    + '<span style="font-size:13px">'+rotulo+'</span>'
-    + (ehCand?'<span class="atd-badge atd-b-warn" style="margin-left:auto">candidata</span>':'')
+    + _ocAvatarHTML(rotulo, tipo)
+    + '<span style="font-size:13px;flex:1;min-width:0">'+esc(rotulo)+'</span>'
+    + (ehCand?'<span class="atd-badge atd-b-warn">candidata</span>':'')
     + '</label>';
   const tituloDe = (cid)=>{
     const c = (_ocInbox||[]).find(x=>x.id===cid);
-    return esc(c ? _ocTituloComAssunto(c) : ('Conversa #'+cid));
+    return c ? {titulo:_ocTituloComAssunto(c), tipo:c.tipo} : {titulo:'Conversa #'+cid, tipo:null};
   };
-  let html = [...cand].map((cid,i)=>linha(cid, tituloDe(cid), true, i===0)).join('');
-  html += outras.map(c=>linha(c.id, esc(_ocTituloComAssunto(c)), false, false)).join('');
+  let html = [...cand].map((cid,i)=>{ const c = tituloDe(cid); return linha(cid, c.titulo, c.tipo, true, i===0); }).join('');
+  html += outras.map(c=>linha(c.id, _ocTituloComAssunto(c), c.tipo, false, false)).join('');
   document.getElementById('oc-trg-candidatos').innerHTML =
     html || '<div style="color:var(--muted);font-size:12px;padding:6px">Nenhuma conversa na inbox — use "Criar novo cliente".</div>';
 }

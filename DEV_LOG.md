@@ -2965,6 +2965,62 @@ tokens novos (declarados corretamente nos dois temas).
 **Deploy:** commit + push no `main`; redeploy só da instância B (Homolog); **A e produção real
 seguem PAUSADAS** até aprovação visual do Marcelo. Grafo MCP re-ingerido.
 
+---
+
+## FATIA 7 rodada 3 (mesmo dia) — diff visual automatizado acha o maior buraco: balão de mensagem nunca existiu
+
+Depois da rodada 2, o Marcelo comparou de novo em Homolog com dados reais (não mais os de
+exemplo) e achou tudo "muito diferente" de novo — inclusive dizendo, com razão de ficar
+desconfiado, "você não identifica padrões", e perguntando se outra IA (Claude Design, ChatGPT)
+resolveria melhor. Investigado ao vivo em Homolog (não só localhost) antes de responder:
+"+Criar Grupo" e a busca de cliente cadastrado **funcionavam** (testado ponta a ponta, com
+demora real de rede que um teste apressado meu tinha confundido com "travado"); os avatares
+coloridos **funcionavam**, só que invisíveis nos dados reais dele (fila de triagem = 90+
+contatos SEM NOME, que por design não ganham cor — só telefone; "?" cinza é o comportamento
+certo). O achado real e verificado: **o painel de resolução da Triagem** (Segmento/Vincular a
+uma conversa) segue com o estilo antigo (Sessão 158), nunca recebeu o tratamento novo — eu
+tinha tratado "a tela ainda é necessária" como equivalente a "não precisa de trabalho visual",
+que são perguntas diferentes.
+
+**Resposta concreta ao pedido de ferramenta melhor:** construído
+`scripts/visual_diff_mockup.py` — diff de PIXEL de verdade entre o mockup de referência e a
+implementação (Playwright + Pillow), não mais julgamento visual subjetivo. Duas decisões de
+design da ferramenta que fizeram a diferença entre um número inútil e um número real:
+1. Comparar só o ELEMENTO do módulo de chat (`.screen`/`.ochat-scr`), não a página inteira — a
+   primeira versão comparava a PÁGINA TODA e dava 20%+ de diferença só porque o app tem um menu
+   lateral que o mockup nunca teve (chrome fora de escopo, não um bug).
+2. Injetar o MESMO dado de exemplo nos dois lados (mesmo nome, mesma mensagem) usando a função
+   REAL de render (`_ocRenderMsg`), não um placeholder escrito à mão no script — um placeholder
+   mascararia exatamente o tipo de achado que apareceu.
+
+**O diff (14.1% antes do fix) apontou hoje, sozinho, o maior buraco visual do módulo inteiro,
+nunca notado em nenhuma rodada anterior:** a área de mensagens (`_ocRenderMsg`/
+`_ocRenderMsgProjeto`) nunca teve estilo de balão — sempre foi texto corrido, sem distinguir
+"eu"/"o outro lado", enquanto o mockup usa balões coloridos alinhados à direita/esquerda
+(`.bubble-row`/`.bubble.in`/`.bubble.out`). É a maior área da tela e o elemento mais usado —
+ficou pra trás em TODAS as rodadas anteriores porque elas focaram em barra/chips/avatar/cor,
+nunca em "como uma mensagem individual aparece". Implementado `_ocBubbleHTML(m)` (usada por
+`_ocRenderMsg` e pelo caminho não-transferência de `_ocRenderMsgProjeto`) — "out" (fundo
+`--accent-tint`, alinhado à direita) quando `autor_usuario_id` bate com o usuário logado; "in"
+(fundo `--surface-2`, à esquerda, com nome do autor visível — útil em grupo) pro resto. Mesmos
+tokens do app, nenhuma cor nova. `_ocMsgCabecalho` (função antiga, só cabeçalho sem balão)
+removida por ficar sem nenhuma chamada.
+
+**Também nesta rodada:** painel de resolução de Triagem ganhou avatar nas linhas de candidato
+(`ocTriagemAbrir`, mesma função `_ocAvatarHTML` da lista principal) — antes era só texto cru
+num card, quebrando a consistência com o resto da tela já redesenhada.
+
+**Verificação:** suíte **1734 passed** (2 rodadas seguidas, sem regressão), `node --check`
+limpo, `diff_local` rodado antes/depois do fix de balão confirmando a mudança visualmente
+(mesma % — o balão por si só não muda MUITO a % total porque o desalinhamento vertical da 2ª
+linha de filtro, que o mockup não tem, continua dominando o cálculo — mas o CONTEÚDO do diff
+mudou de "sem balão nenhum" pra "balão presente, só desalinhado por causa da linha extra de
+filtro", que é uma diferença estrutural conhecida e aceita, não mais uma ausência total de
+tratamento).
+
+**Deploy:** commit + push no `main`; redeploy só da instância B (Homolog); **A e produção real
+seguem PAUSADAS** até aprovação visual do Marcelo. Grafo MCP re-ingerido.
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

@@ -2068,8 +2068,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     .atd-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
     .atd-nome{font-weight:700;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center}
     .atd-tempo{font-size:11px;color:var(--muted);flex:none}
-    .atd-prev{font-size:12px;color:var(--muted);margin:3px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .atd-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    /* Prévia + tag na MESMA linha (mockup .conv-bottom — achado 2026-08-05 rodada 4: aqui viviam
+       em linhas separadas, então a tag "Triagem"/segmento ficava sempre solta embaixo em vez de
+       ancorada ao final da prévia como no mockup). Prévia encolhe (ellipsis) pra abrir espaço. */
+    .atd-bottom{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:3px}
+    .atd-prev{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+    .atd-tags{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;flex-shrink:0}
     .atd-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent}
     .atd-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
     .atd-b-seg{background:var(--surface-2);color:var(--muted);border-color:var(--border)}
@@ -2349,7 +2353,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button>
                     </div>
                     <div class="oc-sec" style="padding-left:0"><i class="ti ti-brand-whatsapp"></i> Mensagem recebida</div>
-                    <div id="oc-trg-texto" style="font-size:13px;white-space:pre-wrap;border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--surface-2);margin-bottom:16px"></div>
+                    <div class="oc-bubble-row in" style="margin-bottom:16px"><div class="oc-bubble" id="oc-trg-texto"></div></div>
                     <div class="oc-sec" style="padding-left:0"><i class="ti ti-adjustments"></i> Segmento</div>
                     <div style="margin-bottom:16px;max-width:360px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
                       <label class="field-label" style="margin-top:0">Encaminhar para <span style="color:var(--muted);font-weight:400;text-transform:none">(a triagem indica; sem segmento, a gerência trata depois)</span></label>
@@ -11204,8 +11208,7 @@ function _intItemHTML(c){
     + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
-    + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+tipoBadge+_intAssuntoTag(c)+'</div></div></div>';
+    + '<div class="atd-bottom"><div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div><div class="atd-tags">'+tipoBadge+_intAssuntoTag(c)+'</div></div></div></div>';
 }
 // (intNova/intForum/intAdmin e o painel de Administração legados foram removidos — o oversight
 //  da gerência vive no toggle "Todas (oversight)" dos dois canais, r5.)
@@ -11277,8 +11280,7 @@ function _atdTriagemItemHTML(e){
     + _ocAvatarHTML(null, 'pessoal')
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+esc(_ocFmtRemetente(e.remetente))+'</span><span class="atd-tempo">'+esc(_atdQuando(e.criado_em))+'</span></div>'
-    + '<div class="atd-prev">'+esc(e.texto||'—')+'</div>'
-    + '<div class="atd-tags">'+badge+seg+cand+'</div></div></div>';
+    + '<div class="atd-bottom"><div class="atd-prev">'+esc(e.texto||'—')+'</div><div class="atd-tags">'+badge+seg+cand+'</div></div></div></div>';
 }
 function _ocFmtRemetente(r){
   const d = (r||'').replace(/\D/g,'');
@@ -11327,8 +11329,7 @@ function _atdItemHTML(c){
     + _ocAvatarHTML(titulo, c.tipo)
     + '<div class="atd-main">'
     + '<div class="atd-top"><span class="atd-nome">'+dot+esc(titulo)+nl+'</span><span class="atd-tempo">'+esc(_atdQuando(c.ultima_em||c.criado_em))+'</span></div>'
-    + '<div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div>'
-    + '<div class="atd-tags">'+seg+jan+proj+concl+'</div></div></div>';
+    + '<div class="atd-bottom"><div class="atd-prev">'+esc(c.ultima_previa||'—')+'</div><div class="atd-tags">'+seg+jan+proj+concl+'</div></div></div></div>';
 }
 // (atendAbrir é definido no bloco do painel de conversa: alias de ocAbrirConversa — thread na própria página.)
 

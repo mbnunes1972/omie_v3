@@ -2201,15 +2201,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <!-- Atendimentos (fila, F7/RF-12) — lista à esquerda, thread à direita (padrão HuntPilot) -->
           <div class="ochat-scr oc-fullflex" id="ochat-scr-atend">
             <div class="oc-topbar">
-              <button class="oc-newbtn" onclick="ocAtdNovoAbrir()" title="Iniciar Conversa"><i class="ti ti-plus"></i></button>
               <span class="oc-busca-wrap"><i class="ti ti-search"></i><input type="search" id="atd-busca" class="oc-busca" placeholder="Buscar por nome, assunto ou palavra-chave…" oninput="atendRender()"></span>
+              <button class="btn btn-ghost btn-sm" onclick="ocContatoAbrir()" title="Cadastrar um novo contato e iniciar conversa"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
               <button class="oc-pill oc-pill-amber" onclick="ocNovaAbrir()"><i class="ti ti-users-plus"></i> Criar Grupo</button>
               <div class="oc-topbar-divider"></div>
               <div class="atd-tabs" id="atd-tabs"></div>
             </div>
             <div class="atd-filtro">
-              <button class="btn btn-ghost btn-sm" onclick="ocContatoAbrir()"><i class="ti ti-user-plus"></i> Adicionar Contato</button>
-              <button class="oc-chip" id="atd-pend" onclick="ocTogglePend('atd')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</button>
               <select id="atd-seg-filtro" onchange="atendRender()" title="Segmento" style="padding:5px 8px;font-family:inherit;font-size:12px"><option value="">Todos</option></select>
             </div>
             <div class="oc-middle">
@@ -2330,16 +2328,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                       </div>
                       <label class="field-label">Motivo do contato</label>
                       <textarea id="oc-ct-motivo" rows="2" placeholder="Ex.: autorização de entrega na portaria" style="width:100%;box-sizing:border-box;padding:8px;font-family:inherit;margin-bottom:10px"></textarea>
-                      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-                        <div style="flex:1;min-width:180px">
-                          <label class="field-label">Projeto (opcional)</label>
-                          <select id="oc-ct-projeto" style="width:100%;padding:6px 8px"></select>
-                        </div>
-                        <div style="flex:1;min-width:180px">
-                          <label class="field-label">Segmento (opcional)</label>
-                          <select id="oc-ct-seg" style="width:100%;padding:6px 8px"></select>
-                        </div>
-                      </div>
+                      <label class="field-label">Projeto (opcional)</label>
+                      <select id="oc-ct-projeto" style="width:100%;padding:6px 8px;margin-bottom:10px"></select>
+                      <!-- Segmento NÃO se escolhe aqui (pedido do usuário 2026-08-05 rodada 6): entra
+                           SEMPRE automático — herdado da Função de quem adiciona o contato (mesma
+                           regra de canal_segmento_do_usuario já usada no chat), igual à triagem
+                           (o segmento nasce do fluxo, não de escolha manual no cadastro). -->
+                      <div class="hint" style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:10px"><i class="ti ti-adjustments"></i> O segmento do atendimento é automático, herdado da sua Função — não precisa escolher aqui.</div>
                       <div style="display:flex;gap:8px">
                         <button class="btn btn-primary btn-sm" onclick="ocContatoSalvar()"><i class="ti ti-check"></i> Adicionar</button>
                         <button class="btn btn-ghost btn-sm" onclick="ocPaneVoltar()">Cancelar</button>
@@ -11073,6 +11068,12 @@ function _ocDaChip(c, chip){
 function _ocChipsRow(chips, atual, fn){
   return chips.map(c=>'<div class="oc-chip'+(c.key===atual?' active':'')+'" onclick="'+fn+'(\''+c.key+'\')">'+esc(c.rot)+'</div>').join('');
 }
+// "Pendentes" é um FILTRO de mensagens como os demais chips (achado 2026-08-05 rodada 6: vivia
+// solto numa 2ª linha, separado de Urgentes) — agora entra na mesma faixa de chips, logo antes
+// de Oversight.
+function _ocPendChip(qual){
+  return '<span class="oc-chip'+(_ocPend[qual]?' active':'')+'" id="'+qual+'-pend" onclick="ocTogglePend(\''+qual+'\')" title="Só conversas recebidas sem resposta"><i class="ti ti-clock-exclamation"></i> Pendentes</span>';
+}
 // Avatar da lista (mockup §4): círculo com a inicial do nome (ou "?" quando o título é só
 // telefone, sem letra) para pessoa/direct; quadrado com ícone/emoji para grupo/projeto — mesma
 // forma do mockup. Cor por CONTATO (achado FATIA 7 rodada 2 — mockup varia a cor do avatar por
@@ -11185,7 +11186,7 @@ function intRender(){
   const tabsEl = document.getElementById('int-tabs');
   const q = ((document.getElementById('int-busca')||{}).value||'').trim().toLowerCase();
   const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
-  tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip')
+  tabsEl.innerHTML = _ocChipsRow(_INT_CHIPS, _intChip, 'intChip') + _ocPendChip('int')
     + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_intOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="intOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('int-lista');
   if(_intOversight){                                   // oversight da gerência (r5)
@@ -11275,7 +11276,7 @@ function atendRender(){
   const podeOversight = !!(_usuarioAtual && _usuarioAtual.pode_ver_todas_conversas);
   let trg = filtroSeg ? _atdTriagem.filter(e=>e.segmento_sugerido===filtroSeg) : _atdTriagem;
   if(q) trg = trg.filter(e=>((e.remetente||'')+' '+(e.texto||'')).toLowerCase().includes(q));
-  tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip')
+  tabsEl.innerHTML = _ocChipsRow(_ATD_CHIPS, _atdChip, 'atendChip') + _ocPendChip('atd')
     + (podeOversight ? '<span class="oc-chip oc-chip-oversight'+(_atdOversight?' active':'')+'" title="Ver todas as conversas da loja, inclusive as que você não participa" onclick="atendOversightToggle()"><i class="ti ti-eye"></i> Oversight</span>' : '');
   const box = document.getElementById('atd-lista');
   if(_atdOversight){                                  // oversight da gerência (r5)
@@ -14475,8 +14476,6 @@ async function ocContatoAbrir(){
   ['oc-ct-nome','oc-ct-tel','oc-ct-email','oc-ct-motivo'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
   const tp = document.getElementById('oc-ct-tipo'); if(tp) tp.value = 'cliente';
   document.getElementById('oc-ct-aviso').textContent = '';
-  await _ocSegsCarregar();
-  document.getElementById('oc-ct-seg').innerHTML = _ocSegOptions('', '— sem segmento —');
   const selP = document.getElementById('oc-ct-projeto');
   selP.innerHTML = '<option value="">— sem projeto (lead novo) —</option>';
   if(!_ocAssuntoCache) await ocCarregarAssuntos();
@@ -14493,7 +14492,6 @@ async function ocContatoSalvar(){
     email: document.getElementById('oc-ct-email').value,
     motivo: document.getElementById('oc-ct-motivo').value,
     projeto_nome: document.getElementById('oc-ct-projeto').value,
-    segmento: document.getElementById('oc-ct-seg').value,
   };
   let d;
   try{

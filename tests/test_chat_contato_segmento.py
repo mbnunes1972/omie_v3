@@ -136,6 +136,8 @@ def test_adicionar_contato_sem_projeto_vira_lead(app_db, seed):
         motivo="Conheceu o estande na feira de decoração")
     db.commit()
     assert conv.tipo == "grupo" and "Lead da Feira" in (conv.titulo or "")
+    assert conv.origem_entrada == "avulsa"           # canal de entrada registrado
+    assert conv.segmento is None                     # dir_l1 sem Função → nada pra derivar
     with pytest.raises(ValueError, match="motivo"):
         mod_chat.adicionar_contato(db, seed["loja1_id"], u.id, "Sem Motivo",
                                    telefone="(12) 94444-0002", motivo="")
@@ -143,6 +145,34 @@ def test_adicionar_contato_sem_projeto_vira_lead(app_db, seed):
     with pytest.raises(ValueError, match="WhatsApp"):
         mod_chat.adicionar_contato(db, seed["loja1_id"], u.id, "Sem Contato", motivo="x")
     db.rollback()
+    db.close()
+
+
+def test_adicionar_contato_segmento_automatico_da_funcao(app_db, seed):
+    """r6 (2026-08-05): a tela de Adicionar Contato não pergunta mais o segmento — herda a
+    Função de quem adiciona (canal_segmento_do_usuario), igual à triagem. Sem função (ou função
+    sem palavra-chave reconhecida) o segmento fica None — "gerência trata depois", mesmo
+    fallback já usado em toda a fila de Atendimentos."""
+    import mod_chat
+    db = app_db.get_session()
+    func = app_db.Funcao(nome="Consultora Comercial", loja_id=seed["loja1_id"])
+    db.add(func); db.flush()
+    consultora = app_db.Usuario(nome="Beatriz Consultora", login="beatriz_cons",
+                                nivel="operador", loja_id=seed["loja1_id"], funcao_id=func.id,
+                                ativo=1)
+    consultora.set_senha("senha123")
+    db.add(consultora); db.flush()
+    conv, _cli = mod_chat.adicionar_contato(
+        db, seed["loja1_id"], consultora.id, "Lead da Beatriz", telefone="(12) 94444-0099",
+        motivo="Contato feito na loja física")
+    db.commit()
+    assert conv.segmento == "comercial"              # derivado da Função "Consultora Comercial"
+    # explícito ainda vence o derivado (uso programático/API)
+    conv2, _cli2 = mod_chat.adicionar_contato(
+        db, seed["loja1_id"], consultora.id, "Lead Financeiro", telefone="(12) 94444-0098",
+        motivo="Encaminhado pelo financeiro", segmento="financeiro")
+    db.commit()
+    assert conv2.segmento == "financeiro"
     db.close()
 
 

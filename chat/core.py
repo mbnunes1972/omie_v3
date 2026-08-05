@@ -1318,8 +1318,15 @@ def adicionar_contato(db, loja_id, usuario_id, nome, telefone=None, email=None, 
     else:
         conv = criar_grupo(db, loja_id, usuario_id, "Lead — %s" % nome,
                            [usuario_id], exige_dois=False)
+        conv.origem_entrada = "avulsa"     # canal de entrada registrado (pedido 2026-08-05 r6)
     adicionar_externo(db, conv, nome, telefone=telefone, email=email,
                       meio=("whatsapp" if telefone else "email"), criado_por_id=usuario_id)
+    # Segmento SEMPRE automático (pedido 2026-08-05 r6): a tela de Adicionar Contato não pergunta
+    # mais — herda a Função de quem adiciona (mesma regra do canal_segmento_do_usuario já usada em
+    # enviar_mensagem), igual à triagem (indicado/derivado, nunca escolha manual no formulário).
+    # `segmento` explícito continua aceito (uso programático/API) e vence o derivado.
+    if segmento is None:
+        segmento = canal_segmento_do_usuario(db, loja_id, usuario_id)
     if segmento:
         definir_segmento(db, conv, segmento)
     u = db.get(Usuario, usuario_id) if usuario_id else None

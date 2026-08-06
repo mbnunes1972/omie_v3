@@ -5,6 +5,7 @@ omie_config.json
 omie_grupos_cache.json
 /PROJETOS/
 /CONTRATOS/
+/ASSISTENCIAS_AVULSAS/
 *.xlsx
 .env
 .pytest_cache/

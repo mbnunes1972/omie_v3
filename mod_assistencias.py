@@ -12,9 +12,15 @@ Realizar um caso dispara o lançamento contábil (motor v7 §6):
 from datetime import datetime
 
 import mod_contabil
-from database import AssistenciaCaso
+from database import (AssistenciaCaso, AssistenciaExecutor, AssistenciaAnexo, PoolAmbiente,
+                      Funcionario, Terceiro)
 
 SUB_TIPOS = {"montagem": "Assistência Montagem", "pos_conclusao": "Assistência Pós-Conclusão"}
+
+# Funções elegíveis pra executar uma assistência (2026-08-06) — mesmo catálogo que
+# mod_escopo.PAPEL_FUNCOES["montagem"], mas COPIADO (não importado): a Assistência tem
+# agendamento próprio agora, desacoplado do papel do Mapa (que não existe mais pra ela).
+FUNCOES_ELEGIVEIS = ("Montador", "Supervisor de Montagem")
 
 # motivo -> (rótulo, tipo_custo). Tabela do doc (Modulos_Orizon_v5 módulo 10 / Financeiro v7 §6).
 MOTIVOS = {
@@ -49,19 +55,50 @@ def _num(v):
         return None
 
 
-def criar_caso(db, loja_id, projeto_nome, sub_tipo, motivo, descricao, valor, usuario_id, quando=None):
+def criar_caso(db, loja_id, projeto_nome, sub_tipo, motivo, descricao, valor, usuario_id, quando=None,
+               pool_ambiente_id=None, data_inicio=None, data_fim=None):
     tc = tipo_custo_de(motivo)
     if sub_tipo not in SUB_TIPOS:
         raise ValueError("sub_tipo inválido")
     if tc is None:
         raise ValueError("motivo inválido")
+    if (data_inicio and not data_fim) or (data_fim and not data_inicio):
+        raise ValueError("Informe início e fim da janela, ou nenhum dos dois.")
+    if data_inicio and data_fim and data_inicio > data_fim:
+        raise ValueError("Data de início não pode ser depois da data de fim.")
     caso = AssistenciaCaso(loja_id=loja_id, projeto_nome=(projeto_nome or None), sub_tipo=sub_tipo,
                            motivo=motivo, tipo_custo=tc, descricao=(descricao or None),
-                           valor=_num(valor), status="aberto",
+                           valor=_num(valor), status="aberto", pool_ambiente_id=pool_ambiente_id,
+                           data_inicio=data_inicio, data_fim=data_fim,
                            criado_em=quando or datetime.utcnow(), criado_por_id=usuario_id)
     db.add(caso)
     db.flush()
     return caso
+
+
+def definir_equipe(db, caso, executores):
+    """Substitui a equipe do caso (delete-all + insert-many — mesmo padrão do Montagem
+    multi-executor). `executores` = [(tipo, id)], tipo em 'funcionario'|'terceiro'."""
+    db.query(AssistenciaExecutor).filter_by(caso_id=caso.id).delete()
+    for tipo, oid in executores:
+        reg = AssistenciaExecutor(caso_id=caso.id)
+        if tipo == "funcionario":
+            reg.funcionario_id = oid
+        else:
+            reg.terceiro_id = oid
+        db.add(reg)
+    db.flush()
+
+
+def equipe_do_caso(db, caso_id):
+    """[{chave, nome}] da equipe atual do caso."""
+    out = []
+    for e in db.query(AssistenciaExecutor).filter_by(caso_id=caso_id).all():
+        alvo = db.get(Funcionario, e.funcionario_id) if e.funcionario_id else db.get(Terceiro, e.terceiro_id)
+        if alvo:
+            chave = ("f:%d" % e.funcionario_id) if e.funcionario_id else ("t:%d" % e.terceiro_id)
+            out.append({"chave": chave, "nome": alvo.nome})
+    return out
 
 
 def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
@@ -85,9 +122,24 @@ def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
     return True, None
 
 
-def serialize(caso):
+def anexos_do_caso(db, caso_id):
+    """[{id, nome_original, enviado_em}] do caso, mais recente primeiro."""
+    return [{"id": a.id, "nome_original": a.nome_original,
+             "enviado_em": a.enviado_em.isoformat() if a.enviado_em else None}
+            for a in db.query(AssistenciaAnexo).filter_by(caso_id=caso_id)
+                        .order_by(AssistenciaAnexo.id.desc()).all()]
+
+
+def serialize(db, caso):
+    amb = db.get(PoolAmbiente, caso.pool_ambiente_id) if caso.pool_ambiente_id else None
     return {
         "id": caso.id, "projeto_nome": caso.projeto_nome or "",
+        "pool_ambiente_id": caso.pool_ambiente_id,
+        "ambiente_nome": (amb.nome_exibicao or amb.nome) if amb else "",
+        "data_inicio": caso.data_inicio.isoformat() if caso.data_inicio else None,
+        "data_fim": caso.data_fim.isoformat() if caso.data_fim else None,
+        "equipe": equipe_do_caso(db, caso.id),
+        "anexos": anexos_do_caso(db, caso.id),
         "sub_tipo": caso.sub_tipo, "sub_tipo_label": SUB_TIPOS.get(caso.sub_tipo, caso.sub_tipo),
         "motivo": caso.motivo, "motivo_label": (MOTIVOS.get(caso.motivo) or ["", ""])[0],
         "tipo_custo": caso.tipo_custo, "tipo_custo_label": TIPO_CUSTO_LABEL.get(caso.tipo_custo, caso.tipo_custo),
@@ -96,11 +148,13 @@ def serialize(caso):
     }
 
 
-def listar(db, loja_id, tipo=None):
+def listar(db, loja_id, tipo=None, apenas_abertos=False):
     q = db.query(AssistenciaCaso).filter_by(loja_id=loja_id)
     if tipo in ("paga", "loja", "fabrica"):
         q = q.filter(AssistenciaCaso.tipo_custo == tipo)
-    return [serialize(c) for c in q.order_by(AssistenciaCaso.id.desc()).all()]
+    if apenas_abertos:
+        q = q.filter(AssistenciaCaso.status == "aberto")
+    return [serialize(db, c) for c in q.order_by(AssistenciaCaso.id.desc()).all()]
 
 
 def a_cobrar_fabrica(db, loja_id):
@@ -109,7 +163,7 @@ def a_cobrar_fabrica(db, loja_id):
     casos = [c for c in db.query(AssistenciaCaso).filter_by(loja_id=loja_id, tipo_custo="fabrica").all()
              if not c.reembolsado_fabrica]
     return {"total": round(sum(c.valor or 0 for c in casos), 2), "qtd": len(casos),
-            "itens": [serialize(c) for c in casos]}
+            "itens": [serialize(db, c) for c in casos]}
 
 
 def meta():

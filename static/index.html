@@ -1512,7 +1512,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <span onclick="assistNovoFechar()" style="cursor:pointer;color:var(--muted);font-size:18px">&#x2715;</span>
       </div>
       <label style="font-size:var(--fs-sm);color:var(--muted)">PROJETO (opcional)</label>
-      <select id="assist-novo-projeto" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px"></select>
+      <select id="assist-novo-projeto" onchange="assistNovoProjetoChange()" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px"></select>
+      <div id="assist-novo-agendamento" style="display:none">
+        <label style="font-size:var(--fs-sm);color:var(--muted)">AMBIENTE</label>
+        <select id="assist-novo-ambiente" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px"><option value="">— sem ambiente —</option></select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div><label style="font-size:var(--fs-sm);color:var(--muted)">INÍCIO</label>
+            <input type="date" id="assist-novo-inicio" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px"></div>
+          <div><label style="font-size:var(--fs-sm);color:var(--muted)">FIM</label>
+            <input type="date" id="assist-novo-fim" style="width:100%;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px"></div>
+        </div>
+        <label style="font-size:var(--fs-sm);color:var(--muted)">EQUIPE</label>
+        <select id="assist-novo-equipe" multiple size="3" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px"></select>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div><label style="font-size:var(--fs-sm);color:var(--muted)">SUB-TIPO</label>
           <select id="assist-novo-subtipo" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px"></select></div>
@@ -1524,7 +1536,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <input type="text" id="assist-novo-desc" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px">
       <label style="font-size:var(--fs-sm);color:var(--muted)">VALOR (R$) — custo do reparo / valor da venda</label>
       <input type="number" step="0.01" min="0" id="assist-novo-valor" placeholder="pode informar depois, ao realizar"
-             style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 4px">
+             style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:13px;margin:2px 0 12px">
+      <label style="font-size:var(--fs-sm);color:var(--muted)">ANEXOS</label>
+      <input type="file" id="assist-novo-anexo" multiple style="width:100%;font-size:12px;color:var(--muted);margin:2px 0 4px">
       <div id="assist-novo-status" style="font-size:11px;color:var(--muted);min-height:14px;margin:6px 0 8px"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" onclick="assistNovoFechar()">Cancelar</button>
@@ -1905,9 +1919,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="op-panel-mont" style="display:none"><div id="montagem-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="op-panel-assist" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
-        <div style="font-size:12px;color:var(--muted)">Atendimento pós-execução. O motivo define o tipo de custo (Paga · Loja · Fábrica).</div>
+        <div style="font-size:12px;color:var(--muted)">Agendamento (ambiente, janela e equipe) + controle de custos (Paga · Loja · Fábrica). Só projetos com casos ABERTOS aparecem na grade.</div>
         <button class="btn btn-primary btn-sm" onclick="assistNovoAbrir()">+ Novo caso</button>
       </div>
+      <div id="assist-gantt-ui"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+      <div style="border-top:1px solid var(--border);margin:20px 0 16px"></div>
       <div id="assist-resumo"></div>
       <div id="assist-filtros" style="display:flex;gap:6px;margin:12px 0 14px;flex-wrap:wrap"></div>
       <div id="assist-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -2789,7 +2805,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Mapa de Atribuições</div>
         <span onclick="mapaFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:720px">Quem executa cada papel operacional (PE / Medição / Montagem / Assistência), por ambiente. Só aparecem profissionais com a <strong style="color:var(--text)">função compatível</strong>. Uma pessoa por papel/ambiente. A atribuição concede visibilidade escopada ao profissional.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:720px">Quem executa cada papel operacional (PE / Medição / Montagem), por ambiente. Só aparecem profissionais com a <strong style="color:var(--text)">função compatível</strong>. Uma pessoa por papel/ambiente (Montagem aceita vários). A atribuição concede visibilidade escopada ao profissional. Assistência tem agendamento próprio — aba Operacional › Assistências.</div>
       <div id="mapa-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
   </div>
@@ -4170,7 +4186,7 @@ function _agRenderMes(){
 // conflitos do papel e espelho de atribuições por ambiente (Val_Liq = referência da comissão).
 // Assistências = transplante da antiga page-14 (mesmo código, gated pelo módulo da loja).
 let _opTabAtual='pe';
-let _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],conflitos:[]}};
+let _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],conflitos:[]}, assist:{itens:[],conflitos:[]}};
 // Grade de recursos (reforma 2026-08-06, pedido do usuário — "Gráfico de Gantt" quadriculado):
 // linha = Projeto × Ambiente (menor unidade — antes era Projeto × Fase inteira), coluna = DIA
 // corrido do mês (não só dia útil — fim de semana/feriado aparece sombreado, não sumido).
@@ -4179,7 +4195,7 @@ let _opGridStart=null;      // ISO do 1º dia visível na grade
 const _opGridDias=30;       // colunas visíveis por vez
 // filtros por Projeto/Montador (2026-08-06, pedido do usuário) — estado por aba, pra não
 // vazar a seleção da Montagem quando o usuário troca pra Projeto Executivo (e vice-versa).
-let _opFiltro = {pe:{projeto:'',montador:''}, mont:{projeto:'',montador:''}};
+let _opFiltro = {pe:{projeto:'',montador:''}, mont:{projeto:'',montador:''}, assist:{projeto:'',montador:''}};
 function _opModuloOk(id){
   const mods=((_usuarioAtual&&_usuarioAtual.hub)||[]).flatMap(g=>g.modulos||[]);
   const m=mods.find(x=>x.id===id);
@@ -4202,7 +4218,7 @@ function opTab(qual){
     if(t) t.classList.toggle('ativo', q===qual);
     if(pn) pn.style.display = q===qual ? '' : 'none';
   });
-  if(qual==='assist'){ assistenciasCarregar(); return; }
+  if(qual==='assist'){ assistenciasCarregar(); opCarregar('assist'); return; }
   opCarregar(qual);
 }
 function opGridData(v){ if(v) _opGridStart=v; opCarregar(_opTabAtual); }
@@ -4217,10 +4233,11 @@ async function opFiltroProjeto(aba, v){
   if(f.projeto){
     // reposiciona no início da execução do projeto (previsão do sistema) — busca dedicada, sem
     // depender do buffer ±15 dias já carregado (o início real pode estar bem fora dele).
-    const papel = aba==='pe' ? 'projeto_executivo' : 'montagem';
+    const url = aba==='assist'
+      ? '/api/agenda/assistencia?projeto='+encodeURIComponent(f.projeto)
+      : '/api/agenda/montagem?papel='+(aba==='pe'?'projeto_executivo':'montagem')+'&projeto='+encodeURIComponent(f.projeto);
     try{
-      const r = await fetch('/api/agenda/montagem?papel='+papel+'&projeto='+encodeURIComponent(f.projeto),
-        {credentials:'same-origin'}).then(x=>x.json());
+      const r = await fetch(url, {credentials:'same-origin'}).then(x=>x.json());
       const itens = (r && r.ok && r.itens) || [];
       if(itens.length) _opGridStart = itens.map(i=>i.inicio).sort()[0];
     }catch(e){}
@@ -4238,10 +4255,46 @@ function opGridSlideLive(v){
   _opLiveRaf=requestAnimationFrame(()=>{ _opLiveRaf=null; _opRender(_opTabAtual, true); });
 }
 function opGridSlideFim(){ opCarregar(_opTabAtual); }
+function _opBoxId(aba){ return aba==='pe' ? 'op-pe-ui' : (aba==='mont' ? 'montagem-ui' : 'assist-gantt-ui'); }
+// Disponibilidade (2026-08-06, pedido do usuário): linha ACIMA dos Gantts de Montagem e
+// Assistência com o nº de montadores livres por dia — MESMO pool nos dois (a mesma pessoa
+// pode fazer um ou outro), por isso é uma busca só, cacheada por janela (de|ate) pra não
+// refazer o cálculo (O(dias×itens) no servidor) a cada troca de aba.
+let _opDisp = {total:0, porDia:{}}, _opDispChave = null;
+async function _opDisponibilidadeCarregar(de, ate){
+  const chave = de+'|'+ate;
+  if(_opDispChave === chave) return;
+  try{
+    const r = await fetch('/api/agenda/disponibilidade?de='+de+'&ate='+ate, {credentials:'same-origin'}).then(x=>x.json());
+    if(r && r.ok){
+      const porDia = {}; (r.dias||[]).forEach(d=>{ porDia[d.data] = d.disponivel; });
+      _opDisp = {total: r.total, porDia}; _opDispChave = chave;
+    }
+  }catch(e){}
+}
 async function opCarregar(aba){
-  const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
+  const box=document.getElementById(_opBoxId(aba)); if(!box) return;
   if(!_opGridStart) _opGridStart=_opHojeIso();
-  const de=_opAddDias(_opGridStart,-15), ate=_opAddDias(_opGridStart,_opGridDias+15);
+  // achado 2026-08-06 (usuário: "a grade se fecha ao arrastar o cursor"): o buffer era só
+  // ±15 dias em torno do _opGridStart do momento da busca, mas o cursor cobre hoje-180..hoje+365
+  // inteiro — arrastar além do buffer mostrava "Nenhuma janela..." (grade esvaziando) até soltar
+  // e refazer a busca. Corrigido buscando o intervalo INTEIRO possível do cursor de uma vez, fixo
+  // em relação a HOJE (não ao _opGridStart) — sai mais barato do que parece: cargas/itens são
+  // computados pela janela REAL de cada projeto; de/ate só filtra DEPOIS, não muda o custo por
+  // projeto (ver mod_agenda.cargas/itens_montagem). Nunca mais falta buffer durante o arrasto.
+  const de=_opAddDias(_opHojeIso(),-185), ate=_opAddDias(_opHojeIso(),365+_opGridDias+5);
+  // Assistência (2026-08-06): Gantt próprio, fonte é AssistenciaCaso — sem capacidade/produtividade
+  // em R$ (isso é PE/Montagem); a Disponibilidade dela é a linha de headcount (Fase 4), não este /api/agenda.
+  if(aba==='assist'){
+    try{
+      const rm = await fetch('/api/agenda/assistencia?de='+de+'&ate='+ate,{credentials:'same-origin'}).then(r=>r.json());
+      await _opDisponibilidadeCarregar(de, ate);
+      _opDados[aba]=(rm&&rm.ok)?rm:{itens:[],conflitos:[]};
+      _opRender(aba);
+    }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
+    return;
+  }
+  if(aba==='mont') await _opDisponibilidadeCarregar(de, ate);
   const papel=aba==='pe'?'projeto_executivo':'montagem';
   try{
     const [d,rm]=await Promise.all([
@@ -4289,7 +4342,7 @@ function _opTipMove(ev){
 }
 function _opTipHide(){ const t=document.getElementById('op-tip'); if(t) t.style.display='none'; }
 function _opRender(aba, liveOnly){
-  const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
+  const box=document.getElementById(_opBoxId(aba)); if(!box) return;
   if(!_opGridStart) _opGridStart=_opHojeIso();
   const hojeIso=_opHojeIso();
   const dias=[]; for(let i=0;i<_opGridDias;i++) dias.push(_opAddDias(_opGridStart,i));
@@ -4298,7 +4351,7 @@ function _opRender(aba, liveOnly){
   const dadosAba=_opDados[aba]||{itens:[],conflitos:[]};
   const itensG=dadosAba.itens||[], confs=dadosAba.conflitos||[];
   const rotResp = aba==='pe' ? 'projetista' : 'montador';
-  const atividade = aba==='pe' ? 'Projeto Executivo' : 'Montagem';
+  const atividade = aba==='pe' ? 'Projeto Executivo' : (aba==='mont' ? 'Montagem' : 'Assistência');
   const confKeys=new Set(); confs.forEach(c=>(c.itens||[]).forEach(x=>confKeys.add(x.projeto+'|'+(x.fase||''))));
   const corMap={ok:'var(--status-ok)',err:'var(--status-err)',warn:'var(--status-warn)',liga:'var(--accent)'};
 
@@ -4385,8 +4438,12 @@ function _opRender(aba, liveOnly){
     // clique no rótulo (pedido 2026-08-06): reabre o Mapa de Atribuições do projeto, já rolado
     // e destacado na linha deste ambiente — mostra quem já está alocado (permite trocar) ou
     // deixa alocar do zero. Reusa o modal existente (mapaAbrir) em vez de um popup paralelo.
+    // Assistência NÃO usa o Mapa (saiu de lá) — a linha fica sem clique, só leitura por ora
+    // (editar um caso já criado ainda não existe; a equipe se define na criação).
+    const rotAttrs = aba==='assist' ? `title="${esc(L.rotCompleto)}"`
+      : `style="cursor:pointer" title="${esc(L.rotCompleto)} — clique pra gerenciar equipe" onclick="mapaAbrir('${esc(L.it.projeto)}'${L.a2.id?','+L.a2.id:''})"`;
     linhasHtml+=`<div style="${colGrid};margin-bottom:1px">
-      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px 3px ${6+L.indent}px;border-left:3px solid ${corMap[L.cor]};cursor:pointer" title="${esc(L.rotCompleto)} — clique pra gerenciar equipe" onclick="mapaAbrir('${esc(L.it.projeto)}'${L.a2.id?','+L.a2.id:''})">${esc(L.rotCurto)}</div>
+      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px 3px ${6+L.indent}px;border-left:3px solid ${corMap[L.cor]}" ${rotAttrs}>${esc(L.rotCurto)}</div>
       ${cels}
     </div>`;
   });
@@ -4395,7 +4452,12 @@ function _opRender(aba, liveOnly){
     : `<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período visível.</div>`;
 
   let rodape='', resumo='';
-  if(aba==='mont'){
+  if(aba==='assist'){
+    // Assistência (2026-08-06) não tem capacidade em R$ (isso é conceito de PE/Montagem) — a
+    // disponibilidade dela é a linha de headcount compartilhada com Montagem (Fase 4), não este
+    // rodapé por dia. Sem rodapé aqui; resumo simples com a contagem de casos visíveis.
+    resumo=`<strong style="color:var(--text)">${linhas.length}</strong> caso(s) agendado(s) no período visível`;
+  } else if(aba==='mont'){
     const disp=Math.max(0,parseInt(_opCfg.duplas_disponiveis,10)||0);
     let totalDuplasDia=0, nUteis=0; dias.forEach(iso=>{ if(!_opEhFolga(iso)){ nUteis++; totalDuplasDia+=((porDia[iso]||{}).duplas||0); } });
     const capTotal=disp*nUteis;
@@ -4422,12 +4484,23 @@ function _opRender(aba, liveOnly){
       ${confs.map(c=>esc(c.nome||'?')+' — '+(c.itens||[]).map(x=>esc(x.projeto)+(x.fase?' F'+x.fase:'')+' ('+_fmtDataBR(x.inicio)+'–'+_fmtDataBR(x.fim)+')').join(' × ')).join('; ')}
     </div>`:'';
 
+  // Disponibilidade (2026-08-06): linha ACIMA do próprio gráfico — nº de montadores livres
+  // naquele dia, MESMO pool pra Montagem e Assistência (a mesma pessoa serve pra um ou outro,
+  // por isso o número é compartilhado entre as duas abas, não uma conta por Gantt).
+  const dispHtml = (aba==='mont' || aba==='assist') ? `<div style="${colGrid};margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;color:var(--muted);padding:3px 6px">Disponibilidade (${_opDisp.total} no total)</div>
+      ${dias.map(iso=>{ if(_opEhFolga(iso)) return `<div style="background:var(--surface-2);border-radius:3px"></div>`;
+        const v=_opDisp.porDia[iso]; if(v==null) return `<div></div>`;
+        return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${v<=0?'var(--status-err)':'var(--text)'};font-weight:${v<=0?'800':'400'}" title="${v} montador(es) livre(s) em ${_fmtDataBR(iso)}">${v}</div>`; }).join('')}
+    </div>` : '';
+
   // grid-body: cabeçalhos + linhas + rodapé + legenda — é tudo que muda quando o cursor desliza.
   // Fica num container próprio (.op-grid-body) pra o live-drag (liveOnly) reescrever só ele, sem
   // tocar no <input type=range> nem no resto do shell (ver nota abaixo).
   const gridBodyHtml = `
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada célula é o nº de ${rotResp}s alocados naquele ambiente naquele dia. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito · <span style="background:var(--surface-2);border-radius:2px;padding:0 4px">&nbsp;</span> fim de semana/feriado</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada célula é o nº de ${rotResp==='montador'?'montadores':'projetistas'} alocados naquele ambiente naquele dia. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito · <span style="background:var(--surface-2);border-radius:2px;padding:0 4px">&nbsp;</span> fim de semana/feriado</div>
       ${confHtml}
+      ${dispHtml}
       ${cabecalhoMes}${cabecalhoDia}${linhasHtml}${rodape}`;
 
   // achado 2026-08-06: arrastar o cursor disparava 'input' a cada pixel, e cada tick reescrevia
@@ -5641,23 +5714,49 @@ async function assistRealizar(id, valor){
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Caso realizado — lançamento contábil gerado.', false); assistenciasCarregar();
 }
+// Equipe da assistência (2026-08-06) — mesmo catálogo do backend (mod_assistencias.
+// FUNCOES_ELEGIVEIS), reusa o cadastro já carregado pelo Mapa (_mapaProfs) em vez de duplicar
+// o fetch de funcionários/terceiros.
+const _ASSIST_FUNCOES_ELEGIVEIS = ["Montador", "Supervisor de Montagem"];
 async function assistNovoAbrir(){
   const st = document.getElementById('assist-novo-status'); if(st) st.textContent='';
   document.getElementById('assist-novo-desc').value=''; document.getElementById('assist-novo-valor').value='';
+  document.getElementById('assist-novo-inicio').value=''; document.getElementById('assist-novo-fim').value='';
+  document.getElementById('assist-novo-anexo').value='';
   if(!_assistMeta) await assistenciasCarregar();
   const meta = _assistMeta || {sub_tipos:[], motivos:[]};
   document.getElementById('assist-novo-subtipo').innerHTML = meta.sub_tipos.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.label)+'</option>').join('');
   document.getElementById('assist-novo-motivo').innerHTML = meta.motivos.map(m=>'<option value="'+esc(m.id)+'" data-tc="'+esc(m.tipo_custo)+'">'+esc(m.label)+'</option>').join('');
   assistNovoMotivoChange();
+  await mapaProfissionaisGarantir();
+  const eq = document.getElementById('assist-novo-equipe');
+  eq.innerHTML = (_mapaProfs||[]).filter(p=>_ASSIST_FUNCOES_ELEGIVEIS.includes(p.funcao_nome))
+    .map(p=>'<option value="'+p.tipo+':'+p.id+'">'+esc(p.nome)+' ('+esc(p.funcao_nome)+')</option>').join('');
   const sel = document.getElementById('assist-novo-projeto'); sel.innerHTML='<option value="">— sem projeto —</option>';
   try{
     const dj = await (await fetch('/projetos', {credentials:'same-origin'})).json();
     sel.innerHTML = '<option value="">— sem projeto —</option>' + (dj.projetos||[]).filter(p=>p.nome_safe).map(p=>
       '<option value="'+esc(p.nome_safe)+'">'+esc(p.nome_projeto||p.nome_safe)+(p.cliente_nome?' · '+esc(p.cliente_nome):'')+'</option>').join('');
   }catch(e){}
+  assistNovoProjetoChange();
   document.getElementById('modal-assist-novo').style.display='flex';
 }
 function assistNovoFechar(){ document.getElementById('modal-assist-novo').style.display='none'; }
+async function assistNovoProjetoChange(){
+  const nome = document.getElementById('assist-novo-projeto').value;
+  const bloco = document.getElementById('assist-novo-agendamento');
+  const ambSel = document.getElementById('assist-novo-ambiente');
+  if(!nome){ bloco.style.display='none'; ambSel.innerHTML='<option value="">— sem ambiente —</option>'; return; }
+  bloco.style.display='';
+  ambSel.innerHTML='<option value="">carregando…</option>';
+  try{
+    // reusa o endpoint do Mapa só pela lista de ambientes (d.ambientes) — sem escrever nada lá.
+    const d = await (await fetch('/api/projetos/'+encodeURIComponent(nome)+'/atribuicoes',{credentials:'same-origin'})).json();
+    const ambs = (d && d.ok && d.ambientes) || [];
+    ambSel.innerHTML = '<option value="">— sem ambiente —</option>'
+      + ambs.map(a=>'<option value="'+a.id+'">'+esc(a.nome)+'</option>').join('');
+  }catch(e){ ambSel.innerHTML='<option value="">— sem ambiente —</option>'; }
+}
 function assistNovoMotivoChange(){
   const sel = document.getElementById('assist-novo-motivo');
   const tc = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].getAttribute('data-tc') : '';
@@ -5666,8 +5765,17 @@ function assistNovoMotivoChange(){
 }
 async function assistCriar(){
   const st = document.getElementById('assist-novo-status');
+  const projeto = document.getElementById('assist-novo-projeto').value;
+  const eqSel = document.getElementById('assist-novo-equipe');
+  const executores = projeto ? Array.from(eqSel.selectedOptions).map(o=>{
+    const p = o.value.split(':'); return {tipo: p[0]==='f'?'funcionario':'terceiro', id: parseInt(p[1],10)};
+  }) : [];
   const payload = {
-    projeto_nome: document.getElementById('assist-novo-projeto').value,
+    projeto_nome: projeto,
+    pool_ambiente_id: projeto ? (document.getElementById('assist-novo-ambiente').value || null) : null,
+    data_inicio: projeto ? (document.getElementById('assist-novo-inicio').value || null) : null,
+    data_fim: projeto ? (document.getElementById('assist-novo-fim').value || null) : null,
+    executores: executores,
     sub_tipo: document.getElementById('assist-novo-subtipo').value,
     motivo: document.getElementById('assist-novo-motivo').value,
     descricao: document.getElementById('assist-novo-desc').value.trim(),
@@ -5677,6 +5785,12 @@ async function assistCriar(){
   const d = await (await fetch('/api/assistencias/casos', {method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})).json();
   if(!d.ok){ st.textContent='Erro: '+(d.erro||'falha'); st.style.color='var(--err)'; return; }
+  const arquivos = document.getElementById('assist-novo-anexo').files;
+  for(let i=0; i<arquivos.length; i++){
+    const fd = new FormData(); fd.append('arquivo', arquivos[i]);
+    try{ await fetch('/api/assistencias/casos/'+d.id+'/anexo', {method:'POST', credentials:'same-origin', body: fd}); }
+    catch(e){}
+  }
   assistNovoFechar(); showToast('Caso criado.', false); assistenciasCarregar();
 }
 
@@ -15907,11 +16021,11 @@ async function cronoResponsavelSalvar(codigo, funcionario_id){
 }
 
 // ── Mapa de Atribuições (Regras_Funcoes_Perfis_Atribuicoes §4) — só Gerência+/Supervisor ──
-const _PAPEL_LABEL = {projeto_executivo:"Projeto Executivo", medicao:"Medição",
-                      montagem:"Montagem", assistencia:"Assistência"};
-const _PAPEL_FUNCOES = {   // espelha mod_escopo.PAPEL_FUNCOES (§7)
+const _PAPEL_LABEL = {projeto_executivo:"Projeto Executivo", medicao:"Medição", montagem:"Montagem"};
+const _PAPEL_FUNCOES = {   // espelha mod_escopo.PAPEL_FUNCOES (§7) — 'assistencia' saiu do Mapa
+                            // 2026-08-06 (agendamento próprio, ver aba Assistências)
   projeto_executivo:["Projetista Executivo"], medicao:["Medidor"],
-  montagem:["Montador","Supervisor de Montagem"], assistencia:["Montador","Supervisor de Montagem"],
+  montagem:["Montador","Supervisor de Montagem"],
 };
 function _podeEditarMapaFront(){
   // = _pode_editar_mapa no backend: Gerência+ (autorizar/aprovar_financeiro = master/gerencial) ou

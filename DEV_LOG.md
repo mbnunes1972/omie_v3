@@ -3207,6 +3207,76 @@ mudou.
 passed**, `node --check` limpo, cada peça (grade, hover, arrasto, clique→modal, filtros,
 bloqueio) confirmada ao vivo com Playwright.
 
+## Sessão 163 — Fix "grade fecha ao arrastar" (buffer curto) + Assistência ganha agendamento próprio (ambiente/janela/equipe), Gantt e Disponibilidade compartilhada com Montagem
+
+**(0) Fix: cursor ainda "fechava" a grade em parte do curso.** O fix da Sessão 162 (isolar
+`.op-grid-body` do shell) resolveu o CONGELAMENTO/flash, mas sobrava um problema de DADO: o
+buffer de busca era só ±15 dias em torno do `_opGridStart` do momento do fetch, enquanto o
+cursor cobre hoje-180..hoje+365 inteiro — arrastar além do buffer (a maior parte do curso)
+mostrava "Nenhuma janela..." (grade genuinamente vazia) até soltar e refazer a busca. Fix:
+`opCarregar` busca o intervalo INTEIRO possível do cursor de uma vez (`hoje-185` a
+`hoje+365+35`), fixo em relação a HOJE (não ao `_opGridStart`) — sai mais barato do que parece,
+porque `mod_agenda.cargas`/`itens_montagem` computam a janela REAL de cada projeto
+independente do `de/ate` pedido (que só filtra DEPOIS); o range maior não muda o custo por
+projeto. Verificado varrendo o cursor ponta a ponta: zero quadros vazios.
+
+**(1) Assistência ganha agendamento próprio — decisão do usuário ("quero refletir um pouco
+mais...") após levantamento do estado atual: `AssistenciaCaso` não tinha data nem ambiente nem
+equipe; o papel `assistencia` do Mapa de Atribuições nunca esteve de fato conectado a ele (dois
+mecanismos desencontrados). Confirmado com o usuário: SIM, vincula a ambiente do projeto (mesmo
+padrão do Montagem). Implementado em 4 fases, na ordem aprovada.**
+
+**Fase 1 — schema:** `AssistenciaCaso` ganha `pool_ambiente_id`+`data_inicio`+`data_fim`.
+Tabelas novas `AssistenciaExecutor` (equipe POR CASO, não por ambiente — dois casos no mesmo
+ambiente podem ter equipes diferentes) e `AssistenciaAnexo` (append-only, mesmo padrão de
+`CicloDocumento`). Papel `assistencia` REMOVIDO de `mod_escopo.PAPEIS`/`PAPEL_FUNCOES` — migração
+de limpeza das linhas órfãs em `atribuicoes_ambiente`. **Efeitos colaterais achados e
+corrigidos ao investigar antes de remover** (o papel alimentava mais coisa do que só o Mapa):
+etapa 18 ("Assistência pós Montagem") tinha comissão por papel (`mod_comissao.PAPEL_POR_ETAPA`)
+e um gate de execução (`montagem_lacunas`) que dependiam de `atribuicoes_ambiente` papel=
+assistencia — sem o papel, a base da comissão sempre daria zero e o gate travaria pra sempre em
+lojas com 2+ montadores. Comissão da etapa 18 **retirada** (sem substituto automático por ora —
+comissão de assistência, se vier a existir, precisa de desenho próprio a partir dos CASOS); o
+gate de lacuna ficou só pra etapa 17 (Montagem); a retenção-por-obra continua barrando as duas.
+
+**Fase 2 — backend:** `mod_assistencias.criar_caso` aceita ambiente/datas/equipe;
+`definir_equipe`/`equipe_do_caso` (delete-all+insert-many, mesmo padrão do Montagem
+multi-executor). **Bloqueio de conflito CRUZADO** (o reforço explícito do usuário — "atenção ao
+conflito de datas entre montagem e assistência para o mesmo montador"): helper
+`_bloqueios_conflito_agenda` extraído do bloqueio da Sessão 162 e reusado nos DOIS endpoints —
+`POST /atribuicoes` (Montagem) agora também cruza contra Assistência, e `POST
+/assistencias/casos` cruza contra Montagem+outras Assistências, ambos pré-commit, 409 se
+colidir. `POST /assistencias/casos/<id>/anexo` (+ download) reusa `storage_salvar_binario` e o
+parser multipart já usados por `CicloDocumento` — nada de infra nova.
+
+**Fase 3 — Gantt de Assistências:** `GET /api/agenda/assistencia` no mesmo shape de
+`/agenda/montagem` — o truque foi fazer `_assistencia_itens_enriquecidos` devolver também
+`ambientes:[...]` (como o de Montagem), pra reusar o `_opRender` do Operacional **sem nenhuma
+duplicação de código JS**. A aba Assistências virou Gantt-primeiro (só projetos com caso
+`aberto`), com a lista de controle de custo (Paga/Loja/Fábrica) mantida embaixo. Linha do rótulo
+do ambiente NÃO abre o Mapa (a Assistência não vive mais lá; editar caso existente ainda não
+existe — só criação). Modal "Novo caso" ganhou ambiente (cascata do projeto, reusa
+`GET /atribuicoes` só pela lista), início/fim, equipe (`<select multiple>`, reusa
+`_mapaProfs`/`mapaProfissionaisGarantir`) e anexar-arquivo (upload após criar, via `FormData`).
+
+**Fase 4 — Disponibilidade:** `GET /api/agenda/disponibilidade` — headcount de
+`mod_equipe.candidatos_montagem` (mesmo catálogo do gate de execução) MENOS quem já está
+ocupado naquele dia, somando janelas de Montagem E Assistência (mesmo pool de gente). Uma linha
+só, compartilhada, ACIMA do quadriculado nas abas Montagem e Assistência (ausente em PE — pool
+de Projetista Executivo é disjunto).
+
+**Verificação:** suíte **1737 → 1751 passed** (14 testes novos em
+`tests/test_assistencias_agenda.py`, 1 reescrito em `test_comissao.py`). Ponta a ponta no
+navegador: criar caso com ambiente+datas+equipe+anexo real, ver a linha no Gantt (inclusive
+navegando o cursor até a janela do caso), disponibilidade certa nas 3 abas, bloqueio cruzado
+funcionando nos dois sentidos.
+
+**Arquivos:** `database.py`, `main.py`, `mod_assistencias.py`, `mod_comissao.py`,
+`mod_escopo.py`, `modulos.py`, `static/index.html`, `tests/test_comissao.py`,
+`tests/test_assistencias_agenda.py` (novo). **Pendências anotadas, fora de escopo desta
+rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
+sem substituto).
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

@@ -17,7 +17,9 @@ def test_papel_da_etapa():
     assert mod_comissao.papel_da_etapa("11") == "projeto_executivo"
     assert mod_comissao.papel_da_etapa("11a") == "projeto_executivo"
     assert mod_comissao.papel_da_etapa("17") == "montagem"
-    assert mod_comissao.papel_da_etapa("18") == "assistencia"
+    # etapa 18 (Assistência pós Montagem) saiu do mapa de comissão por papel (2026-08-06) — o
+    # papel 'assistencia' deixou de existir no Mapa de Atribuições (mod_escopo.PAPEIS).
+    assert mod_comissao.papel_da_etapa("18") is None
     assert mod_comissao.papel_da_etapa("13") is None   # produção não gera comissão de papel
 
 

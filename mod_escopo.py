@@ -8,8 +8,12 @@ Isolamento por loja (F4) é aplicado ANTES, pelo tenancy — aqui é o escopo DE
 """
 from auth import perfis
 
-# Papéis operacionais do Mapa de Atribuições (Regras §4).
-PAPEIS = ("projeto_executivo", "medicao", "montagem", "assistencia")
+# Papéis operacionais do Mapa de Atribuições (Regras §4). 'assistencia' SAIU daqui (2026-08-06,
+# pedido do usuário) — a Assistência ganhou agendamento próprio por CASO (ambiente+janela+equipe
+# em AssistenciaCaso/AssistenciaExecutor, ver mod_assistencias.py), não é mais 1 responsável fixo
+# por ambiente do Mapa. As funções elegíveis (Montador/Supervisor de Montagem) viraram constante
+# própria em mod_assistencias.FUNCOES_ELEGIVEIS — mesmo catálogo de nomes, sem depender deste enum.
+PAPEIS = ("projeto_executivo", "medicao", "montagem")
 
 # Papel ↔ Função(ões) compatível(is) (Regras §7). Nomes do catálogo padrão (seed FUNCOES_PADRAO); o
 # alvo de uma atribuição precisa ter uma dessas funções. (Follow-up: campo `papel` na Tabela de Funções
@@ -18,7 +22,6 @@ PAPEL_FUNCOES = {
     "projeto_executivo": ("Projetista Executivo",),
     "medicao":           ("Medidor",),
     "montagem":          ("Montador", "Supervisor de Montagem"),
-    "assistencia":       ("Montador", "Supervisor de Montagem"),
 }
 
 

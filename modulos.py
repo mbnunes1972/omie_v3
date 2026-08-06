@@ -122,7 +122,7 @@ MODULOS = {
                     "rotas": ["/api/folha", "/api/comissao", "/api/adiantamentos"]},
     "assistencias":{"camada": "dominio", "depende_de": ["comercial", "montagem", "financeiro"], "rotulo": "Assistências", "faixa": "montagem",
                     "arquivos": ["mod_assistencias.py"],
-                    "tabelas": ["assistencia_caso"],
+                    "tabelas": ["assistencia_caso", "assistencia_executores", "assistencia_anexos"],
                     "rotas": ["/api/assistencias"]},
 }
 

@@ -6,13 +6,16 @@ import json
 import mod_folha
 from database import (ComissaoFolha, Funcao, Funcionario, PoolAmbiente, AtribuicaoAmbiente, Orcamento)
 
-# Etapa operacional → papel do Mapa (só estas geram comissão de papel).
+# Etapa operacional → papel do Mapa (só estas geram comissão de papel). A etapa 18 (Assistência
+# pós Montagem) SAIU daqui (2026-08-06): a comissão de papel é calculada a partir de quem está
+# atribuído no Mapa (atribuicoes_ambiente) — 'assistencia' deixou de ser um papel do Mapa (ver
+# mod_escopo.PAPEIS), então a base sempre daria zero. Sem substituto automático por ora
+# (comissão de assistência, se vier a existir, precisa de desenho próprio a partir dos CASOS).
 PAPEL_POR_ETAPA = {
     "10": "medicao",
     "11": "projeto_executivo", "11a": "projeto_executivo", "11b": "projeto_executivo",
     "11c": "projeto_executivo", "11d": "projeto_executivo", "11e": "projeto_executivo",
     "17": "montagem",
-    "18": "assistencia",
 }
 
 

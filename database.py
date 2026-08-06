@@ -856,12 +856,20 @@ class ArquivoPE(Base):
 class AssistenciaCaso(Base):
     """Módulo Assistências (Modulos_Orizon_v5, módulo 10 / Financeiro v7 §6): atendimento pós-execução.
     Duas dimensões independentes: sub_tipo (montagem × pós-conclusão) e tipo_custo (paga/loja/fabrica),
-    este DERIVADO do motivo. Realizar o caso dispara o lançamento contábil conforme o tipo de custo."""
+    este DERIVADO do motivo. Realizar o caso dispara o lançamento contábil conforme o tipo de custo.
+    **Agendamento (2026-08-06):** `pool_ambiente_id`+`data_inicio`+`data_fim` tiram a Assistência do
+    Mapa de Atribuições (papel `assistencia` foi removido de `mod_escopo.PAPEIS`) — cada CASO agora
+    carrega sua própria janela e ambiente, com Gantt próprio (ver `mod_agenda.itens_assistencia`).
+    Um mesmo ambiente pode ter vários casos ao longo do tempo, cada um com equipe/janela distintas —
+    por isso não reaproveita `AtribuicaoAmbiente` (que é por ambiente+papel, não por caso)."""
     __tablename__ = "assistencia_caso"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
     loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
     projeto_nome   = Column(Text,     nullable=True)                 # ref: nome_safe (opcional)
+    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"), nullable=True)
+    data_inicio    = Column(Date,     nullable=True)
+    data_fim       = Column(Date,     nullable=True)
     sub_tipo       = Column(Text,     nullable=False)                # "montagem" | "pos_conclusao"
     motivo         = Column(Text,     nullable=False)                # chave de mod_assistencias.MOTIVOS
     tipo_custo     = Column(Text,     nullable=False)                # "paga" | "loja" | "fabrica" (derivado)
@@ -873,6 +881,29 @@ class AssistenciaCaso(Base):
     criado_em      = Column(DateTime, nullable=True)
     realizado_em   = Column(DateTime, nullable=True)
     criado_por_id  = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+
+
+class AssistenciaExecutor(Base):
+    """Equipe de UM caso de assistência (0..N — mesmo padrão do Montagem multi-executor, mas por
+    CASO, não por ambiente: dois casos no mesmo ambiente podem ter equipes diferentes)."""
+    __tablename__ = "assistencia_executores"
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    caso_id        = Column(Integer, ForeignKey("assistencia_caso.id"), nullable=False)
+    funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    terceiro_id    = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
+
+
+class AssistenciaAnexo(Base):
+    """Arquivo anexado a um caso de assistência. Append-only (mesmo padrão de CicloDocumento)."""
+    __tablename__ = "assistencia_anexos"
+
+    id             = Column(Integer,  primary_key=True, autoincrement=True)
+    caso_id        = Column(Integer,  ForeignKey("assistencia_caso.id"), nullable=False)
+    arquivo_path   = Column(Text,     nullable=False)   # relativo a PROJETOS/<nome>/
+    nome_original  = Column(Text,     nullable=False)
+    enviado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    enviado_em     = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class ProvisaoRegistro(Base):
@@ -1936,6 +1967,16 @@ def _migrar_colunas_pg():
            EXCEPTION WHEN undefined_object THEN NULL; END $$""",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_atribuicao_papel_ambiente "
         "ON atribuicoes_ambiente (projeto_nome, pool_ambiente_id, papel) WHERE papel <> 'montagem'",
+        # Assistência ganha agendamento próprio (2026-08-06): ambiente + janela — sai do Mapa de
+        # Atribuições (papel 'assistencia' removido de mod_escopo.PAPEIS). assistencia_executores/
+        # assistencia_anexos são tabelas NOVAS (create_all cria sozinho, sem entrada aqui).
+        "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS pool_ambiente_id INTEGER",
+        "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS data_inicio DATE",
+        "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS data_fim DATE",
+        # limpeza única: linhas do Mapa com o papel aposentado (o mecanismo nunca chegou a ser
+        # usado de verdade — achado ao investigar antes de tirar 'assistencia' do Mapa — mas
+        # roda mesmo assim por segurança; idempotente, a 2ª vez apaga 0 linha).
+        "DELETE FROM atribuicoes_ambiente WHERE papel = 'assistencia'",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

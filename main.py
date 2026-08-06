@@ -18,6 +18,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        membership_loja_ids, lojas_acessiveis_ids, UsuarioLoja, ProvisaoRegistro,
                        CicloDocumento, CicloRevisao, DocumentoFiscal, Emitente,
                        PerfilEmissao, CicloLogistico, CicloLogisticoTransicao, AssistenciaCaso,
+                       AssistenciaExecutor, AssistenciaAnexo,
                        Funcionario, Fornecedor, Terceiro, Funcao, FolhaPagamento, ComissaoFolha,
                        AdiantamentoFuncionario,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
@@ -1509,6 +1510,100 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/agenda/assistencia":
+            # ── Gantt de ASSISTÊNCIA (2026-08-06) — mesmo shape do de Montagem, mas a partir
+            # de AssistenciaCaso (status='aberto'), não do Mapa de Atribuições (papel
+            # 'assistencia' saiu de lá). Conflitos aqui são só ENTRE assistências (mesma
+            # convenção do Gantt de Montagem, que só olha pra dentro do próprio tipo) — o
+            # cruzamento com Montagem já é BLOQUEADO na escrita (POST /atribuicoes e
+            # /assistencias/casos), não precisa reportar aqui de novo.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            from urllib.parse import parse_qs
+            _qs = parse_qs(urlparse(self.path).query)
+            def _q(k):
+                return (_qs.get(k) or [None])[0]
+            def _pd(s):
+                try:
+                    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                except ValueError:
+                    return None
+            de, ate = _pd(_q("de")), _pd(_q("ate"))
+            proj_filtro = unquote(_q("projeto") or "") or None
+            db = get_session()
+            try:
+                import mod_agenda as _mag
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                itens = _assistencia_itens_enriquecidos(db, loja_id, proj_filtro)
+                visiveis = {d["nome_safe"] for d in _agenda_dados_projetos(db, ator, loja_id)}
+                itens = [i for i in itens if i["projeto"] in visiveis]
+                if de:
+                    itens = [i for i in itens if i["fim"] >= de]
+                if ate:
+                    itens = [i for i in itens if i["inicio"] <= ate]
+                conflitos = _mag.conflitos_montagem(itens)
+                for it in itens:
+                    it["inicio"] = it["inicio"].isoformat()
+                    it["fim"] = it["fim"].isoformat()
+                for c in conflitos:
+                    for x in c["itens"]:
+                        x["inicio"] = x["inicio"].isoformat()
+                        x["fim"] = x["fim"].isoformat()
+                self.send_json({"ok": True, "itens": itens, "conflitos": conflitos})
+            finally:
+                db.close()
+            return
+
+        if path == "/api/agenda/disponibilidade":
+            # ── Disponibilidade de recurso por dia (2026-08-06) — linha compartilhada acima
+            # dos Gantts de Montagem e Assistência: total de montadores/terceiros elegíveis da
+            # loja (mesmo catálogo de mod_equipe.candidatos_montagem, o mesmo usado pelo gate de
+            # execução) MENOS quem já está ocupado naquele dia — em montagem OU assistência, é
+            # o MESMO pool de gente, por isso a disponibilidade é uma só, não uma por Gantt.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            from urllib.parse import parse_qs
+            _qs = parse_qs(urlparse(self.path).query)
+            def _q(k):
+                return (_qs.get(k) or [None])[0]
+            def _pd(s):
+                try:
+                    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                except ValueError:
+                    return None
+            de, ate = _pd(_q("de")), _pd(_q("ate"))
+            if not (de and ate) or (ate - de).days > 600:
+                self.send_json({"ok": False, "erro": "Informe de/ate (janela ≤ 600 dias)"}, code=400)
+                return
+            db = get_session()
+            try:
+                import mod_equipe as _meq
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                cm = _meq.candidatos_montagem(db, loja_id)
+                total = len(cm.get("funcionarios", [])) + len(cm.get("terceiros", []))
+                _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                pool = (_montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag, papel="montagem")
+                       + _assistencia_itens_enriquecidos(db, loja_id))
+                dias = []
+                cur = de
+                while cur <= ate:
+                    ocupados = {m["chave"] for it in pool if it["inicio"] <= cur <= it["fim"]
+                               for m in (it.get("montadores") or []) if m.get("chave")}
+                    dias.append({"data": cur.isoformat(), "disponivel": max(0, total - len(ocupados))})
+                    cur += timedelta(days=1)
+                self.send_json({"ok": True, "total": total, "dias": dias})
+            finally:
+                db.close()
+            return
+
         m_rets = re.match(r'^/api/projetos/([^/]+)/retencoes$', path)
         if m_rets:
             # Histórico de retenções por obra (eventos): quando, etapa do ciclo, ambientes,
@@ -1684,6 +1779,36 @@ class Handler(BaseHTTPRequestHandler):
                                 "casos": mod_assistencias.listar(db, lid, tipo or None),
                                 "a_cobrar_fabrica": mod_assistencias.a_cobrar_fabrica(db, lid),
                                 "meta": mod_assistencias.meta()})
+            finally:
+                db.close()
+            return
+
+        m = re.match(r'^/api/assistencias/casos/(\d+)/anexo/(\d+)$', path)
+        if m:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                lid = usuario.get("loja_id")
+                caso = db.get(AssistenciaCaso, int(m.group(1)))
+                if caso is None or (lid and caso.loja_id != lid):
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                anexo = db.query(AssistenciaAnexo).filter_by(id=int(m.group(2)), caso_id=caso.id).first()
+                if not anexo:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                base_dir = _projeto_path(caso.projeto_nome) if caso.projeto_nome \
+                    else os.path.join(_BASE_DIR, "ASSISTENCIAS_AVULSAS")
+                caminho = os.path.join(base_dir, anexo.arquivo_path)
+                if not os.path.exists(caminho):
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                conteudo = storage_ler_binario(caminho)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Disposition", f'inline; filename="{anexo.nome_original}"')
+                self.send_header("Content-Length", str(len(conteudo)))
+                self.end_headers()
+                self.wfile.write(conteudo)
             finally:
                 db.close()
             return
@@ -6883,12 +7008,98 @@ class Handler(BaseHTTPRequestHandler):
                 projeto = (req.get("projeto_nome") or "").strip() or None
                 if projeto and db.query(Projeto).filter_by(nome_safe=projeto, loja_id=lid).first() is None:
                     self.send_json({"ok": False, "erro": "Projeto não encontrado nesta loja."}, code=404); return
+                # Agendamento (2026-08-06): ambiente + janela + equipe — opcionais (mantém
+                # retrocompat com casos "só valor/descrição", sem agenda).
+                amb_id = req.get("pool_ambiente_id") or None
+                if amb_id is not None:
+                    amb_id = int(amb_id)
+                    pa = db.get(PoolAmbiente, amb_id)
+                    if pa is None or pa.projeto_id != projeto:
+                        self.send_json({"ok": False, "erro": "Ambiente não encontrado neste projeto."}, code=404); return
+
+                def _pd(s):
+                    return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                data_inicio, data_fim = _pd(req.get("data_inicio")), _pd(req.get("data_fim"))
+
+                # Equipe: mesmo padrão de validação do Mapa (tipo+id, função elegível), mas com
+                # catálogo PRÓPRIO (mod_assistencias.FUNCOES_ELEGIVEIS) — a Assistência não
+                # depende mais de mod_escopo.PAPEIS (papel 'assistencia' foi removido de lá).
+                alvos = []
+                for a in (req.get("executores") or []):
+                    tipo = "funcionario" if (a or {}).get("tipo") in ("f", "funcionario") else "terceiro"
+                    Model = Funcionario if tipo == "funcionario" else Terceiro
+                    obj = db.get(Model, int((a or {}).get("id") or 0)) if (a or {}).get("id") else None
+                    if obj is None or obj.loja_id != lid:
+                        self.send_json({"ok": False, "erro": "Profissional não encontrado"}, code=404); return
+                    fnome = ""
+                    if getattr(obj, "funcao_id", None):
+                        _fn = db.get(Funcao, obj.funcao_id); fnome = _fn.nome if _fn else ""
+                    if fnome not in mod_assistencias.FUNCOES_ELEGIVEIS:
+                        self.send_json({"ok": False,
+                                        "erro": "Profissional não tem função elegível pra assistência"}, code=400)
+                        return
+                    alvos.append((tipo, obj.id, obj))
+
+                # Bloqueio de conflito de agenda (mesma regra do Mapa, 2026-08-06): a equipe da
+                # assistência não pode estar, na mesma janela, noutra montagem/assistência de
+                # OUTRO projeto. Ator interno (não-escopado) — o conflito é da LOJA inteira,
+                # independente de quem está criando o caso ver ou não aquele outro projeto.
+                if alvos and data_inicio and data_fim and projeto:
+                    _ator_interno = {"nivel": "_conflito_agenda_interno"}
+                    _cfg_ag_pre = (_cfg_financeira_loja(db, lid) or {}).get("agenda") or {}
+                    _pool = (_montagem_itens_enriquecidos(db, _ator_interno, lid, _cfg_ag_pre, papel="montagem")
+                            + _assistencia_itens_enriquecidos(db, lid))
+                    bloqueios = _bloqueios_conflito_agenda(alvos, [(data_inicio, data_fim)], _pool, projeto)
+                    if bloqueios:
+                        self.send_json({"ok": False, "erro": "Conflito de agenda — "
+                                       + "; ".join(sorted(set(bloqueios)))}, code=409)
+                        return
+
                 caso = mod_assistencias.criar_caso(db, lid, projeto, req.get("sub_tipo"), req.get("motivo"),
-                                                   req.get("descricao"), req.get("valor"), usuario.get("id"))
+                                                   req.get("descricao"), req.get("valor"), usuario.get("id"),
+                                                   pool_ambiente_id=amb_id, data_inicio=data_inicio,
+                                                   data_fim=data_fim)
+                if alvos:
+                    mod_assistencias.definir_equipe(db, caso, [(t, i) for t, i, _o in alvos])
                 db.commit()
                 self.send_json({"ok": True, "id": caso.id, "tipo_custo": caso.tipo_custo}, code=201)
             except ValueError as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
+            except Exception as e:
+                db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
+        m = re.match(r'^/api/assistencias/casos/(\d+)/anexo$', path)
+        if m:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
+            arquivos, _campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
+            db = get_session()
+            try:
+                lid = usuario.get("loja_id")
+                caso = db.get(AssistenciaCaso, int(m.group(1)))
+                if caso is None or (lid and caso.loja_id != lid):
+                    self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
+                if "arquivo" not in arquivos:
+                    self.send_json({"ok": False, "erro": "Anexe o arquivo."}, code=400); return
+                fname, data = arquivos["arquivo"]
+                base_nome = os.path.basename(fname)
+                unico = datetime.utcnow().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "_" + base_nome
+                # arquivo_path é RELATIVO (mesmo padrão de CicloDocumento) — a raiz muda conforme
+                # o caso tem projeto (PROJETOS/<nome>/) ou é avulso (pasta própria), resolvida de
+                # novo em toda leitura (nunca grava caminho absoluto — portabilidade entre envs).
+                rel = os.path.join("assistencias", str(caso.id), unico)
+                base_dir = _projeto_path(caso.projeto_nome) if caso.projeto_nome \
+                    else os.path.join(_BASE_DIR, "ASSISTENCIAS_AVULSAS")
+                anexo = AssistenciaAnexo(caso_id=caso.id, arquivo_path=rel, nome_original=base_nome,
+                                         enviado_por_id=usuario.get("id"))
+                db.add(anexo)
+                db.commit()
+                storage_salvar_binario(os.path.join(base_dir, rel), data)
+                self.send_json({"ok": True, "anexo_id": anexo.id}, code=201)
             except Exception as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=500)
             finally:
@@ -9763,9 +9974,10 @@ class Handler(BaseHTTPRequestHandler):
                     # já tinha sido salva) — o usuário não conseguia recusar. Simula "e se esse
                     # alvo entrasse aqui?" comparando a janela deste projeto (calculada com o
                     # estado ATUAL, pré-troca) contra as janelas de QUALQUER outro projeto onde o
-                    # alvo já responde por montagem/PE.
+                    # alvo já responde por montagem/PE — e, pra Montagem, TAMBÉM Assistência (a
+                    # mesma pessoa não pode estar nos dois ao mesmo tempo — reforço do usuário
+                    # 2026-08-06 ao redesenhar a Assistência com agendamento próprio).
                     if alvos and papel in ("montagem", "projeto_executivo"):
-                        import mod_agenda as _mag
                         _cfg_ag_pre = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
                         _itens_pre = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag_pre,
                                                                   papel=papel)
@@ -9775,25 +9987,10 @@ class Handler(BaseHTTPRequestHandler):
                                              any(a2["id"] in alvo_amb_ids
                                                  for a2 in (it.get("ambientes") or [])))]
                         if janelas_alvo:
-                            outros_por_chave = {}
-                            for it in _itens_pre:
-                                if it.get("realizado") or it["projeto"] == nome_safe:
-                                    continue
-                                for m in (it.get("montadores") or []):
-                                    if not m.get("chave"):
-                                        continue
-                                    outros_por_chave.setdefault(m["chave"], []).append(
-                                        (it["projeto"], it["inicio"], it["fim"]))
-                            bloqueios = []
-                            for tipo, oid, obj in alvos:
-                                chave = ("f:%d" % oid) if tipo == "funcionario" else ("t:%d" % oid)
-                                for (o_proj, o_ini, o_fim) in outros_por_chave.get(chave, []):
-                                    if any(ini <= o_fim and o_ini <= fim for ini, fim in janelas_alvo):
-                                        bloqueios.append(
-                                            "%s já está em %s (%s–%s)"
-                                            % (obj.nome, o_proj, o_ini.strftime("%d/%m/%Y"),
-                                               o_fim.strftime("%d/%m/%Y")))
-                                        break
+                            _pool = _itens_pre
+                            if papel == "montagem":
+                                _pool = _pool + _assistencia_itens_enriquecidos(db, loja_id)
+                            bloqueios = _bloqueios_conflito_agenda(alvos, janelas_alvo, _pool, nome_safe)
                             if bloqueios:
                                 self.send_json({"ok": False, "erro": "Conflito de agenda — "
                                                + "; ".join(sorted(set(bloqueios)))}, code=409)
@@ -11835,20 +12032,20 @@ class Handler(BaseHTTPRequestHandler):
                         if not ok_op:
                             self.send_json({"ok": False, "erro": erro_op}, code=400)
                             return
-                    # Gate de execução de MONTAGEM/ASSISTÊNCIA (17/18): responsável por AMBIENTE no Mapa.
-                    # Só trava na LACUNA (>1 candidato e ambiente sem responsável) — mesma regra do
-                    # bloqueador invertido, mas por ambiente (fecha o gate de PE/montagem do chat).
+                    # Gate de execução de MONTAGEM/ASSISTÊNCIA (17/18): retenção por obra barra os
+                    # dois (desmembramento operacional, achado da Vera — concluir com ambiente
+                    # RETIDO registraria "montado" algo que fisicamente não pôde ser montado).
                     if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and etapa_cod in ("17", "18"):
-                        # Desmembramento operacional (achado da Vera): a etapa 17/18 é de PROJETO INTEIRO —
-                        # concluí-la com um ambiente ainda RETIDO pela obra registraria "montado" algo que
-                        # fisicamente não pôde ser montado. Barra até liberar (mesmo padrão do pe/upload e
-                        # da Conciliação Final).
                         import mod_retido as _mret
                         if _mret.ambientes_retidos(db, nome_safe):
                             self.send_json({"ok": False, "erro": "Há ambientes retidos pela obra: "
                                 "libere-os (Retenção por Obra) antes de concluir a montagem/assistência."},
                                 code=409)
                             return
+                    # Lacuna de responsável por AMBIENTE no Mapa: só MONTAGEM (17) — a 18 (Assistência
+                    # pós Montagem) saiu do Mapa (2026-08-06, papel 'assistencia' aposentado, ver
+                    # mod_escopo.PAPEIS); ela não trava mais por essa via.
+                    if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and etapa_cod == "17":
                         import mod_equipe as _meq
                         faltam = _meq.montagem_lacunas(
                             db, loja_id, _ETAPA_PAPEL.get(etapa_cod),
@@ -13220,6 +13417,75 @@ def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None
         it["ambientes"] = ambs
         it["montadores"] = list(montadores.values())
     return itens
+
+
+def _assistencia_itens_enriquecidos(db, loja_id, proj_filtro=None):
+    """Casos de Assistência ABERTOS e AGENDADOS (data_inicio/fim preenchidas) no formato de item
+    do Gantt/conflito — mesmo shape de _montagem_itens_enriquecidos (projeto/fase/inicio/fim/
+    realizado/montadores) pra dar de comer direto em mod_agenda.conflitos_montagem sem mudar
+    aquela função: uma assistência e uma montagem da MESMA pessoa em projetos DIFERENTES com
+    janelas sobrepostas já cai na regra existente (só não conflita dentro do MESMO projeto —
+    mesma filosofia de 'a equipe pode se dividir entre fases/ambientes do projeto', preservada)."""
+    q = db.query(AssistenciaCaso).filter_by(loja_id=loja_id, status="aberto")
+    if proj_filtro:
+        q = q.filter(AssistenciaCaso.projeto_nome == proj_filtro)
+    cache_nome = {}
+
+    def _nome_alvo(fid, tid):
+        chave = ("f:%d" % fid) if fid else ("t:%d" % tid)
+        if chave not in cache_nome:
+            alvo = db.get(Funcionario, fid) if fid else db.get(Terceiro, tid)
+            cache_nome[chave] = alvo.nome if alvo else None
+        return chave, cache_nome[chave]
+
+    out = []
+    for caso in q.all():
+        if not (caso.data_inicio and caso.data_fim):
+            continue
+        amb = db.get(PoolAmbiente, caso.pool_ambiente_id) if caso.pool_ambiente_id else None
+        ms = []
+        for e in db.query(AssistenciaExecutor).filter_by(caso_id=caso.id).all():
+            chave, nome = _nome_alvo(e.funcionario_id, e.terceiro_id)
+            if nome:
+                ms.append({"chave": chave, "nome": nome})
+        amb_nome = (amb.nome_exibicao or amb.nome) if amb else ""
+        out.append({"projeto": caso.projeto_nome, "fase": None, "caso_id": caso.id,
+                    "ambiente_id": caso.pool_ambiente_id, "ambiente_nome": amb_nome,
+                    "descricao": caso.descricao or "",
+                    "inicio": caso.data_inicio, "fim": caso.data_fim,
+                    "realizado": False, "montadores": ms,
+                    # espelha o shape de _montagem_itens_enriquecidos (ambientes[]) — o Gantt do
+                    # Operacional (_opRender) renderiza os dois tipos com o MESMO código JS.
+                    "ambientes": [{"id": caso.pool_ambiente_id, "nome": amb_nome,
+                                  "val_liq": None, "montadores": ms,
+                                  "montador": (ms[0] if ms else None)}]})
+    out.sort(key=lambda i: (i["inicio"], i["projeto"] or ""))
+    return out
+
+
+def _bloqueios_conflito_agenda(alvos, janelas_alvo, pool_outros, exclude_projeto):
+    """Compartilhado entre POST /atribuicoes (montagem/PE) e POST /assistencias/casos
+    (2026-08-06): dado quem está sendo alocado (`alvos`, [(tipo,id,obj)]) e a(s) janela(s) que
+    essa alocação ocupa (`janelas_alvo`, [(inicio,fim)]), varre `pool_outros` (itens de
+    montagem/PE/assistência de QUALQUER projeto ≠ exclude_projeto) e devolve as mensagens de
+    bloqueio (vazia = sem conflito). Puro — quem chama decide o que entra no pool."""
+    outros_por_chave = {}
+    for it in pool_outros:
+        if it.get("realizado") or it["projeto"] == exclude_projeto:
+            continue
+        for m in (it.get("montadores") or []):
+            if not m.get("chave"):
+                continue
+            outros_por_chave.setdefault(m["chave"], []).append((it["projeto"], it["inicio"], it["fim"]))
+    bloqueios = []
+    for tipo, oid, obj in alvos:
+        chave = ("f:%d" % oid) if tipo == "funcionario" else ("t:%d" % oid)
+        for (o_proj, o_ini, o_fim) in outros_por_chave.get(chave, []):
+            if any(ini <= o_fim and o_ini <= fim for ini, fim in janelas_alvo):
+                bloqueios.append("%s já está em %s (%s–%s)"
+                                 % (obj.nome, o_proj, o_ini.strftime("%d/%m/%Y"), o_fim.strftime("%d/%m/%Y")))
+                break
+    return bloqueios
 
 
 def _liquidos_contrato_por_ambiente(orcamento_id, db):

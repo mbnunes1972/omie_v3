@@ -3130,6 +3130,83 @@ visualmente com Playwright (login real, dados reais do dev local) antes/depois �
 julgamento visual. Nenhum deploy feito ainda nesta sessão (A/B/produção seguem no estado da
 Sessão 160 até o usuário aprovar).
 
+## Sessão 162 — Operacional: Gantt de recursos vira quadriculado por dia + Montagem multi-executor + realocação inline + bloqueio de conflito de agenda
+
+Pedido do usuário: transformar o "mapa de recursos" do Operacional (PE/Montagem) numa
+ferramenta de gestão de verdade — "Gráfico de Gantt" quadriculado por dia, com realocação de
+pessoal direto na grade. Executado em incrementos, TDD nos trechos de backend. Suíte
+**1736 → 1737 passed** (líquido: 1 teste novo de multi-executor, 1 reescrito de aviso→bloqueio).
+
+**(1) Redesenho do Gantt — grade diária (antes: barras por semana).** Linha = Projeto ×
+**Ambiente** (menor unidade — antes era o projeto/fase inteiro), não mais só o projeto; a
+partir do 2º ambiente do mesmo projeto a linha indenta (leitura em árvore). Coluna = dia
+corrido do mês, com cabeçalho de mês agrupando os dias (spans) e fim de semana/feriado
+sombreado (`_opEhFolga`, usa `_opCfg.feriados`) em vez de sumir da grade. Célula = nº de
+recursos alocados naquele ambiente naquele dia. Navegação: seletor de **data de início** (era
+texto fixo do período) + **cursor** (`<input type=range>`) pra deslocar dia a dia, com espaço
+reservado (sem lógica ainda) pro futuro configurador de produtividade. Aplicado nas DUAS abas
+(Projeto Executivo e Montagem, confirmado com o usuário). `opNav/_opBase/_opRange` (semanais)
+saíram; entraram `opGridData/opGridHoje/opGridSlideLive/opGridSlideFim/opCarregar` +
+`_opRender`. Hover por célula: balão custom (`#op-tip`, `_opTipShow/_opTipMove/_opTipHide`) no
+lugar do `title=` nativo (lento, sem estilo) — mostra dia + quem está alocado, via `data-*`
+nas células (evita re-escapar HTML dinâmico).
+
+**(2) Mapa de Atribuições — Montagem aceita VÁRIOS executores por ambiente.** Antes, todo
+papel era 1:1 (um índice único bloqueava mais de 1 linha por ambiente/papel). Decisão do
+usuário: só **Montagem** relaxa pra N (times de montagem podem ter 2+ pessoas); PE/Medição/
+Assistência continuam 1:1. Banco: `UniqueConstraint` antiga trocada por **índice único parcial**
+no Postgres (`WHERE papel <> 'montagem'` — `SQLAlchemy` não expressa unicidade condicional).
+`mod_escopo.resolver_responsaveis` (nova, plural — devolve a lista inteira, específica do
+ambiente prevalece sobre projeto-inteiro) + `resolver_responsavel` (singular, preservado pro
+resto do código: devolve o ÚLTIMO da lista, MESMO critério de sempre — trocar pro primeiro
+quebrava um teste por causa de um dado de teste vazado pré-existente, achado ao investigar; a
+lacuna de unicidade NULL do Postgres pra papéis 1:1 em nível "projeto inteiro" ficou
+documentada como fora de escopo, não corrigida). Frontend: coluna Montagem do Mapa vira
+`<select multiple>`; demais continuam `<select>` simples. `POST /atribuicoes` aceita
+`alvos:[{tipo,id},...]` (só p/ papel=montagem, 400 nos demais), grava delete-all+insert-many,
+notifica só quem é NOVO no conjunto. Modal do Mapa: 820px→**1180px**; nome do ambiente trunca
+com "…" (hover mostra completo).
+
+**(3) Bug: arrastar o cursor fazia a grade "sumir".** Causa raiz: cada evento `input` do
+slider (o navegador dispara ~1 por pixel arrastado) reescrevia o `innerHTML` do painel
+**inteiro** — inclusive o próprio `<input type=range>` sendo arrastado NAQUELE instante.
+Substituir o nó DOM que o navegador tem em captura de ponteiro no meio do gesto derruba o
+arrasto; combinado com a rajada de eventos, a tela piscava em branco. Fix: o miolo que muda
+(cabeçalhos+linhas+rodapé) foi isolado num container próprio (`.op-grid-body`); durante o
+arrasto (`liveOnly=true`) só ele é reescrito — o slider e a barra de comando sobrevivem ao
+gesto inteiro sem serem recriados. Bônus: os `input` em rajada agora colapsam num render por
+quadro (`requestAnimationFrame`), em vez de um render por pixel.
+
+**(4) Realocação de pessoal direto na grade.** Clicar no rótulo do ambiente (Projeto ·
+Ambiente) reabre o Mapa de Atribuições do projeto, **rolado e destacado** na linha daquele
+ambiente (`mapaAbrir(nomeSafe, focusAmbId)`) — reusa o modal existente por inteiro (mais
+contexto que um popup novo, zero backend adicional): se já tem equipe, mostra e permite trocar;
+se não tem, permite alocar do zero. Dois filtros novos na barra de comando — **Projeto** e
+**Montador/Projetista** — construídos **inteiramente client-side** a partir dos dados já
+carregados (`chave`/`nome` já vinham no payload de `/api/agenda/montagem`; nenhuma tabela nem
+endpoint novo — `AtribuicaoAmbiente` já É a associação montagem×montador, não precisava
+duplicar). Filtrar por Projeto também **reposiciona a grade no início da execução** (busca
+dedicada, sem depender do buffer ±15 dias já carregado, já que o início real pode cair bem fora
+dele).
+
+**(5) Conflito de agenda: de "avisa e salva" pra "bloqueia" (decisão do usuário — sempre
+bloqueia, sem override nem pra gerência).** Antes, `POST /atribuicoes` salvava a troca e SÓ
+DEPOIS calculava conflito (`aviso_conflito`, toast informativo, dado já gravado). Virou
+verificação **pré-commit**: simula a janela do ambiente sendo escrito contra as janelas de
+QUALQUER outro projeto onde o alvo já responde por montagem/PE (mesma lógica de sobreposição de
+`mod_agenda.conflitos_montagem`, mas calculada ANTES da escrita) e, se colidir, rejeita a troca
+inteira com **409** — nada é persistido. `aviso_conflito` saiu da resposta (o erro chega pelo
+mesmo caminho `!d.ok` que o resto do form já tratava — zero mudança extra no frontend).
+`test_conflito_avisado_no_post` virou `test_conflito_bloqueia_no_post` (verifica 409 + nada
+gravado + `GET` sem conflito). Verificado ponta a ponta no navegador: tentar alocar alguém já
+ocupado noutro projeto bloqueia com a mensagem exata do conflito, e o grid confirma que nada
+mudou.
+
+**Arquivos:** `database.py`, `main.py`, `mod_escopo.py`, `static/index.html`,
+`tests/test_atribuicoes.py`, `tests/test_montagem_gantt.py`. **Verificação:** suíte **1737
+passed**, `node --check` limpo, cada peça (grade, hover, arrasto, clique→modal, filtros,
+bloqueio) confirmada ao vivo com Playwright.
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

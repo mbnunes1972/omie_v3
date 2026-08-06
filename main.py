@@ -9757,6 +9757,48 @@ class Handler(BaseHTTPRequestHandler):
                                 self.send_json({"ok": False, "erro": erro}, code=cod); return
                             alvos.append((tipo, obj.id, obj))
 
+                    # Bloqueio de conflito de agenda (2026-08-06, decisão do usuário: "bloqueia
+                    # sempre" — sem override, nem pra gerência). Roda ANTES de tocar o banco:
+                    # antes disso o conflito era só um AVISO calculado DEPOIS do commit (a troca
+                    # já tinha sido salva) — o usuário não conseguia recusar. Simula "e se esse
+                    # alvo entrasse aqui?" comparando a janela deste projeto (calculada com o
+                    # estado ATUAL, pré-troca) contra as janelas de QUALQUER outro projeto onde o
+                    # alvo já responde por montagem/PE.
+                    if alvos and papel in ("montagem", "projeto_executivo"):
+                        import mod_agenda as _mag
+                        _cfg_ag_pre = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                        _itens_pre = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag_pre,
+                                                                  papel=papel)
+                        janelas_alvo = [(it["inicio"], it["fim"]) for it in _itens_pre
+                                        if it["projeto"] == nome_safe and not it.get("realizado")
+                                        and (alvo_amb_ids == [None] or
+                                             any(a2["id"] in alvo_amb_ids
+                                                 for a2 in (it.get("ambientes") or [])))]
+                        if janelas_alvo:
+                            outros_por_chave = {}
+                            for it in _itens_pre:
+                                if it.get("realizado") or it["projeto"] == nome_safe:
+                                    continue
+                                for m in (it.get("montadores") or []):
+                                    if not m.get("chave"):
+                                        continue
+                                    outros_por_chave.setdefault(m["chave"], []).append(
+                                        (it["projeto"], it["inicio"], it["fim"]))
+                            bloqueios = []
+                            for tipo, oid, obj in alvos:
+                                chave = ("f:%d" % oid) if tipo == "funcionario" else ("t:%d" % oid)
+                                for (o_proj, o_ini, o_fim) in outros_por_chave.get(chave, []):
+                                    if any(ini <= o_fim and o_ini <= fim for ini, fim in janelas_alvo):
+                                        bloqueios.append(
+                                            "%s já está em %s (%s–%s)"
+                                            % (obj.nome, o_proj, o_ini.strftime("%d/%m/%Y"),
+                                               o_fim.strftime("%d/%m/%Y")))
+                                        break
+                            if bloqueios:
+                                self.send_json({"ok": False, "erro": "Conflito de agenda — "
+                                               + "; ".join(sorted(set(bloqueios)))}, code=409)
+                                return
+
                     trocas = []
                     novos_alvos_uids = set()   # só notifica quem é NOVO no conjunto (evita spam)
                     for amb_id in alvo_amb_ids:
@@ -9793,10 +9835,11 @@ class Handler(BaseHTTPRequestHandler):
                         acao="atribuir_mapa", projeto_nome=nome_safe, etapa_alvo=papel,
                         contexto=json.dumps({"papel": papel, "trocas": trocas})))
                     db.commit()
-                    # ── pós-commit, best-effort: notificação via Orizon Chat + aviso de conflito ──
+                    # ── pós-commit, best-effort: notificação via Orizon Chat ──
+                    # (aviso de conflito saiu daqui — 2026-08-06, virou bloqueio PRÉ-commit acima)
                     _PAPEL_ROTULO = {"projeto_executivo": "Projeto Executivo", "medicao": "Medição",
                                      "montagem": "Montagem", "assistencia": "Assistência"}
-                    notificado, aviso_conflito = False, None
+                    notificado = False
                     if novos_alvos_uids:
                         try:
                             import mod_chat as _mchat
@@ -9822,30 +9865,8 @@ class Handler(BaseHTTPRequestHandler):
                             notificado = True
                         except Exception:
                             db.rollback()   # notificação nunca derruba a atribuição (já commitada)
-                    if alvos and papel in ("montagem", "projeto_executivo"):
-                        try:
-                            import mod_agenda as _mag
-                            _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
-                            _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag,
-                                                                  papel=papel)
-                            _confs = _mag.conflitos_montagem(_itens)
-                            _avisos = []
-                            for tipo, oid, obj in alvos:
-                                _chave = ("f:%d" % oid) if tipo == "funcionario" else ("t:%d" % oid)
-                                _hit = next((c for c in _confs if c["chave"] == _chave
-                                             and any(x["projeto"] == nome_safe for x in c["itens"])), None)
-                                if _hit:
-                                    _outros = sorted({x["projeto"] for x in _hit["itens"]
-                                                      if x["projeto"] != nome_safe})
-                                    _avisos.append("%s: %s" % (_hit["nome"] or obj.nome, ", ".join(_outros)))
-                            if _avisos:
-                                _atividade = "montagem" if papel == "montagem" else "projeto executivo"
-                                aviso_conflito = ("⚠ Período sobreposto de %s — %s."
-                                                  % (_atividade, "; ".join(_avisos)))
-                        except Exception:
-                            db.rollback()
                     self.send_json({"ok": True, "atribuicoes": _serializar_atribuicoes(db, nome_safe),
-                                    "notificado": notificado, "aviso_conflito": aviso_conflito})
+                                    "notificado": notificado})
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)

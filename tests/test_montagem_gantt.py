@@ -178,7 +178,7 @@ def test_endpoint_papel_projeto_executivo(app_db, seed, http_client_factory):
     assert st == 400
 
 
-def test_conflito_avisado_no_post(app_db, seed, http_client_factory):
+def test_conflito_bloqueia_no_post(app_db, seed, http_client_factory):
     nome = seed["projeto_l1"]
     ids, func_id, _ = _setup(app_db, seed)
     # segundo projeto NA MESMA loja com janela sobreposta
@@ -212,13 +212,17 @@ def test_conflito_avisado_no_post(app_db, seed, http_client_factory):
     st, _d = c.post("/api/projetos/%s/atribuicoes" % nome,
                     {"papel": "montagem", "pool_ambiente_ids": ids, "funcionario_id": func_id})
     assert st == 200
+    # bloqueia (2026-08-06 — decisão do usuário: nunca salva com sobreposição, sem override)
     st, d = c.post("/api/projetos/Proj_L1_B/atribuicoes",
                    {"papel": "montagem", "pool_ambiente_ids": [pa2_id],
                     "funcionario_id": func_id})
-    assert st == 200 and d["ok"], (st, d)
-    assert d["aviso_conflito"] and "sobreposto" in d["aviso_conflito"]
-    assert nome in d["aviso_conflito"]
-    # GET também lista o conflito
+    assert st == 409 and d["ok"] is False, (st, d)
+    assert "onflito" in d["erro"] and nome in d["erro"]
+    # nada foi salvo — Proj_L1_B continua sem montador
+    db = app_db.get_session()
+    try:
+        assert db.query(AtribuicaoAmbiente).filter_by(projeto_nome="Proj_L1_B").count() == 0
+    finally:
+        db.close()
     st, g = c.get("/api/agenda/montagem?de=2026-09-01&ate=2026-09-30")
-    assert st == 200 and g["conflitos"]
-    assert {x["projeto"] for x in g["conflitos"][0]["itens"]} == {nome, "Proj_L1_B"}
+    assert st == 200 and g["conflitos"] == []

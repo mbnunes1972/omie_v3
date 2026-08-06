@@ -1913,6 +1913,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div id="assist-lista"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
   </div>
+  <style>
+    /* Hover custom das quadrículas do Gantt de recursos (pedido 2026-08-06) — troca o title=
+       nativo (lento, sem estilo) por um balão posicionado perto do cursor. */
+    #op-tip{position:fixed;z-index:9999;display:none;pointer-events:none;max-width:260px;
+      background:var(--surface);border:1px solid var(--border);border-radius:8px;
+      box-shadow:0 4px 16px rgba(0,0,0,.18);padding:8px 10px;font-size:11px;color:var(--text)}
+  </style>
 
   <!-- PAGE 16: Agenda da Loja (spec 2026-08-03) — marcos e volumes dos cronogramas, por Setor -->
   <div class="page" id="page-16">
@@ -4170,6 +4177,9 @@ let _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],c
 // Navegação vira seletor de data de início + cursor dia-a-dia, sem mais "pular 1 semana".
 let _opGridStart=null;      // ISO do 1º dia visível na grade
 const _opGridDias=30;       // colunas visíveis por vez
+// filtros por Projeto/Montador (2026-08-06, pedido do usuário) — estado por aba, pra não
+// vazar a seleção da Montagem quando o usuário troca pra Projeto Executivo (e vice-versa).
+let _opFiltro = {pe:{projeto:'',montador:''}, mont:{projeto:'',montador:''}};
 function _opModuloOk(id){
   const mods=((_usuarioAtual&&_usuarioAtual.hub)||[]).flatMap(g=>g.modulos||[]);
   const m=mods.find(x=>x.id===id);
@@ -4197,9 +4207,36 @@ function opTab(qual){
 }
 function opGridData(v){ if(v) _opGridStart=v; opCarregar(_opTabAtual); }
 function opGridHoje(){ _opGridStart=_opHojeIso(); opCarregar(_opTabAtual); }
+function opFiltroMontador(aba, v){
+  (_opFiltro[aba] = _opFiltro[aba] || {projeto:'',montador:''}).montador = v || '';
+  _opRender(aba);
+}
+async function opFiltroProjeto(aba, v){
+  const f = (_opFiltro[aba] = _opFiltro[aba] || {projeto:'',montador:''});
+  f.projeto = v || '';
+  if(f.projeto){
+    // reposiciona no início da execução do projeto (previsão do sistema) — busca dedicada, sem
+    // depender do buffer ±15 dias já carregado (o início real pode estar bem fora dele).
+    const papel = aba==='pe' ? 'projeto_executivo' : 'montagem';
+    try{
+      const r = await fetch('/api/agenda/montagem?papel='+papel+'&projeto='+encodeURIComponent(f.projeto),
+        {credentials:'same-origin'}).then(x=>x.json());
+      const itens = (r && r.ok && r.itens) || [];
+      if(itens.length) _opGridStart = itens.map(i=>i.inicio).sort()[0];
+    }catch(e){}
+  }
+  opCarregar(aba);
+}
 // cursor dia-a-dia: arrastar só re-renderiza (dado já buscado com folga); soltar (change) busca
-// de novo, pra sempre ter buffer suficiente em qualquer direção.
-function opGridSlideLive(v){ _opGridStart=_opAddDias(_opHojeIso(),parseInt(v,10)||0); _opRender(_opTabAtual); }
+// de novo, pra sempre ter buffer suficiente em qualquer direção. rAF junta os 'input' (o
+// navegador dispara um a cada pixel arrastado) num render por quadro — sem isso a rajada de
+// eventos empilhava renders mais rápido do que a tela dava conta de desenhar.
+let _opLiveRaf=null;
+function opGridSlideLive(v){
+  _opGridStart=_opAddDias(_opHojeIso(),parseInt(v,10)||0);
+  if(_opLiveRaf) return;
+  _opLiveRaf=requestAnimationFrame(()=>{ _opLiveRaf=null; _opRender(_opTabAtual, true); });
+}
 function opGridSlideFim(){ opCarregar(_opTabAtual); }
 async function opCarregar(aba){
   const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
@@ -4225,7 +4262,33 @@ function _opEhFolga(iso){
 }
 const _OP_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function _opAbrev(s,n){ s=(s||'').trim(); return s.length>n?s.slice(0,n-1)+'…':s; }
-function _opRender(aba){
+function _opTipEl(){
+  let t=document.getElementById('op-tip');
+  if(!t){ t=document.createElement('div'); t.id='op-tip'; document.body.appendChild(t); }
+  return t;
+}
+function _opTipShow(ev,el){
+  const t=_opTipEl();
+  let nomes=[]; try{ nomes=JSON.parse(el.dataset.nomes||'[]'); }catch(e){}
+  t.innerHTML = '<div style="font-weight:700;margin-bottom:2px">'+esc(el.dataset.titulo||'')+'</div>'
+    + '<div style="color:var(--muted);margin-bottom:5px">'+esc(el.dataset.data||'')+'</div>'
+    + (nomes.length
+        ? nomes.map(n=>'<div>• '+esc(n)+'</div>').join('')
+        : '<div style="color:var(--status-warn)">sem '+esc(el.dataset.resp||'responsável')+'</div>');
+  t.style.display='block';
+  _opTipMove(ev);
+}
+function _opTipMove(ev){
+  const t=document.getElementById('op-tip'); if(!t||t.style.display==='none') return;
+  const mx=ev.clientX, my=ev.clientY, pad=14;
+  let x=mx+pad, y=my+pad;
+  const w=t.offsetWidth||180, h=t.offsetHeight||40;
+  if(x+w>window.innerWidth-8) x=mx-w-pad;
+  if(y+h>window.innerHeight-8) y=my-h-pad;
+  t.style.left=Math.max(4,x)+'px'; t.style.top=Math.max(4,y)+'px';
+}
+function _opTipHide(){ const t=document.getElementById('op-tip'); if(t) t.style.display='none'; }
+function _opRender(aba, liveOnly){
   const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
   if(!_opGridStart) _opGridStart=_opHojeIso();
   const hojeIso=_opHojeIso();
@@ -4251,10 +4314,13 @@ function _opRender(aba){
       // pedido 2026-08-06: Montagem aceita VÁRIOS executores por ambiente — a célula mostra a
       // contagem real (2, 3...), não mais só 0/1 (PE/Medição continuam com no máximo 1).
       const nomes=(a2.montadores||[]).map(m=>esc(m.nome||'')).filter(Boolean);
+      const chaves=(a2.montadores||[]).map(m=>m.chave).filter(Boolean);
       linhas.push({it, a2, cor,
         // a partir do 2º ambiente do MESMO projeto, indenta — cria leitura em árvore (projeto
         // novo = volta pro início) sem esconder nenhuma informação.
         indent: idxAmb>0 ? 14 : 0,
+        nomesArr: nomes,
+        chavesArr: chaves,
         rotCurto: _opAbrev(it.projeto,15) + (a2.nome ? ' · '+_opAbrev(a2.nome,11) : (it.fase?' · F'+it.fase:'')),
         rotResumo: nomes.length ? nomes.join(', ') : 'sem '+rotResp,
         rotCompleto: it.projeto + (it.fase?' · Fase '+it.fase:'') + (a2.nome?' · '+a2.nome:'')
@@ -4264,6 +4330,19 @@ function _opRender(aba){
           + (it.retida?' · RETIDA':'') + (confKeys.has(key)?' · ⚠ CONFLITO de '+rotResp:'')});
     });
   });
+
+  // filtros (pedido 2026-08-06): opções vêm de TUDO que está carregado (não encolhem com a
+  // seleção atual — UX padrão de filtro), a filtragem em si é só client-side (os dados já
+  // trazem chave+nome por ambiente, não precisa de tabela nova nem endpoint novo).
+  const _opProjOpts=new Map(), _opMontOpts=new Map();
+  linhas.forEach(L=>{
+    _opProjOpts.set(L.it.projeto, L.it.projeto);
+    (L.a2.montadores||[]).forEach(m=>{ if(m.chave) _opMontOpts.set(m.chave, m.nome||m.chave); });
+  });
+  const filt = _opFiltro[aba] || (_opFiltro[aba]={projeto:'',montador:''});
+  const linhasVis = linhas.filter(L =>
+    (!filt.projeto || L.it.projeto===filt.projeto) &&
+    (!filt.montador || (L.chavesArr||[]).includes(filt.montador)));
 
   const colGrid=`display:grid;grid-template-columns:200px repeat(${nDias},minmax(20px,1fr));gap:1px`;
 
@@ -4287,25 +4366,33 @@ function _opRender(aba){
     </div>`;
 
   let linhasHtml='';
-  linhas.forEach(L=>{
+  linhasVis.forEach(L=>{
     const cels=dias.map(iso=>{
       const folga=_opEhFolga(iso);
       const ativo = !folga && iso>=L.it.inicio && iso<=L.it.fim;
       const n = ativo ? ((L.a2.montadores||[]).length) : null;
       const bg = folga ? 'var(--surface-2)' : (ativo ? corMap[L.cor]+'22' : 'transparent');
       const txtCor = n===null ? 'var(--text-3)' : (n===0 ? 'var(--status-warn)' : 'var(--text)');
-      // hover por CÉLULA (pedido 2026-08-06): dia + quem está alocado naquele ambiente naquele
-      // dia — hoje é sempre a mesma pessoa a semana toda (1 responsável por ambiente/papel no
-      // modelo atual), mas o hover já fica pronto pra quando aceitar mais de 1 executor.
-      const tipCel = ativo ? (_fmtDataBR(iso)+' — '+L.rotResumo) : '';
-      return `<div style="text-align:center;font-size:11px;font-family:var(--font-mono);font-weight:${n?'700':'400'};padding:3px 0;border-radius:3px;background:${bg};color:${txtCor}"${tipCel?` title="${esc(tipCel)}"`:''}>${n===null?'':n}</div>`;
+      // hover por CÉLULA (pedido 2026-08-06, refeito com balão custom em vez de title= nativo):
+      // dia + quem está alocado naquele ambiente naquele dia — hoje é sempre a mesma equipe a
+      // janela toda (o modelo não varia por dia), mas os data-* já ficam prontos pra quando isso
+      // mudar. data-nomes carrega o array via JSON (esc() escapa aspas pro atributo HTML).
+      const tipAttrs = ativo
+        ? ` data-titulo="${esc(L.rotCurto)}" data-data="${esc(_fmtDataBR(iso))}" data-resp="${esc(rotResp)}" data-nomes="${esc(JSON.stringify(L.nomesArr||[]))}" onmouseenter="_opTipShow(event,this)" onmousemove="_opTipMove(event)" onmouseleave="_opTipHide()"`
+        : '';
+      return `<div style="text-align:center;font-size:11px;font-family:var(--font-mono);font-weight:${n?'700':'400'};padding:3px 0;border-radius:3px;background:${bg};color:${txtCor}"${tipAttrs}>${n===null?'':n}</div>`;
     }).join('');
+    // clique no rótulo (pedido 2026-08-06): reabre o Mapa de Atribuições do projeto, já rolado
+    // e destacado na linha deste ambiente — mostra quem já está alocado (permite trocar) ou
+    // deixa alocar do zero. Reusa o modal existente (mapaAbrir) em vez de um popup paralelo.
     linhasHtml+=`<div style="${colGrid};margin-bottom:1px">
-      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px 3px ${6+L.indent}px;border-left:3px solid ${corMap[L.cor]}" title="${esc(L.rotCompleto)}">${esc(L.rotCurto)}</div>
+      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px 3px ${6+L.indent}px;border-left:3px solid ${corMap[L.cor]};cursor:pointer" title="${esc(L.rotCompleto)} — clique pra gerenciar equipe" onclick="mapaAbrir('${esc(L.it.projeto)}'${L.a2.id?','+L.a2.id:''})">${esc(L.rotCurto)}</div>
       ${cels}
     </div>`;
   });
-  if(!linhasHtml) linhasHtml=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período visível.</div>`;
+  if(!linhasHtml) linhasHtml = linhas.length
+    ? `<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhum resultado para o filtro atual.</div>`
+    : `<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período visível.</div>`;
 
   let rodape='', resumo='';
   if(aba==='mont'){
@@ -4335,13 +4422,43 @@ function _opRender(aba){
       ${confs.map(c=>esc(c.nome||'?')+' — '+(c.itens||[]).map(x=>esc(x.projeto)+(x.fase?' F'+x.fase:'')+' ('+_fmtDataBR(x.inicio)+'–'+_fmtDataBR(x.fim)+')').join(' × ')).join('; ')}
     </div>`:'';
 
-  // barra de comando: seletor de data de início (onde hoje era o texto do período) + espaço
+  // grid-body: cabeçalhos + linhas + rodapé + legenda — é tudo que muda quando o cursor desliza.
+  // Fica num container próprio (.op-grid-body) pra o live-drag (liveOnly) reescrever só ele, sem
+  // tocar no <input type=range> nem no resto do shell (ver nota abaixo).
+  const gridBodyHtml = `
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada célula é o nº de ${rotResp}s alocados naquele ambiente naquele dia. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito · <span style="background:var(--surface-2);border-radius:2px;padding:0 4px">&nbsp;</span> fim de semana/feriado</div>
+      ${confHtml}
+      ${cabecalhoMes}${cabecalhoDia}${linhasHtml}${rodape}`;
+
+  // achado 2026-08-06: arrastar o cursor disparava 'input' a cada pixel, e cada tick reescrevia
+  // o box.innerHTML INTEIRO — inclusive o próprio <input type=range> sendo arrastado naquele
+  // instante. Substituir o nó do slider no meio do gesto derruba a captura do ponteiro no
+  // navegador: o arrasto trava e a grade "some" (fica em branco) até soltar o mouse. Fix:
+  // liveOnly só atualiza o miolo (.op-grid-body); o slider e a barra de comando sobrevivem ao
+  // arrasto inteiro sem serem recriados.
+  if(liveOnly){
+    const gridBody = box.querySelector('.op-grid-body');
+    if(gridBody){ gridBody.innerHTML = gridBodyHtml; return; }
+    // shell ainda não existe (1º render da aba) — cai pro render completo abaixo.
+  }
+
+  // barra de comando: seletor de data de início (onde hoje era o texto do período) + filtros de
+  // Projeto/Montador (pedido 2026-08-06 — client-side, ver nota acima dos filtros) + espaço
   // reservado do configurador de produtividade (pedido: "depois definimos a relação com o
   // projeto" — só o espaço por enquanto, sem lógica) + cursor dia-a-dia abaixo da grade.
+  const _selOptsHtml = (map, cur) => '<option value="">— todos —</option>' +
+    [...map].map(([v,l]) => `<option value="${esc(v)}"${cur===v?' selected':''}>${esc(l)}</option>`).join('');
+  const rotRespCap = rotResp.charAt(0).toUpperCase()+rotResp.slice(1);
   const comando=`
     <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:12px">
       <label style="font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px">Início da grade
         <input type="date" value="${_opGridStart}" onchange="opGridData(this.value)" style="padding:6px 8px;font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text)">
+      </label>
+      <label style="font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px">Projeto
+        <select onchange="opFiltroProjeto('${aba}',this.value)" style="padding:6px 8px;font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);max-width:180px">${_selOptsHtml(_opProjOpts, filt.projeto)}</select>
+      </label>
+      <label style="font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px">${esc(rotRespCap)}
+        <select onchange="opFiltroMontador('${aba}',this.value)" style="padding:6px 8px;font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text);max-width:180px">${_selOptsHtml(_opMontOpts, filt.montador)}</select>
       </label>
       <button class="btn btn-ghost btn-sm" onclick="opGridHoje()">hoje</button>
       <div style="padding:6px 12px;border:1px dashed var(--border);border-radius:8px;font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px" title="Reservado — ainda não definimos como a produtividade se relaciona com o projeto">
@@ -4357,9 +4474,7 @@ function _opRender(aba){
   box.innerHTML = comando
     +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px;overflow-x:auto">
       <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">${atividade} — mapa de recursos</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada célula é o nº de ${rotResp}s alocados naquele ambiente naquele dia. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito · <span style="background:var(--surface-2);border-radius:2px;padding:0 4px">&nbsp;</span> fim de semana/feriado</div>
-      ${confHtml}
-      ${cabecalhoMes}${cabecalhoDia}${linhasHtml}${rodape}
+      <div class="op-grid-body">${gridBodyHtml}</div>
       ${cursor}
     </div>
     <div style="font-size:10px;color:var(--muted)">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades em Config → Agenda; atribuições no Mapa de Atribuições do projeto.</div>`;
@@ -13230,7 +13345,9 @@ async function abrirModalComissao(lid){
   ltb.innerHTML = '';
   (ld.limites || []).forEach(l => cvAdicionarLimite(l.desconto_acima_de, l.redutor_pct));
   document.getElementById('cv-salvar-btn').onclick = () => salvarModalComissao(lid);
-  document.getElementById('modal-comissao').style.display = 'flex';
+  const mc = document.getElementById('modal-comissao');
+  mc.style.zIndex = 700;
+  mc.style.display = 'flex';
 }
 function fecharModalComissao(){
   document.getElementById('modal-comissao').style.display = 'none';
@@ -15812,8 +15929,13 @@ async function mapaProfissionaisGarantir(force){
   ((t && t.itens) || []).forEach(x => prof.push({tipo:'t', id:x.id, nome:x.nome, funcao_nome:x.funcao_nome||''}));
   _mapaProfs = prof; return prof;
 }
-async function mapaAbrir(nomeSafe){
+// focusAmbId (2026-08-06, clique no ambiente do Gantt Operacional): rola até a linha do
+// ambiente clicado e destaca — o modal continua mostrando o projeto inteiro (mais contexto,
+// zero código novo de backend), só chama atenção pra linha que o usuário veio resolver.
+let _mapaFocusAmb = null;
+async function mapaAbrir(nomeSafe, focusAmbId){
   _mapaNome = nomeSafe;
+  _mapaFocusAmb = focusAmbId || null;
   document.getElementById('mapa-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('modal-mapa').style.display = 'flex';
   await mapaProfissionaisGarantir();
@@ -15866,7 +15988,7 @@ function mapaRender(d){
   html += '</tr>';
   ambientes.forEach(a2 => {
     // nome do ambiente abreviado com "…" (pedido 2026-08-06) — hover mostra o nome completo
-    html += '<tr><td style="font-weight:600;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a2.nome)+'">'+esc(a2.nome)+'</td>';
+    html += '<tr data-amb-row="'+a2.id+'"><td style="font-weight:600;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a2.nome)+'">'+esc(a2.nome)+'</td>';
     papeis.forEach(papel => {
       const multi = _MAPA_MULTI.includes(papel);
       const espec = atrib[papel+'|'+a2.id] || [];
@@ -15889,6 +16011,16 @@ function mapaRender(d){
   const aviso = (_mapaProfs||[]).length ? '' :
     '<div style="font-size:11px;color:var(--warn);margin-top:8px">Nenhum funcionário/terceiro com função cadastrada — cadastre em Cadastro e defina a Função.</div>';
   document.getElementById('mapa-body').innerHTML = html + aviso;
+  if(_mapaFocusAmb){
+    const tr = document.querySelector('[data-amb-row="'+_mapaFocusAmb+'"]');
+    if(tr){
+      tr.scrollIntoView({block:'center'});
+      tr.style.transition='background-color .3s ease';
+      tr.style.backgroundColor='var(--accent-soft)';
+      setTimeout(()=>{ tr.style.backgroundColor=''; }, 2200);
+    }
+    _mapaFocusAmb = null;
+  }
 }
 function _mapaBodyAlvo(body, sel){
   if(sel){ const p = sel.split(':'); if(p[0]==='f') body.funcionario_id = parseInt(p[1],10); else body.terceiro_id = parseInt(p[1],10); }
@@ -15902,8 +16034,9 @@ function _mapaAlvosDoSelect(sel){
 async function _mapaPost(body){
   const d = await (await fetch('/api/projetos/'+encodeURIComponent(_mapaNome)+'/atribuicoes',{method:'POST',credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json().catch(()=>({}));
+  // conflito de agenda agora BLOQUEIA no backend (2026-08-06) — chega aqui como d.ok=false,
+  // reaproveita o mesmo toast de erro; recarregar o mapa abaixo mostra o estado real (nada mudou).
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); }
-  else if(d.aviso_conflito){ showToast(d.aviso_conflito, true); }   // conflito de montador (períodos sobrepostos)
   else showToast('Atribuição salva.'+(d.notificado?' Profissional notificado no Orizon Chat.':''), false);
   mapaAbrir(_mapaNome);   // recarrega o grid (reflete substituições/limpezas)
 }

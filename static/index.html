@@ -2777,7 +2777,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
   <!-- Modal: Mapa de Atribuições (Regras_Funcoes_Perfis_Atribuicoes §4) — só Gerência+/Supervisor -->
   <div id="modal-mapa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
-    <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:24px;max-width:820px;width:94%;max-height:90vh;overflow:auto;animation:mIn .18s ease">
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:24px;max-width:1180px;width:94%;max-height:90vh;overflow:auto;animation:mIn .18s ease">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Mapa de Atribuições</div>
         <span onclick="mapaFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
@@ -4163,14 +4163,23 @@ function _agRenderMes(){
 // conflitos do papel e espelho de atribuições por ambiente (Val_Liq = referência da comissão).
 // Assistências = transplante da antiga page-14 (mesmo código, gated pelo módulo da loja).
 let _opTabAtual='pe';
-let _opBase=null, _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],conflitos:[]}};
+let _opCap=[], _opCfg={}, _opDados={pe:{itens:[],conflitos:[]}, mont:{itens:[],conflitos:[]}};
+// Grade de recursos (reforma 2026-08-06, pedido do usuário — "Gráfico de Gantt" quadriculado):
+// linha = Projeto × Ambiente (menor unidade — antes era Projeto × Fase inteira), coluna = DIA
+// corrido do mês (não só dia útil — fim de semana/feriado aparece sombreado, não sumido).
+// Navegação vira seletor de data de início + cursor dia-a-dia, sem mais "pular 1 semana".
+let _opGridStart=null;      // ISO do 1º dia visível na grade
+const _opGridDias=30;       // colunas visíveis por vez
 function _opModuloOk(id){
   const mods=((_usuarioAtual&&_usuarioAtual.hub)||[]).flatMap(g=>g.modulos||[]);
   const m=mods.find(x=>x.id===id);
   return !!(m && !m.bloqueado);
 }
+function _opHojeIso(){ const h=new Date(); return _agIso(h.getFullYear(),h.getMonth(),h.getDate()); }
+function _opAddDias(iso,n){ const d=new Date(iso+'T00:00:00'); d.setDate(d.getDate()+n); return _agIso(d.getFullYear(),d.getMonth(),d.getDate()); }
+function _opOffsetHoje(){ return Math.round((new Date(_opGridStart+'T00:00:00')-new Date(_opHojeIso()+'T00:00:00'))/86400000); }
 function operacionalAbrir(){
-  if(!_opBase) _opBase=_agSegunda(new Date());
+  if(!_opGridStart) _opGridStart=_opHojeIso();
   const ta=document.getElementById('op-tab-assist');
   if(ta) ta.style.display=_opModuloOk('assistencias')?'':'none';   // gating por módulo da loja
   opTab(_opTabAtual||'pe');
@@ -4186,18 +4195,16 @@ function opTab(qual){
   if(qual==='assist'){ assistenciasCarregar(); return; }
   opCarregar(qual);
 }
-function opNav(d){
-  if(d===0) _opBase=_agSegunda(new Date()); else _opBase.setDate(_opBase.getDate()+7*d);
-  opCarregar(_opTabAtual);
-}
-function _opRange(){
-  const a=_opBase, n=((_opCfg.horizonte_semanas||6)*7-1);
-  const b=new Date(a.getFullYear(),a.getMonth(),a.getDate()+n);
-  return [_agIso(a.getFullYear(),a.getMonth(),a.getDate()), _agIso(b.getFullYear(),b.getMonth(),b.getDate())];
-}
+function opGridData(v){ if(v) _opGridStart=v; opCarregar(_opTabAtual); }
+function opGridHoje(){ _opGridStart=_opHojeIso(); opCarregar(_opTabAtual); }
+// cursor dia-a-dia: arrastar só re-renderiza (dado já buscado com folga); soltar (change) busca
+// de novo, pra sempre ter buffer suficiente em qualquer direção.
+function opGridSlideLive(v){ _opGridStart=_opAddDias(_opHojeIso(),parseInt(v,10)||0); _opRender(_opTabAtual); }
+function opGridSlideFim(){ opCarregar(_opTabAtual); }
 async function opCarregar(aba){
   const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
-  const [de,ate]=_opRange();
+  if(!_opGridStart) _opGridStart=_opHojeIso();
+  const de=_opAddDias(_opGridStart,-15), ate=_opAddDias(_opGridStart,_opGridDias+15);
   const papel=aba==='pe'?'projeto_executivo':'montagem';
   try{
     const [d,rm]=await Promise.all([
@@ -4210,97 +4217,150 @@ async function opCarregar(aba){
     _opRender(aba);
   }catch(e){ box.innerHTML='<em style="color:var(--err);font-size:12px">Erro de rede.</em>'; }
 }
+function _opEhFolga(iso){
+  const dow=new Date(iso+'T00:00:00').getDay();
+  if(dow===0) return true;
+  if(dow===6) return !_opCfg.sabado_util;
+  return (_opCfg.feriados||[]).includes(iso);
+}
+const _OP_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+function _opAbrev(s,n){ s=(s||'').trim(); return s.length>n?s.slice(0,n-1)+'…':s; }
 function _opRender(aba){
   const box=document.getElementById(aba==='pe'?'op-pe-ui':'montagem-ui'); if(!box) return;
-  const [deIso,ateIso]=_opRange();
-  const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
-  const dias=[];
-  for(let d=new Date(_opBase.getFullYear(),_opBase.getMonth(),_opBase.getDate());;d.setDate(d.getDate()+1)){
-    const iso=_agIso(d.getFullYear(),d.getMonth(),d.getDate());
-    if(iso>ateIso) break;
-    if(d.getDay()===0) continue;
-    if(d.getDay()===6 && !_opCfg.sabado_util) continue;
-    dias.push(iso);
-  }
+  if(!_opGridStart) _opGridStart=_opHojeIso();
+  const hojeIso=_opHojeIso();
+  const dias=[]; for(let i=0;i<_opGridDias;i++) dias.push(_opAddDias(_opGridStart,i));
+  const nDias=dias.length;
   const porDia={}; _opCap.forEach(c=>{ porDia[c.data]=c; });
-  const rotDia=iso=>iso.slice(8,10)+'/'+iso.slice(5,7);
   const dadosAba=_opDados[aba]||{itens:[],conflitos:[]};
   const itensG=dadosAba.itens||[], confs=dadosAba.conflitos||[];
   const rotResp = aba==='pe' ? 'projetista' : 'montador';
   const atividade = aba==='pe' ? 'Projeto Executivo' : 'Montagem';
   const confKeys=new Set(); confs.forEach(c=>(c.itens||[]).forEach(x=>confKeys.add(x.projeto+'|'+(x.fase||''))));
-  const nDias=dias.length;
-  const colGrid=`display:grid;grid-template-columns:190px repeat(${nDias},minmax(13px,1fr));gap:2px;align-items:center`;
-  const cabecalhoG=`<div style="${colGrid};margin-bottom:2px"><div></div>${dias.map((iso,i)=>{
-      const dt=new Date(iso+'T00:00:00'); const seg=dt.getDay()===1;
-      const hoje=iso===hojeIso;
-      return `<div style="font-size:8px;text-align:center;overflow:hidden;white-space:nowrap;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':(seg?'700':'400')}">${(seg||i===0||hoje)?rotDia(iso):''}</div>`;
-    }).join('')}</div>`;
-  let linhasG='';
+  const corMap={ok:'var(--status-ok)',err:'var(--status-err)',warn:'var(--status-warn)',liga:'var(--accent)'};
+
+  // linhas: Projeto × Ambiente — pedido 2026-08-06, a menor unidade da grade vira o ambiente
+  // (antes era o projeto/fase inteiro). Caso especial DENTRO de um ambiente fica pra estudar
+  // depois (fora de escopo agora). Sem ambiente cadastrado, cai numa linha só (fallback).
+  const linhas=[];
   itensG.forEach(it=>{
-    let a=dias.findIndex(x=>x>=it.inicio);
-    let b=nDias-1; while(b>=0 && dias[b]>it.fim) b--;
-    if(a<0 || b<0 || a>b){ if(it.inicio<=dias[nDias-1] && it.fim>=dias[0]){ a=Math.max(a,0); b=Math.max(b,a); } else return; }
     const key=it.projeto+'|'+(it.fase||'');
-    const cor=it.realizado?'var(--status-ok)':(confKeys.has(key)?'var(--status-err)':(it.retida?'var(--status-warn)':'var(--accent)'));
-    const rot=esc(it.projeto)+(it.fase?' · F'+it.fase:'');
-    const tip=`${it.projeto}${it.fase?' · Fase '+it.fase:''} — ${_fmtDataBR(it.inicio)} a ${_fmtDataBR(it.fim)}${it.val_liq!=null?' · R$ '+fmt(it.val_liq):''}${it.retida?' · RETIDA':''}${confKeys.has(key)?' · ⚠ CONFLITO de '+rotResp:''}`;
-    linhasG+=`<div style="${colGrid};margin-bottom:2px">
-      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:6px" title="${esc(tip)}">${rot}</div>
-      <div style="grid-column:${2+a} / ${3+b};height:15px;border-radius:7px;background:${cor}" title="${esc(tip)}"></div>
+    const cor=it.realizado?'ok':(confKeys.has(key)?'err':(it.retida?'warn':'liga'));
+    const ambs=(it.ambientes&&it.ambientes.length)?it.ambientes:[{id:null,nome:null,montadores:[],val_liq:it.val_liq}];
+    ambs.forEach((a2,idxAmb)=>{
+      // pedido 2026-08-06: Montagem aceita VÁRIOS executores por ambiente — a célula mostra a
+      // contagem real (2, 3...), não mais só 0/1 (PE/Medição continuam com no máximo 1).
+      const nomes=(a2.montadores||[]).map(m=>esc(m.nome||'')).filter(Boolean);
+      linhas.push({it, a2, cor,
+        // a partir do 2º ambiente do MESMO projeto, indenta — cria leitura em árvore (projeto
+        // novo = volta pro início) sem esconder nenhuma informação.
+        indent: idxAmb>0 ? 14 : 0,
+        rotCurto: _opAbrev(it.projeto,15) + (a2.nome ? ' · '+_opAbrev(a2.nome,11) : (it.fase?' · F'+it.fase:'')),
+        rotResumo: nomes.length ? nomes.join(', ') : 'sem '+rotResp,
+        rotCompleto: it.projeto + (it.fase?' · Fase '+it.fase:'') + (a2.nome?' · '+a2.nome:'')
+          + ' — ' + _fmtDataBR(it.inicio) + ' a ' + _fmtDataBR(it.fim)
+          + (a2.val_liq!=null?' · R$ '+fmt(a2.val_liq):'')
+          + (' · '+(nomes.length?nomes.join(', '):'sem '+rotResp))
+          + (it.retida?' · RETIDA':'') + (confKeys.has(key)?' · ⚠ CONFLITO de '+rotResp:'')});
+    });
+  });
+
+  const colGrid=`display:grid;grid-template-columns:200px repeat(${nDias},minmax(20px,1fr));gap:1px`;
+
+  // cabeçalho de MÊS — agrupa dias consecutivos do mesmo mês numa célula só (spans)
+  let mesHtml='<div></div>', i=0;
+  while(i<nDias){
+    const dt=new Date(dias[i]+'T00:00:00'), ym=dt.getFullYear()+'-'+dt.getMonth();
+    let j=i; while(j<nDias && (new Date(dias[j]+'T00:00:00').getFullYear()+'-'+new Date(dias[j]+'T00:00:00').getMonth())===ym) j++;
+    mesHtml+=`<div style="grid-column:span ${j-i};text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;padding-bottom:3px;border-bottom:1px solid var(--border)">${_OP_MESES[dt.getMonth()]} ${dt.getFullYear()}</div>`;
+    i=j;
+  }
+  const cabecalhoMes=`<div style="${colGrid};margin-bottom:2px">${mesHtml}</div>`;
+
+  // cabeçalho de DIA — número do dia; fim de semana/feriado sombreado (pedido: cinza)
+  const cabecalhoDia=`<div style="${colGrid};margin-bottom:3px">
+      <div></div>
+      ${dias.map(iso=>{
+        const folga=_opEhFolga(iso), hoje=iso===hojeIso;
+        return `<div style="text-align:center;font-size:10px;padding:3px 0;border-radius:3px;background:${folga?'var(--surface-2)':'transparent'};color:${hoje?'var(--accent)':(folga?'var(--text-3)':'var(--muted)')};font-weight:${hoje?'800':'400'}" title="${_fmtDataBR(iso)}">${iso.slice(8,10)}</div>`;
+      }).join('')}
+    </div>`;
+
+  let linhasHtml='';
+  linhas.forEach(L=>{
+    const cels=dias.map(iso=>{
+      const folga=_opEhFolga(iso);
+      const ativo = !folga && iso>=L.it.inicio && iso<=L.it.fim;
+      const n = ativo ? ((L.a2.montadores||[]).length) : null;
+      const bg = folga ? 'var(--surface-2)' : (ativo ? corMap[L.cor]+'22' : 'transparent');
+      const txtCor = n===null ? 'var(--text-3)' : (n===0 ? 'var(--status-warn)' : 'var(--text)');
+      // hover por CÉLULA (pedido 2026-08-06): dia + quem está alocado naquele ambiente naquele
+      // dia — hoje é sempre a mesma pessoa a semana toda (1 responsável por ambiente/papel no
+      // modelo atual), mas o hover já fica pronto pra quando aceitar mais de 1 executor.
+      const tipCel = ativo ? (_fmtDataBR(iso)+' — '+L.rotResumo) : '';
+      return `<div style="text-align:center;font-size:11px;font-family:var(--font-mono);font-weight:${n?'700':'400'};padding:3px 0;border-radius:3px;background:${bg};color:${txtCor}"${tipCel?` title="${esc(tipCel)}"`:''}>${n===null?'':n}</div>`;
+    }).join('');
+    linhasHtml+=`<div style="${colGrid};margin-bottom:1px">
+      <div style="font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px 3px ${6+L.indent}px;border-left:3px solid ${corMap[L.cor]}" title="${esc(L.rotCompleto)}">${esc(L.rotCurto)}</div>
+      ${cels}
     </div>`;
   });
-  if(!linhasG) linhasG=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período.</div>`;
+  if(!linhasHtml) linhasHtml=`<div style="font-size:12px;color:var(--muted);padding:6px 0">Nenhuma janela de ${atividade.toLowerCase()} no período visível.</div>`;
+
   let rodape='', resumo='';
   if(aba==='mont'){
     const disp=Math.max(0,parseInt(_opCfg.duplas_disponiveis,10)||0);
-    let totalDuplasDia=0; dias.forEach(iso=>{ totalDuplasDia+=((porDia[iso]||{}).duplas||0); });
-    const capTotal=disp*dias.length;
+    let totalDuplasDia=0, nUteis=0; dias.forEach(iso=>{ if(!_opEhFolga(iso)){ nUteis++; totalDuplasDia+=((porDia[iso]||{}).duplas||0); } });
+    const capTotal=disp*nUteis;
     rodape=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
-        <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Duplas/dia (${disp} disponíveis)</div>
-        ${dias.map(iso=>{ const n=(porDia[iso]||{}).duplas||0;
+        <div style="font-size:10px;color:var(--muted);padding:3px 6px">Duplas/dia (${disp} disponíveis)</div>
+        ${dias.map(iso=>{ if(_opEhFolga(iso)) return `<div style="background:var(--surface-2);border-radius:3px"></div>`;
+          const n=(porDia[iso]||{}).duplas||0;
           return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${n>disp?'var(--status-err)':(n?'var(--text)':'var(--text-3)')};font-weight:${n>disp?'800':'400'}">${n||''}</div>`; }).join('')}
       </div>`;
-    resumo=`Necessário no período: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${dias.length} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''}`;
+    resumo=`Necessário no período visível: <strong style="color:var(--text)">${totalDuplasDia} dias-dupla</strong> · capacidade: ${disp} dupla(s) × ${nUteis} dias úteis = <strong style="color:var(--text)">${capTotal}</strong>${totalDuplasDia>capTotal?' <span style="color:var(--status-err);font-weight:700">— estouro no período</span>':''}`;
   } else {
-    let somaPe=0; dias.forEach(iso=>{ somaPe+=((porDia[iso]||{}).pe||0); });
+    let somaPe=0; dias.forEach(iso=>{ if(!_opEhFolga(iso)) somaPe+=((porDia[iso]||{}).pe||0); });
     const diasPe=(_opCfg.produtividade_pe>0)?(somaPe/_opCfg.produtividade_pe):0;
     rodape=`<div style="${colGrid};margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
-        <div style="font-size:10px;color:var(--muted);text-align:right;padding-right:6px">Ocupação/dia (100% = R$ ${_agN0(_opCfg.produtividade_pe||20000)})</div>
-        ${dias.map(iso=>{ const pct=Math.round((porDia[iso]||{}).pe_pct||0);
+        <div style="font-size:10px;color:var(--muted);padding:3px 6px">Ocupação/dia (100% = R$ ${_agN0(_opCfg.produtividade_pe||20000)})</div>
+        ${dias.map(iso=>{ if(_opEhFolga(iso)) return `<div style="background:var(--surface-2);border-radius:3px"></div>`;
+          const pct=Math.round((porDia[iso]||{}).pe_pct||0);
           return `<div style="text-align:center;font-size:9px;font-family:var(--font-mono);color:${pct>100?'var(--status-err)':(pct?'var(--text)':'var(--text-3)')};font-weight:${pct>100?'800':'400'}">${pct?pct+'%':''}</div>`; }).join('')}
       </div>`;
-    resumo=`Necessário no período: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_opCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor`;
+    resumo=`Necessário no período visível: <strong style="color:var(--text)">${diasPe.toFixed(1)} dias-PE</strong> (produtividade R$ ${_agN0(_opCfg.produtividade_pe||20000)}/dia) · dias acima de 100% estouram a capacidade do setor`;
   }
   const confHtml=confs.length?`<div style="border:1px solid var(--status-err);border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--text)">
       <strong style="color:var(--status-err)">⚠ Conflito de ${rotResp} (períodos sobrepostos):</strong>
       ${confs.map(c=>esc(c.nome||'?')+' — '+(c.itens||[]).map(x=>esc(x.projeto)+(x.fase?' F'+x.fase:'')+' ('+_fmtDataBR(x.inicio)+'–'+_fmtDataBR(x.fim)+')').join(' × ')).join('; ')}
     </div>`:'';
-  const espelho=itensG.length?`<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
-      <div style="font-weight:700;color:var(--text);font-size:12px;margin-bottom:6px">Atribuições de ${atividade.toLowerCase()} — projeto por ambiente <span style="color:var(--muted);font-weight:400;font-size:10px">(espelho do Mapa de Atribuições; valor líquido = referência da comissão)</span></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${itensG.map(it=>{
-        const key=it.projeto+'|'+(it.fase||'');
-        return `<div style="border:1px solid ${confKeys.has(key)?'var(--status-err)':'var(--border)'};border-radius:8px;padding:10px 12px;min-width:240px;flex:1;max-width:360px">
-          <div style="font-size:12px;font-weight:700;color:var(--text)">${esc(it.projeto)}${it.fase?` · Fase ${it.fase}`:''} <span style="color:var(--muted);font-weight:400;font-size:10px">${_fmtDataBR(it.inicio)}–${_fmtDataBR(it.fim)}</span></div>
-          ${(it.ambientes||[]).map(a2=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid var(--border);padding:5px 0;font-size:12px">
-            <div><div style="color:var(--text)">${esc(a2.nome||('Amb '+a2.id))}</div>${a2.val_liq!=null?`<div style="font-size:10px;color:var(--muted);font-family:var(--font-mono)">R$ ${fmt(a2.val_liq)}</div>`:''}</div>
-            <div style="text-align:right;color:${a2.montador?'var(--text)':'var(--status-warn)'};font-size:11px">${a2.montador?esc(a2.montador.nome||''):'— sem '+rotResp+' —'}</div>
-          </div>`).join('')||'<div style="font-size:11px;color:var(--muted);padding-top:4px">Sem ambientes.</div>'}
-        </div>`;}).join('')}</div>
-    </div>`:'';
-  box.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <button class="btn btn-ghost btn-sm" onclick="opNav(-1)">&#x2039;</button>
-      <span style="font-weight:800;color:var(--text);min-width:200px;text-align:center">${_fmtDataBR(deIso)} — ${_fmtDataBR(ateIso)}</span>
-      <button class="btn btn-ghost btn-sm" onclick="opNav(1)">&#x203A;</button>
-      <button class="btn btn-ghost btn-sm" onclick="opNav(0)">hoje</button>
-    </div>`
-    +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px">
-      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">${atividade} — Gantt do período</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada barra é a JANELA de ${atividade.toLowerCase()} de um projeto/fase. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito</div>
+
+  // barra de comando: seletor de data de início (onde hoje era o texto do período) + espaço
+  // reservado do configurador de produtividade (pedido: "depois definimos a relação com o
+  // projeto" — só o espaço por enquanto, sem lógica) + cursor dia-a-dia abaixo da grade.
+  const comando=`
+    <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:12px">
+      <label style="font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px">Início da grade
+        <input type="date" value="${_opGridStart}" onchange="opGridData(this.value)" style="padding:6px 8px;font-family:inherit;font-size:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);color:var(--text)">
+      </label>
+      <button class="btn btn-ghost btn-sm" onclick="opGridHoje()">hoje</button>
+      <div style="padding:6px 12px;border:1px dashed var(--border);border-radius:8px;font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:6px" title="Reservado — ainda não definimos como a produtividade se relaciona com o projeto">
+        <i class="ti ti-adjustments"></i> Produtividade <span style="color:var(--text-3);font-style:italic">(configurar depois)</span>
+      </div>
+    </div>`;
+  const cursor=`
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <span style="font-size:10px;color:var(--muted);white-space:nowrap"><i class="ti ti-arrows-horizontal"></i> arraste pra navegar dia a dia</span>
+      <input type="range" min="-180" max="365" step="1" value="${_opOffsetHoje()}" oninput="opGridSlideLive(this.value)" onchange="opGridSlideFim()" style="flex:1;accent-color:var(--accent)">
+    </div>`;
+
+  box.innerHTML = comando
+    +`<div style="border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px;overflow-x:auto">
+      <div style="font-weight:700;color:var(--text);font-size:13px;margin-bottom:2px">${atividade} — mapa de recursos</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Cada célula é o nº de ${rotResp}s alocados naquele ambiente naquele dia. ${resumo} · <span style="color:var(--status-ok)">■</span> concluída <span style="color:var(--accent)">■</span> prevista <span style="color:var(--status-warn)">■</span> retida <span style="color:var(--status-err)">■</span> conflito · <span style="background:var(--surface-2);border-radius:2px;padding:0 4px">&nbsp;</span> fim de semana/feriado</div>
       ${confHtml}
-      ${cabecalhoG}${linhasG}${rodape}
-      ${espelho}
+      ${cabecalhoMes}${cabecalhoDia}${linhasHtml}${rodape}
+      ${cursor}
     </div>
     <div style="font-size:10px;color:var(--muted)">Janelas de trabalho vêm do CRONOGRAMA de cada projeto/fase; fase retida não ocupa agenda. Produtividades em Config → Agenda; atribuições no Mapa de Atribuições do projeto.</div>`;
 }
@@ -15767,37 +15827,59 @@ function mapaFechar(){ document.getElementById('modal-mapa').style.display = 'no
 // ambientes", que aplica o MESMO profissional a todos (um POST em lote, uma notificação).
 // Atribuição NULL legada (projeto inteiro) aparece como valor herdado nos ambientes.
 let _mapaAmbIds = [];
+// Montagem aceita VÁRIOS executores por ambiente (2026-08-06, pedido do usuário — times de
+// montagem podem ter 2+ pessoas); PE/Medição/Assistência continuam 1 só (o próprio banco trava
+// isso — índice único parcial, ver database.py). Por isso a coluna Montagem vira
+// <select multiple> e as demais continuam <select> simples.
+const _MAPA_MULTI = ["montagem"];
 function mapaRender(d){
   const papeis = d.papeis || Object.keys(_PAPEL_LABEL);
   const ambientes = d.ambientes || [];
   _mapaAmbIds = ambientes.map(a=>a.id);
-  const atrib = {};
-  (d.atribuicoes || []).forEach(a => { atrib[a.papel+'|'+(a.pool_ambiente_id||'')] = a; });
+  const atrib = {};   // agora LISTA por chave (antes sobrescrevia — achado 2026-08-06: já
+                       // colidia silenciosamente com quem a Equipe de Montagem gravava)
+  (d.atribuicoes || []).forEach(a => {
+    const k = a.papel+'|'+(a.pool_ambiente_id||'');
+    (atrib[k] = atrib[k] || []).push(a);
+  });
   const valorDe = a => a ? (a.funcionario_id?('f:'+a.funcionario_id):(a.terceiro_id?('t:'+a.terceiro_id):'')) : '';
-  const opts = (papel, cur) => {
+  const opts = (papel, curSet) => {
     const aceitas = _PAPEL_FUNCOES[papel] || [];
     const elig = (_mapaProfs||[]).filter(p => aceitas.includes(p.funcao_nome));
-    let h = '<option value="">— ninguém —</option>';
+    let h = curSet.size ? '' : '<option value="">— ninguém —</option>';
     elig.forEach(p => { const v = p.tipo+':'+p.id;
-      h += '<option value="'+v+'"'+(cur===v?' selected':'')+'>'+esc(p.nome)+' ('+esc(p.funcao_nome)+')</option>'; });
+      h += '<option value="'+v+'"'+(curSet.has(v)?' selected':'')+'>'+esc(p.nome)+' ('+esc(p.funcao_nome)+')</option>'; });
     return h;
   };
   let html = '<table class="proj-table" style="width:100%"><thead><tr><th>Ambiente</th>'
-    + papeis.map(p => '<th>'+esc(_PAPEL_LABEL[p]||p)+'</th>').join('') + '</tr></thead><tbody>';
-  // linha "Todos os ambientes": aplica o mesmo nome em todos (lote)
+    + papeis.map(p => '<th>'+esc(_PAPEL_LABEL[p]||p)
+        +(_MAPA_MULTI.includes(p)?' <span style="font-weight:400;color:var(--muted);font-size:10px">(vários — Ctrl/Cmd+clique)</span>':'')
+        +'</th>').join('') + '</tr></thead><tbody>';
+  // linha "Todos os ambientes": aplica o mesmo conjunto em todos (lote)
   html += '<tr style="background:var(--surface-2)"><td style="font-weight:700;color:var(--text)">Todos os ambientes</td>';
   papeis.forEach(papel => {
-    html += '<td><select onchange="mapaSetTodos(\''+papel+'\',this.value)" title="Aplica o mesmo profissional a todos os ambientes" style="width:170px;box-sizing:border-box">'+opts(papel,'')+'</select></td>';
+    const multi = _MAPA_MULTI.includes(papel);
+    html += '<td><select '+(multi?'multiple size="3" data-papel="'+papel+'" onchange="mapaSetTodosMulti(this)"'
+        :'onchange="mapaSetTodos(\''+papel+'\',this.value)"')
+      +' title="Aplica '+(multi?'o mesmo conjunto':'o mesmo profissional')+' a todos os ambientes" style="width:170px;box-sizing:border-box">'+opts(papel,new Set())+'</select></td>';
   });
   html += '</tr>';
   ambientes.forEach(a2 => {
-    html += '<tr><td style="font-weight:600;color:var(--text)">'+esc(a2.nome)+'</td>';
+    // nome do ambiente abreviado com "…" (pedido 2026-08-06) — hover mostra o nome completo
+    html += '<tr><td style="font-weight:600;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a2.nome)+'">'+esc(a2.nome)+'</td>';
     papeis.forEach(papel => {
-      const espec = atrib[papel+'|'+a2.id];
-      const geral = atrib[papel+'|'];            // NULL legado (projeto inteiro) — herdado
-      const cur = valorDe(espec) || valorDe(geral);
-      const herdado = !espec && geral && valorDe(geral);
-      html += '<td><select onchange="mapaSetAtribuicao(\''+papel+'\','+a2.id+',this.value)" style="width:170px;box-sizing:border-box;'+(herdado?'opacity:.75;':'')+'"'+(herdado?' title="Herdado da atribuição geral do projeto — alterar grava só neste ambiente"':'')+'>'+opts(papel, cur)+'</select></td>';
+      const multi = _MAPA_MULTI.includes(papel);
+      const espec = atrib[papel+'|'+a2.id] || [];
+      const geral = atrib[papel+'|'] || [];            // NULL legado (projeto inteiro) — herdado
+      const usados = espec.length ? espec : geral;
+      const herdado = !espec.length && geral.length>0;
+      const curSet = new Set(usados.map(valorDe).filter(Boolean));
+      if(multi){
+        html += '<td><select multiple size="3" data-papel="'+papel+'" data-amb="'+a2.id+'" onchange="mapaSetAtribuicaoMulti(this)" style="width:170px;box-sizing:border-box;'+(herdado?'opacity:.75;':'')+'"'+(herdado?' title="Herdado da equipe geral do projeto — alterar grava só neste ambiente"':'')+'>'+opts(papel, curSet)+'</select></td>';
+      } else {
+        const cur = curSet.size ? [...curSet][0] : '';
+        html += '<td><select onchange="mapaSetAtribuicao(\''+papel+'\','+a2.id+',this.value)" style="width:170px;box-sizing:border-box;'+(herdado?'opacity:.75;':'')+'"'+(herdado?' title="Herdado da atribuição geral do projeto — alterar grava só neste ambiente"':'')+'>'+opts(papel, cur?new Set([cur]):new Set())+'</select></td>';
+      }
     });
     html += '</tr>';
   });
@@ -15811,6 +15893,11 @@ function mapaRender(d){
 function _mapaBodyAlvo(body, sel){
   if(sel){ const p = sel.split(':'); if(p[0]==='f') body.funcionario_id = parseInt(p[1],10); else body.terceiro_id = parseInt(p[1],10); }
   return body;
+}
+function _mapaAlvosDoSelect(sel){
+  return Array.from(sel.selectedOptions).map(o=>o.value).filter(Boolean).map(v=>{
+    const p = v.split(':'); return {tipo: p[0]==='f'?'funcionario':'terceiro', id: parseInt(p[1],10)};
+  });
 }
 async function _mapaPost(body){
   const d = await (await fetch('/api/projetos/'+encodeURIComponent(_mapaNome)+'/atribuicoes',{method:'POST',credentials:'same-origin',
@@ -15826,6 +15913,15 @@ async function mapaSetAtribuicao(papel, ambId, sel){
 async function mapaSetTodos(papel, sel){
   if(!_mapaAmbIds.length) return;
   await _mapaPost(_mapaBodyAlvo({papel: papel, pool_ambiente_ids: _mapaAmbIds}, sel));
+}
+async function mapaSetAtribuicaoMulti(selEl){
+  await _mapaPost({papel: selEl.dataset.papel, pool_ambiente_id: parseInt(selEl.dataset.amb,10),
+                   alvos: _mapaAlvosDoSelect(selEl)});
+}
+async function mapaSetTodosMulti(selEl){
+  if(!_mapaAmbIds.length) return;
+  await _mapaPost({papel: selEl.dataset.papel, pool_ambiente_ids: _mapaAmbIds,
+                   alvos: _mapaAlvosDoSelect(selEl)});
 }
 
 // ── Retenção por Obra — desmembramento operacional por ambiente (spec 2026-07-27) ──────────

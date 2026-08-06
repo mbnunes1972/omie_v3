@@ -125,6 +125,50 @@ def test_mapa_upsert_funcao_substitui_e_audita(http_client_factory, seed, projet
         db.close()
 
 
+def test_mapa_montagem_aceita_varios_por_ambiente(http_client_factory, seed, projetos_dir, app_db):
+    """2026-08-06 (pedido do usuário): só Montagem aceita mais de 1 executor por ambiente —
+    PE/Medição/Assistência continuam 1:1. {alvos:[...]} substitui o CONJUNTO inteiro (mesmo
+    padrão de mod_equipe._salvar_montagem, só que por ambiente em vez de projeto inteiro)."""
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id
+    fmont = app_db.Funcao(loja_id=loja, nome="Montador")
+    db.add(fmont); db.flush()
+    beto = app_db.Funcionario(loja_id=loja, nome="Beto Montador", funcao_id=fmont.id, status="ativo")
+    caio = app_db.Funcionario(loja_id=loja, nome="Caio Montador", funcao_id=fmont.id, status="ativo")
+    db.add_all([beto, caio]); db.flush()
+    pa = app_db.PoolAmbiente(projeto_id="Proj_L1", nome="Sala", nome_exibicao="Sala",
+                             xml_path="x.xml", ambientes_json="[]", budget_total=0.0)
+    db.add(pa); db.commit()
+    beto_id, caio_id, amb_id = beto.id, caio.id, pa.id
+    db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    # 2 executores no MESMO ambiente/papel — aceita os dois
+    st, d = c.post("/api/projetos/Proj_L1/atribuicoes",
+                   {"papel": "montagem", "pool_ambiente_id": amb_id,
+                    "alvos": [{"tipo": "funcionario", "id": beto_id},
+                             {"tipo": "funcionario", "id": caio_id}]})
+    assert st == 200, d
+    mont = [a for a in d["atribuicoes"] if a["papel"] == "montagem" and a["pool_ambiente_id"] == amb_id]
+    assert {a["responsavel_nome"] for a in mont} == {"Beto Montador", "Caio Montador"}
+    # substitui o CONJUNTO inteiro (tira o Caio, fica só o Beto)
+    st2, d2 = c.post("/api/projetos/Proj_L1/atribuicoes",
+                     {"papel": "montagem", "pool_ambiente_id": amb_id,
+                      "alvos": [{"tipo": "funcionario", "id": beto_id}]})
+    assert st2 == 200
+    mont2 = [a for a in d2["atribuicoes"] if a["papel"] == "montagem" and a["pool_ambiente_id"] == amb_id]
+    assert len(mont2) == 1 and mont2[0]["responsavel_nome"] == "Beto Montador"
+    # PE não aceita "alvos" (só Montagem) -> 400, sem gravar nada
+    st3, d3 = c.post("/api/projetos/Proj_L1/atribuicoes",
+                     {"papel": "projeto_executivo", "pool_ambiente_id": amb_id,
+                      "alvos": [{"tipo": "funcionario", "id": beto_id}]})
+    assert st3 == 400 and d3.get("ok") is False
+    # limpa (app_db é module-scoped — não vazar pros testes seguintes)
+    db = app_db.get_session()
+    db.query(app_db.AtribuicaoAmbiente).filter_by(projeto_nome="Proj_L1").delete()
+    db.query(app_db.PoolAmbiente).filter_by(projeto_id="Proj_L1").delete()
+    db.commit(); db.close()
+
+
 def test_mapa_so_gerencia_edita(http_client_factory, seed, projetos_dir, app_db):
     c = http_client_factory(); c.login("cons_l1", "senha123")   # consultor
     st, _ = c.post("/api/projetos/Proj_L1/atribuicoes",

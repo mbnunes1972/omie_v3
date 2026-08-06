@@ -1584,7 +1584,10 @@ class Handler(BaseHTTPRequestHandler):
                                "duplas_disponiveis": _cfg_ag.get("duplas_disponiveis", 2),
                                "produtividade_pe": _cfg_ag.get("produtividade_pe_rs_dia", 20000.0),
                                "sabado_util": bool(_cfg_ag.get("sabado_util")),
-                               "horizonte_semanas": _cfg_ag.get("horizonte_capacidade_semanas", 6)}
+                               "horizonte_semanas": _cfg_ag.get("horizonte_capacidade_semanas", 6),
+                               # grade do Operacional (2026-08-06): sombreia coluna de feriado —
+                               # antes só mod_calendario via server sabia dessa lista.
+                               "feriados": _cfg_ag.get("feriados") or []}
                 self.send_json({"ok": True, "marcos": out, "cargas": cargas_out,
                                 "capacidade": cap_out, "capacidade_cfg": cap_cfg, "visao": visao,
                                 "setores": [{"id": s, "rotulo": r} for s, r in _mag.SETORES],
@@ -9669,10 +9672,14 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
-            # POST /api/projetos/<nome>/atribuicoes — upsert de uma atribuição do Mapa (Regras §4/§5).
-            # Body: {papel, pool_ambiente_id|null, funcionario_id|null, terceiro_id|null}. Alvo vazio
-            # limpa a linha. Alvo tem de pertencer à loja E ter Função compatível com o papel (§7).
-            # 1:1 por (papel, ambiente) — substitui. Auditado em LogAcaoGerencial. Só Gerência+/Supervisor.
+            # POST /api/projetos/<nome>/atribuicoes — upsert de atribuição(ões) do Mapa (Regras
+            # §4/§5). Body: {papel, pool_ambiente_id|null, funcionario_id|null, terceiro_id|null}
+            # (1 alvo, comportamento de sempre) OU {papel, pool_ambiente_id|null,
+            # alvos:[{tipo,id},...]} (2026-08-06: papel="montagem" aceita VÁRIOS executores por
+            # ambiente — substitui TODO o conjunto, mesmo padrão de mod_equipe._salvar_montagem
+            # já usado pra Equipe de Montagem no projeto inteiro). PE/Medição/Assistência
+            # continuam 1:1 (trava real no banco — ver database.py). Auditado em
+            # LogAcaoGerencial. Só Gerência+/Supervisor.
             m = _re.match(r'^/api/projetos/([^/]+)/atribuicoes$', path)
             if m:
                 nome_safe = unquote(m.group(1))
@@ -9709,47 +9716,78 @@ class Handler(BaseHTTPRequestHandler):
                             pa = db.get(PoolAmbiente, aid)
                             if pa is None or pa.projeto_id != nome_safe:
                                 self.send_json({"ok": False, "erro": "Ambiente não encontrado"}, code=404); return
-                    fio_id = req.get("funcionario_id") or None
-                    ter_id = req.get("terceiro_id") or None
-                    alvo = None
-                    if fio_id or ter_id:
-                        # resolve alvo, valida loja + função compatível com o papel (§7)
-                        if fio_id:
-                            alvo = db.get(Funcionario, int(fio_id)); ter_id = None
-                        else:
-                            alvo = db.get(Terceiro, int(ter_id)); fio_id = None
-                        if alvo is None or alvo.loja_id != loja_id:
-                            self.send_json({"ok": False, "erro": "Profissional não encontrado"}, code=404); return
+
+                    # múltiplos executores (2026-08-06, só "montagem"): {alvos:[{tipo,id},...]}
+                    _alvos_req = req.get("alvos")
+                    if _alvos_req is not None and papel != "montagem":
+                        self.send_json({"ok": False,
+                                        "erro": "Só o papel 'montagem' aceita mais de um executor."}, code=400)
+                        return
+
+                    def _resolve_alvo(tipo, id_):
+                        """(obj, erro, http_code) — separa "não achei" (404) de "achei mas não
+                        serve" (400), achado 2026-08-06: a versão anterior devolvia `obj=None`
+                        nos dois casos e tentava adivinhar o código pelo TEXTO da mensagem."""
+                        Model = Funcionario if tipo == "funcionario" else Terceiro
+                        obj = db.get(Model, int(id_)) if id_ else None
+                        if obj is None or obj.loja_id != loja_id:
+                            return None, "Profissional não encontrado", 404
                         fnome = ""
-                        if getattr(alvo, "funcao_id", None):
-                            _fn = db.get(Funcao, alvo.funcao_id); fnome = _fn.nome if _fn else ""
+                        if getattr(obj, "funcao_id", None):
+                            _fn = db.get(Funcao, obj.funcao_id); fnome = _fn.nome if _fn else ""
                         if not mod_escopo.funcao_compativel(papel, fnome):
-                            self.send_json({"ok": False,
-                                            "erro": "Profissional não tem função compatível com este papel"}, code=400)
-                            return
+                            return None, "Profissional não tem função compatível com este papel", 400
+                        return obj, None, None
+
+                    alvos = []   # [(tipo, id, obj)] — lista normalizada, 0..N
+                    if _alvos_req is not None:
+                        for a in _alvos_req:
+                            tipo = "funcionario" if (a or {}).get("tipo") in ("f", "funcionario") else "terceiro"
+                            obj, erro, cod = _resolve_alvo(tipo, (a or {}).get("id"))
+                            if erro:
+                                self.send_json({"ok": False, "erro": erro}, code=cod); return
+                            alvos.append((tipo, obj.id, obj))
+                    else:
+                        fio_id = req.get("funcionario_id") or None
+                        ter_id = req.get("terceiro_id") or None
+                        if fio_id or ter_id:
+                            tipo = "funcionario" if fio_id else "terceiro"
+                            obj, erro, cod = _resolve_alvo(tipo, fio_id or ter_id)
+                            if erro:
+                                self.send_json({"ok": False, "erro": erro}, code=cod); return
+                            alvos.append((tipo, obj.id, obj))
+
                     trocas = []
+                    novos_alvos_uids = set()   # só notifica quem é NOVO no conjunto (evita spam)
                     for amb_id in alvo_amb_ids:
-                        reg = (db.query(AtribuicaoAmbiente)
-                               .filter_by(projeto_nome=nome_safe, papel=papel)
-                               .filter(AtribuicaoAmbiente.pool_ambiente_id.is_(None) if amb_id is None
-                                       else AtribuicaoAmbiente.pool_ambiente_id == amb_id).first())
-                        antigo = None
-                        if reg is not None:
-                            antigo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
-                        if alvo is None:
-                            if reg is not None:
-                                db.delete(reg)
-                            novo = None
-                        else:
-                            if reg is None:
-                                reg = AtribuicaoAmbiente(loja_id=loja_id, projeto_nome=nome_safe,
-                                                         pool_ambiente_id=amb_id, papel=papel)
-                                db.add(reg)
-                            reg.funcionario_id = int(fio_id) if fio_id else None
-                            reg.terceiro_id    = int(ter_id) if ter_id else None
-                            reg.atribuido_por_id = usuario["id"]
-                            novo = reg.funcionario_id or (("t%d" % reg.terceiro_id) if reg.terceiro_id else None)
-                        trocas.append({"pool_ambiente_id": amb_id, "alvo_antigo": antigo, "alvo_novo": novo})
+                        q_reg = (db.query(AtribuicaoAmbiente)
+                                   .filter_by(projeto_nome=nome_safe, papel=papel)
+                                   .filter(AtribuicaoAmbiente.pool_ambiente_id.is_(None) if amb_id is None
+                                           else AtribuicaoAmbiente.pool_ambiente_id == amb_id))
+                        regs_antigos = q_reg.all()
+                        antes_chaves = {(r.funcionario_id, r.terceiro_id) for r in regs_antigos}
+                        antigo_rot = [(r.funcionario_id or ("t%d" % r.terceiro_id)) for r in regs_antigos]
+                        for r in regs_antigos:
+                            db.delete(r)
+                        novo_rot = []
+                        for tipo, oid, obj in alvos:
+                            reg = AtribuicaoAmbiente(loja_id=loja_id, projeto_nome=nome_safe,
+                                                     pool_ambiente_id=amb_id, papel=papel,
+                                                     atribuido_por_id=usuario["id"])
+                            if tipo == "funcionario":
+                                reg.funcionario_id = oid
+                            else:
+                                reg.terceiro_id = oid
+                            db.add(reg)
+                            novo_rot.append(oid if tipo == "funcionario" else ("t%d" % oid))
+                            chave = (oid, None) if tipo == "funcionario" else (None, oid)
+                            if chave not in antes_chaves:
+                                uid = getattr(obj, "usuario_id", None)
+                                if uid and uid != usuario["id"]:
+                                    novos_alvos_uids.add(uid)
+                        trocas.append({"pool_ambiente_id": amb_id,
+                                       "alvo_antigo": (antigo_rot[0] if len(antigo_rot) == 1 else (antigo_rot or None)),
+                                       "alvo_novo": (novo_rot[0] if len(novo_rot) == 1 else (novo_rot or None))})
                     db.add(LogAcaoGerencial(
                         solicitante_id=usuario["id"], autorizador_id=usuario["id"],
                         acao="atribuir_mapa", projeto_nome=nome_safe, etapa_alvo=papel,
@@ -9759,19 +9797,18 @@ class Handler(BaseHTTPRequestHandler):
                     _PAPEL_ROTULO = {"projeto_executivo": "Projeto Executivo", "medicao": "Medição",
                                      "montagem": "Montagem", "assistencia": "Assistência"}
                     notificado, aviso_conflito = False, None
-                    if alvo is not None:
+                    if novos_alvos_uids:
                         try:
-                            alvo_uid = getattr(alvo, "usuario_id", None)
-                            if alvo_uid and alvo_uid != usuario["id"]:
-                                import mod_chat as _mchat
-                                nomes_amb = [pa.nome_exibicao or pa.nome for pa in
-                                             db.query(PoolAmbiente).filter(
-                                                 PoolAmbiente.id.in_([a for a in alvo_amb_ids if a])).all()]
-                                onde = ("no projeto inteiro" if alvo_amb_ids == [None]
-                                        else ("no ambiente %s" % nomes_amb[0] if len(nomes_amb) == 1
-                                              else "em %d ambientes (%s)" % (len(nomes_amb), ", ".join(nomes_amb))))
-                                corpo = ("📌 Você foi atribuído como responsável de %s %s no projeto %s."
-                                         % (_PAPEL_ROTULO.get(papel, papel), onde, nome_safe))
+                            import mod_chat as _mchat
+                            nomes_amb = [pa.nome_exibicao or pa.nome for pa in
+                                         db.query(PoolAmbiente).filter(
+                                             PoolAmbiente.id.in_([a for a in alvo_amb_ids if a])).all()]
+                            onde = ("no projeto inteiro" if alvo_amb_ids == [None]
+                                    else ("no ambiente %s" % nomes_amb[0] if len(nomes_amb) == 1
+                                          else "em %d ambientes (%s)" % (len(nomes_amb), ", ".join(nomes_amb))))
+                            corpo = ("📌 Você foi atribuído como responsável de %s %s no projeto %s."
+                                     % (_PAPEL_ROTULO.get(papel, papel), onde, nome_safe))
+                            for alvo_uid in novos_alvos_uids:
                                 conv = _mchat.get_or_create_direct(db, loja_id, usuario["id"], alvo_uid,
                                                                   assunto_tipo="livre")
                                 msg = _mchat.enviar_mensagem(db, conv, usuario["id"], corpo)
@@ -9782,29 +9819,31 @@ class Handler(BaseHTTPRequestHandler):
                                     db.commit()
                                 except Exception:
                                     db.rollback()
-                                notificado = True
+                            notificado = True
                         except Exception:
                             db.rollback()   # notificação nunca derruba a atribuição (já commitada)
-                        if papel in ("montagem", "projeto_executivo"):
-                            try:
-                                import mod_agenda as _mag
-                                _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
-                                _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag,
-                                                                      papel=papel)
-                                _chave = ("f:%d" % int(fio_id)) if fio_id else ("t:%d" % int(ter_id))
-                                _hit = next((c for c in _mag.conflitos_montagem(_itens)
-                                             if c["chave"] == _chave
+                    if alvos and papel in ("montagem", "projeto_executivo"):
+                        try:
+                            import mod_agenda as _mag
+                            _cfg_ag = (_cfg_financeira_loja(db, loja_id) or {}).get("agenda") or {}
+                            _itens = _montagem_itens_enriquecidos(db, ator, loja_id, _cfg_ag,
+                                                                  papel=papel)
+                            _confs = _mag.conflitos_montagem(_itens)
+                            _avisos = []
+                            for tipo, oid, obj in alvos:
+                                _chave = ("f:%d" % oid) if tipo == "funcionario" else ("t:%d" % oid)
+                                _hit = next((c for c in _confs if c["chave"] == _chave
                                              and any(x["projeto"] == nome_safe for x in c["itens"])), None)
                                 if _hit:
                                     _outros = sorted({x["projeto"] for x in _hit["itens"]
                                                       if x["projeto"] != nome_safe})
-                                    _atividade = ("montagem" if papel == "montagem"
-                                                  else "projeto executivo")
-                                    aviso_conflito = ("⚠ %s já tem %s em período sobreposto: %s."
-                                                      % (_hit["nome"] or "O profissional",
-                                                         _atividade, ", ".join(_outros)))
-                            except Exception:
-                                db.rollback()
+                                    _avisos.append("%s: %s" % (_hit["nome"] or obj.nome, ", ".join(_outros)))
+                            if _avisos:
+                                _atividade = "montagem" if papel == "montagem" else "projeto executivo"
+                                aviso_conflito = ("⚠ Período sobreposto de %s — %s."
+                                                  % (_atividade, "; ".join(_avisos)))
+                        except Exception:
+                            db.rollback()
                     self.send_json({"ok": True, "atribuicoes": _serializar_atribuicoes(db, nome_safe),
                                     "notificado": notificado, "aviso_conflito": aviso_conflito})
                 except Exception as e:
@@ -13143,14 +13182,20 @@ def _montagem_itens_enriquecidos(db, ator, loja_id, cfg_agenda, proj_filtro=None
             if amb_ids else {}
         ambs, montadores = [], {}
         for aid in amb_ids:
-            resp = mod_escopo.resolver_responsavel(atribs, aid, papel)
-            m = None
-            if resp:
+            # plural (2026-08-06): Montagem aceita vários executores por ambiente —
+            # `resolver_responsaveis` devolve a lista inteira (PE/Medição seguem com 0 ou 1,
+            # é o próprio banco quem garante isso, não esta leitura).
+            resps = mod_escopo.resolver_responsaveis(atribs, aid, papel)
+            ms = []
+            for resp in resps:
                 chave, nome = _nome_alvo(resp.get("funcionario_id"), resp.get("terceiro_id"))
                 m = {"chave": chave, "nome": nome}
+                ms.append(m)
                 montadores[chave] = m
             ambs.append({"id": aid, "nome": pa_nome.get(aid, ""),
-                         "val_liq": liq.get(aid), "montador": m})
+                         "val_liq": liq.get(aid), "montadores": ms,
+                         # compat: quem só quer "tem alguém?" (1º da lista, ou None)
+                         "montador": (ms[0] if ms else None)})
         it["ambientes"] = ambs
         it["montadores"] = list(montadores.values())
     return itens

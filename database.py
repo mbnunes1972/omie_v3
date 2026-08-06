@@ -693,8 +693,12 @@ class AtribuicaoAmbiente(Base):
     """Mapa de Atribuições (Regras_Funcoes_Perfis_Atribuicoes §4/§5): quem executa cada papel
     operacional (PE/Medição/Montagem/Assistência) por ambiente do projeto. A atribuição CONCEDE
     visibilidade escopada ao Usuário vinculado ao profissional. pool_ambiente_id NULL = 'projeto
-    inteiro' (default que vale para os ambientes sem atribuição própria). Um profissional por
-    papel/ambiente (UniqueConstraint). Trocas ficam em LogAcaoGerencial (sem versionar a tabela)."""
+    inteiro' (default que vale para os ambientes sem atribuição própria). PE/Medição/Assistência
+    seguem 1 profissional por papel/ambiente; **Montagem aceita VÁRIOS** (2026-08-06, pedido do
+    usuário — times de montagem podem ter 2+ pessoas) — por isso a unicidade não é mais
+    `__table_args__` (SQLAlchemy não expressa "único, exceto quando papel='montagem'"): virou um
+    ÍNDICE ÚNICO PARCIAL só sobre `papel <> 'montagem'`, criado em `_migrar_colunas_pg`
+    (`uq_atribuicao_papel_ambiente`). Trocas ficam em LogAcaoGerencial (sem versionar a tabela)."""
     __tablename__ = "atribuicoes_ambiente"
 
     id               = Column(Integer,  primary_key=True, autoincrement=True)
@@ -707,9 +711,6 @@ class AtribuicaoAmbiente(Base):
     atribuido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
     atualizado_em    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    __table_args__ = (UniqueConstraint("projeto_nome", "pool_ambiente_id", "papel",
-                                       name="uq_atribuicao_papel_ambiente"),)
 
 
 class CicloLogistico(Base):
@@ -1925,6 +1926,16 @@ def _migrar_colunas_pg():
         # Triagem automática (2026-08-05): nome do perfil do WhatsApp (Meta), usado como fallback
         # de nome do lead quando o telefone não bate com nenhum Cliente já cadastrado.
         "ALTER TABLE triagem_entradas ADD COLUMN IF NOT EXISTS nome_whatsapp VARCHAR(150)",
+        # Mapa de Atribuições — Montagem aceita VÁRIOS executores por ambiente (2026-08-06,
+        # pedido do usuário). A UniqueConstraint antiga (1 só por papel/ambiente) sai do modelo
+        # e vira ÍNDICE ÚNICO PARCIAL, válido só pra papel<>'montagem' — SQLAlchemy não tem como
+        # expressar "único, exceto quando X" via __table_args__. DROP tolera o nome não existir
+        # (bases que nunca chegaram a criar a constraint, ex. squash de create_all novo).
+        """DO $$ BEGIN
+             ALTER TABLE atribuicoes_ambiente DROP CONSTRAINT uq_atribuicao_papel_ambiente;
+           EXCEPTION WHEN undefined_object THEN NULL; END $$""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_atribuicao_papel_ambiente "
+        "ON atribuicoes_ambiente (projeto_nome, pool_ambiente_id, papel) WHERE papel <> 'montagem'",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

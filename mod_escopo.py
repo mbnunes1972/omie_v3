@@ -107,18 +107,32 @@ def pode_ver_ambiente(ator, pool_ambiente_id, atribuicoes_do_ator):
     return False
 
 
+def resolver_responsaveis(atribuicoes, pool_ambiente_id, papel):
+    """Versão PLURAL (2026-08-06 — Montagem aceita vários executores por ambiente): dada a lista
+    de atribuições de UM projeto, devolve TODAS as que respondem por (ambiente, papel).
+    Específicas do ambiente PREVALECEM sobre projeto-inteiro (mesma regra de sempre) — se existir
+    ao menos uma específica, as gerais (projeto-inteiro) são ignoradas. PE/Medição/Assistência
+    são 1:1 só quando a atribuição é POR AMBIENTE (índice único parcial no banco, ver
+    database.py) — no nível "projeto inteiro" (pool_ambiente_id NULL) o SQL não distingue NULLs
+    entre si, então em teoria caberia mais de 1 linha ali; fora de escopo desta rodada consertar
+    isso pros papéis 1:1 (só Montagem estava pedido) — resolver_responsavel abaixo preserva o
+    comportamento de sempre (o ÚLTIMO da lista) pra não mudar nada além do pedido."""
+    especificas = [a for a in (atribuicoes or [])
+                  if a.get("papel") == papel and a.get("pool_ambiente_id") == pool_ambiente_id]
+    if especificas:
+        return especificas
+    return [a for a in (atribuicoes or [])
+           if a.get("papel") == papel and a.get("pool_ambiente_id") is None]
+
+
 def resolver_responsavel(atribuicoes, pool_ambiente_id, papel):
-    """Dada a lista de atribuições de UM projeto, resolve o responsável de (ambiente, papel):
-    específica do ambiente PREVALECE sobre projeto-inteiro (NULL); se nenhuma, None."""
-    especifica = geral = None
-    for a in (atribuicoes or []):
-        if a.get("papel") != papel:
-            continue
-        if a.get("pool_ambiente_id") == pool_ambiente_id:
-            especifica = a
-        elif a.get("pool_ambiente_id") is None:
-            geral = a
-    return especifica or geral
+    """Versão SINGULAR — pra papéis que só têm 1 responsável (PE/Medição/Assistência) ou pra
+    quem só precisa de "algum" responsável de Montagem sem se importar com o resto da equipe
+    (ex.: gate de execução). Quando há vários, devolve o ÚLTIMO da lista — mesmo critério de
+    sempre (não mudar aqui é deliberado: ver nota em resolver_responsaveis). Não usar pra decidir
+    QUEM está alocado em Montagem, aí é resolver_responsaveis (plural) que vale."""
+    lst = resolver_responsaveis(atribuicoes, pool_ambiente_id, papel)
+    return lst[-1] if lst else None
 
 
 def projetos_visiveis(ator, metas, usuario_ids_por_projeto):

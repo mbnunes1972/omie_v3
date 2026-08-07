@@ -12553,6 +12553,109 @@ function _reconProvTabelaHtml(provisoes, opts){
     '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin:16px 0 4px">'+t+' · '+TIPOS[t]+'</div>'
     +'<div style="overflow-x:auto"><table style="width:100%;min-width:'+(alinhar?'760':'660')+'px;border-collapse:collapse'+(alinhar?';table-layout:fixed':'')+'">'+head+grupos[t].map(linha).join('')+'</table></div>').join('');
 }
+
+// ── Recebimento de Venda dentro da Reconciliação (2026-08-07, pedido do usuário: "achei que
+// estaria na conciliação") — mesmo molde de _reconProvTabelaHtml, painel irmão selecionável via
+// _reconPainel. 4 estados: previsto no futuro (neutro), vencido = previsto porém data já passou
+// (vermelho — "considerado mas não conciliado"), duvidoso = não-recebimento reclassificado (âmbar,
+// mesmo token do badge HOMOLOGAÇÃO do painel Fiscal), confirmado (verde).
+const _recebCor = r => r.status==='confirmado' ? 'var(--status-ok)' : (r.status==='duvidoso' ? 'var(--warn)' : (r.vencido ? 'var(--status-err)' : 'var(--text)'));
+const _RECEB_STATUS_LABEL = r => r.status==='confirmado' ? 'Confirmado' : (r.status==='duvidoso' ? 'Duvidoso' : (r.vencido ? 'Vencido' : 'Previsto'));
+function _recebiveisTabelaHtml(recebiveis, opts){
+  opts = opts || {};
+  const editavel = !!opts.editavel, consolidado = !!opts.consolidado;
+  if(!recebiveis.length) return '<div style="font-size:12px;color:var(--muted)">Sem recebíveis materializados.</div>';
+  const linha = r => {
+    let acao = '';
+    if(editavel){
+      if(r.status==='previsto'){
+        acao = '<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
+          + '<input type="date" id="receb-data-'+r.id+'" value="'+esc(r.data_prevista)+'" style="width:128px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-size:11px;margin-right:4px">'
+          + '<button class="btn btn-sm" onclick="reconRecebConfirmar('+r.id+',this)" style="font-size:11px">Confirmar</button> '
+          + '<button class="btn btn-sm btn-ghost" onclick="reconRecebReprogramar('+r.id+',this)" style="font-size:11px">Reprogramar</button> '
+          + '<button class="btn btn-sm btn-ghost" onclick="reconRecebDuvidoso('+r.id+',this)" style="font-size:11px;color:var(--warn)">Duvidoso</button>'
+          + '</td>';
+      } else if(r.status==='duvidoso'){
+        acao = '<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
+          + '<button class="btn btn-sm" onclick="reconRecebConfirmar('+r.id+',this)" style="font-size:11px">Confirmar</button>'
+          + '</td>';
+      } else {
+        acao = '<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
+          + '<span style="font-size:11px;color:var(--status-ok)">✓ '+_fluxoDataBR(r.confirmado_em)+'</span></td>';
+      }
+    }
+    return '<tr style="border-top:1px solid var(--border);font-size:12px">'
+      + (consolidado ? '<td style="padding:10px 16px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.projeto||'')+'">'+esc(r.projeto||'')+'</td>' : '')
+      + '<td style="padding:10px 16px">'+_fluxoDataBR(r.data_prevista)+'</td>'
+      + '<td style="padding:10px 16px">'+esc(_RECEB_TIPO_LABEL[r.tipo]||r.tipo)+(r.numero?' '+r.numero:'')+'</td>'
+      + '<td style="padding:10px 16px;color:var(--muted)">'+esc(r.forma||'—')+'</td>'
+      + '<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);'+_reconColBorda+';color:'+_recebCor(r)+'">'+_fBRL(r.status==='confirmado'?r.valor_confirmado:r.valor_previsto)+'</td>'
+      + '<td style="text-align:right;padding:10px 16px;'+_reconColBorda+';color:'+_recebCor(r)+';font-weight:600">'+_RECEB_STATUS_LABEL(r)+'</td>'
+      + acao + '</tr>';
+  };
+  const head = '<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+    + (consolidado ? '<th style="text-align:left;padding:10px 16px">Projeto</th>' : '')
+    + '<th style="text-align:left;padding:10px 16px">Data prevista</th><th style="text-align:left;padding:10px 16px">Tipo</th>'
+    + '<th style="text-align:left;padding:10px 16px">Forma</th><th style="text-align:right;padding:10px 16px;'+_reconColBorda+'">Valor</th>'
+    + '<th style="text-align:right;padding:10px 16px;'+_reconColBorda+'">Status</th>'
+    + (editavel?'<th style="text-align:right;padding:10px 16px;'+_reconColBorda+'">Ação</th>':'')+'</tr>';
+  return '<div style="overflow-x:auto"><table style="width:100%;min-width:640px;border-collapse:collapse">'+head+recebiveis.map(linha).join('')+'</table></div>';
+}
+async function reconRecebConfirmar(id, btn){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }   // trava duplo-clique (mesmo cuidado de reconProvEfetivar)
+  try{
+    const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
+      titulo: 'Confirmar recebimento',
+      mensagem: 'Baixa Contas a Receber no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.'});
+    if(!cred){ if(btn) btn.disabled = false; return; }
+    const d = await fetch('/api/recebiveis/'+id+'/confirmar',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({login: cred.login, senha: cred.senha})}).then(r=>r.json());
+    if(d.ok){ showToast('Recebimento confirmado.'); _reconReloadAtivo(); }
+    else { await avisoPopup(d.erro||'Erro', {titulo:'Confirmar recebimento'}); if(btn) btn.disabled = false; }
+  } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Confirmar recebimento'}); if(btn) btn.disabled = false; }
+}
+async function reconRecebReprogramar(id, btn){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }
+  try{
+    const el = document.getElementById('receb-data-'+id);
+    const novaData = el ? el.value : '';
+    if(!novaData){ showToast('Escolha a nova data prevista.', true); if(btn) btn.disabled = false; return; }
+    const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
+      titulo: 'Reprogramar recebível',
+      mensagem: 'Não-recebimento: só muda a data prevista, sem lançamento. Login e senha do Gerente Adm/Financeiro ou Diretor.'});
+    if(!cred){ if(btn) btn.disabled = false; return; }
+    const d = await fetch('/api/recebiveis/'+id+'/reprogramar',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({data_prevista: novaData, login: cred.login, senha: cred.senha})}).then(r=>r.json());
+    if(d.ok){ showToast('Recebível reprogramado.'); _reconReloadAtivo(); }
+    else { await avisoPopup(d.erro||'Erro', {titulo:'Reprogramar recebível'}); if(btn) btn.disabled = false; }
+  } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Reprogramar recebível'}); if(btn) btn.disabled = false; }
+}
+async function reconRecebDuvidoso(id, btn){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }
+  try{
+    if(!await confirmarPopup('Marcar como Duvidoso? Reclassifica o valor de Contas a Receber para Recebíveis Duvidosos no razão — ainda pode ser confirmado depois, se o dinheiro chegar.',{titulo:'Recebível duvidoso'})){
+      if(btn) btn.disabled = false; return;
+    }
+    const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
+      titulo: 'Marcar como duvidoso',
+      mensagem: 'Reclassifica no razão (Contas a Receber → Recebíveis Duvidosos). Login e senha do Gerente Adm/Financeiro ou Diretor.'});
+    if(!cred){ if(btn) btn.disabled = false; return; }
+    const d = await fetch('/api/recebiveis/'+id+'/duvidoso',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({login: cred.login, senha: cred.senha})}).then(r=>r.json());
+    if(d.ok){ showToast('Recebível marcado como duvidoso.'); _reconReloadAtivo(); }
+    else { await avisoPopup(d.erro||'Erro', {titulo:'Recebível duvidoso'}); if(btn) btn.disabled = false; }
+  } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Recebível duvidoso'}); if(btn) btn.disabled = false; }
+}
+
+let _reconPainel = 'provisoes';   // 'provisoes' | 'recebiveis' — compartilhado entre as telas de Reconciliação
+function _reconPainelSetor(v){ _reconPainel = v; _reconReloadAtivo(); }
+function _reconPainelSeletorHtml(){
+  const btn = (v,lbl) => '<button class="btn '+(_reconPainel===v?'btn-primary':'btn-ghost')+' btn-sm" onclick="_reconPainelSetor(\''+v+'\')">'+lbl+'</button>';
+  return '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+btn('provisoes','Provisões')+btn('recebiveis','Recebíveis')+'</div>';
+}
 let _reconProvProj = null;   // null = consolidado
 async function finReconProvCarregar(){
   const box = document.getElementById('reconprov-box');
@@ -12563,17 +12666,31 @@ async function finReconProvCarregar(){
     if(rp.status===403){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Módulo financeiro inativo ou sem acesso.</em>'; return; }
     projetos = ((await rp.json().catch(()=>({}))).projetos||[]).map(p=>p.projeto_id);
   }catch(e){}
-  const qs = _reconProvProj ? ('?projeto='+encodeURIComponent(_reconProvProj)) : '';
-  const rec = (await fetch('/api/financeiro/reconciliacao-provisoes'+qs, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
-  if(!rec){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Falha ao carregar.</em>'; return; }
   const opts = ['<option value="">Consolidado (todos os projetos)</option>']
     .concat(projetos.map(p=>'<option value="'+esc(p)+'"'+(p===_reconProvProj?' selected':'')+'>'+esc(p)+'</option>')).join('');
-  // Só leitura (2026-08-06): editar (Efetivar/Resolver) agora é só "no projeto" — Reconciliação
-  // no cabeçalho do projeto, ou a Etapa 21 (Conciliação Final) do Ciclo.
-  const seletor = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
+  // Só leitura (2026-08-06): editar (Efetivar/Resolver — e Confirmar, pros recebíveis) agora é só
+  // "no projeto" — Reconciliação no cabeçalho do projeto, ou a Etapa 21 (Conciliação Final) do Ciclo.
+  const seletor = _reconPainelSeletorHtml()
+    +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
     +'<span style="font-size:12px;color:var(--muted)">Projeto:</span>'
     +'<select id="reconprov-sel" onchange="_reconProvProj=this.value||null;finReconProvCarregar()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px">'+opts+'</select>'
-    +'<span style="font-size:11px;color:var(--muted)">Só leitura — para efetivar/resolver, abra o projeto (botão Reconciliação, ou Etapa 21)</span></div>';
+    +'<span style="font-size:11px;color:var(--muted)">Só leitura — para efetivar/resolver/confirmar, abra o projeto (botão Reconciliação, ou Etapa 21)</span></div>';
+  if(_reconPainel === 'recebiveis'){
+    const qs = _reconProvProj ? ('?projeto='+encodeURIComponent(_reconProvProj)) : '';
+    const d = await fetch('/api/financeiro/recebiveis'+qs, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+    if(!d.ok){ box.innerHTML=seletor+'<em style="color:var(--muted);font-size:12px">Falha ao carregar.</em>'; return; }
+    const t = d.totais;
+    box.innerHTML=seletor
+      +'<div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 18px;display:flex;gap:24px;flex-wrap:wrap;font-size:12px;margin-bottom:14px">'
+      +'<span style="color:var(--muted)">Previsto <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(t.previsto)+'</strong></span>'
+      +'<span style="color:var(--muted)">Vencido <strong style="font-family:var(--font-mono);color:var(--status-err)">'+_fBRL(t.vencido)+'</strong></span>'
+      +'<span style="color:var(--muted)">Confirmado <strong style="font-family:var(--font-mono);color:var(--status-ok)">'+_fBRL(t.confirmado)+'</strong></span></div>'
+      +_recebiveisTabelaHtml(d.recebiveis, {editavel:false, consolidado: !_reconProvProj});
+    return;
+  }
+  const qs = _reconProvProj ? ('?projeto='+encodeURIComponent(_reconProvProj)) : '';
+  const rec = (await fetch('/api/financeiro/reconciliacao-provisoes'+qs, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
+  if(!rec){ box.innerHTML=seletor+'<em style="color:var(--muted);font-size:12px">Falha ao carregar.</em>'; return; }
   const tot=rec.totais;
   box.innerHTML=seletor
     +'<div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 18px;display:flex;gap:24px;flex-wrap:wrap;font-size:12px">'
@@ -12624,13 +12741,20 @@ async function abrirReconciliacaoProjeto(){
 async function reconProjRender(){
   const box=document.getElementById('recon-proj-box');
   if(!box) return;
+  const seletor = _reconPainelSeletorHtml();
+  if(_reconPainel === 'recebiveis'){
+    const d = await fetch('/api/financeiro/recebiveis?projeto='+encodeURIComponent(_reconProvProj),{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+    if(!d.ok){ box.innerHTML=seletor+'<em style="color:var(--err);font-size:12px">Falha ao carregar.</em>'; return; }
+    box.innerHTML=seletor+_recebiveisTabelaHtml(d.recebiveis, {editavel:true, consolidado:false});
+    return;
+  }
   const rec=(await fetch('/api/financeiro/reconciliacao-provisoes?projeto='+encodeURIComponent(_reconProvProj),{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
-  if(!rec){ box.innerHTML='<em style="color:var(--err);font-size:12px">Falha ao carregar (módulo financeiro inativo/sem acesso ou servidor desatualizado).</em>'; return; }
+  if(!rec){ box.innerHTML=seletor+'<em style="color:var(--err);font-size:12px">Falha ao carregar (módulo financeiro inativo/sem acesso ou servidor desatualizado).</em>'; return; }
   const tot=rec.totais;
   // Sem filtro (2026-08-07): antes só entrava linha com provisionado/efetivado != 0 — a lista
   // ficava mais curta que a do Financeiro/Etapa 21 pro mesmo projeto, quebrando a promessa de
   // "3 telas, uma fonte só" do construtor de tabela compartilhado (ver comentário acima).
-  box.innerHTML=_reconProvTabelaHtml(rec.provisoes, {editavel:true, prefixo:'efp-'})
+  box.innerHTML=seletor+_reconProvTabelaHtml(rec.provisoes, {editavel:true, prefixo:'efp-'})
     +'<div style="margin-top:10px;font-size:var(--fs-body);font-weight:600;color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo total a reconciliar: <strong style="font-family:var(--font-mono);color:'+_reconSaldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></div>';
 }
 
@@ -12706,7 +12830,50 @@ function _fluxoRender(){
   const box = document.getElementById('fluxo-caixa-box');
   if(!box || !_fluxoDados) return;
   box.innerHTML = _fluxoControlesHtml()
-    + (_fluxoView === 'calendario' ? _fluxoCalendarioHtml(_fluxoDados) : _fluxoStandardHtml(_fluxoDados));
+    + (_fluxoView === 'calendario' ? _fluxoCalendarioHtml(_fluxoDados) : _fluxoStandardHtml(_fluxoDados))
+    + _fluxoPrevistosHtml(_fluxoDados);
+}
+// Recebíveis Previstos (2026-08-07, achado da Vera): entradas de caixa PREVISTAS do contrato
+// (entrada/parcela/lote financiado por Cartão-Aymoré) — confirmação manual dá baixa em Contas a
+// Receber (mesmo padrão de "Apropriar receita"/Reconciliação — pedirCredenciaisGerente).
+const _RECEB_TIPO_LABEL = {entrada:'Entrada', parcela:'Parcela', financiado:'Financiado (operadora)'};
+function _fluxoPrevistosHtml(d){
+  const previstos = d.previstos || [];
+  if(!previstos.length) {
+    return '<div style="margin-top:18px">'
+      +'<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Recebíveis Previstos</div>'
+      +'<em style="color:var(--muted);font-size:12px">Nenhum recebível previsto no período. Nascem automaticamente '
+      +'quando um contrato é gerado (aparecem aqui com a data prevista de cada entrada/parcela).</em></div>';
+  }
+  const linhas = previstos.map(p => {
+    const cor = p.vencido ? 'var(--status-err)' : 'var(--text)';
+    return '<tr><td style="padding:7px 10px">'+_fluxoDataBR(p.data_prevista)+(p.vencido?' <span style="color:var(--status-err);font-size:10px;font-weight:700">VENCIDO</span>':'')+'</td>'
+    +'<td style="padding:7px 10px">'+esc(p.projeto||'')+'</td>'
+    +'<td style="padding:7px 10px">'+esc(_RECEB_TIPO_LABEL[p.tipo]||p.tipo)+(p.numero?' '+p.numero:'')+'</td>'
+    +'<td style="padding:7px 10px;color:var(--muted)">'+esc(p.forma||'—')+'</td>'
+    +'<td class="num" style="padding:7px 10px;font-family:var(--font-mono);color:'+cor+'">'+_fBRL(p.valor_previsto)+'</td>'
+    +'<td style="padding:7px 10px"><button class="btn btn-ghost btn-sm" onclick="fluxoRecebivelConfirmar('+p.id+')">Confirmar</button></td></tr>';
+  }).join('');
+  return '<div style="margin-top:18px">'
+    +'<div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:8px">Recebíveis Previstos</div>'
+    +'<div style="overflow-x:auto"><table class="proj-table" style="width:100%;min-width:560px"><thead><tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+    +'<th style="text-align:left;padding:6px 10px">Data</th><th style="text-align:left;padding:6px 10px">Projeto</th>'
+    +'<th style="text-align:left;padding:6px 10px">Tipo</th><th style="text-align:left;padding:6px 10px">Forma</th>'
+    +'<th class="num" style="padding:6px 10px">Valor</th><th style="padding:6px 10px"></th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div></div>';
+}
+async function fluxoRecebivelConfirmar(id){
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
+    titulo: 'Confirmar recebimento',
+    mensagem: 'Baixa Contas a Receber no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.'});
+  if(!cred) return;
+  try {
+    const j = await fetch('/api/recebiveis/'+id+'/confirmar',
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({login: cred.login, senha: cred.senha})}).then(r=>r.json());
+    if(j.ok){ showToast('Recebimento confirmado.'); await _fluxoBuscarERenderizar(); }
+    else { await avisoPopup(j.erro||'Erro', {titulo:'Confirmar recebimento'}); }
+  } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Confirmar recebimento'}); }
 }
 function _fluxoControlesHtml(){
   const d = _fluxoDados || {contas:[]};
@@ -13509,6 +13676,11 @@ async function adminFinanceiroCarregar(){
       ${campo('fin-prov-com','% Provisão de Comissão de Vendas',(_cfgFin.provisoes_contabeis||{}).comissao_pct)}
     </div>
     <div style="font-size:10px;color:var(--muted);margin:-8px 0 12px">A provisão de Assistência usa o "% Assistências" acima (herança automática).</div>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:14px 0 4px">Prazo de antecipação (Recebimento de Venda — dias até a operadora antecipar a loja)</div>
+    <div class="grid2" style="gap:14px;margin-bottom:14px">
+      ${campo('fin-prazo-cartao','Cartão (dias)',(_cfgFin.prazo_antecipacao||{}).cartao ?? 1)}
+      ${campo('fin-prazo-aymore','Aymoré/Financeira (dias)',(_cfgFin.prazo_antecipacao||{}).aymore ?? 2)}
+    </div>
     <div style="display:flex;gap:8px;margin-top:0;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" onclick="adminFinanceiroSalvar(${lid})">Salvar provisões</button>
     </div>`;
@@ -13519,6 +13691,7 @@ async function adminFinanceiroSalvar(lid){
   _cfgFin.provisoes = {frete_fab_pct:n('fin-frete-fab'), com_adm_pct:n('fin-com-adm'), com_med_pct:n('fin-com-med'),
     com_proj_exec_pct:n('fin-com-pe'), frete_loc_pct:n('fin-frete-loc'), assist_pct:n('fin-assist'), ins_loc_pct:n('fin-ins')};
   _cfgFin.provisoes_contabeis = {montagem_pct:n('fin-prov-mont'), garantia_pct:n('fin-prov-gar'), comissao_pct:n('fin-prov-com')};
+  _cfgFin.prazo_antecipacao = {cartao:n('fin-prazo-cartao'), aymore:n('fin-prazo-aymore')};
   const r = await fetch('/api/admin/lojas/'+lid+'/config-financeira', {method:'PUT', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify(_cfgFin)});
   const d = await r.json();

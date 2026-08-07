@@ -34,15 +34,21 @@ def test_medicao_fallback_previsao_do_gate():
     assert [(m["etapa"], m["data"]) for m in ms] == [("10", date(2026, 9, 8))]
 
 
-def test_setores_das_subfases_pe_e_financeiro():
+def test_setores_das_subfases_pe():
     p = _proj(etapas={c: {"prevista": datetime(2026, 9, 10)} for c in
-                      ("11a", "11c", "11d", "11e", "8", "21")})
+                      ("11a", "11c", "11e")})
     por = {m["etapa"]: m["setor"] for m in mod_agenda.marcos([p])}
     assert por["11a"] == por["11c"] == por["11e"] == "pe"
-    assert por["11d"] == por["8"] == por["21"] == "financeiro"
     titulos = {m["etapa"]: m["titulo"] for m in mod_agenda.marcos([p])}
     assert titulos["11a"] == "Planta de pontos de PE"
-    assert titulos["11d"] == "Aprovação financeira II"
+
+
+def test_financeiro_nao_gera_mais_marco():
+    """2026-08-07 (pedido do usuário): Financeiro saiu da Agenda — a agenda financeira corre
+    separada. 8/11d/21 não geram marco nenhum (saíram de ETAPAS_MARCO)."""
+    p = _proj(etapas={c: {"prevista": datetime(2026, 9, 10)} for c in ("8", "11d", "21")})
+    assert mod_agenda.marcos([p]) == []
+    assert "financeiro" not in dict(mod_agenda.SETORES)
 
 
 def test_entrega_por_fase_com_prioridade_e_retida():
@@ -78,6 +84,40 @@ def test_cadeia_canonica_data_entrega_projeto_vence_prevista_16():
     p2 = _proj(data_entrega=None, etapas={"16": {"prevista": datetime(2026, 11, 25)}})
     ms2 = [m for m in mod_agenda.marcos([p2]) if m["etapa"] == "16"]
     assert ms2[0]["data"] == date(2026, 11, 25)   # sem âncora → último recurso
+
+
+def test_marcos_assistencia_previsto_e_realizado():
+    casos = [
+        {"projeto_nome": "P1", "data_inicio": date(2026, 9, 10), "status": "aberto",
+         "realizado_em": None, "valor": 300.0, "titulo": "Erro de montagem"},
+        {"projeto_nome": "P1", "data_inicio": date(2026, 9, 1), "status": "realizado",
+         "realizado_em": datetime(2026, 9, 3), "valor": 500.0, "titulo": "Defeito de fabricação"},
+        {"projeto_nome": None, "data_inicio": None, "status": "aberto",
+         "realizado_em": None, "valor": 100.0, "titulo": "Sem data — fora"},
+    ]
+    ms = mod_agenda.marcos_assistencia(casos)
+    assert len(ms) == 2
+    assert all(m["setor"] == "assistencia" for m in ms)
+    por_titulo = {m["titulo"]: m for m in ms}
+    assert por_titulo["Erro de montagem"]["data"] == date(2026, 9, 10)
+    assert por_titulo["Erro de montagem"]["realizado"] is False
+    assert por_titulo["Defeito de fabricação"]["data"] == date(2026, 9, 3)   # realizado_em, não previsto
+    assert por_titulo["Defeito de fabricação"]["realizado"] is True
+
+
+def test_marcos_assistencia_avulso_projeto_none():
+    casos = [{"projeto_nome": None, "data_inicio": date(2026, 9, 5), "status": "aberto",
+             "realizado_em": None, "valor": 200.0, "titulo": "Concessão"}]
+    ms = mod_agenda.marcos_assistencia(casos)
+    assert len(ms) == 1 and ms[0]["projeto"] is None
+
+
+def test_marcos_assistencia_filtro_periodo():
+    casos = [{"projeto_nome": "P1", "data_inicio": date(2026, 9, 1), "status": "aberto",
+             "realizado_em": None, "valor": 10.0, "titulo": "A"},
+            {"projeto_nome": "P1", "data_inicio": date(2026, 10, 1), "status": "aberto",
+             "realizado_em": None, "valor": 20.0, "titulo": "B"}]
+    assert [m["titulo"] for m in mod_agenda.marcos_assistencia(casos, de=date(2026, 9, 15))] == ["B"]
 
 
 def test_filtros_periodo_e_setor():
@@ -258,7 +298,7 @@ def test_endpoint_agenda(app_db, seed, http_client_factory):
     st, d = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31")
     assert st == 200 and d["ok"], (st, d)
     assert d["visao"] == "comercial"
-    assert {s["id"] for s in d["setores"]} == {"medicao", "pe", "expedicao", "montagem", "financeiro"}
+    assert {s["id"] for s in d["setores"]} == {"medicao", "pe", "expedicao", "montagem", "assistencia"}
     meus = [m for m in d["marcos"] if m["projeto"] == nome]
     por_etapa = {m["etapa"]: m for m in meus}
     assert por_etapa["9"]["data"] == "2026-09-05" and por_etapa["9"]["setor"] == "medicao"
@@ -284,6 +324,37 @@ def test_endpoint_agenda(app_db, seed, http_client_factory):
     dias_mont = {cg["data"] for cg in mont}
     cap_mont = [cp for cp in d["capacidade"] if cp["data"] in dias_mont]
     assert cap_mont and all(cp["duplas"] >= 1 for cp in cap_mont)
+
+
+def test_endpoint_agenda_inclui_assistencia(app_db, seed, http_client_factory):
+    """2026-08-07: caso de Assistência (com projeto e avulso) aparece no /api/agenda, setor
+    'assistencia'; filtro server-side por setor funciona; avulso (sem projeto) também entra."""
+    import mod_assistencias as ma
+    nome = seed["projeto_l1"]
+    _setup_projeto(app_db, seed)
+    db = app_db.get_session()
+    try:
+        caso_proj = ma.criar_caso(db, seed["loja1_id"], nome, "montagem", "erro_montagem",
+                                  "porta empenou", 300.0, None, data_inicio=date(2026, 9, 12),
+                                  data_fim=date(2026, 9, 12))
+        caso_avulso = ma.criar_caso(db, seed["loja1_id"], None, "pos_conclusao", "defeito_fabricacao",
+                                    "cliente ligou", 150.0, None, classificacao_avulsa="garantia",
+                                    data_inicio=date(2026, 9, 20), data_fim=date(2026, 9, 20))
+        db.commit()
+    finally:
+        db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31")
+    assert st == 200 and d["ok"]
+    assist = [m for m in d["marcos"] if m["setor"] == "assistencia"]
+    assert {m["projeto"] for m in assist} == {nome, None}
+    com_proj = next(m for m in assist if m["projeto"] == nome)
+    assert com_proj["data"] == "2026-09-12" and com_proj["valor"] == 300.0
+    avulso = next(m for m in assist if m["projeto"] is None)
+    assert avulso["data"] == "2026-09-20" and avulso["valor"] == 150.0
+    # filtro de setor no servidor
+    st2, d2 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&setor=assistencia")
+    assert st2 == 200 and d2["marcos"] and all(m["setor"] == "assistencia" for m in d2["marcos"])
 
 
 def test_endpoint_agenda_isola_loja(app_db, seed, http_client_factory):

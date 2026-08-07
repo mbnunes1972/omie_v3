@@ -914,6 +914,37 @@ class AssistenciaAnexo(Base):
     enviado_em     = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class Recebivel(Base):
+    """Recebível de venda (2026-08-07, achado da Vera): `1.1.02 Contas a Receber` nasce cheia no
+    contrato (`registro_venda_contrato`) mas nunca era baixada — nada disparava o evento
+    `recebimento_venda`. Cada linha aqui é uma entrada de caixa PREVISTA (entrada, parcela ou o lote
+    financiado por Cartão/Aymoré) — materializada uma vez na geração do contrato
+    (`mod_recebiveis.materializar`), confirmada manualmente (mesmo padrão de `efetivar_provisao`) via
+    `mod_contabil.registrar_recebimento_venda`, que capa ao saldo real em aberto de `1.1.02` — protege
+    o razão mesmo quando `valor_previsto` é só uma estimativa de face (caso do Total Flex, que mistura
+    capital+juros na parcela; a apropriação do juros em si é separada, `apropriar_juros_loja`)."""
+    __tablename__ = "recebivel"
+
+    id                = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    projeto_nome      = Column(Text,     nullable=False)
+    orcamento_id      = Column(Integer,  ForeignKey("orcamentos.id"), nullable=False)
+    tipo              = Column(Text,     nullable=False)   # "entrada" | "parcela" | "financiado"
+    numero            = Column(Integer,  nullable=True)     # nº da parcela, quando aplicável
+    forma             = Column(Text,     nullable=True)     # instrumento informativo (pix/boleto/cartao/aymore/...)
+    valor_previsto    = Column(Float,    nullable=False)
+    data_prevista     = Column(Date,     nullable=False)
+    status            = Column(Text,     nullable=False, default="previsto")   # "previsto" | "confirmado" | "duvidoso"
+    valor_confirmado  = Column(Float,    nullable=True)
+    confirmado_em     = Column(Date,     nullable=True)
+    confirmado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    # Não-recebimento (2026-08-07): reclassificado pra "Recebíveis Duvidosos" (1.1.10) — ainda pode
+    # ser confirmado depois (o dinheiro pode chegar), só sai de Contas a Receber "normal".
+    duvidoso_em       = Column(Date,     nullable=True)
+    ref               = Column(Text,     nullable=False, unique=True)   # idempotência do lançamento
+    criado_em         = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class ProvisaoRegistro(Base):
     """Provisões registradas por versão (venda/rev1/rev2) de um orçamento.
     venda = snapshot na geração do contrato; rev1/rev2 = aprovação financeira I/II."""
@@ -1989,6 +2020,15 @@ def _migrar_colunas_pg():
         # usado de verdade — achado ao investigar antes de tirar 'assistencia' do Mapa — mas
         # roda mesmo assim por segurança; idempotente, a 2ª vez apaga 0 linha).
         "DELETE FROM atribuicoes_ambiente WHERE papel = 'assistencia'",
+        # Não-recebimento (2026-08-07): recebível reclassificado pra "Recebíveis Duvidosos" (1.1.10)
+        # — ver docstring de Recebivel.
+        "ALTER TABLE recebivel ADD COLUMN IF NOT EXISTS duvidoso_em DATE",
+        # O model.origem alargou de String(30) pra String(64) em 2026-07-15 (comentário na classe
+        # Lancamento) mas a migração de COLUMN TYPE nunca foi escrita — bases Postgres criadas antes
+        # dessa data ficaram presas em varchar(30) e nunca mais deram erro até um evento novo passar
+        # de 30 chars (achado ao vivo 2026-08-07, StringDataRightTruncation em
+        # 'reconhecimento_despesa_retencao_com_vendas' e afins — a coluna larga só existia no papel).
+        "ALTER TABLE lancamento ALTER COLUMN origem TYPE VARCHAR(64)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

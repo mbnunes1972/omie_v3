@@ -3277,6 +3277,191 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 173 — Não-recebimento: Reprogramar ou Recebíveis Duvidosos (+ achado ao vivo: origem VARCHAR(30) preso desde 2026-07-15)
+
+Fecha o pedido do usuário: confirmar recebimento OU **não-recebimento**. Não-recebimento tem duas
+saídas — **Reprogramar** (só muda a data prevista, sem lançamento — o dinheiro continua esperado) ou
+**Recebíveis Duvidosos** (reclassifica de verdade no razão — "as contrapartidas contábeis precisam
+refletir", pedido explícito do usuário). Suíte 1810→**1819**.
+
+**Por que `1.1.10` e não `1.1.02.01`:** `seed_plano` promove uma conta de analítica pra sintética
+assim que ela ganha filho, e `lancar()` recusa lançamento em conta sintética — dar ao Duvidoso um
+código filho de `1.1.02` teria quebrado `registro_venda_contrato`/`recebimento_venda` (que lançam
+DIRETO em `1.1.02`) na primeira vez que `seed_plano` rodasse depois do deploy. Achado ANTES de
+implementar (`EnterPlanMode`), não em produção. `1.1.10 Recebíveis Duvidosos` entra como conta-irmã.
+
+**Contrapartidas:** `reclassificar_recebivel_duvidoso` (nova) — débito `1.1.10` × crédito `1.1.02`,
+ativo×ativo, NÃO toca a DRE (não é perda, é reclassificação de risco), capado ao saldo em aberto do
+projeto (mesmo idiom de `reconhecer_custo_financeiro`/`registrar_recebimento_venda`).
+`registrar_recebimento_venda` ganha `duvidoso=False` — quando `True` credita `1.1.10` em vez de
+`1.1.02` (evento novo `recebimento_venda_duvidoso`), permitindo confirmar um Duvidoso depois (o
+dinheiro pode chegar atrasado). Reprogramar não lança nada — só `Recebivel.data_prevista`, com
+reauth+auditoria em `LogAcaoGerencial` (mesmo molde de `POST /ciclo/<cod>/data-prevista`).
+
+**Achado ao vivo, sério (fora do que foi pedido, corrigido no ato):** ao testar Duvidoso contra o
+servidor local, `StringDataRightTruncation` — `Lancamento.origem` é `String(64)` no model, mas a
+coluna Postgres real ficou presa em `varchar(30)`. O comentário na classe já documentava: alargada em
+2026-07-15 "achado ao validar a suíte contra Postgres de verdade" — só que a migração de COLUMN TYPE
+nunca foi escrita, e a suíte nunca pegou porque testes sempre criam schema fresco
+(`Base.metadata.create_all`) a partir do model atual. Bases Postgres de vida longa (dev local — e
+possivelmente outras) ficaram travadas em 30 chars **desde então**, sem sintoma até um evento passar
+de 30 (`reconhecimento_despesa_retencao_com_vendas`, 42 chars — já existia, `efetivar_provisao` usa —
+só nunca tinha batido nesta base específica). Corrigido com `ALTER TABLE lancamento ALTER COLUMN
+origem TYPE VARCHAR(64)` em `_migrar_colunas_pg` (idempotente, autoaplica em qualquer ambiente ao
+subir). Meu evento novo (`reclassificar_recebivel_duvidoso`, 32 chars) também foi encurtado pra
+`recebivel_duvidoso` — nome curto por segurança, já que nem toda base terá rodado a migração no
+mesmo instante do deploy.
+
+**Frontend:** 4º estado nas cores (`duvidoso` → `var(--warn)`, mesmo token do badge HOMOLOGAÇÃO do
+Fiscal); linha `previsto` editável ganha 3 ações (Confirmar, `<input type="date">`+Reprogramar,
+Duvidoso com `confirmarPopup`); linha `duvidoso` só ganha Confirmar.
+
+**Verificado ao vivo** contra `Projeto_Norberto` (os 2 recebíveis vencidos da Sessão 172): marcar
+duvidoso → razão mostra `1.1.10×1.1.02` certinho; confirmar o duvidoso → `1.1.01×1.1.10` (não
+`1.1.02` de novo); reprogramar o outro → data muda, some do vencido.
+
+**Fora de escopo, anotado como resposta a uma ideia do usuário (não implementado)**: "Despesas
+Recorrentes" como 3ª aba no mesmo painel (aluguel/luz — o gerente confirma data+valor+conta de
+origem). Recomendado como frente própria: precisa de um conceito de "template" que Recebível não
+tem (recebível nasce de um evento — contrato; despesa recorrente só tem calendário) + seletor de
+conta de origem por lançamento. Ver a resposta completa no plano da sessão.
+
+**Arquivos:** `database.py`, `mod_contabil.py`, `main.py`, `static/index.html`,
+`tests/test_recebiveis.py`.
+
+## Sessão 172 — Recebíveis entra na Reconciliação (seletor Provisões/Recebíveis) + status "vencido" (3 cores)
+
+Continuação direta da Sessão 171. O usuário esperava achar a confirmação do recebimento dentro da
+**Reconciliação** (mesma tela que já confirma provisões via Efetivar/Resolver), não só no Fluxo de
+Caixa — pediu um seletor "Provisões / Recebíveis" nos dois lugares onde a Reconciliação de provisões
+já existe (aba Financeiro → "Reconc. Provisões", leitura consolidada; modal Reconciliação dentro do
+projeto, editável). Confirmado: Fluxo de Caixa **continua** mostrando os previstos (é a tela de
+previsão de caixa; Reconciliação é quem confirma) — sem duplicar lógica, só sem remover nada de lá.
+Pediu também 3 cores de status: previsto no futuro (neutro), confirmado (verde), e **vencido** —
+`data_prevista` já passou e ainda não foi confirmado (vermelho, "considerado mas não conciliado").
+Plano via `EnterPlanMode` de novo (mexe em 2 telas + endpoint novo). Suíte 1806→**1810**.
+
+**Vencido é só um flag computado** (`data_prevista < hoje AND status == 'previsto'`) — nenhuma coluna
+nova no banco, nenhuma mudança de schema.
+
+**Backend:** `GET /api/financeiro/recebiveis?projeto=<nome|vazio>` (novo, `main.py`) — espelha
+`/reconciliacao-provisoes` (mesmo gate `_contabil_ctx(exige_edicao=False)`, mesmo escopo de owner do
+Fluxo de Caixa). Devolve o histórico completo (previsto+confirmado, não só o que falta — como
+Provisões mostra Provisionado E Efetivado juntos) com `vencido` por linha e `totais`
+(previsto/confirmado/vencido). `/api/financeiro/fluxo-caixa` também ganhou `vencido` no `previstos`,
+pra consistência visual entre as duas telas.
+
+**Frontend:** `_recebiveisTabelaHtml` (novo, molde de `_reconProvTabelaHtml` — mesmo idiom de tabela
+compartilhada por telas diferentes) + `_recebCor`/`_RECEB_STATUS_LABEL` (3 cores). `_reconPainel`
+(state novo, `'provisoes'|'recebiveis'`) + seletor de 2 botões (mesmo idioma visual do 3-way toggle
+de DRE, `_DRE_VISOES`) injetado em `finReconProvCarregar()` (aba Financeiro, só-leitura) e
+`reconProjRender()` (modal do projeto, editável — ganha `reconRecebConfirmar`, com a mesma trava de
+duplo-clique que `reconProvEfetivar` já tem, achado da Vera da Sessão 171). Etapa 21/Conciliação Final
+**não** ganhou o seletor nesta rodada — é encerramento de projeto, não confirmação do dia a dia; fora
+do que foi pedido.
+
+**Verificado ao vivo** contra dados reais do banco local: `Projeto_Norberto` (2 recebíveis de julho,
+ainda previstos) aparece com `vencido:true` tanto no endpoint novo quanto no Fluxo de Caixa;
+`Projeto_A` (confirmado na Sessão 171) aparece verde nos totais consolidados.
+
+**Explicitamente fora de escopo, anotado pelo próprio usuário como "precisa ver"/"podemos pensar"**:
+tratamento de "não recebimento" (cancelar/baixar um recebível que nunca vai chegar — hoje só existe
+`previsto`/`confirmado`, sem `cancelado`; fica vermelho indefinidamente até decisão manual); e
+provisões ganharem data prevista própria (pra aparecerem no Fluxo de Caixa do lado da despesa também)
+— ideia de uma frente futura.
+
+**Arquivos:** `main.py`, `static/index.html`, `modulos.py`, `tests/test_recebiveis.py`.
+
+## Sessão 171 — Recebimento de Venda: recebíveis previstos no Fluxo de Caixa + efetivação por confirmação
+
+Resposta ao achado 🟡 do teste exaustivo da Vera em homologação (10 simulações Projeto_M_1..10, VPS
+B — rodada posterior à Sessão 169): `recebimento_venda` existia só
+como chave morta em `mod_contabil.EVENTOS` — nada dava baixa em Contas a Receber (`1.1.02`) quando o
+cliente pagava de fato; Caixa (`1.1.01`) só era debitado por despesa, nunca creditado por venda
+recebida. Usuário: recebíveis do contrato devem aparecer no Fluxo de Caixa como previsão, efetivados
+por confirmação manual (mesmo padrão de `efetivar_provisao`/"Apropriar receita"); + painel de config
+de prazo de antecipação (Cartão/Aymoré). Plano desenhado em `EnterPlanMode` antes de codar (área
+financeira sensível). Suíte 1791→**1806**.
+
+**Não duplica o subsistema de juros já existente (Fase B):** `apropriar_juros_loja`/`1.1.07`/`2.1.07`
+já cuidam da apropriação de JUROS do financiamento direto (Total Flex/Venda Programada) — esta frente
+cobre só a perna de CAPITAL (`1.1.02`), que nunca tinha rota nenhuma.
+
+**Nova tabela `Recebivel`** (`database.py`): uma linha por entrada de caixa prevista (`entrada` |
+`parcela` | `financiado`), status `previsto`→`confirmado`, `ref` único (idempotência).
+
+**Materialização (`mod_recebiveis.py`, puro):** dispara na geração do contrato (mesmo ponto de
+`_fin_provisoes_venda_seguro`, `main.py`), parseia `Orcamento.forma_pagamento`. Dois ramos pelo campo
+`tipo` do JSON do frontend (`avista`/`vp`/`tf`/`aymore`/`cartao` — strings diferentes das de
+`mod_fin.ramo_financiamento`): **avista/loja** (à vista, Venda Programada, Total Flex) — 1 recebível
+por parcela real, valor de face (Total Flex mistura capital+juros na parcela — decisão do usuário:
+valor de face por ora, sem split); **financeira** (Cartão/Aymoré) — a operadora antecipa em LOTE, não
+em parcelas: 1 recebível `entrada` (direta) + 1 `financiado` = `Val_Cont − entrada`, na data do
+contrato + prazo de antecipação (config nova). Validado contra 3 orçamentos reais do banco de dev
+(à vista e cartão) — soma dos recebíveis bate exato com `Val_Cont` nos dois ramos.
+
+**Confirmação (`mod_contabil.registrar_recebimento_venda`):** mesmo idiom de
+`reconhecer_custo_financeiro`/`apropriar_juros_loja` — CAPA o valor ao saldo em aberto de `1.1.02` do
+projeto, protegendo o razão mesmo com um previsto otimista (caso do Total Flex). Idempotente por ref.
+`POST /api/recebiveis/<id>/confirmar` (reauth `aprovar_financeiro`, valor/data editáveis — cobre
+parcial/atraso) e `GET /api/financeiro/fluxo-caixa` ganha `previstos` (mesmo escopo de owner do resto
+do painel — rede inteira quando a loja pertence a uma).
+
+**Frontend:** seção "Recebíveis Previstos" na tela Fluxo de Caixa (botão Confirmar via
+`pedirCredenciaisGerente`, mesmo padrão de "Apropriar receita"); 2 campos novos (dias Cartão/Aymoré)
+em Config → Provisões.
+
+**Verificado ao vivo** contra o servidor local com dados reais (`Projeto_A`, à vista): materializou o
+recebível certo, apareceu no Fluxo de Caixa, confirmação lançou `1.1.01×1.1.02` no razão
+(`recebimento_venda`, conferido via `/api/financeiro/lancamentos`), segunda confirmação bloqueada com
+409.
+
+**Arquivos:** `database.py`, `mod_recebiveis.py` (novo), `mod_contabil.py`, `mod_provisoes.py`,
+`main.py`, `static/index.html`, `modulos.py`, `tests/test_recebiveis.py` (novo),
+`tests/test_provisoes.py`.
+
+**Pendente, fora de escopo desta rodada:** reconciliar recebíveis com devolução/cancelamento; split
+exato capital/juros do Total Flex; granularidade por submodalidade de cartão.
+
+## Sessão 170 — Agenda: Assistências vira setor/filtro + Financeiro sai (agenda financeira corre separada)
+
+Pedido do usuário: "Vamos precisar inserir as Assistências na Agenda, é um filtro importante. [...]
+Pode tirar o financeiro da agenda, a agenda financeira corre separada." (a 3ª parte do pedido —
+"agenda de expedição" dentro do módulo Expedição, pra edição de datas/responsabilidades — foi
+**explicitamente adiada** pelo usuário: "vamos alinhar melhor na sequência"; não implementada nesta
+sessão). Suíte 1786→**1791**.
+
+**Financeiro sai:** `mod_agenda.SETOR_POR_ETAPA` perde as etapas `8`/`11d`/`21`; `ETAPAS_MARCO` não
+gera mais marco pra elas; `SETORES` perde `("financeiro", "Financeiro")`. A agenda financeira já
+corre por fora (Reconciliação/DRE), então essas etapas duplicavam informação sem servir de filtro
+útil aqui.
+
+**Assistências entra como setor próprio:** novo `("assistencia", "Assistências")` em `SETORES`. Não
+vem de etapa de ciclo (não tem `CicloEtapa`) — vem direto de `AssistenciaCaso`, um marco por caso.
+Nova função pura `mod_agenda.marcos_assistencia(casos, de=None, ate=None)`: usa `realizado_em`
+(status `realizado`) ou `data_inicio` (previsto) como data do marco; caso sem nenhuma das duas fica
+de fora. `main.py`'s `/api/agenda` busca os `AssistenciaCaso` da loja e monta o dict de entrada;
+casos **com projeto** respeitam a mesma visibilidade/escopo já usada pro resto da Agenda (reusa o
+padrão `visiveis = {d["nome_safe"] for d in dados}` já existente no endpoint `/api/agenda/assistencia`);
+casos **avulsos** (sem projeto) entram sempre — ninguém tem posse deles.
+
+**Frontend não mudou:** os chips de filtro por Setor já eram 100% data-driven a partir de
+`d.setores` retornado pela API (`_agSetores=d.setores||[]`) — zero referência hardcoded a
+"financeiro"/setor específico em `static/index.html`. Confirmado ao vivo via API (`/api/agenda`):
+lista de setores retorna `assistencia` no lugar de `financeiro`, nenhum marco com `setor=financeiro`
+sobra, e `?setor=assistencia` filtra corretamente pra um caso real de teste.
+
+**Testes:** `test_financeiro_nao_gera_mais_marco` (zero marcos pras etapas antigas + `financeiro`
+fora de `SETORES`); 3 testes unitários novos pra `marcos_assistencia` (previsto/realizado, avulso
+com `projeto=None`, filtro por período); `test_endpoint_agenda_inclui_assistencia` (HTTP,
+com-projeto + avulso, valida setor/data/valor e o filtro `?setor=assistencia`).
+
+**Arquivos:** `mod_agenda.py`, `main.py`, `tests/test_agenda.py`.
+
+**Pendente, fora de escopo desta rodada (adiado pelo usuário):** "agenda de expedição" dentro do
+módulo Expedição, pra inserção/edição de datas e definição de responsabilidades — precisa de
+conversa de alinhamento antes de começar.
+
 ## Sessão 169 — Assistência/Garantia: fecha o duplo-caminho que a Vera achou (só o módulo Assistências efetiva) + avulso (sem projeto) ganha despesa direta/Concessão
 
 Resposta direta ao achado 🔴 da Vera na Sessão 168 (duplo-lançamento de Assistência/Garantia por

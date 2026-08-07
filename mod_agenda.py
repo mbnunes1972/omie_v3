@@ -20,19 +20,22 @@ from datetime import date, datetime
 import mod_ciclo
 
 # Setor (Agenda, spec §3) — refinamento DE EXIBIÇÃO de mod_ciclo.FAIXA_POR_ETAPA.
+# 2026-08-07 (pedido do usuário): Financeiro SAIU daqui — a agenda financeira corre separada,
+# não precisa poluir a Agenda operacional. Assistências ENTROU — filtro importante pro dia a dia
+# (marcos_assistencia, abaixo — não vem de etapa de ciclo, vem de AssistenciaCaso).
 SETOR_POR_ETAPA = {
     "9": "medicao", "10": "medicao",
     "11": "pe", "11a": "pe", "11b": "pe", "11c": "pe", "11e": "pe",
     "12": "expedicao", "13": "expedicao", "14": "expedicao", "15": "expedicao", "16": "expedicao",
     "17": "montagem", "18": "montagem", "19": "montagem", "20": "montagem",
-    "8": "financeiro", "11d": "financeiro", "21": "financeiro",
 }
 SETORES = [("medicao", "Medição"), ("pe", "Projeto Executivo"), ("expedicao", "Expedição"),
-           ("montagem", "Montagem"), ("financeiro", "Financeiro")]
+           ("montagem", "Montagem"), ("assistencia", "Assistências")]
 
 # Etapas que viram marco direto (a 16 tem tratamento por FASE; Comercial 1–7 fora da v1).
-ETAPAS_MARCO = ["8", "9", "10", "11a", "11b", "11c", "11d", "11e",
-                "12", "13", "14", "15", "17", "18", "19", "20", "21"]
+# 8/11d/21 (Financeiro) saíram — ver nota acima.
+ETAPAS_MARCO = ["9", "10", "11a", "11b", "11c", "11e",
+                "12", "13", "14", "15", "17", "18", "19", "20"]
 
 
 def nome_etapa(codigo):
@@ -343,4 +346,30 @@ def marcos(projetos, de=None, ate=None, setor=None):
                 continue
             out.append(m)
     out.sort(key=lambda m: (m["data"], m["projeto"] or "", m["etapa"]))
+    return out
+
+
+def marcos_assistencia(casos, de=None, ate=None):
+    """Marcos de Assistência/Garantia — um por CASO agendado (2026-08-07, pedido do usuário: "é um
+    filtro importante"). Não vem de etapa de ciclo — vem de AssistenciaCaso (`caso` já em dict:
+    projeto_nome, data_inicio, status, realizado_em, valor, titulo). Executado (status='realizado')
+    usa `realizado_em`; senão `data_inicio` (previsto). Sem data_inicio → sem marco (nada a marcar).
+    Casos avulsos (sem projeto) entram com `projeto=None` — visíveis pra quem vê a Agenda da loja
+    (não são escopados por projeto, já que não têm um)."""
+    out = []
+    for c in (casos or []):
+        prev = _d(c.get("data_inicio"))
+        conc = _d(c.get("realizado_em")) if c.get("status") == "realizado" else None
+        data = conc or prev
+        if not data:
+            continue
+        if de and data < de:
+            continue
+        if ate and data > ate:
+            continue
+        out.append({"projeto": c.get("projeto_nome"), "cliente": None, "data": data,
+                    "setor": "assistencia", "etapa": None, "titulo": c.get("titulo") or "Assistência",
+                    "fase": None, "valor": c.get("valor"), "realizado": conc is not None,
+                    "retida": False})
+    out.sort(key=lambda m: (m["data"], m["projeto"] or ""))
     return out

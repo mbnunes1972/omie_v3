@@ -30,6 +30,11 @@ PLANO_PADRAO = [
     # Ajustes Excepcionais de Fábrica (spec 2026-07-21): saldos de acordos no razão
     ("1.1.08", "Créditos com a Fábrica"),
     ("1.1.09", "Créditos com Empresas (conta corrente)"),
+    # Não-recebimento (2026-08-07): recebível reclassificado da Contas a Receber "normal" quando o
+    # cliente não paga na data prevista — CONTA-IRMÃ de 1.1.02, nunca filha (1.1.02 já é folha e
+    # lança direto; virar sintética ao ganhar filho quebraria registro_venda_contrato/
+    # recebimento_venda — ver seed_plano/lancar).
+    ("1.1.10", "Recebíveis Duvidosos"),
     ("1.2", "Não Circulante"),
     ("1.2.1", "Imobilizado"),
     ("1.2.1.01", "Itens de Informática"), ("1.2.1.02", "Veículos"),
@@ -658,6 +663,15 @@ EVENTOS = {
     "registro_venda_contrato":      ("1.1.02", "2.1.06",    "Registro da venda no contrato — Receita a Realizar"),
     # Recebimento (entrada + parcelas Total Flex/Aymoré) abate Contas a Receber, não a Receita a Realizar.
     "recebimento_venda":            ("1.1.01", "1.1.02",    "Recebimento do cliente (abate Contas a Receber)"),
+    # Não-recebimento (2026-08-07): o cliente não pagou na data prevista — duas contrapartidas.
+    # Reclassificação (dúvida sobre o recebimento, SEM tocar a DRE — troca de ativo por ativo, não é
+    # perda): move o saldo de Contas a Receber "normal" pra Recebíveis Duvidosos.
+    # Nome curto de propósito: `origem` do Lancamento é VARCHAR(30) na base já em produção (o model
+    # declara String(64), mas colunas de bases antigas nunca foram alteradas — achado ao vivo
+    # 2026-08-07, StringDataRightTruncation). "reclassificar_recebivel_duvidoso" (32) estourava.
+    "recebivel_duvidoso":              ("1.1.10", "1.1.02", "Reclassificação — recebível duvidoso"),
+    # Se o dinheiro afinal chegar depois de já estar em Duvidosos, baixa de lá em vez de 1.1.02.
+    "recebimento_venda_duvidoso":       ("1.1.01", "1.1.10", "Recebimento do cliente (baixa de Recebível Duvidoso)"),
     # Faturamento SEGMENTADO (B1): Mercadoria → 4.1.01 (NF-e) · Serviço → 4.2.01 (NFS-e). NUNCA lançar
     # estes 4 direto no wiring — sempre via faturar_segmento() (split adiantado/a-receber + idempotência).
     "faturamento_mercadoria_adiantado": ("2.1.06", "4.1.01", "Faturamento mercadoria (NF-e) — baixa de adiantamento"),
@@ -1212,6 +1226,55 @@ def despesa_avulsa(db, owner_tipo, owner_id, codigo_despesa, valor, forma_pagame
     cc = _conta_por_codigo(db, owner_tipo, owner_id, cc_cod)
     return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data,
                   origem="despesa_avulsa_assistencia", historico=historico, ref=ref)
+
+
+def registrar_recebimento_venda(db, owner_tipo, owner_id, projeto_id, valor, ref, data=None, duvidoso=False):
+    """Recebimento REAL do cliente (2026-08-07, achado da Vera — `recebimento_venda` existia só como
+    chave morta em EVENTOS, nada disparava a baixa de Contas a Receber). Débito Caixa/Bancos (1.1.01) ×
+    crédito Contas a Receber (1.1.02), CAPADO ao saldo em aberto de 1.1.02 do projeto — mesmo idiom de
+    `reconhecer_custo_financeiro`/`apropriar_juros_loja`, protege o razão mesmo quando `valor` vem de um
+    previsto só estimado (caso do Total Flex, que mistura capital+juros na parcela). Não mexe na
+    apropriação de juros do ramo loja (`apropriar_juros_loja`, conta 1.1.07 à parte) — só a perna de
+    capital. `duvidoso=True` (2026-08-07, não-recebimento): o recebível já foi reclassificado pra
+    Recebíveis Duvidosos (`reclassificar_recebivel_duvidoso`) — credita 1.1.10 em vez de 1.1.02
+    (mesma capagem, contra o saldo em aberto de 1.1.10). Idempotente por ref."""
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
+    if ja is not None:
+        return ja
+    valor = round(float(valor or 0), 2)
+    if valor <= 0:
+        return None
+    seed_plano(db, owner_tipo, owner_id)
+    cod_origem = "1.1.10" if duvidoso else "1.1.02"
+    evento = "recebimento_venda_duvidoso" if duvidoso else "recebimento_venda"
+    saldo_aberto = round(total_lancado(db, owner_tipo, owner_id, cod_origem, "debito", projeto_id)
+                         - total_lancado(db, owner_tipo, owner_id, cod_origem, "credito", projeto_id), 2)
+    mv = round(min(valor, max(saldo_aberto, 0.0)), 2)
+    if mv <= 0:
+        return None
+    return registrar_evento(db, owner_tipo, owner_id, evento, mv,
+                            projeto_id=projeto_id, data=data, ref=ref)
+
+
+def reclassificar_recebivel_duvidoso(db, owner_tipo, owner_id, projeto_id, valor, ref, data=None):
+    """Não-recebimento (2026-08-07): o cliente não pagou na data prevista e o recebível vira
+    DUVIDOSO — reclassifica ativo×ativo (débito 1.1.10 Recebíveis Duvidosos × crédito 1.1.02 Contas a
+    Receber), sem tocar a DRE (não é perda, é só troca de bucket — mesmo idiom de
+    `reclassificar_provisao`). CAPADO ao saldo em aberto de 1.1.02 do projeto. Idempotente por ref."""
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
+    if ja is not None:
+        return ja
+    valor = round(float(valor or 0), 2)
+    if valor <= 0:
+        return None
+    seed_plano(db, owner_tipo, owner_id)
+    saldo_aberto = round(total_lancado(db, owner_tipo, owner_id, "1.1.02", "debito", projeto_id)
+                         - total_lancado(db, owner_tipo, owner_id, "1.1.02", "credito", projeto_id), 2)
+    mv = round(min(valor, max(saldo_aberto, 0.0)), 2)
+    if mv <= 0:
+        return None
+    return registrar_evento(db, owner_tipo, owner_id, "recebivel_duvidoso", mv,
+                            projeto_id=projeto_id, data=data, ref=ref)
 
 
 def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, ref, data=None):

@@ -51,6 +51,10 @@ def config_financeira_default():
             "feriados": [],                       # ["AAAA-MM-DD", ...] — mod_calendario
             "horizonte_capacidade_semanas": 6,
         },
+        # Recebimento de venda (2026-08-07): dias até a operadora antecipar a loja, por modalidade
+        # 'financeira' (Cartão/Aymoré — mod_recebiveis._RAMO). Cartão default 1 (já era o texto
+        # hardcoded "1 dia útil" em mod_fin/cartao.py); Aymoré 2 (chute conservador, ajustável).
+        "prazo_antecipacao": {"cartao": 1, "aymore": 2},
         "cronograma_padrao": [
             {"codigo": "8",  "prazo_dias": 2},   {"codigo": "9",  "prazo_dias": 3},
             {"codigo": "10", "prazo_dias": 5},   {"codigo": "11", "prazo_dias": 10},
@@ -131,6 +135,12 @@ def validar_config_financeira(dados):
     pc = d.get("prazo_contratual_dias_uteis")
     if pc is not None and _f(pc) <= 0:
         erros.append("Prazo contratual (dias úteis) deve ser maior que zero.")
+    pa = d.get("prazo_antecipacao")
+    if pa is not None:
+        for k in ("cartao", "aymore"):
+            v = (pa or {}).get(k)
+            if v is not None and _f(v) < 0:
+                erros.append(f"Prazo de antecipação ({k}) não pode ser negativo.")
     ag = d.get("agenda")
     if ag is not None:
         from datetime import datetime as _dt

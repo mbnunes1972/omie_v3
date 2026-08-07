@@ -24,7 +24,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
-                       ContraparteFinanceira)
+                       ContraparteFinanceira, Recebivel)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -594,6 +594,40 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
         logging.getLogger(__name__).warning("wiring fechamento (provisões+custo fin, ref=%s) falhou: %s", ref_base, e)
 
 
+def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrato, ref_base):
+    """Materializa os recebíveis PREVISTOS do orçamento assinado (2026-08-07, achado da Vera — ver
+    mod_recebiveis). Mesmo espírito de `_fin_provisoes_venda_seguro`: fail-soft/isolado/idempotente
+    (não aborta a geração do contrato) e roda só uma vez por orçamento (guarda por `orcamento_id`,
+    protege regeração do contrato)."""
+    try:
+        orc_id = getattr(orc, "id", None)
+        if not orc_id or not loja_id:
+            return
+        import mod_recebiveis
+        db = get_session()
+        try:
+            if db.query(Recebivel).filter_by(orcamento_id=orc_id).first() is not None:
+                return   # já materializado (regeração do contrato)
+            orc2 = db.get(Orcamento, orc_id)
+            if orc2 is None:
+                return
+            cfg = _cfg_financeira_loja(db, loja_id)
+            linhas = mod_recebiveis.materializar(
+                orc2.forma_pagamento, orc2.valor_total,
+                data_contrato.date() if hasattr(data_contrato, "date") else data_contrato,
+                ref_base, prazo_antecipacao=cfg.get("prazo_antecipacao"))
+            for linha in linhas:
+                db.add(Recebivel(loja_id=loja_id, projeto_nome=projeto_id, orcamento_id=orc_id,
+                                 tipo=linha["tipo"], numero=linha["numero"], forma=linha["forma"],
+                                 valor_previsto=linha["valor_previsto"],
+                                 data_prevista=linha["data_prevista"], ref=linha["ref"]))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logging.getLogger(__name__).warning("wiring recebíveis (ref=%s) falhou: %s", ref_base, e)
+
+
 def _ramo_financeiro_efetivo(orc):
     """Ramo do custo financeiro (Fatia B): override confirmado na AF (orc.ramo_financeiro) ou o default
     automático pela forma de pagamento (loja|financeira|avista)."""
@@ -1001,7 +1035,23 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     conta_ids = [c.id for c in todas]
                 dados = mod_contabil.fluxo_caixa(db, ot, oid, conta_ids, de, ate)
-                self.send_json({"ok": True, **dados,
+                # Recebíveis previstos (2026-08-07): mesmo escopo de owner do resto do painel —
+                # rede inteira quando a loja pertence a uma; senão só a própria (achado da Vera).
+                previstos = []
+                if ot != "consolidado":
+                    lojas_owner = ([l.id for l in db.query(Loja).filter_by(rede_id=oid).all()]
+                                   if ot == "rede" else [oid])
+                    q_prev = (db.query(Recebivel)
+                              .filter(Recebivel.loja_id.in_(lojas_owner))
+                              .filter(Recebivel.status == "previsto")
+                              .filter(Recebivel.data_prevista >= de, Recebivel.data_prevista <= ate)
+                              .order_by(Recebivel.data_prevista))
+                    _hoje = date.today()
+                    previstos = [{"id": r.id, "projeto": r.projeto_nome, "tipo": r.tipo,
+                                 "numero": r.numero, "forma": r.forma, "valor_previsto": r.valor_previsto,
+                                 "data_prevista": r.data_prevista.isoformat(),
+                                 "vencido": r.data_prevista < _hoje} for r in q_prev.all()]
+                self.send_json({"ok": True, **dados, "previstos": previstos,
                                 "contas": [{"id": c.id, "codigo": c.codigo, "nome": c.nome} for c in todas]})
             except (ValueError, PermissionError) as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=400 if isinstance(e, ValueError) else 403)
@@ -1294,6 +1344,47 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 proj = (parse_qs(urlparse(self.path).query).get("projeto") or [None])[0]
                 self.send_json({"ok": True, "reconciliacao": mod_contabil.reconciliacao(db, ot, oid, projeto_id=proj)})
+            finally:
+                db.close()
+            return
+
+        if path == "/api/financeiro/recebiveis":
+            # Recebimento de Venda (2026-08-07): espelha reconciliacao-provisoes — histórico
+            # completo (previsto+confirmado), ?projeto=<nome> → granular; sem → consolidado (mesmo
+            # escopo de owner do Fluxo de Caixa — rede inteira quando a loja pertence a uma).
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            try:
+                proj = (parse_qs(urlparse(self.path).query).get("projeto") or [None])[0]
+                recebiveis, totais = [], {"previsto": 0.0, "confirmado": 0.0, "vencido": 0.0, "duvidoso": 0.0}
+                if ot != "consolidado":
+                    lojas_owner = ([l.id for l in db.query(Loja).filter_by(rede_id=oid).all()]
+                                   if ot == "rede" else [oid])
+                    q = db.query(Recebivel).filter(Recebivel.loja_id.in_(lojas_owner))
+                    if proj:
+                        q = q.filter(Recebivel.projeto_nome == proj)
+                    hoje = date.today()
+                    for r in q.order_by(Recebivel.data_prevista).all():
+                        vencido = r.status == "previsto" and r.data_prevista < hoje
+                        recebiveis.append({
+                            "id": r.id, "projeto": r.projeto_nome, "tipo": r.tipo, "numero": r.numero,
+                            "forma": r.forma, "valor_previsto": r.valor_previsto,
+                            "data_prevista": r.data_prevista.isoformat(), "status": r.status,
+                            "vencido": vencido, "valor_confirmado": r.valor_confirmado,
+                            "confirmado_em": r.confirmado_em.isoformat() if r.confirmado_em else None,
+                            "duvidoso_em": r.duvidoso_em.isoformat() if r.duvidoso_em else None,
+                        })
+                        if r.status == "confirmado":
+                            totais["confirmado"] = round(totais["confirmado"] + (r.valor_confirmado or 0.0), 2)
+                        elif r.status == "duvidoso":
+                            totais["duvidoso"] = round(totais["duvidoso"] + r.valor_previsto, 2)
+                        elif vencido:
+                            totais["vencido"] = round(totais["vencido"] + r.valor_previsto, 2)
+                        else:
+                            totais["previsto"] = round(totais["previsto"] + r.valor_previsto, 2)
+                self.send_json({"ok": True, "recebiveis": recebiveis, "totais": totais})
             finally:
                 db.close()
             return
@@ -1718,6 +1809,31 @@ class Handler(BaseHTTPRequestHandler):
                         m["valor"] = None            # visão do papel: sem comercial (Regras §3)
                     m["data"] = m["data"].isoformat()
                     out.append(m)
+                # Assistências (2026-08-07, pedido do usuário — "é um filtro importante"): setor
+                # próprio, fora do ciclo de etapas (vem de AssistenciaCaso, não de CicloEtapa). Casos
+                # COM projeto respeitam a MESMA visibilidade da agenda (consultor só vê os seus);
+                # avulsos (sem projeto) entram sempre — ninguém tem "posse" deles.
+                if not setor or setor == "assistencia":
+                    import mod_assistencias as _mass
+                    visiveis = {d["nome_safe"] for d in dados}
+                    q_casos = db.query(AssistenciaCaso).filter_by(loja_id=loja_id)
+                    if proj_filtro:
+                        q_casos = q_casos.filter(AssistenciaCaso.projeto_nome == proj_filtro)
+                    casos_dict = []
+                    for caso in q_casos.all():
+                        if caso.projeto_nome and caso.projeto_nome not in visiveis:
+                            continue
+                        casos_dict.append({
+                            "projeto_nome": caso.projeto_nome, "data_inicio": caso.data_inicio,
+                            "status": caso.status, "realizado_em": caso.realizado_em,
+                            "valor": caso.valor,
+                            "titulo": (_mass.MOTIVOS.get(caso.motivo) or ["Assistência"])[0]})
+                    for m in _mag.marcos_assistencia(casos_dict, de=de, ate=ate):
+                        if visao == "operacional":
+                            m["valor"] = None
+                        m["data"] = m["data"].isoformat()
+                        out.append(m)
+                    out.sort(key=lambda m: (m["data"], m["projeto"] or ""))
                 # Fatias 3/4: CARGAS + CAPACIDADE — só p/ visão comercial (é tudo R$)
                 cargas_out, cap_out, cap_cfg = [], [], {}
                 if visao != "operacional":
@@ -8568,6 +8684,146 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        elif re.match(r"^/api/recebiveis/(\d+)/confirmar$", path):
+            # ── POST /api/recebiveis/<id>/confirmar — recebimento real do cliente (2026-08-07) ──
+            import mod_contabil as _mc
+            m_rc = re.match(r"^/api/recebiveis/(\d+)/confirmar$", path)
+            rid = int(m_rc.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                rec = _obj_da_loja(db, Recebivel, rid, loja_id)
+                if rec is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if rec.status == "confirmado":
+                    self.send_json({"ok": False, "erro": "Este recebível já foi confirmado."}, code=409); return
+                try:
+                    valor = round(float(req.get("valor")), 2) if req.get("valor") is not None else rec.valor_previsto
+                except (TypeError, ValueError):
+                    self.send_json({"ok": False, "erro": "Valor inválido"}, code=400); return
+                if valor <= 0:
+                    self.send_json({"ok": False, "erro": "Informe um valor (> 0)"}, code=400); return
+                data_str = (req.get("data") or "").strip()
+                try:
+                    data_conf = (datetime.strptime(data_str[:10], "%Y-%m-%d").date()
+                                if data_str else date.today())
+                except ValueError:
+                    self.send_json({"ok": False, "erro": "Data inválida"}, code=400); return
+                ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                lan = _mc.registrar_recebimento_venda(db, ot, own_id, rec.projeto_nome, valor,
+                                                      ref=rec.ref, data=data_conf,
+                                                      duvidoso=(rec.status == "duvidoso"))
+                rec.status = "confirmado"
+                rec.valor_confirmado = valor
+                rec.confirmado_em = data_conf
+                rec.confirmado_por_id = usuario.get("id")
+                db.commit()
+                self.send_json({"ok": True, "recebivel": {
+                    "id": rec.id, "status": rec.status, "valor_confirmado": rec.valor_confirmado,
+                    "confirmado_em": rec.confirmado_em.isoformat() if rec.confirmado_em else None,
+                }, "lancado": bool(lan)})
+            finally:
+                db.close()
+            return
+
+        elif re.match(r"^/api/recebiveis/(\d+)/reprogramar$", path):
+            # ── POST /api/recebiveis/<id>/reprogramar — não-recebimento: só muda a data prevista,
+            # sem lançamento (o dinheiro continua em Contas a Receber normal). Reauth + auditoria,
+            # mesmo molde de POST /ciclo/<cod>/data-prevista (main.py ~10009). ──
+            m_rp = re.match(r"^/api/recebiveis/(\d+)/reprogramar$", path)
+            rid = int(m_rp.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                rec = _obj_da_loja(db, Recebivel, rid, loja_id)
+                if rec is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if rec.status != "previsto":
+                    self.send_json({"ok": False, "erro": "Só recebíveis previstos podem ser reprogramados."}, code=409); return
+                nova_str = (req.get("data_prevista") or "").strip()
+                try:
+                    nova_dt = datetime.strptime(nova_str[:10], "%Y-%m-%d").date() if nova_str else None
+                except ValueError:
+                    nova_dt = None
+                if nova_dt is None:
+                    self.send_json({"ok": False, "erro": "Informe a nova data prevista (AAAA-MM-DD)"}, code=400); return
+                antigo = rec.data_prevista
+                rec.data_prevista = nova_dt
+                db.add(LogAcaoGerencial(
+                    solicitante_id=usuario["id"], autorizador_id=aprovador.id,
+                    acao="reprogramar_recebivel", projeto_nome=rec.projeto_nome,
+                    contexto=json.dumps({"recebivel_id": rec.id,
+                                        "valor_antigo": antigo.isoformat() if antigo else None,
+                                        "valor_novo": nova_dt.isoformat()})))
+                db.commit()
+                self.send_json({"ok": True, "recebivel": {"id": rec.id, "data_prevista": rec.data_prevista.isoformat()}})
+            finally:
+                db.close()
+            return
+
+        elif re.match(r"^/api/recebiveis/(\d+)/duvidoso$", path):
+            # ── POST /api/recebiveis/<id>/duvidoso — não-recebimento: reclassifica pra Recebíveis
+            # Duvidosos (1.1.10), com contrapartida contábil real (mod_contabil.
+            # reclassificar_recebivel_duvidoso). Ainda pode ser confirmado depois. ──
+            import mod_contabil as _mc
+            m_rd = re.match(r"^/api/recebiveis/(\d+)/duvidoso$", path)
+            rid = int(m_rd.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                rec = _obj_da_loja(db, Recebivel, rid, loja_id)
+                if rec is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if rec.status != "previsto":
+                    self.send_json({"ok": False, "erro": "Só recebíveis previstos podem virar duvidosos."}, code=409); return
+                ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                hoje = date.today()
+                lan = _mc.reclassificar_recebivel_duvidoso(db, ot, own_id, rec.projeto_nome,
+                                                            rec.valor_previsto, ref=rec.ref + ":duv",
+                                                            data=hoje)
+                rec.status = "duvidoso"
+                rec.duvidoso_em = hoje
+                db.add(LogAcaoGerencial(
+                    solicitante_id=usuario["id"], autorizador_id=aprovador.id,
+                    acao="marcar_recebivel_duvidoso", projeto_nome=rec.projeto_nome,
+                    contexto=json.dumps({"recebivel_id": rec.id, "valor": rec.valor_previsto})))
+                db.commit()
+                self.send_json({"ok": True, "recebivel": {"id": rec.id, "status": rec.status,
+                                "duvidoso_em": rec.duvidoso_em.isoformat()}, "lancado": bool(lan)})
+            finally:
+                db.close()
+            return
+
         elif re.match(r"^/api/orcamentos/(\d+)/devolucao$", path):
             # ── POST /api/orcamentos/<id>/devolucao — devolução (parcial/total) da venda (Fatia D) ──
             import mod_contabil as _mc
@@ -10619,6 +10875,9 @@ class Handler(BaseHTTPRequestHandler):
                     db.commit()
                     # v6 §6.4: auto-constitui as 3 provisões contábeis (% × valor da venda), fail-soft
                     _fin_provisoes_venda_seguro(_orc_venda, nome_safe, "prov:" + str(contrato.id))
+                    # 2026-08-07: materializa os recebíveis previstos (achado da Vera), fail-soft
+                    _materializar_recebiveis_venda_seguro(_orc_venda, nome_safe, loja_id,
+                                                          contrato.gerado_em, "receb:" + str(contrato.id))
                     resp = {"ok": True, "contrato_id": contrato.id, "status": "para_assinatura"}
                     self.send_json(resp)
                 except Exception as e:

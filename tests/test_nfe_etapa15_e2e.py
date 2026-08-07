@@ -601,8 +601,11 @@ def test_emitir_nfse_processando_idempotente(http_client_factory, seed, app_db, 
 
 def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, app_db, projetos_dir, monkeypatch):
     """Wiring FASE B2: NF-e de produto autorizada lança a receita da MERCADORIA (4.1.01, segmentada do
-    Val_Cont) + o CMV = CFO (5.1.01×2.1.04.06), idempotentes por ref. Sem adiantamento prévio → a
-    parcela Mercadoria vai como 'a receber'. O evento legado `faturamento` NÃO é mais emitido no wiring."""
+    Val_Cont), idempotente por ref. Sem adiantamento prévio → a parcela Mercadoria vai como 'a receber'.
+    O evento legado `faturamento` NÃO é mais emitido no wiring. 2026-08-07: o CMV = CFO (5.1.01×1.1.06.06)
+    NÃO é mais reconhecido aqui — a NF-e só sai perto da entrega, e o custo real da fábrica só é
+    conhecido depois; a despesa nasce na efetivação (mod_contabil.efetivar_provisao), não mais estimada
+    de uma vez na NF-e (extinto o "matching pleno")."""
     monkeypatch.setattr(nfe_emissao, "_emissor_para", lambda db, eid: FakeEmissor())
     proj = seed["projeto_l2"]
     _reset15(app_db, proj); _perfil(app_db, seed["loja2_id"])
@@ -633,9 +636,16 @@ def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, 
     merc = [l for l in lans if l["ref"] == ref_merc]
     assert len(merc) == 1 and merc[0]["origem"] == "faturamento_mercadoria_adiantado"
     assert merc[0]["valor"] == 65000.0
-    # FASE D2: o CMV da fábrica é reconhecido na NF-e via matching pleno (5.1.01 × baixa do ativo 1.1.06.06)
-    cmv = [l for l in lans if l["ref"] == f"match:{proj}:custo_fabrica"]
-    assert len(cmv) == 1 and cmv[0]["origem"] == "reconhecimento_despesa_custo_fabrica" and cmv[0]["valor"] == 40000.0
+    # 2026-08-07: o CMV da fábrica NÃO é mais reconhecido na NF-e — fica diferido até a efetivação real.
+    assert not [l for l in lans if l["origem"] == "reconhecimento_despesa_custo_fabrica"]
+    st3, dc = c.get("/api/financeiro/contas")
+    assert st3 == 200
+    import mod_contabil as _mc2
+    dbchk = app_db.get_session()
+    ot2, oid2 = _mc2.resolver_owner(dbchk, {"loja_id": seed["loja2_id"], "rede_id": None})
+    ca = dbchk.query(_mc2.Conta).filter_by(owner_tipo=ot2, owner_id=oid2, codigo="1.1.06.06").first()
+    assert _mc2.saldo_conta(dbchk, ot2, oid2, ca.id) == 40000.0   # ativo diferido intacto — CMV ainda não conhecido
+    dbchk.close()
     # o evento legado 'faturamento' foi aposentado do wiring (não há lançamento com o ref antigo)
     assert not [l for l in lans if l["ref"] == f"fat:NFE-{proj}-{up['documento_id']}"]
 

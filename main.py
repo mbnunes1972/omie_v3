@@ -692,15 +692,10 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
                 imp_merc, imp_serv = _segmentar(imp_total, vals["seg"]["pct_mercadoria"])
                 imp_seg = imp_merc if segmento == "mercadoria" else imp_serv
                 mod_contabil.efetivar_impostos_segmento(db, ot, oid, projeto_nome, imp_seg, ref_base="imp:" + ref_doc)
-            # FASE D2: matching pleno — reconhece TODAS as despesas planejadas (10 rubricas, incl. o CMV da
-            # fábrica) na NF-e, baixando os ativos diferidos 1.1.06.0X. Idempotente por projeto+rubrica e por
-            # saldo → seguro disparar em ambas as emissões (mercadoria/serviço). Substitui o faturamento_cmv.
-            # Desmembramento operacional (Fatia 4): limita ao ELEGÍVEL (parcelas não retidas) — a retida
-            # fica DIFERIDA; ao liberar (fração maior), a re-emissão reconhece só o delta. None = inteiro.
-            import mod_retido
-            _fr = mod_retido.fracao_reconhecivel(db, projeto_nome)
-            mod_contabil.reconhecer_despesas_nfe(db, ot, oid, projeto_nome,
-                                                 ref_base="match:" + projeto_nome, fracao=_fr)
+            # 2026-08-07: a NF-e NÃO reconhece mais despesa (extinto o "matching pleno" — as despesas de
+            # projeto de móveis planejados ocorrem espalhadas ao longo do ciclo, muitas depois da própria
+            # NF-e). A despesa nasce só na efetivação real (mod_contabil.efetivar_provisao /
+            # mod_assistencias.realizar_caso), na competência real do custo.
         finally:
             db.close()
     except Exception as e:
@@ -885,6 +880,11 @@ class Handler(BaseHTTPRequestHandler):
             proj = (qs.get("projeto") or [None])[0]
             ini = _parse_data((qs.get("ini") or [None])[0])
             fim = _parse_data((qs.get("fim") or [None])[0])
+            # `data` é DateTime real (com hora) — um `fim` vindo de <input type=date> chega à
+            # meia-noite; sem levar pro fim do dia, um lançamento das 14h do próprio dia ficaria
+            # de fora do filtro (achado ao testar o filtro combinado projeto+período, 2026-08-07).
+            if fim is not None:
+                fim = datetime.combine(fim.date(), datetime.max.time())
             try:
                 lans = mod_contabil.listar_lancamentos(db, ot, oid, projeto_id=proj, ini=ini, fim=fim)
                 self.send_json({"ok": True, "lancamentos": lans})
@@ -1018,12 +1018,20 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query)
             ini = _parse_data((qs.get("ini") or [None])[0])
             fim = _parse_data((qs.get("fim") or [None])[0])
+            modo = (qs.get("modo") or ["real"])[0]
             try:
                 if ot == "consolidado":
                     self.send_json({"ok": True,
                                     "dre": mod_contabil.dre_consolidada(db, oid, ini=ini, fim=fim)})
                     return
-                self.send_json({"ok": True, "dre": mod_contabil.dre(db, ot, oid, ini=ini, fim=fim)})
+                # 2026-08-07: 3 visões — 'real' (padrão, o razão de verdade) ou as duas simuladas
+                # (leitura pura, nunca lançam) — ver mod_contabil.dre_simulada.
+                if modo == "real":
+                    self.send_json({"ok": True, "dre": mod_contabil.dre(db, ot, oid, ini=ini, fim=fim)})
+                else:
+                    self.send_json({"ok": True, "dre": mod_contabil.dre_simulada(db, ot, oid, modo, ini=ini, fim=fim)})
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:
                 db.close()
             return
@@ -1036,8 +1044,18 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query)
             ini = _parse_data((qs.get("ini") or [None])[0])
             fim = _parse_data((qs.get("fim") or [None])[0])
+            modo = (qs.get("modo") or ["real"])[0]
             try:
-                self.send_json({"ok": True, "projetos": mod_contabil.margem_todos_projetos(db, ot, oid, ini=ini, fim=fim)})
+                if modo == "real":
+                    projetos = mod_contabil.margem_todos_projetos(db, ot, oid, ini=ini, fim=fim)
+                else:
+                    projetos = sorted(
+                        (mod_contabil.margem_projeto_simulada(db, ot, oid, p, modo, ini=ini, fim=fim)
+                         for p in mod_contabil.projetos_com_lancamento(db, ot, oid)),
+                        key=lambda r: r["margem_contribuicao"], reverse=True)
+                self.send_json({"ok": True, "projetos": projetos})
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:
                 db.close()
             return
@@ -7388,8 +7406,15 @@ class Handler(BaseHTTPRequestHandler):
                 dd = json.loads(body or b'{}')
                 conta = (dd.get("conta") or "").strip()
                 proj = (dd.get("projeto") or "").strip() or None
-                ref = (dd.get("ref") or "").strip() or ("ef:%s:%s:%s" % (proj or "-", conta, uuid.uuid4().hex[:8]))
-                lan = mod_contabil.efetivar_provisao(db, ot, oid, proj, conta, dd.get("valor"), ref=ref)
+                valor = float(dd.get("valor") or 0)
+                # ref DETERMINÍSTICO quando o cliente não manda um (achado da Vera, 2026-08-07): um
+                # uuid aleatório a cada chamada fazia a idempotência de efetivar_provisao nunca
+                # acionar entre duas ações GENUINAMENTE separadas do operador (duplo-clique, retry
+                # após timeout) — cada uma tinha seu próprio ref, e a despesa duplicava. Chave por
+                # projeto+conta+valor+dia: repetir o MESMO evento no mesmo dia vira no-op idempotente.
+                ref = (dd.get("ref") or "").strip() or (
+                    "ef:%s:%s:%.2f:%s" % (proj or "-", conta, valor, date.today().isoformat()))
+                lan = mod_contabil.efetivar_provisao(db, ot, oid, proj, conta, valor, ref=ref)
                 db.commit()
                 self.send_json({"ok": True, "lancamento": lan})
             except ValueError as e:

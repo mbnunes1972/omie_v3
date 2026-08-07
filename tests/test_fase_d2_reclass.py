@@ -26,26 +26,28 @@ def test_reclassificar_espelha_ativo_antes_da_nfe(app_db):
     db.close()
 
 
-def test_matching_reconhece_outros_fornecedores(app_db):
-    """Após reclass antes da NF-e, o matching reconhece as DUAS partes como CMV (5.1.01), baixando os
-    dois ativos; as provisões (2.1.04.06/2.1.04.14) sobrevivem p/ pagamento/reconciliação."""
+def test_efetivacao_reconhece_despesa_outros_fornecedores(app_db):
+    """Após reclass, cada provisão (fábrica remanescente + outros fornecedores) reconhece despesa na
+    PRÓPRIA efetivação (2026-08-07 — antes era o matching pleno na NF-e), no MESMO 5.1.01; as provisões
+    (2.1.04.06/2.1.04.14) sobrevivem p/ pagamento/reconciliação."""
     db = app_db.get_session(); ot, oid = "loja", 731; mc.seed_plano(db, ot, oid)
     _constitui_fabrica(db, ot, oid, "P", 1000.0)
     mc.reclassificar_provisao(db, ot, oid, "P", "2.1.04.06", "2.1.04.14", 200.0, ref="rc:P")
-    out = mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")
-    assert out.get("custo_fabrica") == 800.0 and out.get("outros_fornecedores") == 200.0
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.06", 800.0, ref="ef:fab")
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.14", 200.0, ref="ef:out")
     assert _s(db, ot, oid, "5.1.01") == 1000.0                          # 800 fábrica + 200 outros
     assert _s(db, ot, oid, "1.1.06.06") == 0.0 and _s(db, ot, oid, "1.1.06.14") == 0.0
     assert _s(db, ot, oid, "2.1.04.06") == 800.0 and _s(db, ot, oid, "2.1.04.14") == 200.0
     db.close()
 
 
-def test_reclassificar_depois_da_nfe_nao_espelha_ativo_baixado(app_db):
-    """Reclass DEPOIS da NF-e: o ativo diferido já foi baixado (=0). A reclass move só a provisão; não há
-    ativo a espelhar (evita saldo negativo). O custo já foi reconhecido; a granularidade fica no passivo."""
+def test_reclassificar_depois_da_efetivacao_nao_espelha_ativo_baixado(app_db):
+    """Reclass DEPOIS da efetivação (2026-08-07 — antes era "depois da NF-e"): o ativo diferido já foi
+    baixado (=0). A reclass move só a provisão; não há ativo a espelhar (evita saldo negativo). O custo
+    já foi reconhecido; a granularidade fica no passivo."""
     db = app_db.get_session(); ot, oid = "loja", 732; mc.seed_plano(db, ot, oid)
     _constitui_fabrica(db, ot, oid, "P", 1000.0)
-    mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")     # baixa 1.1.06.06 → 0
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.06", 1000.0, ref="ef:P")   # baixa 1.1.06.06 → 0
     mc.reclassificar_provisao(db, ot, oid, "P", "2.1.04.06", "2.1.04.14", 200.0, ref="rc:P")
     assert _s(db, ot, oid, "2.1.04.06") == 800.0 and _s(db, ot, oid, "2.1.04.14") == 200.0  # provisão movida
     assert _s(db, ot, oid, "1.1.06.06") == 0.0 and _s(db, ot, oid, "1.1.06.14") == 0.0       # nada a espelhar
@@ -53,14 +55,18 @@ def test_reclassificar_depois_da_nfe_nao_espelha_ativo_baixado(app_db):
     db.close()
 
 
-def test_sobra_custo_fabrica_vira_receita(app_db):
-    """Sobra/falta vale p/ a 10ª rubrica (Custo de Fábrica): custo real < planejado → sobra vira receita."""
+def test_sobra_custo_fabrica_cancela_sem_dre(app_db):
+    """Sobra/falta vale p/ as rubricas com despesa em tempo real (Custo de Fábrica incluso, 2026-08-07):
+    custo real < planejado → cancela ativo × provisão SEM virar receita — a despesa real (900) já foi
+    reconhecida na própria efetivação; os 100 nunca gastos não geram ganho nenhum a "reverter"."""
     db = app_db.get_session(); ot, oid = "loja", 733; mc.seed_plano(db, ot, oid)
     _constitui_fabrica(db, ot, oid, "P", 1000.0)
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.06", 900.0, ref="ef:P")   # custo real 900 < 1000
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.06", ref="rs:P")
     assert _s(db, ot, oid, "2.1.04.06") == 0.0        # provisão zerada
-    assert _s(db, ot, oid, "4.4.02") == 100.0         # sobra → Reversão de Provisões (receita)
+    assert _s(db, ot, oid, "1.1.06.06") == 0.0        # ativo diferido zerado junto (cancelamento)
+    assert _s(db, ot, oid, "4.4.02") == 0.0           # SEM virar receita — nada a reverter
+    assert _s(db, ot, oid, "5.1.01") == 900.0         # a despesa REAL (900) já estava lá, intocada
     db.close()
 
 

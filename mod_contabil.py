@@ -1031,71 +1031,6 @@ def conferencia_pedido(db, owner_tipo, owner_id, projeto_id, custo_fabrica_novo,
     return out
 
 
-# FASE D2: matching pleno na NF-e — rubrica → evento de reconhecimento de despesa (baixa do ativo diferido).
-# Impostos NÃO entram (têm faturamento_impostos_deducao/obrigacao próprios).
-_MATCHING_NFE = {
-    "montagem":            "reconhecimento_despesa_montagem",
-    "garantia":            "reconhecimento_despesa_garantia",
-    "assistencia":         "reconhecimento_despesa_assistencia",
-    "frete_fabrica":       "reconhecimento_despesa_frete_fabrica",
-    "frete_local":         "reconhecimento_despesa_frete_local",
-    "insumos":             "reconhecimento_despesa_insumos",
-    "com_medidor":         "reconhecimento_despesa_com_medidor",
-    "com_proj_exec":       "reconhecimento_despesa_com_proj_exec",
-    "retencao_com_vendas": "reconhecimento_despesa_retencao_com_vendas",
-    "custo_fabrica":       "reconhecimento_despesa_custo_fabrica",
-    # Outros Fornecedores só tem saldo em 1.1.06.14 se houve reclassificação ANTES da NF-e (substituição
-    # de parte do pedido de fábrica) — nesse caso o matching o reconhece; senão o saldo é 0 e é pulado.
-    "outros_fornecedores": "reconhecimento_despesa_outros_fornecedores",
-    # FASE A (resultado da venda): os 4 custos adicionais também dão baixa na NF-e
-    "com_arq":             "reconhecimento_despesa_com_arq",
-    "pro_fid":             "reconhecimento_despesa_pro_fid",
-    "cust_via":            "reconhecimento_despesa_cust_via",
-    "brinde":              "reconhecimento_despesa_brinde",
-    "cust_esp":           "reconhecimento_despesa_cust_esp",
-}
-
-
-def reconhecer_despesas_nfe(db, owner_tipo, owner_id, projeto_id, ref_base, fracao=None):
-    """FASE D2 — matching pleno na NF-e: reconhece de UMA vez TODAS as despesas planejadas do projeto.
-    Para cada rubrica com saldo em aberto no ativo diferido 1.1.06.0X, debita a despesa (5.6.0X, ou
-    5.1.01 p/ Custo de Fábrica) × credita a baixa do ativo. A Provisão (2.1.04.0X) SOBREVIVE (paga/
-    reconciliada depois). Idempotente por ref (`ref_base:<rubrica>`) E por saldo (rubrica já baixada →
-    nada a reconhecer). Impostos NÃO entram aqui (faturamento_impostos_deducao/obrigacao). Retorna
-    {rubrica: valor_reconhecido}.
-
-    `fracao` (desmembramento operacional, Fatia 4): quando informado (0..1 = parte do projeto ELEGÍVEL
-    — as parcelas NÃO retidas), limita o reconhecido de cada rubrica ao ALVO `fracao × constituído`,
-    deixando o resto DIFERIDO no ativo 1.1.06 (a parcela retida). O ALVO acumulado (em centavos) entra
-    no `ref` (`ref_base:aNNNN:rubrica`), por rubrica: assim, ao liberar a parcela (fração maior → alvo
-    maior), a re-emissão reconhece só o DELTA, e dois alvos idênticos ao centavo (nada novo a
-    reconhecer) são corretamente idempotentes — sem colisão por truncamento de fração. `None` = projeto
-    inteiro (legado intacto, ref e valores idênticos ao anterior)."""
-    out = {}
-    if fracao is not None:
-        fracao = max(0.0, min(1.0, float(fracao)))
-    for chave, evento in _MATCHING_NFE.items():
-        ativo = EVENTOS[evento][1]   # crédito do evento = ativo diferido 1.1.06.0X
-        deb = total_lancado(db, owner_tipo, owner_id, ativo, "debito", projeto_id)
-        cred = total_lancado(db, owner_tipo, owner_id, ativo, "credito", projeto_id)
-        saldo = round(deb - cred, 2)
-        if saldo <= 0:
-            continue
-        if fracao is None:
-            val, ref = saldo, ref_base + ":" + chave
-        else:
-            # reconhecido-alvo dado o elegível − o já reconhecido (crédito), limitado ao saldo.
-            # ref pelo ALVO acumulado em centavos → único por nível de reconhecimento (sem colisão).
-            alvo = round(fracao * deb, 2)
-            val = round(min(saldo, alvo - cred), 2)
-            ref = ref_base + (":a%d:" % int(round(alvo * 100))) + chave
-        if val <= 0:
-            continue
-        registrar_evento(db, owner_tipo, owner_id, evento, val, projeto_id=projeto_id, ref=ref)
-        out[chave] = val
-    return out
-
-
 def total_lancado(db, owner_tipo, owner_id, codigo, lado, projeto_id=None,
                   origens=None, excluir_origens=None):
     """Soma BRUTA dos lançamentos de um lado ('debito'|'credito') de uma conta (opcionalmente por
@@ -1141,6 +1076,42 @@ _ORIGEM_RESOL_SOBRA = "resolucao_provisao_sobra"
 _ORIGEM_RESOL_FALTA = "resolucao_provisao_falta"
 _ORIGEM_RECLASS     = "reclassificacao_provisao"
 
+# 2026-08-07 (achado do usuário): despesa na COMPETÊNCIA REAL da efetivação, não mais estimada de
+# uma vez na NF-e (extinto o antigo "matching pleno", reconhecer_despesas_nfe/_MATCHING_NFE — as
+# despesas de projeto de móveis planejados ocorrem espalhadas ao longo do ciclo, muitas depois da
+# própria NF-e, que só sai no fim, na entrega). Ativo diferido (crédito) -> despesa formal (débito),
+# derivado de EVENTOS — cobre as 15 rubricas do antigo matching pleno + Outros Fornecedores
+# automaticamente. Custo Financeiro fica de fora (rota própria: reconhecer_custo_financeiro, atrelada
+# a um evento real de antecipação bancária, não à efetivação manual/automática de provisão).
+_PROV_DESPESA_POR_ATIVO = {cred: deb for ev, (deb, cred, _h) in EVENTOS.items()
+                          if ev.startswith("reconhecimento_despesa_") and ev != "reconhecimento_despesa_custo_financeiro"}
+
+
+def reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
+    """Perna de despesa de uma efetivação de provisão: débito na despesa FORMAL da rubrica (5.x) ×
+    crédito no ativo diferido espelho (1.1.06.0X) — reconhece o custo na competência REAL, em vez de
+    estimado de uma vez na NF-e. Usada tanto por `efetivar_provisao` (efetivação manual, Reconciliação)
+    quanto pela execução automática de casos de Assistência/Garantia
+    (mod_assistencias.realizar_caso) — mesma perna de despesa, qualquer que seja o lado do passivo
+    (Fornecedores a Pagar ou Caixa direto). Sem rota (impostos, custo financeiro, ou qualquer código
+    fora do mapa) → None, sem lançar nada. Idempotente por ref."""
+    ativo_cod = _ativo_diferido_de(codigo_provisao)
+    despesa_cod = _PROV_DESPESA_POR_ATIVO.get(ativo_cod)
+    if not despesa_cod or not _conta_existe(db, owner_tipo, owner_id, ativo_cod):
+        return None
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
+    if ja is not None:
+        return ja
+    valor = round(float(valor or 0), 2)
+    if valor <= 0:
+        return None
+    seed_plano(db, owner_tipo, owner_id)
+    cd = _conta_por_codigo(db, owner_tipo, owner_id, despesa_cod)
+    cc = _conta_por_codigo(db, owner_tipo, owner_id, ativo_cod)
+    return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data, projeto_id=projeto_id,
+                  origem="efetivacao_provisao_despesa",
+                  historico="Reconhecimento de despesa na efetivação (competência real)", ref=ref)
+
 
 def reclassificar_provisao(db, owner_tipo, owner_id, projeto_id, cod_de, cod_para, valor, ref, data=None):
     """Reclassifica parte de uma provisão para OUTRA (passivo × passivo — NÃO toca o resultado). Ex.:
@@ -1180,9 +1151,14 @@ def reclassificar_provisao(db, owner_tipo, owner_id, projeto_id, cod_de, cod_par
 
 
 def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
-    """Efetiva (reconhece) o custo REAL de uma provisão como obrigação com fornecedor: Provisão
-    (2.1.04.x) × Fornecedores a Pagar (2.1.01), por COMPETÊNCIA (não baixa em caixa — o pagamento é o
-    evento `pagamento_fornecedor`). Cobre QUALQUER provisão do grupo. Idempotente por ref."""
+    """Efetiva (reconhece) o custo REAL de uma provisão: dois lançamentos no mesmo evento —
+    (1) `reconhecer_despesa_efetivacao` (ref+':d'): débito na despesa formal da rubrica × crédito no
+    ativo diferido, reconhecendo o custo NA COMPETÊNCIA REAL (2026-08-07, achado do usuário — antes só
+    isto aqui movia passivo, e a despesa nascia estimada de uma vez na NF-e); e (2, ref bruto, mantido
+    p/ compat) Provisão (2.1.04.x) × Fornecedores a Pagar (2.1.01), por competência (não baixa em
+    caixa — o pagamento é o evento `pagamento_fornecedor`). Cobre QUALQUER provisão do grupo — Impostos
+    e Custo Financeiro não ganham a perna de despesa aqui (rota própria, sem entrada em
+    `_PROV_DESPESA_POR_ATIVO`). Idempotente por ref (cada perna por si)."""
     if not (codigo_provisao or "").startswith(GRUPO_PROVISOES + "."):
         raise ValueError("efetivar_provisao: %s não é conta de provisão (%s.x)" % (codigo_provisao, GRUPO_PROVISOES))
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
@@ -1192,6 +1168,8 @@ def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, val
     if valor <= 0:
         return None
     seed_plano(db, owner_tipo, owner_id)
+    reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor,
+                                  ref=ref + ":d", data=data)
     cd = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
     cc = _conta_por_codigo(db, owner_tipo, owner_id, "2.1.01")
     return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data, projeto_id=projeto_id,
@@ -1200,9 +1178,15 @@ def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, val
 
 
 def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, ref, data=None):
-    """Fecha o saldo em aberto da provisão (de um projeto) ao resultado. SOBRA (provisionado > efetivado)
-    → Provisão × Reversão de Provisões (4.4.02, receita). FALTA (efetivado > provisionado) → Ajuste de
-    Provisões (5.6.10, despesa) × Provisão. Zera a provisão do projeto. Idempotente por ref."""
+    """Fecha o saldo em aberto da provisão (de um projeto). Pras rubricas com despesa em tempo real
+    (`_PROV_DESPESA_POR_ATIVO` — as 15 do antigo matching pleno): CANCELA contra o ativo diferido
+    espelho (1.1.06.0X), SEM TOCAR A DRE em nenhuma direção (2026-08-07, achado do usuário) — SOBRA
+    (provisionado > efetivado) é dinheiro nunca gasto, não há despesa nenhuma a reverter, então não
+    vira "receita"; FALTA (efetivado > provisionado) já teve a despesa real reconhecida em tempo real,
+    a cada efetivação — não há nada NOVO a lançar, só o residual mecânico entre ativo e provisão a
+    zerar. Pras demais (Impostos, Custo Financeiro — rota própria, despesa não é em tempo real aqui):
+    mantido o comportamento antigo — SOBRA → Provisão × Reversão de Provisões (4.4.02, receita); FALTA
+    → Ajuste de Provisões (5.6.10, despesa) × Provisão. Zera a provisão do projeto. Idempotente por ref."""
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
     if ja is not None:
         return ja
@@ -1211,7 +1195,21 @@ def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisa
     if abs(saldo) < 0.005:
         return None
     prov = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
-    if saldo > 0:   # sobra → receita (débito Provisão × crédito 4.4.02)
+    ativo_cod = _ativo_diferido_de(codigo_provisao)
+    despesa_em_tempo_real = (_PROV_DESPESA_POR_ATIVO.get(ativo_cod) is not None
+                             and _conta_existe(db, owner_tipo, owner_id, ativo_cod))
+    if despesa_em_tempo_real:
+        ativo = _conta_por_codigo(db, owner_tipo, owner_id, ativo_cod)
+        if saldo > 0:   # sobra: nunca efetivado — cancela sem DRE (débito provisão × crédito ativo)
+            return lancar(db, owner_tipo, owner_id, prov.id, ativo.id, saldo, data=data, projeto_id=projeto_id,
+                          origem=_ORIGEM_RESOL_SOBRA,
+                          historico="Cancelamento de provisão não efetivada (nunca gasto — sem impacto no resultado)",
+                          ref=ref)
+        return lancar(db, owner_tipo, owner_id, ativo.id, prov.id, -saldo, data=data, projeto_id=projeto_id,
+                      origem=_ORIGEM_RESOL_FALTA,
+                      historico="Cancelamento de excedente já reconhecido na efetivação (sem novo impacto no resultado)",
+                      ref=ref)
+    if saldo > 0:   # sobra → receita (débito Provisão × crédito 4.4.02) — rota antiga (impostos/custo financeiro)
         cc = _conta_por_codigo(db, owner_tipo, owner_id, "4.4.02")
         return lancar(db, owner_tipo, owner_id, prov.id, cc.id, saldo, data=data, projeto_id=projeto_id,
                       origem=_ORIGEM_RESOL_SOBRA, historico="Reversão de provisão (sobra → receita)", ref=ref)
@@ -1239,20 +1237,27 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
         provisionado = round(tl(c.codigo, "credito", excluir_origens={_ORIGEM_RESOL_FALTA})
                              - tl(c.codigo, "debito", origens={_ORIGEM_RECLASS}), 2)
         efetivado = tl(c.codigo, "debito", excluir_origens={_ORIGEM_RESOL_SOBRA, _ORIGEM_RECLASS})
-        resolvido = round(tl(c.codigo, "debito", origens={_ORIGEM_RESOL_SOBRA})
-                          + tl(c.codigo, "credito", origens={_ORIGEM_RESOL_FALTA}), 2)
+        resolvido_sobra = tl(c.codigo, "debito", origens={_ORIGEM_RESOL_SOBRA})
+        resolvido_falta = tl(c.codigo, "credito", origens={_ORIGEM_RESOL_FALTA})
+        resolvido = round(resolvido_sobra + resolvido_falta, 2)
         saldo = round(provisionado - efetivado, 2)
         # saldo_aberto (líquido) = o que ainda falta resolver. `resolvido` é magnitude positiva nos dois
         # casos; sobra (saldo>0) e falta (saldo<0) reduzem o bruto em direções opostas → desconta na direção
         # do sinal do saldo. (Painel exibe este como "Saldo"; saldo/resolvido ficam p/ auditoria.)
         saldo_aberto = round(saldo - resolvido if saldo > 0 else (saldo + resolvido if saldo < 0 else 0.0), 2)
+        # resolvido_liquido = mesma magnitude de `resolvido`, com sinal (positivo=sobra/receita,
+        # negativo=falta/despesa) — só para exibição (cor/sinal na UI); `resolvido` acima permanece
+        # magnitude p/ não quebrar saldo_aberto nem os testes que já dependem dele.
+        resolvido_liquido = round(resolvido_sobra - resolvido_falta, 2)
         provs.append({"codigo": c.codigo, "nome": c.nome, "tipo": _PROV_PAINEL_TIPO.get(c.codigo, "O"),
                       "provisionado": provisionado, "efetivado": efetivado,
-                      "saldo": saldo, "resolvido": resolvido, "saldo_aberto": saldo_aberto})
+                      "saldo": saldo, "resolvido": resolvido, "resolvido_liquido": resolvido_liquido,
+                      "saldo_aberto": saldo_aberto})
     t = lambda k: round(sum(p[k] for p in provs), 2)
     return {"projeto_id": projeto_id, "provisoes": provs,
             "totais": {"provisionado": t("provisionado"), "efetivado": t("efetivado"),
-                       "saldo": t("saldo"), "resolvido": t("resolvido"), "saldo_aberto": t("saldo_aberto")}}
+                       "saldo": t("saldo"), "resolvido": t("resolvido"),
+                       "resolvido_liquido": t("resolvido_liquido"), "saldo_aberto": t("saldo_aberto")}}
 
 
 def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base):
@@ -1717,6 +1722,95 @@ def dre(db, owner_tipo, owner_id, ini=None, fim=None):
     }
 
 
+def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
+    """DRE em modo simulado (2026-08-07, a pedido do usuário) — LEITURA pura, nunca escreve no razão
+    nem duplica nada. Recalcula receita/despesa das rubricas com despesa-em-tempo-real (as 15 do
+    antigo "matching pleno") usando o valor CONSTITUÍDO (a provisão da venda — a estimativa),
+    atribuído a uma data diferente da real. Deduções, despesas administrativas/financeiras, outras
+    receitas e impostos NÃO mudam (rota própria, fora desta simulação) — vêm sempre do `dre()` real,
+    mesmo período.
+      - 'competencia_estimada': despesa = constituído de cada rubrica, na data da NF-e (mesma data da
+        receita real) — reproduz o antigo "matching pleno". Receita = a real.
+      - 'antecipacao_contrato': receita E despesa simuladas na data da VENDA/contrato assinado —
+        receita = Val_Cont (lançamento `registro_venda_contrato`); despesa = constituído de cada
+        rubrica, na mesma data.
+    Mesmo formato de `dre()` (compatível com o frontend); sem `detalhe` (a simulação não tem
+    composição linha-a-linha real pra detalhar)."""
+    if modo not in ("competencia_estimada", "antecipacao_contrato"):
+        raise ValueError("modo inválido: %s" % modo)
+    real = dre(db, owner_tipo, owner_id, ini, fim)
+    # normaliza p/ `date` puro — `marco.data` é DateTime; comparar date×datetime levanta TypeError
+    # (o endpoint HTTP manda datetime via _parse_data; chamadas diretas podem mandar date).
+    ini = ini.date() if hasattr(ini, "date") else ini
+    fim = fim.date() if hasattr(fim, "date") else fim
+    ids_receita = [c.id for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()
+                   if c.codigo.startswith("4.1.") or c.codigo.startswith("4.2.")]
+    contas_prov = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
+                   .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
+    receita_bruta = 0.0 if modo == "antecipacao_contrato" else real["receita_bruta"]
+    por_conta_despesa = {}
+    for proj in projetos_com_lancamento(db, owner_tipo, owner_id):
+        if modo == "antecipacao_contrato":
+            marco = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
+                     projeto_id=proj, origem="registro_venda_contrato")
+                     .order_by(Lancamento.data.asc()).first())
+        elif ids_receita:
+            marco = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, projeto_id=proj)
+                     .filter(Lancamento.conta_credito_id.in_(ids_receita))
+                     .order_by(Lancamento.data.asc()).first())
+        else:
+            marco = None
+        if marco is None:
+            continue
+        data_ref = marco.data.date() if hasattr(marco.data, "date") else marco.data
+        if ini and data_ref < ini:
+            continue
+        if fim and data_ref > fim:
+            continue
+        if modo == "antecipacao_contrato":
+            receita_bruta = round(receita_bruta + marco.valor, 2)
+        for c in contas_prov:
+            desp_cod = _PROV_DESPESA_POR_ATIVO.get(_ativo_diferido_de(c.codigo))
+            if not desp_cod:
+                continue
+            constituido = round(total_lancado(db, owner_tipo, owner_id, c.codigo, "credito", proj,
+                                              excluir_origens={_ORIGEM_RESOL_FALTA})
+                                - total_lancado(db, owner_tipo, owner_id, c.codigo, "debito", proj,
+                                                origens={_ORIGEM_RECLASS}), 2)
+            if constituido:
+                por_conta_despesa[desp_cod] = round(por_conta_despesa.get(desp_cod, 0.0) + constituido, 2)
+    # S109: 5.1/5.2 -> cmv_csp; 5.3 -> despesas comerciais (mesmo agrupamento formal do dre() real)
+    cmv_csp = round(sum(v for cod, v in por_conta_despesa.items() if cod.startswith(("5.1", "5.2"))), 2)
+    desp_com = round(sum(v for cod, v in por_conta_despesa.items() if cod.startswith("5.3")), 2)
+    deducoes = real["deducoes"]
+    receita_liquida = round(receita_bruta - deducoes, 2)
+    lucro_bruto = round(receita_liquida - cmv_csp, 2)
+    desp_adm = real["despesas_administrativas"]
+    const_prov = real["constituicao_provisoes"]
+    ebitda = round(lucro_bruto - desp_com - desp_adm - const_prov, 2)
+    ebit = round(ebitda - real["depreciacao"], 2)
+    resultado_financeiro = real["resultado_financeiro"]
+    outras_receitas = real["outras_receitas"]
+    resultado_antes_impostos = round(ebit + resultado_financeiro + outras_receitas, 2)
+    lucro_liquido = round(resultado_antes_impostos - real["impostos"], 2)
+    return {
+        "modo": modo,
+        "periodo": real["periodo"],
+        "receita_bruta": receita_bruta, "deducoes": deducoes, "receita_liquida": receita_liquida,
+        "cmv_csp": cmv_csp, "lucro_bruto": lucro_bruto,
+        "despesas_comerciais": desp_com, "despesas_administrativas": desp_adm,
+        "constituicao_provisoes": const_prov, "ebitda": ebitda,
+        "depreciacao": real["depreciacao"], "ebit": ebit,
+        "resultado_financeiro": resultado_financeiro, "outras_receitas": outras_receitas,
+        "resultado_antes_impostos": resultado_antes_impostos,
+        "impostos": real["impostos"], "lucro_liquido": lucro_liquido,
+        "obs": ("Simulação (leitura, nunca lançada): despesa das rubricas com despesa em tempo real "
+                "usa o valor CONSTITUÍDO na venda, não o efetivado real. Deduções/despesas "
+                "administrativas/financeiras/outras receitas/impostos vêm do resultado real (fora do "
+                "escopo desta simulação)."),
+    }
+
+
 # ── Balanço Patrimonial (v5 §4) ──────────────────────────────────────────────
 def balanco(db, owner_tipo, owner_id, data_corte=None):
     """Posição patrimonial num instante: saldo ACUMULADO (do início até `data_corte`) dos grupos
@@ -1923,7 +2017,15 @@ def margem_projeto(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
     """Margem de contribuição de um projeto (v5 §5): receita − custo direto de produto −
     Provisão de Montagem − Provisão de Assistência Técnica − Provisão de Garantia − comissão.
     Garantia entra pelo **valor bruto** (custo real da loja); repasse à fábrica é controle à parte (§6.2).
-    NÃO aloca despesa fixa (isso é o rateio da Auditoria)."""
+    NÃO aloca despesa fixa (isso é o rateio da Auditoria).
+
+    2026-08-07 (achado do usuário — "não reflete o estágio atual do projeto"): desde que a despesa
+    passou a ser reconhecida na efetivação real (não mais estimada de uma vez na NF-e), essa margem
+    só reflete o que JÁ foi efetivado — um projeto recém-faturado aparece com margem quase cheia,
+    mesmo que ainda falte gastar boa parte da provisão. `saldo_provisao_aberto` (o mesmo total que o
+    painel de Reconciliação mostra) e `margem_projetada` (margem_contribuicao − a PARTE do saldo
+    aberto ainda não gasta) dão o quadro completo: realizado até agora × pior caso se toda a provisão
+    pendente for gasta."""
     m = lambda pref, sen: _mov(db, owner_tipo, owner_id, pref, sen, ini, fim, projeto_id=projeto_id)
     receita = round(m("4.1", "credor") + m("4.2", "credor"), 2)
     custo_produto = m("5.1", "devedor")      # inclui o Frete de Fábrica (5.1.02, formalismo S109)
@@ -1939,7 +2041,65 @@ def margem_projeto(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
     # nada em separado (somar de novo duplicaria o custo). Campo INFORMATIVO / peso de rateio
     # (reconciliar proporcional_custo_direto) — NÃO entra de novo na margem.
     custo_servico = m("5.2", "devedor")
+    saldo_aberto = reconciliacao(db, owner_tipo, owner_id, projeto_id=projeto_id, ini=ini, fim=fim)["totais"]["saldo_aberto"]
+    # só desconta a parte AINDA NÃO gasta (saldo_aberto > 0); saldo negativo (já gastou mais que o
+    # provisionado) já está refletido em margem_contribuicao — subtrair de novo duplicaria o excesso.
+    margem_projetada = round(margem - max(saldo_aberto, 0.0), 2)
     return {"projeto_id": projeto_id, "receita": receita, "custo_produto": custo_produto,
+            "custo_servico": custo_servico,
+            "prov_montagem": prov_montagem, "prov_assistencia": prov_assistencia,
+            "prov_garantia": prov_garantia, "comissao": comissao, "margem_contribuicao": margem,
+            "saldo_provisao_aberto": saldo_aberto, "margem_projetada": margem_projetada}
+
+
+def margem_projeto_simulada(db, owner_tipo, owner_id, projeto_id, modo, ini=None, fim=None):
+    """Margem de contribuição em modo simulado (2026-08-07) — mesmas regras de `dre_simulada`
+    (leitura pura, nunca lança), escopada a 1 projeto. Ver `dre_simulada` pra semântica dos modos."""
+    if modo not in ("competencia_estimada", "antecipacao_contrato"):
+        raise ValueError("modo inválido: %s" % modo)
+    real = margem_projeto(db, owner_tipo, owner_id, projeto_id, ini, fim)
+    ini = ini.date() if hasattr(ini, "date") else ini
+    fim = fim.date() if hasattr(fim, "date") else fim
+    ids_receita = [c.id for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()
+                   if c.codigo.startswith("4.1.") or c.codigo.startswith("4.2.")]
+    if modo == "antecipacao_contrato":
+        marco = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
+                 projeto_id=projeto_id, origem="registro_venda_contrato")
+                 .order_by(Lancamento.data.asc()).first())
+    elif ids_receita:
+        marco = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, projeto_id=projeto_id)
+                 .filter(Lancamento.conta_credito_id.in_(ids_receita))
+                 .order_by(Lancamento.data.asc()).first())
+    else:
+        marco = None
+    dentro_periodo = False
+    if marco is not None:
+        data_ref = marco.data.date() if hasattr(marco.data, "date") else marco.data
+        dentro_periodo = not ((ini and data_ref < ini) or (fim and data_ref > fim))
+    receita = 0.0
+    por_conta = {}
+    if dentro_periodo:
+        receita = marco.valor if modo == "antecipacao_contrato" else real["receita"]
+        contas_prov = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
+                       .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
+        for c in contas_prov:
+            desp_cod = _PROV_DESPESA_POR_ATIVO.get(_ativo_diferido_de(c.codigo))
+            if not desp_cod:
+                continue
+            constituido = round(total_lancado(db, owner_tipo, owner_id, c.codigo, "credito", projeto_id,
+                                              excluir_origens={_ORIGEM_RESOL_FALTA})
+                                - total_lancado(db, owner_tipo, owner_id, c.codigo, "debito", projeto_id,
+                                                origens={_ORIGEM_RECLASS}), 2)
+            if constituido:
+                por_conta[desp_cod] = round(por_conta.get(desp_cod, 0.0) + constituido, 2)
+    custo_produto = round(sum(v for cod, v in por_conta.items() if cod.startswith("5.1")), 2)
+    prov_montagem = por_conta.get("5.2.01", 0.0)
+    prov_assistencia = por_conta.get("5.2.13", 0.0)
+    prov_garantia = por_conta.get("5.2.12", 0.0)
+    comissao = round(sum(v for cod, v in por_conta.items() if cod.startswith("5.3")), 2)
+    custo_servico = round(sum(v for cod, v in por_conta.items() if cod.startswith("5.2")), 2)
+    margem = round(receita - custo_produto - prov_montagem - prov_assistencia - prov_garantia - comissao, 2)
+    return {"projeto_id": projeto_id, "modo": modo, "receita": receita, "custo_produto": custo_produto,
             "custo_servico": custo_servico,
             "prov_montagem": prov_montagem, "prov_assistencia": prov_assistencia,
             "prov_garantia": prov_garantia, "comissao": comissao, "margem_contribuicao": margem}

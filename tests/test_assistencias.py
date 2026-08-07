@@ -70,6 +70,23 @@ def test_realizar_paga_gera_venda_sem_provisao(app_db):
     db.close()
 
 
+def test_realizar_loja_reconhece_despesa_na_competencia_real(app_db):
+    """2026-08-07: realizar um caso Loja/Fábrica também reconhece a despesa formal (baixa do ativo
+    diferido), na competência REAL do atendimento — não mais estimada de uma vez na NF-e. Cenário
+    realista: a provisão nasce na venda (constituir_provisoes_fechamento) ANTES do caso ser aberto."""
+    db = app_db.get_session()
+    loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "5")
+    mc.seed_plano(db, "loja", loja_id)
+    mc.constituir_provisoes_fechamento(db, "loja", loja_id, "Proj5", {"assistencia": 1000.0}, ref_base="pf:Proj5")
+    caso = ma.criar_caso(db, loja_id, "Proj5", "pos_conclusao", "erro_montagem", "x", 300.0, usuario_id)
+    ok, err = ma.realizar_caso(db, "loja", loja_id, caso)
+    assert ok, err
+    assert _saldo(db, loja_id, "5.2.13") == 300.0        # despesa formal reconhecida (Assistência Técnica)
+    assert _saldo(db, loja_id, "1.1.06.05") == 700.0     # ativo diferido baixado só na proporção efetivada
+    assert _saldo(db, loja_id, "2.1.04.05") == 700.0     # provisão sobrevive (700 ainda em aberto)
+    db.close()
+
+
 def test_realizar_idempotente(app_db):
     db = app_db.get_session()
     loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "4")

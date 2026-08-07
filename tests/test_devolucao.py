@@ -1,6 +1,7 @@
 """Fatia D — devolução (parcial/total) da venda. Reverte proporcionalmente a constituição DIFERIDA
-(receita a realizar + impostos + provisões × ativos); a despesa já reconhecida na NF-e (custo real
-de um móvel entregue) NÃO reverte. Resolve o buraco do impostos revisável por devolução.
+(receita a realizar + impostos + provisões × ativos); a despesa já reconhecida NA EFETIVAÇÃO
+(2026-08-07 — antes era "na NF-e"; custo real de um móvel já entregue) NÃO reverte. Resolve o buraco
+do impostos revisável por devolução.
 """
 import mod_contabil as mc
 
@@ -36,10 +37,10 @@ def test_devolucao_parcial_reverte_a_fracao(app_db):
     db.close()
 
 
-def test_devolucao_nao_reverte_custo_ja_reconhecido_na_nfe(app_db):
+def test_devolucao_nao_reverte_custo_ja_reconhecido_na_efetivacao(app_db):
     db = app_db.get_session(); ot, oid = "loja", 992
     _montar_venda(db, ot, oid, "P")
-    mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")   # baixa o ativo 1.1.06.06 (móvel entregue)
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.06", 4000.0, ref="ef:P")   # baixa o ativo 1.1.06.06 (móvel entregue)
     out = mc.devolver_venda(db, ot, oid, "P", 1.0, ref_base="dev:P")
     assert "2.1.04.06" not in out                    # não reverte (ativo já baixado — custo real incorrido)
     assert _s(db, ot, oid, "2.1.04.06") == 4000.0    # provisão (a pagar à fábrica) segue

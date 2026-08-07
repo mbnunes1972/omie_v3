@@ -28,6 +28,22 @@ def test_efetivar_reconciliacao_pagar_fluxo(http_client_factory, seed):
     assert d["contas_a_pagar"]["total_em_aberto"] == 0.0
 
 
+def test_efetivar_sem_ref_e_idempotente_no_mesmo_dia(http_client_factory, seed):
+    """Achado da Vera (2026-08-07): sem `ref` explícito, o endpoint gerava um uuid aleatório a cada
+    chamada — duas ações GENUINAMENTE separadas do operador (duplo-clique, retry após timeout) tinham
+    refs diferentes e a despesa duplicava. Agora o ref auto-gerado é determinístico por
+    projeto+conta+valor+dia: repetir a MESMA chamada no mesmo dia é idempotente."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st1, d1 = c.post("/api/financeiro/efetivar-provisao", {"conta": "2.1.04.09", "valor": 300.0})
+    assert st1 == 200 and d1["ok"] is True, d1
+    st2, d2 = c.post("/api/financeiro/efetivar-provisao", {"conta": "2.1.04.09", "valor": 300.0})
+    assert st2 == 200 and d2["ok"] is True, d2
+    assert d1["lancamento"]["id"] == d2["lancamento"]["id"]   # mesmo lançamento, não duplicou
+    st, d = c.get("/api/financeiro/reconciliacao-provisoes")
+    linhas = {l["codigo"]: l for l in d["reconciliacao"]["provisoes"]}
+    assert linhas["2.1.04.09"]["efetivado"] == 300.0   # não 600
+
+
 def test_resolver_saldo_endpoint(http_client_factory, seed):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     # efetiva 900 numa provisão sem constituição → saldo negativo (falta) → resolver manda p/ despesa

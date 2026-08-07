@@ -26,11 +26,15 @@ def test_custo_financeiro_constitui_provisao_sem_tocar_dre(app_db):
     db.close()
 
 
-def test_custo_financeiro_fica_fora_do_matching_operacional(app_db):
+def test_custo_financeiro_fica_fora_do_reconhecimento_generico(app_db):
+    """Custo Financeiro tem rota própria (reconhecer_custo_financeiro) — nem o reconhecimento genérico
+    de despesa (usado por efetivar_provisao/mod_assistencias) nem a efetivação manual tocam
+    5.5.04/1.1.06.19, senão duplicaria com a rota própria."""
     db = app_db.get_session(); ot, oid = "loja", 961; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"custo_financeiro": 500.0}, ref_base="pf:P")
-    mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")   # matching OPERACIONAL
-    assert _s(db, ot, oid, "1.1.06.19") == 500.0   # ativo intacto — não é baixado pelo matching operacional
+    assert mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.19", 500.0, ref="ef:P") is None
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.19", 500.0, ref="ef2:P")   # só passivo, sem despesa
+    assert _s(db, ot, oid, "1.1.06.19") == 500.0   # ativo intacto — rota própria não foi acionada
     assert _s(db, ot, oid, "5.5.04") == 0.0
     db.close()
 

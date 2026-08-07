@@ -102,7 +102,7 @@ def test_exemplo_loja3_ciclo_completo_sem_sobra_falta(http_client_factory, seed,
     db = app_db.get_session()
     assert _s(db, ot, oid, "2.1.08") == 40500.0
 
-    mc.reconhecer_despesas_nfe(db, ot, oid, nome, ref_base="match:" + nome)
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, nome, "2.1.04.06", 104500.0, ref="ef:" + nome)
     assert _s(db, ot, oid, "5.1.01") == 104500.0
     mc.registrar_evento(db, ot, oid, "pagamento_fabrica", 104500.0, projeto_id=nome,
                         ref="pag:" + nome)

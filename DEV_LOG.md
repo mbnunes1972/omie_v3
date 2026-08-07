@@ -3277,6 +3277,94 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 168 — Motor de despesa passa a reconhecer na efetivação real (não mais estimada na NF-e) + 3 visões de DRE/Margem-Projeto
+
+Frente grande, em duas partes: (1) reforma do reconhecimento de despesa, motivada por um achado do
+usuário sobre o "matching pleno" (Sessão 70); (2) 3 visões de leitura do resultado, pedidas em
+seguida. Área **muito sensível** (motor contábil); brainstorm extenso antes de codar; QA da Vera no
+meio do caminho pegou um bug real. Suíte 1764→**1778**.
+
+**O achado que disparou a mudança:** neste mercado (móveis planejados) a NF-e só sai no FIM do
+ciclo — na entrega, depois de pagar a fábrica — e despesas como Assistência Técnica/Garantia só
+acontecem MESES depois, às vezes no pós-conclusão. O "matching pleno" (`reconhecer_despesas_nfe`,
+extinto) reconhecia a despesa ESTIMADA de ~15 rubricas de uma vez só na NF-e — cedo demais pras
+rubricas de cauda longa, escondendo o descasamento real entre venda e entrega que é, segundo o
+usuário, "o grande desafio gerencial" do negócio.
+
+**Novo modelo:** despesa nasce só na EFETIVAÇÃO real (manual, botão "Efetivar" na Reconciliação, ou
+automática via `mod_assistencias.realizar_caso` pra casos Loja/Fábrica) — nunca mais estimada de
+antemão. `mod_contabil.reconhecer_despesa_efetivacao` (nova) debita a despesa formal da rubrica ×
+credita o ativo diferido, derivando a conta automaticamente de `EVENTOS` (`_PROV_DESPESA_POR_ATIVO`);
+`efetivar_provisao` passa a disparar essa perna JUNTO com a de sempre (Provisão × Fornecedores a
+Pagar); `mod_assistencias.realizar_caso` idem. `resolver_saldo_provisao`/`conciliar_final`: pras
+rubricas com despesa em tempo real, o saldo remanescente agora CANCELA contra o ativo diferido **sem
+tocar a DRE** (nem receita, nem despesa) — sobra nunca foi gasta (nada a reverter em "ganho"), falta
+já foi reconhecida em tempo real (nada NOVO a lançar). Impostos e Custo Financeiro mantêm as rotas
+próprias de sempre, intocadas. `reconhecer_despesas_nfe`/`_MATCHING_NFE` foram removidos por inteiro
+(só tinham um chamador, o wiring do faturamento segmentado em `main.py`).
+
+**🔴 Achado da Vera (QA no meio do caminho) — duplo-lançamento de despesa:** o endpoint
+`POST /api/financeiro/efetivar-provisao` gerava um `ref` com uuid aleatório quando o cliente não
+mandava um — duas ações genuinamente separadas do operador (duplo-clique, retry após timeout) tinham
+refs diferentes e a idempotência nunca disparava, duplicando a despesa. Fix: `ref` auto-gerado passa
+a ser determinístico (`projeto+conta+valor+dia`) — repetir o MESMO evento no mesmo dia vira no-op.
+Frontend: botão "Efetivar" trava no clique (evita a corrida de duplo-clique também). Vera também
+achou uma lacuna na Fatia 4 (retenção de ambiente pela obra, `mod_retido.fracao_reconhecivel` ficou
+órfã) e que Assistência/Garantia continuam editáveis por DOIS caminhos (Efetivar genérico + Realizar
+Caso) sem ciência um do outro — **ambos registrados como pendência**, não corrigidos: o usuário quer
+rever esse controle antes de decidir o quê fazer.
+
+**3 visões de leitura do resultado (pedido em seguida, pra não perder a "antecipação" que o matching
+pleno dava):** `dre_simulada(modo, ini, fim)` e `margem_projeto_simulada(...)` — LEITURA pura, nunca
+escrevem no razão, recalculam em cima do que já existe. `competencia_estimada` reproduz o antigo
+matching pleno (despesa = constituído, na data da NF-e); `antecipacao_contrato` simula receita E
+despesa na data da venda/contrato (Val_Cont do `registro_venda_contrato`). Deduções/despesas
+administrativas/financeiras/outras receitas/impostos sempre vêm do resultado REAL — fora do escopo
+da simulação. `margem_projeto` (real) ganhou `saldo_provisao_aberto`/`margem_projetada` (achado
+próprio do usuário: "Margem/Projeto não parece refletir o estágio atual do projeto" — um projeto
+recém-faturado aparecia com margem quase cheia antes de qualquer efetivação). Endpoints
+`GET /api/financeiro/dre` e `/projetos-dre` ganham `?modo=`; frontend: seletor de 3 botões nas duas
+telas, Margem/Projeto só mostra as colunas Saldo em Aberto/Margem Projetada na visão Real.
+
+**Testes:** 10 arquivos reescritos pra nova semântica (`test_fase_d2_nfe.py`,
+`test_fase_d2_reclass.py`, `test_devolucao.py`, `test_custos_adicionais_provisao.py`,
+`test_fase_b2_eventos.py`, `test_contabil_ajustes_excepcionais.py`,
+`test_fase_d2_conciliacao_final.py`, `test_fase_d_reconciliacao.py`, `test_resultado_financeiro.py`,
+`test_nfe_etapa15_e2e.py`) + `tests/test_dre_simulada.py` (novo) + reforço em `test_assistencias.py`,
+`test_dre_projeto.py`, `test_dre_api.py`, `test_dre_projeto_api.py`, `test_fase_d_endpoints.py`
+(regressão do bug da Vera).
+
+**Verificação:** Vera rodou simulação HTTP real ponta a ponta (efetivar via Reconciliação, Realizar
+Caso na Assistência, Etapa 21 com provisão nunca efetivada — confirma sem receita/despesa fantasma).
+As 3 visões conferidas ao vivo via Playwright nas duas telas, sem erro de console.
+
+**Arquivos:** `mod_contabil.py`, `mod_assistencias.py`, `main.py`, `static/index.html`, os 10 arquivos
+de teste reescritos + `tests/test_dre_simulada.py` (novo).
+
+## Sessão 167 — Reconc. Provisões: cor por sinal (Provisionado/Efetivado neutros) + Lançamentos ganha filtro de projeto/data, layout reorganizado e hora no lançamento
+
+Dois pedidos do usuário, ambos só `static/index.html`. Suíte inalterada (frontend puro).
+
+**Reconc. Provisões — cor por sinal:** Provisionado e Efetivado ficam sempre no texto normal (branco)
+— são valores de referência, não resultado; Saldo e Resolvido usam o sinal (verde positivo, vermelho
+negativo, branco no zero — `_reconSaldoCor` corrigido: zero era `var(--muted)` cinza, virou
+`var(--text)`). Vale pras 3 telas que reusam `_reconProvTabelaHtml` (Financeiro, modal do projeto,
+Etapa 21).
+
+**Lançamentos — filtro de projeto/data combinável:** select de projeto (filtra a lista "Últimos
+lançamentos") + 2 campos de data (De/Até), os três combináveis (`GET
+/api/financeiro/lancamentos?projeto=&ini=&fim=`, endpoint já suportava). **Bug achado ao testar o
+combo:** `fim` vindo de `<input type=date>` chegava à meia-noite — um lançamento das 14h do PRÓPRIO
+dia ficava fora do filtro `[hoje,hoje]`. Fix: `fim` vira fim do dia (`datetime.combine(fim.date(),
+datetime.max.time())`) antes de filtrar, com teste de regressão
+(`test_get_lancamentos_fim_do_dia_inclui_lancamento_de_hoje`). Cada lançamento passa a mostrar
+`dd/mm hh:mm` (a `data` já era DateTime real, só não aparecia). **Reorganização de layout** (pedido
+ao ver a tela): Débito/Crédito/Projeto na mesma linha (o seletor de projeto agora faz dupla função —
+filtra a lista E vira o projeto do próximo lançamento); Valor/Histórico/De/Até/Lançar na linha
+seguinte — sumiu o campo de texto "Projeto (opcional)", substituído pelo seletor.
+
+**Arquivos:** `static/index.html`, `main.py` (fix do `fim`), `tests/test_lancamentos_api.py`.
+
 ## Sessão 166 — Fluxo de Caixa: seletor de Conta encolhido pra caber "+ Adicionar Conta" na mesma linha
 
 Ajuste fino pós-Sessão 165, pedido ao ver a tela: o `<select>` de Conta (sem largura definida)

@@ -33,10 +33,11 @@ def test_constituem_ativo_e_provisao_sem_tocar_dre(app_db):
     db.close()
 
 
-def test_matching_na_nfe_reconhece_despesa_e_baixa_ativo(app_db):
+def test_efetivacao_reconhece_despesa_e_baixa_ativo(app_db):
     db = app_db.get_session(); ot, oid = "loja", 951; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"com_arq": 300.0, "brinde": 80.0}, ref_base="pf:P")
-    mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.15", 300.0, ref="ef:arq")
+    mc.reconhecer_despesa_efetivacao(db, ot, oid, "P", "2.1.04.18", 80.0, ref="ef:brinde")
     assert _s(db, ot, oid, "5.3.15") == 300.0    # Comissão de Arquiteto → despesa comercial
     assert _s(db, ot, oid, "5.3.12") == 80.0     # Brinde → despesa comercial
     assert _s(db, ot, oid, "1.1.06.15") == 0.0   # ativo diferido baixado
@@ -56,16 +57,17 @@ def test_ajuste_delta_af_funciona_para_os_novos(app_db):
     db.close()
 
 
-def test_cust_esp_matching_e_conciliacao(app_db):
-    # Custo Especial percorre o ciclo completo: constituição no contrato → matching na NF-e
-    # (despesa 5.3.17, provisão sobrevive) → conciliação final resolve o saldo (sobra → 4.4.02).
+def test_cust_esp_nunca_efetivado_conciliacao_cancela_sem_dre(app_db):
+    # Custo Especial percorre o ciclo completo: constituição no contrato → nunca efetivado →
+    # conciliação final CANCELA o saldo (ativo × provisão) sem tocar a DRE em nenhuma direção
+    # (2026-08-07 — antes, com o matching pleno na NF-e, a despesa nascia estimada cedo e a sobra
+    # virava receita).
     db = app_db.get_session(); ot, oid = "loja", 953; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"cust_esp": 120.0}, ref_base="pf:P")
-    mc.reconhecer_despesas_nfe(db, ot, oid, "P", ref_base="match:P")
-    assert _s(db, ot, oid, "5.3.17") == 120.0    # despesa reconhecida na NF-e
-    assert _s(db, ot, oid, "1.1.06.20") == 0.0   # ativo diferido baixado
-    assert _s(db, ot, oid, "2.1.04.20") == 120.0 # provisão sobrevive
     out = mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P")
-    assert out.get("2.1.04.20") == 120.0         # sobra resolvida (nada foi efetivado)
+    assert out.get("2.1.04.20") == 120.0         # saldo resolvido (cancelado)
     assert _s(db, ot, oid, "2.1.04.20") == 0.0
+    assert _s(db, ot, oid, "1.1.06.20") == 0.0    # ativo cancelado junto
+    assert _s(db, ot, oid, "5.3.17") == 0.0       # despesa NUNCA reconhecida — nada foi gasto
+    assert _s(db, ot, oid, "4.4.02") == 0.0       # e não vira receita tampouco
     db.close()

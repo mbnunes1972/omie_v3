@@ -48,13 +48,17 @@ def test_reconciliacao_projeto(app_db):
     db.close()
 
 
-def test_resolver_saldo_sobra_vira_receita(app_db):
+def test_resolver_saldo_sobra_cancela_sem_receita(app_db):
+    """2026-08-07: frete_fabrica tem despesa em tempo real (reconhecida na própria efetivação) — a
+    sobra CANCELA contra o ativo diferido, sem virar receita (nada a reverter)."""
     db = app_db.get_session(); ot, oid = "loja", 603; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
-    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07")   # despesa real já reconhecida
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.07", ref="rs:P:07")
     assert _s(db, ot, oid, "2.1.04.07") == 0.0       # provisão zerada
-    assert _s(db, ot, oid, "4.4.02") == 100.0        # sobra → receita reversão
+    assert _s(db, ot, oid, "1.1.06.07") == 0.0       # ativo diferido cancelado junto
+    assert _s(db, ot, oid, "4.4.02") == 0.0          # SEM virar receita
+    assert _s(db, ot, oid, "5.1.02") == 900.0        # despesa real (frete fábrica), intocada
     # reconciliação: efetivado NÃO conta a resolução; expõe resolvido à parte
     rec = {l["codigo"]: l for l in mc.reconciliacao(db, ot, oid, projeto_id="P")["provisoes"]}
     assert rec["2.1.04.07"]["provisionado"] == 1000.0 and rec["2.1.04.07"]["efetivado"] == 900.0
@@ -62,14 +66,18 @@ def test_resolver_saldo_sobra_vira_receita(app_db):
     db.close()
 
 
-def test_resolver_saldo_falta_vira_despesa(app_db):
+def test_resolver_saldo_falta_cancela_sem_despesa_extra(app_db):
+    """2026-08-07: custo real (1200) > provisionado (1000) — a despesa JÁ foi reconhecida por inteiro
+    na própria efetivação; a falta só cancela o residual, sem despesa NOVA (senão duplicaria)."""
     db = app_db.get_session(); ot, oid = "loja", 604; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 1200.0, ref="ef:P:07")   # custo real > provisão
     assert _s(db, ot, oid, "2.1.04.07") == -200.0    # falta (saldo negativo)
+    assert _s(db, ot, oid, "5.1.02") == 1200.0       # despesa real JÁ reconhecida por inteiro
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.07", ref="rs:P:07")
     assert _s(db, ot, oid, "2.1.04.07") == 0.0       # zerada
-    assert _s(db, ot, oid, "5.6.10") == 200.0        # falta → despesa ajuste
+    assert _s(db, ot, oid, "5.6.10") == 0.0          # SEM despesa extra
+    assert _s(db, ot, oid, "5.1.02") == 1200.0       # despesa real, intocada
     db.close()
 
 
@@ -133,11 +141,13 @@ def test_provisao_projetos(app_db):
 
 
 def test_dre_inclui_reversao_de_provisao(app_db):
-    """FASE D: a SOBRA da reconciliação (4.4.02) entra na DRE via Outras Receitas (não fica órfã)."""
+    """A SOBRA de uma provisão SEM despesa em tempo real (rota própria — aqui Custo Financeiro) entra
+    na DRE via Outras Receitas (não fica órfã). Pras rubricas com despesa em tempo real (2026-08-07),
+    ver test_resolver_saldo_sobra_cancela_sem_receita — essas NÃO tocam a DRE."""
     db = app_db.get_session(); ot, oid = "loja", 610; mc.seed_plano(db, ot, oid)
-    mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
-    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 600.0, ref="ef")   # sobra 400
-    mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.07", ref="rs")
+    mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"custo_financeiro": 1000.0}, ref_base="pf:P")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.19", 600.0, ref="ef")   # sobra 400
+    mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.19", ref="rs")
     d = mc.dre(db, ot, oid)
     assert d["outras_receitas"] == 400.0
     assert d["resultado_antes_impostos"] == round(d["ebit"] + d["resultado_financeiro"] + 400.0, 2)

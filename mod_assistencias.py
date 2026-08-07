@@ -103,7 +103,9 @@ def equipe_do_caso(db, caso_id):
 
 def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
     """Executa/conclui o caso: posta o lançamento conforme o tipo de custo e marca 'realizado'.
-    Idempotente por ref ('assist:<id>'). Retorna (ok, erro)."""
+    Loja/Fábrica também reconhecem a despesa formal na competência real (2026-08-07 — mesma perna que
+    `efetivar_provisao` usa manualmente na Reconciliação; antes a despesa nascia estimada de uma vez
+    na NF-e). Idempotente por ref ('assist:<id>'). Retorna (ok, erro)."""
     if caso.status == "realizado":
         return True, None
     nv = _num(valor)
@@ -114,6 +116,10 @@ def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
     evento = EVENTO_POR_CUSTO[caso.tipo_custo]
     ref = "assist:%d" % caso.id
     motivo = caso.motivo if caso.tipo_custo == "fabrica" else None   # §6.2: motivo carimba o reparo em garantia
+    if caso.tipo_custo in ("loja", "fabrica"):
+        codigo_provisao = mod_contabil.EVENTOS[evento][0]   # débito do evento de execução = a provisão
+        mod_contabil.reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, caso.projeto_nome,
+                                                   codigo_provisao, caso.valor, ref=ref + ":d")
     mod_contabil.registrar_evento(db, owner_tipo, owner_id, evento, caso.valor,
                                   projeto_id=caso.projeto_nome, ref=ref, motivo=motivo)
     caso.status = "realizado"

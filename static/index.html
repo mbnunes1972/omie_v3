@@ -13715,7 +13715,12 @@ async function adminFiscalSalvarSegredos(){
   const d = await r.json();
   if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Credenciais Focus'}); return; }
   showToast('Credenciais Focus salvas.', false);
-  adminFiscalCarregar(kind, lid);
+  // Não recarrega o painel inteiro (2026-08-07, achado do usuário): um GET+re-render aqui
+  // apagava da tela qualquer edição ainda não salva nos OUTROS campos (ex. Inscrição
+  // Estadual/Municipal digitadas mas sem ter clicado em "Salvar configuração fiscal" ainda) —
+  // as duas ações são independentes, então só atualiza os 2 campos de token in-place.
+  if (h) { document.getElementById('pf-token-homolog').value=''; document.getElementById('pf-token-homolog').placeholder='✓ definido — deixe em branco para manter'; if(_cfgFisc) _cfgFisc.token_homolog_definido = true; }
+  if (p) { document.getElementById('pf-token-prod').value=''; document.getElementById('pf-token-prod').placeholder='✓ definido — deixe em branco para manter'; if(_cfgFisc) _cfgFisc.token_prod_definido = true; }
 }
 
 async function adminFiscalAtivarAmbiente(ambiente){

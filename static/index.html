@@ -1347,6 +1347,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <button class="home-tab"        data-cadtab="fornecedores" onclick="cadTab('fornecedores')">Fornecedores</button>
       <button class="home-tab"        data-cadtab="parceiros"    onclick="cadTab('parceiros')">Parceiros</button>
       <button class="home-tab"        data-cadtab="terceiros"    onclick="cadTab('terceiros')">Terceiros</button>
+      <button class="home-tab"        data-cadtab="funcionarios" onclick="cadTab('funcionarios')">Funcionários</button>
     </div>
 
     <!-- Painel: Clientes (conteúdo movido de page-05) -->
@@ -1410,6 +1411,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <!-- Painéis stub -->
     <div id="cad-panel-fornecedores" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="cad-panel-terceiros"    style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    <div id="cad-panel-funcionarios" style="display:none"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
   </div>
 
   <!-- Modal genérico de Cadastro (Detalhe/Formulário) — Funcionário/Fornecedor/Terceiro -->
@@ -5798,7 +5800,7 @@ async function assistCriar(){
 function cadTab(qual){
   document.querySelectorAll('#page-10 .home-tab').forEach(b =>
     b.classList.toggle('active', b.getAttribute('data-cadtab') === qual));
-  ['clientes','parceiros','fornecedores','terceiros'].forEach(k => {
+  ['clientes','parceiros','fornecedores','terceiros','funcionarios'].forEach(k => {
     const p = document.getElementById('cad-panel-'+k);
     if(p) p.style.display = (k === qual) ? 'block' : 'none';
   });
@@ -12271,6 +12273,7 @@ const _SB_MODULOS = {
                  {id:'parceiros',    lbl:'Parceiros',    ic:'users-group',    go:()=>cadIr('parceiros')},
                  {id:'fornecedores', lbl:'Fornecedores', ic:'building-store', go:()=>cadIr('fornecedores')},
                  {id:'terceiros',    lbl:'Terceiros',    ic:'user-cog',       go:()=>cadIr('terceiros')},
+                 {id:'funcionarios', lbl:'Funcionários', ic:'id-badge-2',     go:()=>cadIr('funcionarios')},
               ]},
   comercial:  {ic:'chart-histogram', go:()=>comercialDashAbrir()},  // Comercial = DASHBOARD (conversão/carteira/volume); a lista+ciclo é o atalho "Projetos"
   fiscal:     {ic:'file-invoice',  go:()=>goPage(11)},    // folha: Emitente/NF-e
@@ -12590,20 +12593,11 @@ function finTab(t){
 // ── Folha de Pagamento (Modulos_Orizon_v10 §2.1): motor — parte fixa (cadastro) + variável (vendas) ──
 let _folhaComp = null;   // competência ativa (AAAA-MM)
 function _folhaCompDefault(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-let _folhaAba = 'folha';
-async function folhaCarregar(){   // entry do módulo Folha: sub-abas Folha do mês | Funcionários
-  const box = document.getElementById('folha-box'); if(!box) return;
-  box.innerHTML =
-    '<div class="home-tabs" style="display:flex;gap:6px;margin-bottom:14px">'
-    +'<button class="home-tab'+(_folhaAba==='folha'?' active':'')+'" onclick="folhaAba(\'folha\')">Folha do mês</button>'
-    +'<button class="home-tab'+(_folhaAba==='func'?' active':'')+'" onclick="folhaAba(\'func\')">Funcionários</button>'
-    +'</div>'
-    +'<div id="folha-mes-box" style="display:'+(_folhaAba==='folha'?'block':'none')+'"></div>'
-    +'<div id="cad-panel-funcionarios" style="display:'+(_folhaAba==='func'?'block':'none')+'"></div>';
-  if(_folhaAba==='func') cadEntCarregar('funcionarios');
-  else folhaMesCarregar();
+async function folhaCarregar(){   // entry do módulo Folha: só a Folha do mês — Funcionários voltou
+  const box = document.getElementById('folha-box'); if(!box) return;   // pro Cadastro (2026-08-06), o lugar mais adequado
+  box.innerHTML = '<div id="folha-mes-box"></div>';
+  folhaMesCarregar();
 }
-function folhaAba(a){ _folhaAba=a; folhaCarregar(); }
 async function folhaMesCarregar(){
   const box = document.getElementById('folha-mes-box'); if(!box) return;
   if(!_folhaComp) _folhaComp = _folhaCompDefault();

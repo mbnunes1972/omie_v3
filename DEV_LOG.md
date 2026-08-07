@@ -3277,6 +3277,32 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 164 — Funcionários volta pro módulo Cadastro (saiu da aba Folha de Pagamento)
+
+Pedido do usuário: "é o lugar mais adequado". Achado ao investigar: o backend já classificava
+Funcionário como domínio `cadastro` (`modulos.py`, tabela+rotas+`mod_cadastro.py`) e a definição
+genérica de entidade (`_CAD_DEFS.funcionarios`, campos/colunas/modal) já vivia no bloco
+compartilhado de Cadastro — só a NAVEGAÇÃO estava errada: `page-10` (Cadastro) não tinha botão/
+painel/entrada de sidebar pra Funcionários, e `folhaCarregar()` (Financeiro → Folha de
+Pagamento) tinha uma sub-aba "Funcionários" que reusava esse mesmo painel genérico
+(`cad-panel-funcionarios`) por dentro do módulo errado. Puramente um problema de local, não de
+funcionalidade faltando — `cadTab('funcionarios')` já tinha o caso especial certo (só faltava o
+painel na lista que ele itera pra mostrar/esconder, um bug latente à parte, corrigido junto).
+
+**Mudança (só `static/index.html`):** botão+painel "Funcionários" adicionados a `page-10` (mesmo
+padrão de Clientes/Fornecedores/Parceiros/Terceiros); `_SB_MODULOS.cadastro.secoes` ganha a
+entrada (ícone `id-badge-2`); `cadTab()` passa a incluir `'funcionarios'` na lista de painéis
+que alterna display (faltava — `cadEntCarregar` já era chamado, mas o painel nunca aparecia por
+essa via). `folhaCarregar()` simplificado: a sub-aba "Folha do mês | Funcionários" saiu, Folha de
+Pagamento agora abre direto na folha do mês (`_folhaAba`/`folhaAba()` removidos, sem mais uso).
+
+**Verificação:** suíte **1751 passed** (inalterada — mudança 100% de navegação frontend, zero
+backend). Ponta a ponta no navegador: Cadastro → Funcionários lista os 11 funcionários reais
+corretamente (nome/função/CPF/status), botão "+ Novo Funcionário" presente; Financeiro → Folha
+de Pagamento abre direto na folha do mês, sem a sub-aba antiga.
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 159 — Ajuste fino pós-Fatia 6: chips/toggle numa linha, ícone de projeto, tag "Pessoal", bug de race no oversight
 
 Segunda rodada de ajuste visual em cima da Sessão 158, toda em `static/index.html` (sem mudança de

@@ -3277,6 +3277,15 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 166 — Fluxo de Caixa: seletor de Conta encolhido pra caber "+ Adicionar Conta" na mesma linha
+
+Ajuste fino pós-Sessão 165, pedido ao ver a tela: o `<select>` de Conta (sem largura definida)
+ocupava a linha inteira do flex row, empurrando "+ Adicionar Conta" pra uma segunda linha e
+deixando um vão vazio antes do resto do painel. Fix: `<select>` ganhou `width:260px;max-width:50%`
+(cabe ao lado do botão, ainda encolhe em telas estreitas) e o botão `flex-shrink:0` (não espreme
+com o select). Frontend puro (`static/index.html`). Verificado via Playwright: seletor e botão na
+mesma linha, resto do painel sobe de volta, sem erro de console.
+
 ## Sessão 165 — Reconciliação de Provisões (redesenho de 3 telas) + hover de conta + novo submódulo Fluxo de Caixa
 
 Frente longa, dividida em brainstorm (aprovado por partes) + implementação + um novo pedido

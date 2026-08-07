@@ -556,6 +556,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   opacity: 1;
   filter: invert(0.7);
 }
+
+/* Hover do nome da conta (2026-08-07): sinaliza que o NÚMERO da conta (Plano de Contas) tem
+   nome disponível ao passar o mouse — usar em qualquer lugar que mostra só o código, sem nome
+   ao lado (ver _contaTitleAttr()). */
+.conta-hint { border-bottom: 1px dotted var(--muted); cursor: help; }
 </style>
 </head>
 <body>
@@ -1444,6 +1449,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="fin-panel-prov"><div id="loja-panel-financeiro"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-plano" style="display:none"><div id="plano-contas-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-lanc" style="display:none"><div id="lancamentos-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="fin-panel-fluxo" style="display:none"><div id="fluxo-caixa-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-dre" style="display:none"><div id="dre-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-bal" style="display:none"><div id="bal-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-proj" style="display:none"><div id="proj-dre-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
@@ -12246,6 +12252,7 @@ const _FIN_SECOES = [
   {id:'prov',    lbl:'Provisões',       ic:'shield-dollar',   load:()=>finDashboardCarregar()},
   {id:'plano',   lbl:'Plano de Contas', ic:'list-tree',       load:()=>planoContasCarregar()},
   {id:'lanc',    lbl:'Lançamentos',     ic:'receipt',         load:()=>lancamentosCarregar()},
+  {id:'fluxo',   lbl:'Fluxo de Caixa',  ic:'chart-line',      load:()=>fluxoCaixaCarregar()},
   {id:'dre',     lbl:'DRE',             ic:'report-money',    load:()=>dreCarregar()},
   {id:'bal',     lbl:'Balanço',         ic:'scale',           load:()=>balancoCarregar()},
   {id:'proj',    lbl:'Margem/Projeto',  ic:'chart-dots',      load:()=>projDreCarregar()},
@@ -12444,8 +12451,66 @@ async function abrirProvisaoModal(codigo){
 }
 
 // ── FASE D: Reconciliação de Provisões (Provisionado × Efetivado × Saldo × Destino) ───────────
-// Fonte única = razão: mesmo endpoint com ?projeto=X (granular) ou sem (consolidado). Efetivado
-// manual + resolver saldo só quando um projeto está selecionado.
+// Fonte única = razão: mesmo endpoint com ?projeto=X (granular) ou sem (consolidado).
+// Redesenho 2026-08-06 (pedido do usuário): a EDIÇÃO (Efetivar/Resolver) saiu do sub-módulo
+// Financeiro — ele vira só verificação/análise. Edição passou a viver só "no projeto": o modal
+// de Reconciliação do projeto (abrirReconciliacaoProjeto) e o card da Etapa 21 (Conciliação
+// Final). As três telas (Financeiro, modal do projeto, Etapa 21) agora reusam UM SÓ construtor
+// de tabela (_reconProvTabelaHtml) — antes eram três implementações quase-iguais e já tinham
+// divergido (o modal do projeto nem tinha a coluna Resolvido).
+const _reconSaldoCor = v => Math.abs(v)<0.005?'var(--muted)':(v>0?'var(--accent)':'var(--st-quente)');
+function _reconProvTabelaHtml(provisoes, opts){
+  opts = opts || {};
+  const editavel = !!opts.editavel, excluir = opts.excluir || null, prefixo = opts.prefixo || 'ef-';
+  const provs = excluir ? provisoes.filter(p=>!excluir.has(p.codigo)) : provisoes;
+  if(!provs.length) return '<div style="font-size:12px;color:var(--muted)">Sem provisões constituídas.</div>';
+  const TIPOS={A:'Comissões / Pessoas',B:'Custos futuros',C:'Aquisição / Fábrica',D:'Fiscal',O:'Outros'};
+  const grupos={}; provs.forEach(p=>{(grupos[p.tipo]=grupos[p.tipo]||[]).push(p);});
+  const cel=(v,cor)=>'<td style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+(cor||'var(--text)')+'">'+_fBRL(v)+'</td>';
+  const linha=p=>{
+    let acao='';
+    if(editavel){
+      // prefixo no id do input (2026-08-06): as 3 telas (Financeiro/leitura, modal do projeto,
+      // Etapa 21) podem coexistir na mesma página — sem prefixo por tela, ids "ef-<conta>"
+      // colidiriam e o valor lido no Efetivar seria o da tabela ERRADA.
+      // As 3 peças (input, Efetivar, Resolver) ficam SEMPRE presentes (pedido do usuário
+      // 2026-08-07 — antes o Resolver sumia quando saldo_aberto zerava, deslocando a coluna
+      // linha a linha). Quando já está resolvido (saldo_aberto ~0) as 3 desabilitam e mudam de
+      // cor pra "concluído" em vez de sumir — mesma info, sem a coluna pular de largura.
+      const resolvido = Math.abs(p.saldo_aberto) < 0.005;
+      const dis = resolvido ? ' disabled' : '';
+      const corBtn = resolvido ? ';color:var(--status-ok);border-color:var(--status-ok);opacity:.7;cursor:not-allowed' : '';
+      const corInput = resolvido ? ';opacity:.5;cursor:not-allowed' : '';
+      acao='<td style="text-align:right;padding:6px 8px;white-space:nowrap">'
+        +'<input type="number" step="0.01" id="'+prefixo+p.codigo+'" placeholder="R$ real"'+dis+' style="width:90px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-size:11px'+corInput+'">'
+        +' <button class="btn btn-sm"'+dis+' onclick="reconProvEfetivar(\''+p.codigo+'\',\''+prefixo+'\')" style="font-size:11px'+corBtn+'">Efetivar</button>'
+        +' <button class="btn btn-sm"'+dis+' onclick="reconProvResolver(\''+p.codigo+'\')" style="font-size:11px'+corBtn+'">Resolver</button>'
+        +'</td>';
+    }
+    // "Saldo" exibido = saldo_aberto (líquido, o que falta resolver); bruto vai no tooltip p/ auditoria.
+    const celSaldo='<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+_reconSaldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
+    return '<tr style="border-top:1px solid var(--border);font-size:12px">'
+      +'<td style="padding:6px 8px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(p.nome)+'">'+esc(p.nome)+'</td>'
+      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido,_reconSaldoCor(p.resolvido))+acao+'</tr>';
+  };
+  // table-layout:fixed + larguras explícitas (2026-08-06, pedido do usuário) SÓ na leitura: cada
+  // seção (A/B/C/D/O) é uma <table> SEPARADA — sem isso, cada uma auto-dimensiona as colunas pelo
+  // próprio conteúdo e "Provisionado/Efetivado/Saldo/Resolvido" ficam em posições X diferentes de
+  // seção pra seção (o pedido original era exatamente esse: alinhar as colunas da tela de
+  // leitura). No editável (modal do projeto/Etapa 21, container mais estreito + botões) o layout
+  // fixo cortava o botão "Resolver" na borda — ali o auto-layout de sempre respira melhor; poucas
+  // linhas por vez, não precisa alinhar entre tabelas.
+  const alinhar = !editavel;
+  const wProvisao = alinhar ? 'width:34%;' : '', wNum = alinhar ? 'width:16.5%;' : '';
+  const head='<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+    +'<th style="text-align:left;padding:6px 8px;'+wProvisao+'">Provisão</th>'
+    +'<th style="text-align:right;padding:6px 8px;'+wNum+'">Provisionado</th><th style="text-align:right;padding:6px 8px;'+wNum+'">Efetivado</th>'
+    +'<th style="text-align:right;padding:6px 8px;'+wNum+'">Saldo</th><th style="text-align:right;padding:6px 8px;'+wNum+'">Resolvido</th>'
+    +(editavel?'<th style="text-align:right;padding:6px 8px">Ação</th>':'')+'</tr>';
+  return ['A','B','C','D','O'].filter(t=>grupos[t]).map(t=>
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin:16px 0 4px">'+t+' · '+TIPOS[t]+'</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;min-width:'+(alinhar?'620':'520')+'px;border-collapse:collapse'+(alinhar?';table-layout:fixed':'')+'">'+head+grupos[t].map(linha).join('')+'</table></div>').join('');
+}
 let _reconProvProj = null;   // null = consolidado
 async function finReconProvCarregar(){
   const box = document.getElementById('reconprov-box');
@@ -12459,51 +12524,30 @@ async function finReconProvCarregar(){
   const qs = _reconProvProj ? ('?projeto='+encodeURIComponent(_reconProvProj)) : '';
   const rec = (await fetch('/api/financeiro/reconciliacao-provisoes'+qs, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
   if(!rec){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Falha ao carregar.</em>'; return; }
-  const granular = !!_reconProvProj;
-  const TIPOS={A:'Comissões / Pessoas',B:'Custos futuros',C:'Aquisição / Fábrica',D:'Fiscal',O:'Outros'};
   const opts = ['<option value="">Consolidado (todos os projetos)</option>']
     .concat(projetos.map(p=>'<option value="'+esc(p)+'"'+(p===_reconProvProj?' selected':'')+'>'+esc(p)+'</option>')).join('');
+  // Só leitura (2026-08-06): editar (Efetivar/Resolver) agora é só "no projeto" — Reconciliação
+  // no cabeçalho do projeto, ou a Etapa 21 (Conciliação Final) do Ciclo.
   const seletor = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
     +'<span style="font-size:12px;color:var(--muted)">Projeto:</span>'
     +'<select id="reconprov-sel" onchange="_reconProvProj=this.value||null;finReconProvCarregar()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px">'+opts+'</select>'
-    +'<span style="font-size:11px;color:var(--muted)">'+(granular?'edite o Efetivado (custo real) e resolva o saldo por provisão':'visão consolidada — selecione um projeto para efetivar/resolver')+'</span></div>';
-  const grupos={}; rec.provisoes.forEach(p=>{(grupos[p.tipo]=grupos[p.tipo]||[]).push(p);});
-  const saldoCor = v => Math.abs(v)<0.005?'var(--muted)':(v>0?'var(--accent)':'var(--st-quente)');
-  const cel=(v,cor)=>'<td style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+(cor||'var(--text)')+'">'+_fBRL(v)+'</td>';
-  const linha=p=>{
-    let acao='';
-    if(granular){
-      acao='<td style="text-align:right;padding:6px 8px;white-space:nowrap">'
-        +'<input type="number" step="0.01" id="ef-'+p.codigo+'" placeholder="R$ real" style="width:90px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-size:11px">'
-        +' <button class="btn btn-sm" onclick="reconProvEfetivar(\''+p.codigo+'\')" style="font-size:11px">Efetivar</button>'
-        +(Math.abs(p.saldo_aberto)>=0.005?' <button class="btn btn-sm" onclick="reconProvResolver(\''+p.codigo+'\')" style="font-size:11px">Resolver</button>':'')
-        +'</td>';
-    }
-    // "Saldo" exibido = saldo_aberto (líquido, o que falta resolver); bruto vai no tooltip p/ auditoria.
-    const celSaldo='<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+saldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
-    return '<tr style="border-top:1px solid var(--border);font-size:12px">'
-      +'<td style="padding:6px 8px">'+esc(p.nome)+'</td>'
-      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido,'var(--muted)')+acao+'</tr>';
-  };
-  const head='<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
-    +'<th style="text-align:left;padding:6px 8px">Provisão</th>'
-    +'<th style="text-align:right;padding:6px 8px">Provisionado</th><th style="text-align:right;padding:6px 8px">Efetivado</th>'
-    +'<th style="text-align:right;padding:6px 8px">Saldo</th><th style="text-align:right;padding:6px 8px">Resolvido</th>'
-    +(granular?'<th style="text-align:right;padding:6px 8px">Ação</th>':'')+'</tr>';
-  const secoes=['A','B','C','D','O'].filter(t=>grupos[t]).map(t=>
-    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin:16px 0 4px">'+t+' · '+TIPOS[t]+'</div>'
-    +'<table style="width:100%;border-collapse:collapse">'+head+grupos[t].map(linha).join('')+'</table>').join('');
+    +'<span style="font-size:11px;color:var(--muted)">Só leitura — para efetivar/resolver, abra o projeto (botão Reconciliação, ou Etapa 21)</span></div>';
   const tot=rec.totais;
   box.innerHTML=seletor
     +'<div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 18px;display:flex;gap:24px;flex-wrap:wrap;font-size:12px">'
     +'<span style="color:var(--muted)">Provisionado <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(tot.provisionado)+'</strong></span>'
     +'<span style="color:var(--muted)">Efetivado <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(tot.efetivado)+'</strong></span>'
-    +'<span style="color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo <strong style="font-family:var(--font-mono);color:'+saldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></span></div>'
-    +secoes;
+    +'<span style="color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo <strong style="font-family:var(--font-mono);color:'+_reconSaldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></span></div>'
+    +_reconProvTabelaHtml(rec.provisoes, {editavel:false});
 }
 function _reconReloadAtivo(){
+  // 3 telas possíveis desde 2026-08-06 (modal do projeto, Etapa 21 do Ciclo, Financeiro) —
+  // recarrega só a que está de fato visível, na ordem de prioridade abaixo.
   const modal=document.getElementById('modal-recon-proj');
-  if(modal && modal.style.display!=='none'){ reconProjRender(); } else { finReconProvCarregar(); }
+  const ciclo=document.getElementById('ciclo-panel');
+  if(modal && modal.style.display!=='none'){ reconProjRender(); }
+  else if(ciclo && ciclo.classList.contains('ativo') && document.getElementById('concfinal-box')){ _concFinalCarregar(); }
+  else { finReconProvCarregar(); }
 }
 async function reconProvEfetivar(conta, prefixo){
   if(!_reconProvProj) return;
@@ -12532,23 +12576,10 @@ async function reconProjRender(){
   if(!box) return;
   const rec=(await fetch('/api/financeiro/reconciliacao-provisoes?projeto='+encodeURIComponent(_reconProvProj),{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
   if(!rec){ box.innerHTML='<em style="color:var(--err);font-size:12px">Falha ao carregar (módulo financeiro inativo/sem acesso ou servidor desatualizado).</em>'; return; }
-  const saldoCor=v=>Math.abs(v)<0.005?'var(--muted)':(v>0?'var(--accent)':'var(--st-quente)');
-  const cel=(v,cor)=>'<td style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+(cor||'var(--text)')+'">'+_fBRL(v)+'</td>';
-  const celSaldo=p=>'<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:6px 8px;font-family:var(--font-mono);color:'+saldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
-  const linha=p=>'<tr style="border-top:1px solid var(--border);font-size:12px">'
-    +'<td style="padding:6px 8px">'+esc(p.nome)+'</td>'
-    +cel(p.provisionado)+cel(p.efetivado)+celSaldo(p)
-    +'<td style="text-align:right;padding:6px 8px;white-space:nowrap">'
-    +'<input type="number" step="0.01" id="efp-'+p.codigo+'" placeholder="R$ real" style="width:86px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-size:11px">'
-    +' <button class="btn btn-sm" onclick="reconProvEfetivar(\''+p.codigo+'\',\'efp-\')" style="font-size:11px">Efetivar</button>'
-    +(Math.abs(p.saldo_aberto)>=0.005?' <button class="btn btn-sm" onclick="reconProvResolver(\''+p.codigo+'\')" style="font-size:11px">Resolver</button>':'')
-    +'</td></tr>';
-  const head='<tr style="font-size:10px;color:var(--muted);text-transform:uppercase"><th style="text-align:left;padding:6px 8px">Provisão</th><th style="text-align:right;padding:6px 8px">Provisionado</th><th style="text-align:right;padding:6px 8px">Efetivado</th><th style="text-align:right;padding:6px 8px">Saldo</th><th style="text-align:right;padding:6px 8px">Ação</th></tr>';
-  const rows=rec.provisoes.filter(p=>p.provisionado||p.efetivado).map(linha).join('');
   const tot=rec.totais;
-  box.innerHTML='<table style="width:100%;border-collapse:collapse">'+head
-    +(rows||'<tr><td colspan="5" style="padding:8px;color:var(--muted);font-size:12px">Sem provisões constituídas neste projeto ainda.</td></tr>')
-    +'</table><div style="margin-top:10px;font-size:var(--fs-body);font-weight:600;color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo total a reconciliar: <strong style="font-family:var(--font-mono);color:'+saldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></div>';
+  const provs = rec.provisoes.filter(p=>p.provisionado||p.efetivado);
+  box.innerHTML=_reconProvTabelaHtml(provs, {editavel:true, prefixo:'efp-'})
+    +'<div style="margin-top:10px;font-size:var(--fs-body);font-weight:600;color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo total a reconciliar: <strong style="font-family:var(--font-mono);color:'+_reconSaldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></div>';
 }
 
 // ── FASE D: Contas a Pagar (Fornecedores a Pagar em aberto) ───────────────────────────────────
@@ -12577,6 +12608,205 @@ async function contasPagarPagar(){
   const d=await fetch('/api/financeiro/pagar-fornecedor',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor:valor,projeto:proj})}).then(r=>r.json());
   if(d.ok){ showToast('Pagamento registrado.'); finContasPagarCarregar(); } else { await avisoPopup(d.erro||'Erro',{titulo:'Pagar fornecedor'}); }
 }
+// ── Fluxo de Caixa (2026-08-07): dia a dia de crédito/débito/saldo, Consolidado (Caixa/Bancos
+//    1.1.01 + filhos "Adicionar Conta") ou conta específica — views Padrão (tabela) e Calendário.
+let _fluxoMes = null;          // AAAA-MM ativo (drives o filtro rápido e a view Calendário)
+let _fluxoIni = null, _fluxoFim = null;   // período efetivo (AAAA-MM-DD), sincronizado ao trocar o mês
+let _fluxoContaSel = null;     // null = Consolidado; senão id (string) da conta específica
+let _fluxoView = 'standard';   // 'standard' | 'calendario'
+let _fluxoDados = null;        // cache do último fetch (evita refetch só pra trocar de view)
+let _fluxoRaizId = null;       // id da conta 1.1.01, resolvido on-demand p/ "Adicionar Conta"
+function _fluxoMesDefault(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function _fluxoPeriodoDoMes(mes){
+  const [a,m] = mes.split('-').map(Number);
+  const ini = a+'-'+String(m).padStart(2,'0')+'-01';
+  const fim = a+'-'+String(m).padStart(2,'0')+'-'+String(new Date(a,m,0).getDate()).padStart(2,'0');
+  return [ini, fim];
+}
+function _fluxoSaldoCor(v){ return v<-0.005 ? 'var(--status-err)' : 'var(--text)'; }
+function _fluxoDataBR(iso){
+  const dt = new Date(iso+'T00:00:00');
+  const nomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const [a,m,d] = iso.split('-');
+  return d+'/'+m+' <span style="color:var(--muted);font-size:10px">'+nomes[dt.getDay()]+'</span>';
+}
+async function fluxoCaixaCarregar(){   // entry do módulo: FIN_SECOES o chama ao abrir a aba
+  const box = document.getElementById('fluxo-caixa-box');
+  if(!box) return;
+  if(!_fluxoMes) _fluxoMes = _fluxoMesDefault();
+  if(!_fluxoIni || !_fluxoFim) [_fluxoIni, _fluxoFim] = _fluxoPeriodoDoMes(_fluxoMes);
+  await _fluxoBuscarERenderizar();
+}
+async function _fluxoBuscarERenderizar(){
+  const box = document.getElementById('fluxo-caixa-box');
+  if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  let qs = '?de='+encodeURIComponent(_fluxoIni)+'&ate='+encodeURIComponent(_fluxoFim);
+  if(_fluxoContaSel) qs += '&contas='+encodeURIComponent(_fluxoContaSel);
+  const r = await fetch('/api/financeiro/fluxo-caixa'+qs, {credentials:'same-origin'});
+  if(r.status===403){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Módulo financeiro inativo ou sem acesso.</em>'; return; }
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Falha ao carregar.</em>'; return; }
+  _fluxoDados = d;
+  _fluxoRender();
+}
+function _fluxoRender(){
+  const box = document.getElementById('fluxo-caixa-box');
+  if(!box || !_fluxoDados) return;
+  box.innerHTML = _fluxoControlesHtml()
+    + (_fluxoView === 'calendario' ? _fluxoCalendarioHtml(_fluxoDados) : _fluxoStandardHtml(_fluxoDados));
+}
+function _fluxoControlesHtml(){
+  const d = _fluxoDados || {contas:[]};
+  const opts = ['<option value="">Consolidado</option>']
+    .concat((d.contas||[]).map(c=>'<option value="'+c.id+'"'+(String(c.id)===String(_fluxoContaSel)?' selected':'')+'>'+esc(c.codigo)+' · '+esc(c.nome)+'</option>')).join('');
+  return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
+    +'<label style="font-size:var(--fs-sm);color:var(--muted)">Mês</label>'
+    +'<input type="month" value="'+esc(_fluxoMes)+'" onchange="fluxoCaixaMudarMes(this.value)" class="inp" style="width:auto">'
+    +'<label style="font-size:var(--fs-sm);color:var(--muted);margin-left:4px">Período</label>'
+    +'<input type="date" value="'+esc(_fluxoIni)+'" onchange="fluxoCaixaMudarPeriodo(\'ini\',this.value)" class="inp" style="width:auto">'
+    +'<span style="color:var(--muted);font-size:12px">até</span>'
+    +'<input type="date" value="'+esc(_fluxoFim)+'" onchange="fluxoCaixaMudarPeriodo(\'fim\',this.value)" class="inp" style="width:auto">'
+    +'</div>'
+    +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
+    +'<label style="font-size:var(--fs-sm);color:var(--muted)">Conta</label>'
+    +'<select onchange="fluxoCaixaMudarConta(this.value)" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px">'+opts+'</select>'
+    +'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="fluxoCaixaAddConta()"><i class="ti ti-plus"></i> Adicionar Conta</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
+    +'<button class="btn btn-ghost btn-sm" onclick="fluxoCaixaNovoLancamento()"><i class="ti ti-plus"></i> Lançamento</button>'
+    +'<div style="margin-left:auto;display:flex;gap:4px;background:var(--surface-2);border-radius:8px;padding:3px">'
+    +'<button class="btn btn-sm '+(_fluxoView==='standard'?'btn-primary':'btn-ghost')+'" onclick="fluxoCaixaMudarView(\'standard\')">Padrão</button>'
+    +'<button class="btn btn-sm '+(_fluxoView==='calendario'?'btn-primary':'btn-ghost')+'" onclick="fluxoCaixaMudarView(\'calendario\')">Calendário</button></div>'
+    +'</div>'
+    + _fluxoLancFormHtml();
+}
+let _fluxoLancAberto = false;
+let _fluxoContasFlatCache = null;   // todas as contas ANALÍTICAS (p/ escolher a contrapartida)
+async function _fluxoContasFlatGarantir(){
+  if(_fluxoContasFlatCache) return _fluxoContasFlatCache;
+  const d = await fetch('/api/financeiro/contas', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  const flat = [];
+  (function walk(ns){ (ns||[]).forEach(n => { if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(d.contas);
+  _fluxoContasFlatCache = flat;
+  return flat;
+}
+async function fluxoCaixaNovoLancamento(){
+  if(!_fluxoLancAberto) await _fluxoContasFlatGarantir();
+  _fluxoLancAberto = !_fluxoLancAberto;
+  _fluxoRender();
+}
+function _fluxoLancFormHtml(){
+  if(!_fluxoLancAberto) return '';
+  const contasCaixa = (_fluxoDados && _fluxoDados.contas) || [];
+  const optsCaixa = contasCaixa.map(c=>'<option value="'+c.id+'"'+(String(c.id)===String(_fluxoContaSel)?' selected':'')+'>'+esc(c.codigo)+' · '+esc(c.nome)+'</option>').join('');
+  const idsCaixa = new Set(contasCaixa.map(c=>c.id));
+  const optsContra = (_fluxoContasFlatCache||[]).filter(n=>!idsCaixa.has(n.id))
+    .map(n=>'<option value="'+n.id+'">'+esc(n.codigo+' — '+n.nome)+'</option>').join('');
+  return '<div style="background:var(--surface-2);border-radius:10px;padding:14px 16px;margin-bottom:14px">'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<div><label class="field-label">Tipo</label><select id="fluxo-lanc-tipo" style="'+_finInput+'">'
+    +'<option value="entrada">Entrada (débito)</option><option value="saida">Saída (crédito)</option></select></div>'
+    +'<div><label class="field-label">Conta Caixa/Banco</label><select id="fluxo-lanc-caixa" style="'+_finInput+'">'+optsCaixa+'</select></div>'
+    +'<div style="flex:1;min-width:200px"><label class="field-label">Contrapartida</label><select id="fluxo-lanc-contra" style="'+_finInput+';width:100%">'+optsContra+'</select></div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">'
+    +'<div><label class="field-label">Valor</label><input id="fluxo-lanc-valor" type="number" step="0.01" style="'+_finInput+'"></div>'
+    +'<div><label class="field-label">Data</label><input id="fluxo-lanc-data" type="date" value="'+esc(_fluxoIni)+'" style="'+_finInput+'"></div>'
+    +'<div style="flex:1;min-width:200px"><label class="field-label">Histórico</label><input id="fluxo-lanc-hist" type="text" style="'+_finInput+';width:100%"></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="fluxoCaixaLancar()">Lançar</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="fluxoCaixaNovoLancamento()">Cancelar</button>'
+    +'</div></div>';
+}
+async function fluxoCaixaLancar(){
+  const tipo = document.getElementById('fluxo-lanc-tipo').value;
+  const caixaId = +document.getElementById('fluxo-lanc-caixa').value;
+  const contraId = +document.getElementById('fluxo-lanc-contra').value;
+  const valor = parseFloat(document.getElementById('fluxo-lanc-valor').value || '0');
+  const data = document.getElementById('fluxo-lanc-data').value;
+  const hist = document.getElementById('fluxo-lanc-hist').value || '';
+  if(!caixaId || !contraId){ showToast('Escolha a conta Caixa/Banco e a contrapartida.', true); return; }
+  if(!valor || valor<=0){ showToast('Informe um valor > 0', true); return; }
+  const deb = tipo==='entrada' ? caixaId : contraId;
+  const cred = tipo==='entrada' ? contraId : caixaId;
+  const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+    credentials:'same-origin', body: JSON.stringify({conta_debito_id:deb, conta_credito_id:cred, valor, data, historico:hist})});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ showToast(d.erro || 'Falha ao lançar', true); return; }
+  showToast('Lançamento registrado.');
+  _fluxoLancAberto = false;
+  await _fluxoBuscarERenderizar();
+}
+function fluxoCaixaMudarMes(v){
+  if(!v) return;
+  _fluxoMes = v;
+  [_fluxoIni, _fluxoFim] = _fluxoPeriodoDoMes(v);
+  _fluxoBuscarERenderizar();
+}
+function fluxoCaixaMudarPeriodo(campo, v){
+  if(!v) return;
+  if(campo === 'ini') _fluxoIni = v; else _fluxoFim = v;
+  _fluxoBuscarERenderizar();
+}
+function fluxoCaixaMudarConta(v){
+  _fluxoContaSel = v || null;
+  _fluxoBuscarERenderizar();
+}
+function fluxoCaixaMudarView(v){
+  _fluxoView = v;
+  _fluxoRender();   // dados já em cache — só re-renderiza, sem refetch
+}
+async function fluxoCaixaAddConta(){
+  const nome = prompt('Nome da nova conta (ex.: Banco Itaú, Banco Inter):');
+  if(!nome) return;
+  if(!_fluxoRaizId){
+    const arv = await fetch('/api/financeiro/contas', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+    const achar = nos => { for(const n of (nos||[])){ if(n.codigo==='1.1.01') return n.id; const r=achar(n.filhos); if(r) return r; } return null; };
+    _fluxoRaizId = achar(arv.contas);
+  }
+  if(!_fluxoRaizId){ showToast('Não achei a conta Caixa/Bancos (1.1.01).', true); return; }
+  const r = await fetch('/api/financeiro/contas', {method:'POST', headers:{'Content-Type':'application/json'},
+    credentials:'same-origin', body: JSON.stringify({pai_id: _fluxoRaizId, nome})});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ showToast(d.erro || 'Falha ao criar', true); return; }
+  showToast('Conta criada.');
+  await _fluxoBuscarERenderizar();
+}
+function _fluxoStandardHtml(d){
+  const linhas = (d.dias||[]).map(x =>
+    '<tr><td style="padding:7px 10px">'+_fluxoDataBR(x.data)+'</td>'
+    +'<td class="num" style="padding:7px 10px;color:var(--status-ok)">'+(x.debito?_fBRL(x.debito):'—')+'</td>'
+    +'<td class="num" style="padding:7px 10px;color:var(--status-err)">'+(x.credito?_fBRL(x.credito):'—')+'</td>'
+    +'<td class="num" style="padding:7px 10px;font-weight:700;color:'+_fluxoSaldoCor(x.saldo)+'">'+_fBRL(x.saldo)+'</td></tr>'
+  ).join('') || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Sem dias no período.</td></tr>';
+  return '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Saldo inicial: <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(d.saldo_inicial)+'</strong>'
+    +' · Saldo final: <strong style="font-family:var(--font-mono);color:'+_fluxoSaldoCor(d.saldo_final)+'">'+_fBRL(d.saldo_final)+'</strong></div>'
+    +'<div style="overflow-x:auto"><table class="proj-table" style="width:100%;min-width:420px"><thead><tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+    +'<th style="text-align:left;padding:6px 10px">Dia</th><th class="num" style="padding:6px 10px">Débito (entra)</th>'
+    +'<th class="num" style="padding:6px 10px">Crédito (sai)</th><th class="num" style="padding:6px 10px">Saldo</th></tr></thead>'
+    +'<tbody>'+linhas+'</tbody></table></div>';
+}
+function _fluxoCalendarioHtml(d){
+  const dias = d.dias||[];
+  if(!dias.length) return '<em style="color:var(--muted);font-size:12px">Sem dias no período.</em>';
+  const offset = new Date(dias[0].data+'T00:00:00').getDay();
+  const nomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const cab = nomes.map(n=>'<div style="text-align:center;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:4px">'+n+'</div>').join('');
+  const vazios = Array.from({length:offset}, ()=>'<div></div>').join('');
+  const celulas = dias.map(x => {
+    const mov = (x.credito||x.debito) ? '<div style="font-size:9px;line-height:1.4;margin-top:2px">'
+      +(x.debito?'<div style="color:var(--status-ok)">+'+_fBRL(x.debito)+'</div>':'')
+      +(x.credito?'<div style="color:var(--status-err)">−'+_fBRL(x.credito)+'</div>':'')+'</div>' : '';
+    return '<div style="background:var(--surface-2);border-radius:8px;padding:6px 8px;min-height:64px">'
+      +'<div style="font-size:11px;color:var(--muted)">'+x.data.split('-')[2]+'</div>'
+      +'<div style="font-size:12px;font-weight:700;font-family:var(--font-mono);color:'+_fluxoSaldoCor(x.saldo)+'">'+_fBRL(x.saldo)+'</div>'
+      +mov+'</div>';
+  }).join('');
+  return '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Saldo inicial: <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(d.saldo_inicial)+'</strong>'
+    +' · Saldo final: <strong style="font-family:var(--font-mono);color:'+_fluxoSaldoCor(d.saldo_final)+'">'+_fBRL(d.saldo_final)+'</strong></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">'+cab+vazios+celulas+'</div>';
+}
+
 function finTab(t){
   _finSecaoAtual = t;
   _FIN_SECOES.forEach(s => {
@@ -12979,23 +13209,54 @@ async function dreCarregar(){
 }
 
 const _finInput = 'width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-size:12px';
+// Plano de Contas — cache global código→nome (2026-08-07, pedido do usuário): "servirá de apoio
+// em todos os lugares onde não aparece o nome da conta, apenas o número" — passa o mouse sobre
+// o número (span.conta-hint) e mostra o nome do Plano de Contas. Populado a partir de QUALQUER
+// fetch de /api/financeiro/contas já feito na tela (evita round-trip extra); contasNomeGarantir()
+// busca sozinho se ninguém ainda carregou.
+let _contasNomeCache = null;
+function _contasNomeCachePopular(arvore){
+  _contasNomeCache = {};
+  const walk = ns => (ns||[]).forEach(n => { _contasNomeCache[n.codigo] = n.nome; walk(n.filhos); });
+  walk(arvore);
+}
+async function contasNomeGarantir(){
+  if(_contasNomeCache) return _contasNomeCache;
+  try{
+    const d = await (await fetch('/api/financeiro/contas', {credentials:'same-origin'})).json();
+    _contasNomeCachePopular(d.contas);
+  }catch(e){ _contasNomeCache = {}; }
+  return _contasNomeCache;
+}
+// title="..." pronto pra grudar num elemento que hoje só mostra o código — esc() já embutido.
+function _contaTitleAttr(codigo){
+  const nome = _contasNomeCache && _contasNomeCache[codigo];
+  return nome ? ' title="'+esc(nome)+'"' : '';
+}
+// <span> com o código + hover do nome (usar em vez de esc(codigo) cru).
+function contaHint(codigo){
+  return '<span class="conta-hint"'+_contaTitleAttr(codigo)+'>'+esc(codigo)+'</span>';
+}
+
 async function lancamentosCarregar(){
   const box = document.getElementById('lancamentos-box');
   if(!box) return;
   const rc = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
   if(rc.status===403){ box.innerHTML='<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const dc = await rc.json().catch(()=>({}));
+  _contasNomeCachePopular(dc.contas);
   const flat=[]; (function walk(ns){(ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); });})(dc.contas);
   const byId={}; flat.forEach(n=>byId[n.id]=n.codigo);
   const opts = flat.map(n=>'<option value="'+n.id+'">'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>').join('');
   const dl = await (await fetch('/api/financeiro/lancamentos', {credentials:'same-origin'})).json().catch(()=>({}));
-  const lista = (dl.lancamentos||[]).map(l=>
-     '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px">'
+  const lista = (dl.lancamentos||[]).map(l=>{
+    const codDeb = byId[l.conta_debito_id]||l.conta_debito_id, codCred = byId[l.conta_credito_id]||l.conta_credito_id;
+    return '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px">'
     +'<span style="font-family:var(--font-mono);color:var(--muted)">'+esc((l.data||'').slice(0,10))+'</span>'
-    +'<span style="font-family:var(--font-mono)">'+esc((byId[l.conta_debito_id]||l.conta_debito_id)+' → '+(byId[l.conta_credito_id]||l.conta_credito_id))+'</span>'
+    +'<span style="font-family:var(--font-mono)">'+contaHint(codDeb)+' → '+contaHint(codCred)+'</span>'
     +'<span style="margin-left:auto;font-family:var(--font-mono)">'+Number(l.valor).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
-    +(l.projeto_id?'<span style="color:var(--muted)">'+esc(l.projeto_id)+'</span>':'')+'</div>'
-    ).join('') || '<em style="color:var(--muted);font-size:11px">Nenhum lançamento ainda.</em>';
+    +(l.projeto_id?'<span style="color:var(--muted)">'+esc(l.projeto_id)+'</span>':'')+'</div>';
+    }).join('') || '<em style="color:var(--muted);font-size:11px">Nenhum lançamento ainda.</em>';
   box.innerHTML =
      '<div style="display:grid;grid-template-columns:2fr auto;gap:8px;align-items:end;margin-bottom:8px">'
     +'<div><label class="field-label">Descreva o evento e a IA sugere a conta (você confirma)</label>'
@@ -15457,7 +15718,7 @@ async function carregarCiclo() {
     if (projetoAtivo) await pedidosXmlCarregar(projetoAtivo.nome_safe);
     if (projetoAtivo) await nfe15Carregar(projetoAtivo.nome_safe);
     await cronoFuncionariosGarantir();   // funcionários p/ o dropdown de responsável (v12)
-    renderCiclo();
+    renderCiclo();   // já dispara _fichaEfeitos(_cicloEtapaAtiva), que carrega a Etapa 21 se ativa
     atualizarBotoesAprovacao();
   } catch(e) { console.error('Erro ao carregar ciclo:', e); }
 }
@@ -15821,6 +16082,7 @@ function _fichaEfeitos(codigo) {
   if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
   if (codigo === '7') { carregarDadosContrato(); _contratoParamsResumo(); }
   if (codigo === '11e') peComplementoRender();
+  if (codigo === '21') _concFinalCarregar();   // provisões da Conciliação Final (2026-08-06)
   // Fichário fase 2: telas diretas (sem modal) — briefing na 3, provisões nas AFs.
   if (codigo === '3') briefingInlineMontar();
   if ((codigo === '8' || codigo === '11d') && _orcamentoAtivoId
@@ -15893,6 +16155,19 @@ async function _entregaFaixaRender(){
 }
 
 // ── FASE D2: Conciliação Final (etapa 21) — fecha os números e encerra o projeto ──
+// Redesenho 2026-08-06 (pedido do usuário): era um botão cego — nenhuma tabela, nenhum número,
+// nem antes nem depois de clicar, embora mod_contabil.conciliar_final já devolvesse o detalhe
+// por provisão. Agora mostra a MESMA tabela (editável — dá pra efetivar/resolver aqui mesmo
+// antes de fechar).
+// Ajuste 2026-08-07 (achado ao investigar, confirmado pelo usuário): Impostos/Custo Financeiro
+// tinham saído da prévia por "ter rota própria" — só Impostos tem de verdade (auto via NF-e);
+// Custo Financeiro só resolve o ATIVO (1.1.06.19) por aquela rota, a PROVISÃO (2.1.04.19) em si
+// só zera pelo Efetivar/Resolver genérico — escondida da Etapa 21, dinheiro real de venda
+// financiada podia ficar sem tela nenhuma pra resolver. As duas voltam a aparecer aqui — o botão
+// "Concluir Conciliação Final" continua SEM forçar as duas (mod_contabil.conciliar_final
+// inalterado: Impostos normalmente fecha pela NF-e, o usuário resolve à mão via Efetivar/Resolver
+// se precisar agir diferente antes de concluir).
+let _concFinalNomes = {};   // conta -> nome, pra rotular o resultado pós-conciliação
 function _renderCardConciliacaoFinal(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
   const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
@@ -15905,11 +16180,27 @@ function _renderCardConciliacaoFinal(dados, bloqueada) {
     <div style="font-size:.85rem;color:var(--muted);line-height:1.7;margin-bottom:10px">
       Fecha os números do projeto: resolve todo saldo remanescente das provisões
       (sobra → receita, falta → despesa) e <strong>encerra o projeto</strong> (status "Concluído").
+      Impostos normalmente fecha pela NF-e e Custo Financeiro tem rota própria pro ativo — o
+      botão abaixo NÃO força essas duas; use Efetivar/Resolver na tabela se precisar agir nelas
+      antes de concluir.
     </div>
+    <div id="concfinal-box" style="margin-bottom:10px"><em style="color:var(--muted);font-size:12px">Carregando provisões…</em></div>
     ${_usuarioAtual && _usuarioAtual.pode_aprovar_financeiro
       ? `<button class="btn btn-amber btn-sm" ${bloqueada ? 'disabled' : ''} onclick="conciliarFinal()">
       &#x2713; Concluir Conciliação Final</button>`
       : '<div style="font-size:.8rem;color:var(--muted)">Conciliação restrita a quem aprova financeiro.</div>'}`;
+}
+
+async function _concFinalCarregar(){
+  const box = document.getElementById('concfinal-box');
+  if(!box || !projetoAtivo) return;
+  _reconProvProj = projetoAtivo.nome_safe;
+  const rec=(await fetch('/api/financeiro/reconciliacao-provisoes?projeto='+encodeURIComponent(_reconProvProj),{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}))).reconciliacao;
+  if(!rec){ box.innerHTML='<em style="color:var(--err);font-size:12px">Falha ao carregar provisões.</em>'; return; }
+  rec.provisoes.forEach(p=>{ _concFinalNomes[p.codigo]=p.nome; });
+  const tot = rec.totais;
+  box.innerHTML = _reconProvTabelaHtml(rec.provisoes, {editavel:true, prefixo:'efc-'})
+    + '<div style="margin-top:10px;font-size:12px;color:var(--muted)">Saldo total em aberto: <strong style="font-family:var(--font-mono);color:'+_reconSaldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong> (inclui Impostos/Custo Financeiro — resolva-os pelos botões acima se necessário, "Concluir Conciliação Final" não mexe neles)</div>';
 }
 
 async function conciliarFinal() {
@@ -15923,7 +16214,27 @@ async function conciliarFinal() {
       {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: '{}'});
     const j = await r.json();
     if (!j.ok) { showToast(j.erro || 'Falha ao conciliar.', true); return; }
-    showToast('Projeto conciliado e concluído.', false);
+    // mod_contabil.conciliar_final já devolvia esse detalhe por provisão — antes ficava
+    // encostado, só um toast genérico. Agora mostra o que foi resolvido, conta por conta.
+    // avisoPopup() escapa a mensagem (só texto) — usa _popupOverlay direto pra ter cor por linha.
+    const resolvido = j.resolvido || {};
+    const contas = Object.keys(resolvido);
+    if (contas.length) {
+      const linhas = contas.map(c => '<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0;font-size:12px">'
+        +'<span style="color:var(--muted)">'+esc(_concFinalNomes[c]||c)+'</span>'
+        +'<span style="font-family:var(--font-mono);color:'+_reconSaldoCor(resolvido[c])+'">'+_fBRL(resolvido[c])+'</span></div>').join('');
+      await new Promise(resolve => {
+        const ov = _popupOverlay('<h4 style="margin:0 0 12px;color:var(--accent);font-size:1rem">Provisões resolvidas na Conciliação Final</h4>'
+          +linhas
+          +'<div style="display:flex;justify-content:flex-end;margin-top:16px">'
+          +'<button style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">OK</button></div>');
+        const fechar=()=>{ ov.remove(); resolve(); };
+        ov.querySelector('button').onclick = fechar;
+        ov.addEventListener('click', e=>{ if(e.target===ov) fechar(); });
+      });
+    } else {
+      showToast('Projeto conciliado e concluído.', false);
+    }
     _projetoStatusAtual = 'concluido'; negAtualizarStatusBtn();
     await carregarCiclo();
   } catch (e) { showToast('Erro: ' + e, true); }

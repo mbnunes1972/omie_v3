@@ -973,6 +973,42 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/fluxo-caixa":
+            # Fluxo de Caixa (2026-08-07): dia a dia de crédito/débito/saldo, uma ou mais contas
+            # de Caixa/Bancos (ou todas somadas = "Consolidado", quando `contas` vem vazio).
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            try:
+                qs = parse_qs(urlparse(self.path).query)
+                def _q(k):
+                    return (qs.get(k) or [None])[0]
+                def _pd(s):
+                    try:
+                        return datetime.strptime(str(s)[:10], "%Y-%m-%d").date() if s else None
+                    except ValueError:
+                        return None
+                de, ate = _pd(_q("de")), _pd(_q("ate"))
+                if not (de and ate):
+                    self.send_json({"ok": False, "erro": "Informe de/ate"}, code=400); return
+                todas = mod_contabil.contas_caixa(db, ot, oid)
+                contas_param = _q("contas")
+                if contas_param:
+                    pedidos = {int(x) for x in contas_param.split(",") if x.strip().isdigit()}
+                    conta_ids = [c.id for c in todas if c.id in pedidos]
+                else:
+                    conta_ids = [c.id for c in todas]
+                dados = mod_contabil.fluxo_caixa(db, ot, oid, conta_ids, de, ate)
+                self.send_json({"ok": True, **dados,
+                                "contas": [{"id": c.id, "codigo": c.codigo, "nome": c.nome} for c in todas]})
+            except (ValueError, PermissionError) as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400 if isinstance(e, ValueError) else 403)
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/dre":
             ctx = _contabil_ctx(self, exige_edicao=False, consolidado_ok=True)
             if ctx is None: return

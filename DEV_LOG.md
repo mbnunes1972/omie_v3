@@ -3277,6 +3277,74 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 165 — Reconciliação de Provisões (redesenho de 3 telas) + hover de conta + novo submódulo Fluxo de Caixa
+
+Frente longa, dividida em brainstorm (aprovado por partes) + implementação + um novo pedido
+(Fluxo de Caixa) + um bug achado durante a própria verificação. Área sensível (financeiro); TDD.
+
+**Reconciliação de Provisões — redesenho.** Ponto de partida: painel do Financeiro com colunas
+desalinhadas entre as seções A/B/C/D/O (cada `<table>` se auto-dimensionava pelo próprio
+conteúdo) e saldo negativo sem cor distintiva. Corrigido primeiro, isolado do resto do
+brainstorm: `table-layout:fixed` + larguras percentuais nos `<th>` **só** na tela read-only
+(Financeiro); a modal do projeto (mais estreita, 860px) manteria `table-layout:auto` mas ganhou
+`max-width:190px` na célula "Provisão" (funciona mesmo em `auto`) — resolve o desalinhamento sem
+quebrar os botões de Ação por overflow. Depois do brainstorm (3 telas faziam a mesma coisa com
+código duplicado: Financeiro read-only, modal do projeto editável, e a Etapa 21 do Ciclo
+desatualizada/sem Efetivar-Resolver de verdade): unificado em `_reconProvTabelaHtml(provisoes,
+{editavel, excluir, prefixo})`, com `prefixo` evitando colisão de `id` entre as 3 instâncias
+(`ef-`/`efp-`/`efc-`) e novo card `_renderCardConciliacaoFinal`/`_concFinalCarregar` embutido na
+Etapa 21 (hook em `_fichaEfeitos`, mesmo padrão da etapa 7). Coluna Ação: as 3 peças (input +
+Efetivar + Resolver) **sempre presentes** — resolvido (`|saldo_aberto|<0.005`) desabilita as 3 e
+recolore em verde (`--status-ok`), em vez de esconder o Resolver condicionalmente.
+**Correção de um achado próprio:** Impostos (`2.1.04.13`) e Custo Financeiro (`2.1.04.19`) tinham
+sido escondidos da prévia da Etapa 21 sob a premissa "têm rota própria de resolução" — investigado
+a pedido do usuário, achado que **só Impostos** de fato resolve sozinho (via NF-e); Custo
+Financeiro's `reconhecer_custo_financeiro` só baixa o **ativo diferido** (`1.1.06.19`), nunca a
+**provisão** (`2.1.04.19`) — em venda financiada isso pode ficar com saldo real sem rota
+automática de fechamento. Corrigido: os dois voltam a aparecer/editáveis na Etapa 21; o
+force-close automático (`conciliar_final`) continua excluindo os dois (não muda). Popup do
+breakdown resolvido em `conciliarFinal()` trocado de `avisoPopup` (escapa HTML — quebraria as
+linhas coloridas) para `_popupOverlay` direto.
+
+**Hover de conta (`contaHint`).** Pedido do usuário: em todo lugar que hoje só mostra o número da
+conta (sem nome), passar o mouse mostra o nome do plano de contas. `.conta-hint` (CSS) +
+`_contasNomeCache`/`contasNomeGarantir`/`contaHint(codigo)`; aplicado no único lugar achado com
+código nu sem nome — "Últimos lançamentos" de `lancamentosCarregar()`.
+
+**Novo submódulo: Fluxo de Caixa.** Pedido do usuário: filtro de Mês + filtro de Período, 2 views
+(Calendário e Padrão — Crédito/Débito/Saldo por dia), filtro de Conta com "Adicionar Conta" e
+opção "Consolidado". **Backend:** `mod_contabil.contas_caixa()` (folhas analíticas sob `1.1.01`,
+raiz OU filhos criados via `criar_conta`) + `fluxo_caixa(conta_ids, ini, fim)` (uma linha por dia
+mesmo sem movimento; saldo inicial = agregado até a véspera; convenção do razão — débito numa
+conta devedora como Caixa é dinheiro ENTRANDO, crédito é SAINDO); `GET
+/api/financeiro/fluxo-caixa`. **Frontend:** aba nova em `_FIN_SECOES`; Mês (`<input
+type=month>`, estilo Folha) + Período (2 `<input type=date>`, sincronizado ao trocar o mês) +
+seletor de Conta ("Consolidado" + folhas) + toggle Padrão/Calendário (dados já buscados, troca de
+view não refaz fetch). **Ajuste de layout pedido depois de ver a tela:** "+ Adicionar Conta" foi
+para o canto direito, ao lado do seletor de Conta; no lugar onde ele estava (ao lado do toggle de
+view) entrou **"+ Lançamento"** — formulário inline (Tipo Entrada/Saída, Conta Caixa/Banco,
+Contrapartida, Valor, Data, Histórico) que reusa `POST /api/financeiro/lancamentos` já existente
+da aba Lançamentos, sem endpoint novo.
+
+**Bug achado ao limpar dados de teste do Playwright (não relacionado ao pedido original, corrigido
+junto):** `remover_conta` apagava o filho mas nunca revertia o pai de volta a `analitica` — ao
+apagar as 2 contas "Banco Itaú (Playwright)" criadas durante a verificação, `1.1.01` (Caixa/Bancos)
+ficou **preso sintética e vazia**, incapaz de receber lançamento até alguém recriar um filho (e
+`contas_caixa()` passou a devolver lista vazia, quebrando o Fluxo de Caixa pra aquele owner).
+Corrigido: apagar o **último** filho de um pai promovido por `criar_conta` reverte o pai a
+`analitica` de novo (só no caminho de apagar — inativação, quando o pai ainda tem lançamento ou
+outros filhos, não mexe). Regressão coberta por
+`test_remover_ultimo_filho_reverte_pai_a_analitica`; estado corrompido do banco de dev (owner
+`rede/1`) corrigido manualmente com o mesmo fix, sem precisar recriar o banco.
+
+**Testes:** `tests/test_fluxo_caixa.py` (novo, 10) + `tests/test_plano_contas.py` (+1). Suíte
+1751→**1762**. Verificação ponta a ponta via Playwright: tab nova navegável, ambas as views
+renderizam sem erro de console, "+ Adicionar Conta" cria filho e aparece no seletor, "+
+Lançamento" posta um lançamento real e reflete no dia correto, layout final confere com o pedido.
+
+**Arquivos:** `main.py`, `mod_contabil.py`, `static/index.html`, `tests/test_fluxo_caixa.py`
+(novo), `tests/test_plano_contas.py`.
+
 ## Sessão 164 — Funcionários volta pro módulo Cadastro (saiu da aba Folha de Pagamento)
 
 Pedido do usuário: "é o lugar mais adequado". Achado ao investigar: o backend já classificava

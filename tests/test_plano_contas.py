@@ -75,6 +75,25 @@ def test_remover_folha_apaga_pai_inativa(app_db):
     db.close()
 
 
+def test_remover_ultimo_filho_reverte_pai_a_analitica(app_db):
+    """Achado ao apagar contas de teste do Fluxo de Caixa: criar_conta() promove o pai (ex.: "1.1.01"
+    Caixa/Bancos) a sintética; se o único filho depois é apagado, o pai tinha ficado preso sintética
+    e vazio — sem poder receber lançamento de novo até alguém recriar um filho."""
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 1)
+    caixa = db.query(app_db.Conta).filter_by(owner_tipo="loja", owner_id=1, codigo="1.1.01").first()
+    banco = mc.criar_conta(db, "loja", 1, pai_id=caixa.id, nome="Banco Itaú")
+    db.refresh(caixa)
+    assert caixa.tipo == "sintetica"
+    r = mc.remover_conta(db, "loja", 1, banco["id"])
+    assert r["acao"] == "apagada"
+    db.refresh(caixa)
+    assert caixa.tipo == "analitica"                      # reverteu — volta a aceitar lançamento
+    mc.lancar(db, "loja", 1, caixa.id,
+              db.query(app_db.Conta).filter_by(owner_tipo="loja", owner_id=1, codigo="4.1.02").first().id,
+              100.0)
+    db.close()
+
+
 def test_cross_owner_barrado(app_db):
     import pytest
     db = app_db.get_session(); mc.seed_plano(db, "loja", 1)

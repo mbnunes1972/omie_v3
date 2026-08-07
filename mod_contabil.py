@@ -391,10 +391,19 @@ def editar_conta(db, owner_tipo, owner_id, conta_id, nome=None, ordem=None):
 
 
 def remover_conta(db, owner_tipo, owner_id, conta_id):
-    """Folha sem lançamento -> apaga; senão inativa (regra do .docx)."""
+    """Folha sem lançamento -> apaga; senão inativa (regra do .docx). Apagar o ÚLTIMO filho de um
+    pai promovido a sintética por criar_conta() reverte o pai a analítica de volta — senão ele fica
+    preso sem poder receber lançamento (achado ao apagar contas de teste do Fluxo de Caixa: "1.1.01"
+    ficou sintética e vazia, e contas_caixa() parou de devolver qualquer conta)."""
     c = _get_own(db, owner_tipo, owner_id, conta_id)
     if not _tem_filhos(db, c) and not _tem_lancamentos(db, c):
+        pai_id = c.pai_id
         db.delete(c)
+        db.flush()
+        if pai_id:
+            pai = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, id=pai_id).first()
+            if pai and pai.tipo == "sintetica" and not _tem_filhos(db, pai):
+                pai.tipo = "analitica"
         db.commit()
         return {"acao": "apagada", "id": conta_id}
     c.ativa = 0
@@ -477,6 +486,66 @@ def razao(db, owner_tipo, owner_id, conta_id, ini=None, fim=None):
                        "projeto_id": l.projeto_id, "historico": l.historico, "saldo": saldo})
     return {"conta_id": conta_id, "codigo": c.codigo, "nome": c.nome, "natureza": c.natureza,
             "linhas": linhas, "saldo_final": saldo}
+
+
+CONTA_CAIXA_CODIGO = "1.1.01"   # raiz "Caixa/Bancos" — Fluxo de Caixa soma ela + filhos (2026-08-07)
+
+
+def contas_caixa(db, owner_tipo, owner_id):
+    """Contas ANALÍTICAS de caixa/banco: a raiz 1.1.01 (se ainda for folha — nunca foi
+    desmembrada) + qualquer filho criado via 'Adicionar Conta' (ex.: Banco Itaú, Banco Inter).
+    Mesmo padrão de _mov (prefixo + filhos), mas devolvendo as contas em vez do total."""
+    seed_plano(db, owner_tipo, owner_id)
+    raiz = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
+                                      codigo=CONTA_CAIXA_CODIGO).first())
+    if raiz is None:
+        return []
+    todas = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()
+    return [c for c in todas
+            if c.tipo == "analitica" and (c.id == raiz.id or c.codigo.startswith(raiz.codigo + "."))]
+
+
+def fluxo_caixa(db, owner_tipo, owner_id, conta_ids, ini, fim):
+    """Fluxo de caixa dia a dia (2026-08-07): uma linha por dia de [ini,fim] (inclusive, mesmo
+    sem movimento) com crédito/débito/saldo — soma de `conta_ids` (uma conta específica, ou
+    TODAS as de contas_caixa() pro consolidado). Saldo inicial = saldo agregado das contas até a
+    véspera de `ini`. Mesma convenção de sinal do razão: débito numa conta devedora (Caixa é
+    Ativo) É dinheiro ENTRANDO; crédito é dinheiro SAINDO."""
+    from datetime import timedelta, datetime as _dt, time as _time
+    from sqlalchemy import or_
+    if not conta_ids:
+        return {"saldo_inicial": 0.0, "dias": [], "saldo_final": 0.0}
+    contas = [_get_own(db, owner_tipo, owner_id, cid) for cid in conta_ids]
+    saldo_ini = 0.0
+    if ini:
+        vespera = _dt.combine(ini - timedelta(days=1), _time.max)
+        for c in contas:
+            deb, cred = _totais_conta(db, owner_tipo, owner_id, c.id, None, vespera)
+            saldo_ini += (deb - cred) if c.natureza == "devedora" else (cred - deb)
+    fim_dt = _dt.combine(fim, _time.max) if fim else None
+    ini_dt = _dt.combine(ini, _time.min) if ini else None
+    q = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
+           .filter(or_(Lancamento.conta_debito_id.in_(conta_ids),
+                       Lancamento.conta_credito_id.in_(conta_ids))))
+    lans = _filtra_periodo(q, ini_dt, fim_dt).all()
+    por_dia = {}
+    for l in lans:
+        dia = (l.data.date() if hasattr(l.data, "date") else l.data).isoformat()
+        d = por_dia.setdefault(dia, {"credito": 0.0, "debito": 0.0})
+        if l.conta_debito_id in conta_ids:
+            d["debito"] += l.valor
+        if l.conta_credito_id in conta_ids:
+            d["credito"] += l.valor
+    dias, saldo = [], round(saldo_ini, 2)
+    cur = ini
+    while cur and fim and cur <= fim:
+        chave = cur.isoformat()
+        mov = por_dia.get(chave, {"credito": 0.0, "debito": 0.0})
+        cr, db_ = round(mov["credito"], 2), round(mov["debito"], 2)
+        saldo = round(saldo + db_ - cr, 2)
+        dias.append({"data": chave, "credito": cr, "debito": db_, "saldo": saldo})
+        cur += timedelta(days=1)
+    return {"saldo_inicial": round(saldo_ini, 2), "dias": dias, "saldo_final": saldo}
 
 
 def listar_lancamentos(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None, limite=500):
@@ -1189,12 +1258,17 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
 def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base):
     """FASE D2 — Conciliação Final (etapa 21): resolve à força TODO saldo remanescente das provisões de
     custo do projeto (as 10 rubricas). Sobra (provisionado > efetivado) → 4.4.02 (receita); falta →
-    5.6.10 (despesa). Zera as pendências. FORA da conciliação (rota própria): Impostos (2.1.04.13,
-    efetivar_impostos_segmento) e Custo Financeiro (2.1.04.19, reconhecido quando o custo real da
-    antecipação/financeira é apurado — Fatia B). Idempotente por ref (ref_base:<codigo>). Retorna
-    {codigo: saldo_resolvido} (positivo=sobra, negativo=falta)."""
+    5.6.10 (despesa). Zera as pendências. FORA da conciliação (não força — mas ficam visíveis e
+    editáveis via efetivar_provisao/resolver_saldo_provisao na tela, achado 2026-08-07):
+    - Impostos (2.1.04.13): rota própria DE VERDADE — efetivar_impostos_segmento fecha a conta
+      sozinha a cada NF-e emitida.
+    - Custo Financeiro (2.1.04.19): rota PARCIAL — reconhecer_custo_financeiro (Fatia B) só baixa
+      o ATIVO diferido (1.1.06.19); a provisão (2.1.04.19) em si não tem fechamento automático,
+      sobrevive até alguém efetivar/resolver manualmente (venda financiada = dinheiro real).
+    Idempotente por ref (ref_base:<codigo>). Retorna {codigo: saldo_resolvido} (positivo=sobra,
+    negativo=falta)."""
     seed_plano(db, owner_tipo, owner_id)
-    excluir = _PROV_PAINEL_EXCLUI | {"2.1.04.13", "2.1.04.19"}   # impostos e custo financeiro têm rota própria
+    excluir = _PROV_PAINEL_EXCLUI | {"2.1.04.13", "2.1.04.19"}   # ver docstring — nem toda "rota própria" fecha a provisão sozinha
     contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
               .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
     out = {}

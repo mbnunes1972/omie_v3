@@ -31,29 +31,77 @@ def _nova_loja_e_usuario(app_db, db, tag):
     return loja.id, u.id
 
 
-def test_realizar_loja_baixa_provisao_assistencia(app_db):
+def test_realizar_com_projeto_baixa_provisao_assistencia(app_db):
+    """Com projeto: efetivar_provisao baixa a provisão do PROJETO (2026-08-07 — antes o caso avulso
+    também fazia isso; a provisão é uma média estatística por projeto, avulso não toca mais nela,
+    ver test_realizar_avulso_garantia_despesa_direta_sem_provisao)."""
     db = app_db.get_session()
     loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "1")
     mc.seed_plano(db, "loja", loja_id)
-    caso = ma.criar_caso(db, loja_id, None, "montagem", "erro_montagem", "x", 300.0, usuario_id)
+    mc.constituir_provisoes_fechamento(db, "loja", loja_id, "P1", {"assistencia": 300.0}, ref_base="pf:P1")
+    caso = ma.criar_caso(db, loja_id, "P1", "montagem", "erro_montagem", "x", 300.0, usuario_id)
     ok, err = ma.realizar_caso(db, "loja", loja_id, caso)
     assert ok, err
-    # Débito 2.1.04.05 (baixa provisão assist. técnica) -> saldo do passivo cai 300
-    assert _saldo(db, loja_id, "2.1.04.05") == -300.0
+    assert _saldo(db, loja_id, "2.1.04.05") == 0.0        # provisão do projeto zerada (300 constituído - 300 efetivado)
+    assert _saldo(db, loja_id, "1.1.01") == -300.0        # forma_pagamento default 'direto' -> Caixa
     assert caso.status == "realizado"
     db.close()
 
 
-def test_realizar_fabrica_baixa_provisao_garantia(app_db):
+def test_realizar_com_projeto_baixa_provisao_garantia(app_db):
     db = app_db.get_session()
     loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "2")
     mc.seed_plano(db, "loja", loja_id)
-    caso = ma.criar_caso(db, loja_id, None, "pos_conclusao", "defeito_fabricacao", "x", 500.0, usuario_id)
+    mc.constituir_provisoes_fechamento(db, "loja", loja_id, "P2", {"garantia": 500.0}, ref_base="pf:P2")
+    caso = ma.criar_caso(db, loja_id, "P2", "pos_conclusao", "defeito_fabricacao", "x", 500.0, usuario_id)
     assert caso.tipo_custo == "fabrica"
     ma.realizar_caso(db, "loja", loja_id, caso)
-    assert _saldo(db, loja_id, "2.1.04.03") == -500.0        # provisão de garantia baixada
+    assert _saldo(db, loja_id, "2.1.04.03") == 0.0        # provisão de garantia do projeto zerada
     rel = ma.a_cobrar_fabrica(db, loja_id)
     assert rel["total"] == 500.0 and rel["qtd"] == 1     # entra no "a cobrar da fábrica"
+    db.close()
+
+
+def test_realizar_avulso_garantia_despesa_direta_sem_provisao(app_db):
+    """Avulso (sem projeto) + 'garantia' (dentro da cobertura): despesa direta na conta formal de
+    sempre (5.2.13), SEM tocar provisão nenhuma — não há projeto pra debitar (2026-08-07)."""
+    db = app_db.get_session()
+    loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "1b")
+    mc.seed_plano(db, "loja", loja_id)
+    caso = ma.criar_caso(db, loja_id, None, "montagem", "erro_montagem", "x", 300.0, usuario_id,
+                         classificacao_avulsa="garantia")
+    ok, err = ma.realizar_caso(db, "loja", loja_id, caso)
+    assert ok, err
+    assert _saldo(db, loja_id, "5.2.13") == 300.0         # despesa formal (Assistência Técnica)
+    assert _saldo(db, loja_id, "1.1.01") == -300.0        # forma_pagamento default 'direto' -> Caixa
+    assert _saldo(db, loja_id, "2.1.04.05") == 0.0        # provisão INTOCADA (não existe projeto)
+    db.close()
+
+
+def test_realizar_avulso_concessao_conta_propria(app_db):
+    """Avulso + 'concessao' (fora da cobertura): despesa em Concessão a Cliente (5.3.21), não na
+    conta formal de garantia/assistência."""
+    db = app_db.get_session()
+    loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "2b")
+    mc.seed_plano(db, "loja", loja_id)
+    caso = ma.criar_caso(db, loja_id, None, "pos_conclusao", "defeito_fabricacao", "x", 150.0, usuario_id,
+                         forma_pagamento="a_prazo", classificacao_avulsa="concessao")
+    ma.realizar_caso(db, "loja", loja_id, caso)
+    assert _saldo(db, loja_id, "5.3.21") == 150.0         # Concessão a Cliente
+    assert _saldo(db, loja_id, "5.2.12") == 0.0           # não foi pra Garantia
+    assert _saldo(db, loja_id, "2.1.01") == 150.0         # a_prazo -> Fornecedores a Pagar
+    db.close()
+
+
+def test_criar_caso_avulso_nao_cobrado_exige_classificacao(app_db):
+    db = app_db.get_session()
+    loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "1c")
+    mc.seed_plano(db, "loja", loja_id)
+    try:
+        ma.criar_caso(db, loja_id, None, "montagem", "erro_montagem", "x", 100.0, usuario_id)
+        assert False, "deveria ter levantado ValueError"
+    except ValueError:
+        pass
     db.close()
 
 
@@ -91,10 +139,11 @@ def test_realizar_idempotente(app_db):
     db = app_db.get_session()
     loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "4")
     mc.seed_plano(db, "loja", loja_id)
-    caso = ma.criar_caso(db, loja_id, None, "montagem", "erro_projeto", "x", 100.0, usuario_id)
+    caso = ma.criar_caso(db, loja_id, None, "montagem", "erro_projeto", "x", 100.0, usuario_id,
+                         classificacao_avulsa="garantia")
     ma.realizar_caso(db, "loja", loja_id, caso)
     ma.realizar_caso(db, "loja", loja_id, caso)               # 2ª vez não duplica
-    assert _saldo(db, loja_id, "2.1.04.05") == -100.0
+    assert _saldo(db, loja_id, "5.2.13") == 100.0
     db.close()
 
 
@@ -102,7 +151,8 @@ def test_realizar_idempotente(app_db):
 def test_endpoints_criar_listar_realizar(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "defeito_fabricacao",
-                                               "descricao": "porta empenou", "valor": 400})
+                                               "descricao": "porta empenou", "valor": 400,
+                                               "classificacao_avulsa": "garantia"})
     assert st == 201 and d["tipo_custo"] == "fabrica", d
     cid = d["id"]
     st, lst = c.get("/api/assistencias/casos")
@@ -118,7 +168,8 @@ def test_endpoints_criar_listar_realizar(http_client_factory, seed, app_db):
 
 def test_caso_de_outra_loja_nao_realiza(http_client_factory, seed, app_db):
     c1 = http_client_factory(); c1.login("dir_l1", "senha123")
-    _, d = c1.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "erro_projeto", "valor": 50})
+    _, d = c1.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "erro_projeto", "valor": 50,
+                                               "classificacao_avulsa": "garantia"})
     c2 = http_client_factory(); c2.login("dir_l2", "senha123")
     st, _ = c2.post("/api/assistencias/casos/%d/realizar" % d["id"], {})
     assert st == 404

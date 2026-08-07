@@ -3277,6 +3277,51 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 169 — Assistência/Garantia: fecha o duplo-caminho que a Vera achou (só o módulo Assistências efetiva) + avulso (sem projeto) ganha despesa direta/Concessão
+
+Resposta direta ao achado 🔴 da Vera na Sessão 168 (duplo-lançamento de Assistência/Garantia por
+dois caminhos que não se falavam: "Realizar Caso" no módulo Assistências E "Efetivar" genérico da
+Reconciliação). Brainstorm com o usuário: a provisão é uma média ESTATÍSTICA por projeto — só faz
+sentido debitá-la quando existe projeto; casos avulsos (sem projeto) precisam de tratamento
+próprio. Suíte 1778→**1786**.
+
+**Fecha o duplo-caminho:** "Efetivar" genérico trava pras contas `2.1.04.05` (Assistência Técnica)
+e `2.1.04.03` (Garantia) — no servidor (`POST /api/financeiro/efetivar-provisao` devolve **409**) e
+na UI (`_reconProvTabelaHtml`: input+botão desabilitados com tooltip explicando; "Resolver"
+continua ativo, fecha o saldo remanescente no fim do projeto). Só o módulo Assistências alimenta
+essas duas daqui pra frente.
+
+**Um motor só pros dois gatilhos:** `mod_contabil.efetivar_provisao` ganha `forma_pagamento`
+("direto"=Caixa, pago na hora | "a_prazo"=Fornecedores a Pagar, faturado por terceiro — o motivo
+original do "Efetivar" genérico existir), `origem` (parametrizável — preserva
+`execucao_assistencia`/`execucao_reparo_garantia` pro relatório "a cobrar da fábrica") e `motivo`.
+`mod_assistencias.realizar_caso` (com projeto) passa a chamar essa MESMA função, em vez do
+`registrar_evento` fixo de antes.
+
+**Avulso (sem projeto) — território novo:** nova função `despesa_avulsa` (débito na despesa formal
+× crédito Caixa/Fornecedores, SEM tocar provisão nenhuma — não existe projeto pra debitar). Novo
+campo `AssistenciaCaso.classificacao_avulsa` ("garantia" = dentro da cobertura, despesa na conta
+formal de sempre 5.2.12/5.2.13; "concessao" = fora da cobertura, cortesia) — **exigido** na criação
+de caso avulso não cobrado. Nova conta `5.3.21 Concessão a Cliente` (nada parecido existia; reusar
+"Suprimento a Cliente" misturaria naturezas de gasto diferentes). Caso "Paga" (cliente cobra)
+inalterado — nunca tocou provisão.
+
+**Frontend:** modal "Novo caso de assistência" ganha "Forma de pagamento" (sempre visível) e
+"Classificação" (só aparece quando sem projeto + motivo não-paga — `_assistAtualizarClassificacaoVisibilidade`,
+chamada tanto ao trocar projeto quanto motivo).
+
+**Testes:** os 3 testes que criavam caso avulso pra testar o caminho COM projeto foram corrigidos
+pra usar projeto de verdade (`test_realizar_com_projeto_baixa_provisao_*`); 2 novos testes cobrem os
+dois ramos do avulso (`test_realizar_avulso_garantia_despesa_direta_sem_provisao`,
+`test_realizar_avulso_concessao_conta_propria`); regressão do 409 (`test_efetivar_bloqueado_para_assistencia_e_garantia`)
+e da validação de classificação exigida. Verificado ao vivo via Playwright: 409 real no servidor,
+UI trava só as duas contas certas (Efetivar cinza+tooltip, Resolver normal), resto das rubricas
+intocado.
+
+**Arquivos:** `database.py`, `mod_contabil.py`, `mod_assistencias.py`, `main.py`,
+`static/index.html`, `tests/test_assistencias.py`, `tests/test_assistencias_agenda.py`,
+`tests/test_fase_d_endpoints.py`, `tests/test_fase_d_reconciliacao.py`.
+
 ## Sessão 168 — Motor de despesa passa a reconhecer na efetivação real (não mais estimada na NF-e) + 3 visões de DRE/Margem-Projeto
 
 Frente grande, em duas partes: (1) reforma do reconhecimento de despesa, motivada por um achado do

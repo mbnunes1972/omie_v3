@@ -36,6 +36,58 @@ def test_efetivar_idempotente(app_db):
     db.close()
 
 
+def test_efetivar_provisao_forma_pagamento_direto_baixa_caixa(app_db):
+    """2026-08-07: forma_pagamento='direto' (módulo Assistências, loja paga na hora) credita Caixa
+    em vez de Fornecedores a Pagar."""
+    db = app_db.get_session(); ot, oid = "loja", 6012; mc.seed_plano(db, ot, oid)
+    mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07", forma_pagamento="direto")
+    assert _s(db, ot, oid, "2.1.04.07") == 100.0
+    assert _s(db, ot, oid, "1.1.01") == -900.0        # baixou direto do caixa (crédito)
+    assert _s(db, ot, oid, "2.1.01") == 0.0           # Fornecedores intocado
+    assert _s(db, ot, oid, "5.1.02") == 900.0         # despesa real (Frete de Fábrica) reconhecida
+    db.close()
+
+
+def test_efetivar_provisao_origem_e_motivo_customizados(app_db):
+    """2026-08-07: origem/motivo parametrizáveis — mod_assistencias precisa preservar a tag
+    'execucao_reparo_garantia'+motivo='defeito_fabrica' pro relatório 'a cobrar da fábrica'."""
+    db = app_db.get_session(); ot, oid = "loja", 6013; mc.seed_plano(db, ot, oid)
+    mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"garantia": 500.0}, ref_base="pf:P")
+    lan = mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.03", 300.0, ref="ef:P:03",
+                               forma_pagamento="direto", origem="execucao_reparo_garantia",
+                               motivo="defeito_fabrica")
+    assert lan["origem"] == "execucao_reparo_garantia"
+    rel = mc.total_a_cobrar_fabrica(db, ot, oid)
+    assert rel["total"] == 300.0 and rel["qtd"] == 1
+    db.close()
+
+
+def test_despesa_avulsa_direto_e_a_prazo(app_db):
+    """2026-08-07: Assistência/Garantia avulsa (sem projeto) — despesa direta, sem provisão."""
+    db = app_db.get_session(); ot, oid = "loja", 6014; mc.seed_plano(db, ot, oid)
+    mc.despesa_avulsa(db, ot, oid, "5.2.13", 200.0, "direto", ref="av:1")
+    assert _s(db, ot, oid, "5.2.13") == 200.0
+    assert _s(db, ot, oid, "1.1.01") == -200.0
+    mc.despesa_avulsa(db, ot, oid, "5.3.21", 150.0, "a_prazo", ref="av:2")   # concessão, faturada
+    assert _s(db, ot, oid, "5.3.21") == 150.0
+    assert _s(db, ot, oid, "2.1.01") == 150.0
+    # idempotente
+    mc.despesa_avulsa(db, ot, oid, "5.2.13", 200.0, "direto", ref="av:1")
+    assert _s(db, ot, oid, "5.2.13") == 200.0
+    db.close()
+
+
+def test_despesa_avulsa_forma_pagamento_invalida(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 6015; mc.seed_plano(db, ot, oid)
+    try:
+        mc.despesa_avulsa(db, ot, oid, "5.2.13", 100.0, "xpto", ref="av:x")
+        assert False, "deveria ter levantado ValueError"
+    except ValueError:
+        pass
+    db.close()
+
+
 def test_reconciliacao_projeto(app_db):
     db = app_db.get_session(); ot, oid = "loja", 602; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0, "montagem": 500.0}, ref_base="pf:P")

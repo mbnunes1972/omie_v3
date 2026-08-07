@@ -114,6 +114,9 @@ PLANO_PADRAO = [
     ("5.3.18", "Comissão de Medidor"),
     ("5.3.19", "Comissão de Projeto/Executivo"),
     ("5.3.20", "Retenção de Comissão de Vendas"),
+    # Assistência/Garantia avulsa fora da cobertura (2026-08-07): cortesia ao cliente, sem projeto
+    # e sem provisão associada (é uma despesa nova, não uma execução do que já foi provisionado).
+    ("5.3.21", "Concessão a Cliente"),
     ("5.4", "Despesas Administrativas"),
     ("5.4.01", "Aluguel"), ("5.4.02", "Energia Elétrica"), ("5.4.03", "Água"),
     ("5.4.04", "Telefonia Fixa/Móvel e Internet"), ("5.4.05", "Contabilidade"),
@@ -1150,15 +1153,24 @@ def reclassificar_provisao(db, owner_tipo, owner_id, projeto_id, cod_de, cod_par
     return lan
 
 
-def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
+def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None,
+                      forma_pagamento="a_prazo", origem="efetivacao_provisao", motivo=None):
     """Efetiva (reconhece) o custo REAL de uma provisão: dois lançamentos no mesmo evento —
     (1) `reconhecer_despesa_efetivacao` (ref+':d'): débito na despesa formal da rubrica × crédito no
     ativo diferido, reconhecendo o custo NA COMPETÊNCIA REAL (2026-08-07, achado do usuário — antes só
     isto aqui movia passivo, e a despesa nascia estimada de uma vez na NF-e); e (2, ref bruto, mantido
-    p/ compat) Provisão (2.1.04.x) × Fornecedores a Pagar (2.1.01), por competência (não baixa em
-    caixa — o pagamento é o evento `pagamento_fornecedor`). Cobre QUALQUER provisão do grupo — Impostos
-    e Custo Financeiro não ganham a perna de despesa aqui (rota própria, sem entrada em
-    `_PROV_DESPESA_POR_ATIVO`). Idempotente por ref (cada perna por si)."""
+    p/ compat) Provisão (2.1.04.x) × Fornecedores a Pagar (2.1.01) se `forma_pagamento='a_prazo'`
+    (padrão — faturado por terceiro, não baixa em caixa; o pagamento é o evento
+    `pagamento_fornecedor`), ou × Caixa/Bancos (1.1.01) se `forma_pagamento='direto'` (pago na hora —
+    usado pelo módulo Assistências quando a loja executa e paga sozinha, 2026-08-07). `origem`
+    parametrizável (default `efetivacao_provisao`) pra quem chama precisar de uma tag própria (ex.:
+    `mod_assistencias` usa `execucao_assistencia`/`execucao_reparo_garantia`, preservando o filtro do
+    relatório "a cobrar da fábrica"); `motivo` só é relevante nesse caso (carimba o reparo em
+    garantia). Cobre QUALQUER provisão do grupo — Impostos e Custo Financeiro não ganham a perna de
+    despesa aqui (rota própria, sem entrada em `_PROV_DESPESA_POR_ATIVO`). Idempotente por ref (cada
+    perna por si)."""
+    if forma_pagamento not in ("a_prazo", "direto"):
+        raise ValueError("efetivar_provisao: forma_pagamento inválida: %s" % forma_pagamento)
     if not (codigo_provisao or "").startswith(GRUPO_PROVISOES + "."):
         raise ValueError("efetivar_provisao: %s não é conta de provisão (%s.x)" % (codigo_provisao, GRUPO_PROVISOES))
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
@@ -1171,10 +1183,35 @@ def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, val
     reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor,
                                   ref=ref + ":d", data=data)
     cd = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
-    cc = _conta_por_codigo(db, owner_tipo, owner_id, "2.1.01")
+    cc_cod = "1.1.01" if forma_pagamento == "direto" else "2.1.01"
+    cc = _conta_por_codigo(db, owner_tipo, owner_id, cc_cod)
+    hist = ("Efetivação de provisão (custo real → Caixa/Bancos)" if forma_pagamento == "direto"
+            else "Efetivação de provisão (custo real → Fornecedores a Pagar)")
     return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data, projeto_id=projeto_id,
-                  origem="efetivacao_provisao",
-                  historico="Efetivação de provisão (custo real → Fornecedores a Pagar)", ref=ref)
+                  origem=origem, historico=hist, ref=ref, motivo=motivo)
+
+
+def despesa_avulsa(db, owner_tipo, owner_id, codigo_despesa, valor, forma_pagamento, ref, data=None,
+                   historico=""):
+    """Despesa direta, SEM provisão de projeto (2026-08-07 — Assistência/Garantia avulsa: a
+    provisão é uma média estatística por projeto; sem projeto não há o que debitar). Débito na
+    despesa formal (`codigo_despesa` — ex.: 5.2.12 Garantia, 5.2.13 Assistência Técnica, 5.3.21
+    Concessão a Cliente) × crédito Caixa/Bancos ('direto') ou Fornecedores a Pagar ('a_prazo').
+    Idempotente por ref."""
+    if forma_pagamento not in ("direto", "a_prazo"):
+        raise ValueError("despesa_avulsa: forma_pagamento inválida: %s" % forma_pagamento)
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
+    if ja is not None:
+        return ja
+    valor = round(float(valor or 0), 2)
+    if valor <= 0:
+        return None
+    seed_plano(db, owner_tipo, owner_id)
+    cd = _conta_por_codigo(db, owner_tipo, owner_id, codigo_despesa)
+    cc_cod = "1.1.01" if forma_pagamento == "direto" else "2.1.01"
+    cc = _conta_por_codigo(db, owner_tipo, owner_id, cc_cod)
+    return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data,
+                  origem="despesa_avulsa_assistencia", historico=historico, ref=ref)
 
 
 def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, ref, data=None):

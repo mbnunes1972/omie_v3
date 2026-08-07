@@ -348,7 +348,7 @@ def test_endpoint_agenda_assistencia_lista_apenas_abertos(http_client_factory, a
     cid = d["id"]
     # caso SEM agendamento (sem datas) — não deve aparecer no Gantt
     st2, d2 = c.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "erro_montagem",
-                                                 "valor": 10})
+                                                 "valor": 10, "classificacao_avulsa": "garantia"})
     assert st2 == 201
     st, g = c.get("/api/agenda/assistencia?de=2026-09-01&ate=2026-09-30")
     assert st == 200 and g["ok"]
@@ -370,7 +370,7 @@ def test_endpoint_agenda_assistencia_lista_apenas_abertos(http_client_factory, a
 def test_anexo_upload_e_download(http_client_factory, app_db, seed):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "erro_montagem",
-                                               "valor": 10})
+                                               "valor": 10, "classificacao_avulsa": "garantia"})
     assert st == 201
     cid = d["id"]
     st, up = c.post_multipart("/api/assistencias/casos/%d/anexo" % cid,
@@ -386,7 +386,7 @@ def test_anexo_upload_e_download(http_client_factory, app_db, seed):
 def test_anexo_de_caso_de_outra_loja_bloqueado(http_client_factory, app_db, seed):
     c1 = http_client_factory(); c1.login("dir_l1", "senha123")
     st, d = c1.post("/api/assistencias/casos", {"sub_tipo": "montagem", "motivo": "erro_montagem",
-                                                "valor": 10})
+                                                "valor": 10, "classificacao_avulsa": "garantia"})
     cid = d["id"]
     c2 = http_client_factory(); c2.login("dir_l2", "senha123")
     st, up = c2.post_multipart("/api/assistencias/casos/%d/anexo" % cid,

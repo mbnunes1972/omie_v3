@@ -878,6 +878,14 @@ class AssistenciaCaso(Base):
     status         = Column(Text,     nullable=False, default="aberto")   # aberto | realizado
     reembolsado_fabrica = Column(Integer, nullable=True)             # fase 2: fábrica reembolsou de fato
     ref_lancamento = Column(Text,     nullable=True)                 # ref idempotente do lançamento
+    # 2026-08-07 (achado da Vera + revisão do usuário): "direto" = paga na hora (Caixa); "a_prazo" =
+    # faturado por terceiro, cria Fornecedores a Pagar. Substitui o "Efetivar" genérico da
+    # Reconciliação pra Assistência/Garantia (que arriscava duplo-lançamento do mesmo evento real).
+    forma_pagamento = Column(Text,    nullable=False, default="direto")   # "direto" | "a_prazo"
+    # só relevante pra caso AVULSO (sem projeto) e NÃO cobrado (tipo_custo loja/fabrica): a provisão
+    # é uma média estatística por projeto — sem projeto não tem o que debitar. "garantia" = despesa
+    # normal (5.2.12/5.2.13); "concessao" = fora da cobertura, cortesia (5.3.21).
+    classificacao_avulsa = Column(Text, nullable=True)                # "garantia" | "concessao"
     criado_em      = Column(DateTime, nullable=True)
     realizado_em   = Column(DateTime, nullable=True)
     criado_por_id  = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
@@ -1973,6 +1981,10 @@ def _migrar_colunas_pg():
         "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS pool_ambiente_id INTEGER",
         "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS data_inicio DATE",
         "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS data_fim DATE",
+        # forma de pagamento (direto/a_prazo) + classificação do avulso (garantia/concessão),
+        # 2026-08-07 — ver docstring de AssistenciaCaso.
+        "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS forma_pagamento VARCHAR DEFAULT 'direto'",
+        "ALTER TABLE assistencia_caso ADD COLUMN IF NOT EXISTS classificacao_avulsa VARCHAR",
         # limpeza única: linhas do Mapa com o papel aposentado (o mecanismo nunca chegou a ser
         # usado de verdade — achado ao investigar antes de tirar 'assistencia' do Mapa — mas
         # roda mesmo assim por segurança; idempotente, a 2ª vez apaga 0 linha).

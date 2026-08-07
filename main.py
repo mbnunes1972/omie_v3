@@ -7112,7 +7112,9 @@ class Handler(BaseHTTPRequestHandler):
                 caso = mod_assistencias.criar_caso(db, lid, projeto, req.get("sub_tipo"), req.get("motivo"),
                                                    req.get("descricao"), req.get("valor"), usuario.get("id"),
                                                    pool_ambiente_id=amb_id, data_inicio=data_inicio,
-                                                   data_fim=data_fim)
+                                                   data_fim=data_fim,
+                                                   forma_pagamento=req.get("forma_pagamento") or "direto",
+                                                   classificacao_avulsa=req.get("classificacao_avulsa"))
                 if alvos:
                     mod_assistencias.definir_equipe(db, caso, [(t, i) for t, i, _o in alvos])
                 db.commit()
@@ -7405,6 +7407,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 dd = json.loads(body or b'{}')
                 conta = (dd.get("conta") or "").strip()
+                # Assistência Técnica/Garantia: só o módulo Assistências alimenta (2026-08-07,
+                # achado da Vera — "Efetivar" genérico duplicava o mesmo evento real com o caso
+                # criado lá). Trava no servidor, não só na UI.
+                if conta in ("2.1.04.05", "2.1.04.03"):
+                    self.send_json({"ok": False, "erro": "Assistência Técnica e Garantia são "
+                                    "controladas pelo módulo Assistências (crie/realize um caso "
+                                    "lá) — não dá pra efetivar por aqui."}, code=409)
+                    return
                 proj = (dd.get("projeto") or "").strip() or None
                 valor = float(dd.get("valor") or 0)
                 # ref DETERMINÍSTICO quando o cliente não manda um (achado da Vera, 2026-08-07): um

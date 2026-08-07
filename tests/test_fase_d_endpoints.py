@@ -44,6 +44,19 @@ def test_efetivar_sem_ref_e_idempotente_no_mesmo_dia(http_client_factory, seed):
     assert linhas["2.1.04.09"]["efetivado"] == 300.0   # não 600
 
 
+def test_efetivar_bloqueado_para_assistencia_e_garantia(http_client_factory, seed):
+    """2026-08-07 (achado da Vera): Assistência Técnica/Garantia só pelo módulo Assistências —
+    "Efetivar" genérico devolve 409 pras duas."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/financeiro/efetivar-provisao", {"conta": "2.1.04.05", "valor": 100.0})
+    assert st == 409 and d["ok"] is False, d
+    st, d = c.post("/api/financeiro/efetivar-provisao", {"conta": "2.1.04.03", "valor": 100.0})
+    assert st == 409 and d["ok"] is False, d
+    # outras rubricas continuam funcionando normalmente
+    st, d = c.post("/api/financeiro/efetivar-provisao", {"conta": "2.1.04.02", "valor": 100.0})
+    assert st == 200 and d["ok"] is True, d
+
+
 def test_resolver_saldo_endpoint(http_client_factory, seed):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     # efetiva 900 numa provisão sem constituição → saldo negativo (falta) → resolver manda p/ despesa

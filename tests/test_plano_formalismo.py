@@ -14,8 +14,9 @@ import mod_contabil as mc
 
 FORMAIS = {"5.1.02": "Frete de Fábrica", "5.2.01": "Montagem", "5.2.08": "Frete Local",
            "5.2.09": "Insumos Locais", "5.2.12": "Garantia", "5.2.13": "Assistência Técnica",
-           "5.3.18": "Comissão de Medidor", "5.3.19": "Comissão de Projeto/Executivo",
-           "5.3.20": "Retenção de Comissão de Vendas"}
+           "5.3.18": "Comissão de Medidor", "5.3.19": "Comissão de Projeto/Executivo"}
+           # 5.3.20 "Retenção de Comissão de Vendas" removida (Centro de Custo/Natureza, 2026-08-08)
+           # — o evento passou a debitar 5.3.01 Comissão de Vendedor
 
 
 def test_seed_novo_formal(app_db):
@@ -40,7 +41,7 @@ def test_eventos_reconhecimento_nas_contas_formais(app_db):
                 "reconhecimento_despesa_insumos": "5.2.09",
                 "reconhecimento_despesa_com_medidor": "5.3.18",
                 "reconhecimento_despesa_com_proj_exec": "5.3.19",
-                "reconhecimento_despesa_retencao_com_vendas": "5.3.20",
+                "reconhecimento_despesa_retencao_com_vendas": "5.3.01",
                 "reconhecimento_despesa_custo_fabrica": "5.1.01"}
     for ev, conta in esperado.items():
         assert mc.EVENTOS[ev][0] == conta, ev
@@ -77,7 +78,7 @@ def test_migracao_recodifica_preservando_historico(app_db):
     mc.lancar(db, "loja", 951, c5602.id, ativo.id, 500.0, projeto_id="P", historico="montagem NF-e")
     id_original = c5602.id
     out = mc.migrar_plano_formalismo(db)
-    assert out["recodificadas"] >= 9
+    assert out["recodificadas"] >= 8   # 5.6.09 removida (Centro de Custo/Natureza, 2026-08-08)
     contas = {c.codigo: c for c in db.query(mc.Conta)
               .filter_by(owner_tipo="loja", owner_id=951).all()}
     assert "5.6.02" not in contas

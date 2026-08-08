@@ -599,6 +599,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="nav-item" id="nav-07" onclick="goPage(7)" style="display:none"><i class="ti ti-settings"></i>Admin</div>
       <div class="nav-item" id="nav-cfg" onclick="goPage(9)" style="display:none"><i class="ti ti-adjustments"></i>Config</div>
       <div class="nav-item" id="nav-orizon" onclick="goPageOrizon()" style="display:none"><i class="ti ti-building-cog"></i>Painel Orizon</div>
+      <div class="nav-item" id="nav-rede" onclick="goPageRede()" style="display:none"><i class="ti ti-affiliate"></i>Painel da Rede</div>
     </div>
   </nav>
 
@@ -1447,7 +1448,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="page-sub" id="fin-page-sub">Configuração financeira: provisões/custos-padrão e plano de contas.</div>
     <div style="height:8px"></div>
     <div id="fin-panel-prov"><div id="loja-panel-financeiro"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
-    <div id="fin-panel-plano" style="display:none"><div id="plano-contas-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="fin-panel-plano" style="display:none"><div id="plano-contas-shell"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-lanc" style="display:none"><div id="lancamentos-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-fluxo" style="display:none"><div id="fluxo-caixa-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-dre" style="display:none"><div id="dre-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
@@ -1986,11 +1987,24 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:12px 0 16px;flex-wrap:wrap">
       <button class="home-tab ativo" id="orz-tab-redes"    onclick="orizonTab('redes')">Redes</button>
       <button class="home-tab"       id="orz-tab-lojas"    onclick="orizonTab('lojas')">Lojas</button>
-      <button class="home-tab"       id="orz-tab-gestores" onclick="orizonTab('gestores')">Gestores gerais</button>
+      <button class="home-tab"       id="orz-tab-gestores" onclick="orizonTab('gestores')">Gestores</button>
     </div>
     <div id="orz-panel-redes"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="orz-panel-lojas" style="display:none"></div>
     <div id="orz-panel-gestores" style="display:none"></div>
+  </div>
+
+  <!-- Painel da Rede: Gestor de Rede (admin_rede) vê a própria; super_admin entra via duplo
+       clique numa rede no Painel Orizon — administração da rede: lojas + dados cadastrais -->
+  <div class="page" id="page-rede">
+    <div class="page-title" style="margin:0" id="rede-page-titulo">Painel da Rede</div>
+    <div class="page-sub">Administração da rede — lojas e dados cadastrais.</div>
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin:12px 0 16px;flex-wrap:wrap">
+      <button class="home-tab ativo" id="rede-tab-lojas" onclick="redeTab('lojas')">Lojas</button>
+      <button class="home-tab"       id="rede-tab-dados" onclick="redeTab('dados')">Dados da Rede</button>
+    </div>
+    <div id="rede-panel-lojas"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    <div id="rede-panel-dados" style="display:none"></div>
   </div>
 
   <!-- ===== Orizon Chat — módulo de página cheia (mockup 2026-07-28) ===== -->
@@ -2967,6 +2981,47 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   </div>
 </div>
 
+<!-- Modal: tipo do novo gestor (Painel Orizon › Gestores) -->
+<div id="modal-tipo-gestor" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:360px">
+    <div class="modal-title">Novo gestor</div>
+    <div style="font-size:12px;color:var(--muted);margin:6px 0 14px">Qual tipo de conta?</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-ghost btn-sm" style="justify-content:flex-start" onclick="_gestorEscolherTipo('plataforma')">Super Admin</button>
+      <button class="btn btn-ghost btn-sm" style="justify-content:flex-start" onclick="_gestorEscolherTipo('rede')">Gestor de Rede</button>
+      <button class="btn btn-ghost btn-sm" style="justify-content:flex-start" onclick="_gestorEscolherTipo('loja')">Master de loja</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-tipo-gestor').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: busca de rede/loja pra vincular o novo gestor (nome ou CNPJ, filtra ao digitar) -->
+<div id="modal-busca-vinculo" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:420px;max-height:80vh;overflow:auto">
+    <div class="modal-title" id="mbv-titulo">Escolher</div>
+    <input id="mbv-busca" type="text" autocomplete="off" placeholder="Buscar por nome ou CNPJ…"
+      oninput="_buscaVinculoFiltrar()"
+      style="width:100%;box-sizing:border-box;margin:8px 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px">
+    <div id="mbv-lista" style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-busca-vinculo').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Permissões por conta (Gestor de Rede) / info fixa (Super Admin) -->
+<div id="modal-permissoes" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:420px;max-height:80vh;overflow:auto">
+    <div class="modal-title">Permissões</div>
+    <div id="mperm-corpo" style="margin-top:10px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    <div id="mperm-acoes" style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-permissoes').style.display='none'">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Comissão de vendas (faixas + limitador) -->
 <div id="modal-comissao" class="modal-overlay" style="display:none">
   <div class="modal-box" style="max-width:560px;max-height:90vh;overflow-y:auto">
@@ -3523,15 +3578,21 @@ async function carregarUsuarioAutenticado(){
     // Perfil-4 (rev2 §2): navegação Admin/Config pela matriz de acesso do perfil (acessa_admin/config).
     // Esconde só quando o backend diz explicitamente NÃO (=== false); flag ausente (backend antigo/
     // pré-restart) NÃO esconde — evita "sumir os painéis" numa janela de deploy.
-    // super_admin: Admin/Config saem da sidebar por padrão — aparecem só ao "Administrar" uma loja (Painel Orizon).
+    // super_admin e Gestor de Rede (admin_rede): Admin/Config saem da sidebar por padrão —
+    // nenhum dos dois tem loja própria; aparecem só ao "Administrar" uma loja (Painel
+    // Orizon/Painel da Rede, mesmo botão orizonAdministrarLoja).
     const _ehSuper = !!(_usuarioAtual && _usuarioAtual.pode_gerir_redes);
+    const _ehGestorRede = !!(_usuarioAtual && _usuarioAtual.nivel === 'admin_rede');
     const _navAdmin = document.getElementById('nav-07');
-    if (_navAdmin) _navAdmin.style.display = (_ehSuper || (_usuarioAtual && _usuarioAtual.acessa_admin === false)) ? 'none' : '';
+    if (_navAdmin) _navAdmin.style.display = (_ehSuper || _ehGestorRede || (_usuarioAtual && _usuarioAtual.acessa_admin === false)) ? 'none' : '';
     const _navCfg = document.getElementById('nav-cfg');
-    if (_navCfg) _navCfg.style.display = (_ehSuper || (_usuarioAtual && _usuarioAtual.acessa_config === false)) ? 'none' : '';
+    if (_navCfg) _navCfg.style.display = (_ehSuper || _ehGestorRede || (_usuarioAtual && _usuarioAtual.acessa_config === false)) ? 'none' : '';
     // Painel Orizon (administração do sistema): só quem tem gerir_redes (exclusivo do super_admin).
     const _navOrizon = document.getElementById('nav-orizon');
     if (_navOrizon) _navOrizon.style.display = (_usuarioAtual && _usuarioAtual.pode_gerir_redes) ? '' : 'none';
+    // Painel da Rede: só o Gestor de Rede (admin_rede) — visão escopada à própria rede.
+    const _navRede = document.getElementById('nav-rede');
+    if (_navRede) _navRede.style.display = _ehGestorRede ? '' : 'none';
     _aplicarModulosNoMenu();
     sbNavRender();               // monta o acordeão dos módulos (usa _usuarioAtual.hub)
     carregarConsultores();       // seletor de consultor (criação/edição); só gerente+ atribui
@@ -3659,10 +3720,14 @@ function _aterrissarPorPapel(){
       if (el) el.style.display = 'none';
     });
   }
-  // super_admin e admin_rede aterrissam no Painel Admin (page 7);
-  // goPage(7) já dispara adminCarregarConsole(), que aterrissa no nível certo por papel.
-  if (u.pode_gerir_redes || u.nivel === 'admin_rede') {
-    goPage(7);
+  // super_admin aterrissa no Painel Orizon (visão de toda a plataforma); Gestor de Rede
+  // (admin_rede) aterrissa no Painel da Rede (visão só da própria rede) — achado do usuário
+  // 2026-08-08: os dois caíam em goPage(7), o Admin de LOJA ("Loja não identificada", já que
+  // nenhum dos dois tem loja própria).
+  if (u.pode_gerir_redes) {
+    goPageOrizon();
+  } else if (u.nivel === 'admin_rede') {
+    goPageRede();
   }
   const ehAdmin = u.pode_gerir_redes || u.nivel === 'admin_rede';
   if(!ehAdmin) goPage(0);   // Hub removido (Modulos_Orizon_v4): operacional aterrissa em Projetos
@@ -4813,17 +4878,21 @@ function cfgRemuneracaoEditar(id){
   const ben = f.beneficios || {at:{on:false,valor:0}, va:{on:false,valor:0}, ps:{on:false,valor:0}};
   _rmFaixas = (com.faixas||[]).map(x=>({venda_ate:x.venda_ate, pct:x.pct}));
   const benRow = (k,l) => `<label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="rm-b-${k}-on" ${ben[k].on?'checked':''}> ${l}</label><input id="rm-b-${k}-val" type="number" step="0.01" value="${ben[k].valor||0}" style="width:110px;padding:4px 8px" placeholder="R$">`;
-  let comHtml;
-  if (f.usa_comissao_vendas){
-    comHtml = `<div style="font-size:12px;color:var(--muted);margin:6px 0">Comissão de vendas por metas (também usada na negociação).</div>`
-      +`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirModalComissao(${lid||'null'})">Configurar comissão de vendas</button>`;
-  } else {
-    comHtml = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0"><input type="checkbox" id="rm-pormeta" ${com.por_meta?'checked':''} onchange="_rmToggleMeta()"> Comissão por meta?</label>`
-      +`<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">`
-      +`<label style="${lf}"><span>Base</span><select id="rm-base" style="padding:5px 8px"><option value="liquido" ${com.base==='liquido'?'selected':''}>Líquido de Vendas</option><option value="fabrica" ${com.base==='fabrica'?'selected':''}>Custo Fábrica</option></select></label>`
-      +`<label id="rm-pct-wrap" style="${lf};display:${com.por_meta?'none':'flex'}"><span>% comissão</span><input id="rm-pct" type="number" step="0.01" value="${com.pct||0}" style="width:100px;padding:5px 8px"></label></div>`
-      +`<div id="rm-faixas-wrap" style="display:${com.por_meta?'block':'none'};margin-top:8px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Faixas (venda até R$ → %; última com "até" vazio = acima)</div><div id="rm-faixas"></div><button class="btn btn-ghost btn-sm" type="button" style="font-size:11px;margin-top:6px" onclick="_rmAddFaixa()">+ faixa</button></div>`;
-  }
+  // 2026-08-08 (achado da Vera): antes `usa_comissao_vendas` só vinha do seed (nome exato
+  // "Consultor de Vendas") — sem controle nenhum pra ligar em função nova/custom. Os DOIS blocos
+  // ficam sempre no DOM (só um visível por vez) pra alternar sem reabrir o modal.
+  const usaComVendasIni = !!f.usa_comissao_vendas;
+  const comHtmlVendas = `<div style="font-size:12px;color:var(--muted);margin:6px 0">Comissão de vendas por metas (também usada na negociação).</div>`
+    +`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirModalComissao(${lid||'null'})">Configurar comissão de vendas</button>`;
+  const comHtmlSimples = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin:6px 0"><input type="checkbox" id="rm-pormeta" ${com.por_meta?'checked':''} onchange="_rmToggleMeta()"> Comissão por meta?</label>`
+    +`<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">`
+    +`<label style="${lf}"><span>Base</span><select id="rm-base" style="padding:5px 8px"><option value="liquido" ${com.base==='liquido'?'selected':''}>Líquido de Vendas</option><option value="fabrica" ${com.base==='fabrica'?'selected':''}>Custo Fábrica</option></select></label>`
+    +`<label id="rm-pct-wrap" style="${lf};display:${com.por_meta?'none':'flex'}"><span>% comissão</span><input id="rm-pct" type="number" step="0.01" value="${com.pct||0}" style="width:100px;padding:5px 8px"></label></div>`
+    +`<div id="rm-faixas-wrap" style="display:${com.por_meta?'block':'none'};margin-top:8px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Faixas (venda até R$ → %; última com "até" vazio = acima)</div><div id="rm-faixas"></div><button class="btn btn-ghost btn-sm" type="button" style="font-size:11px;margin-top:6px" onclick="_rmAddFaixa()">+ faixa</button></div>`;
+  const comHtml = `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px">`
+    +`<input type="checkbox" id="rm-usa-comvendas" ${usaComVendasIni?'checked':''} onchange="_rmToggleUsaComVendas()"> Usa comissão de vendas por metas (motor da loja, mesmo do Consultor de Vendas)</label>`
+    +`<div id="rm-com-vendas" style="display:${usaComVendasIni?'block':'none'}">${comHtmlVendas}</div>`
+    +`<div id="rm-com-simples" style="display:${usaComVendasIni?'none':'block'}">${comHtmlSimples}</div>`;
   const ex=document.getElementById('modal-remun'); if(ex) ex.remove();
   const ov=document.createElement('div'); ov.id='modal-remun';
   ov.style.cssText='position:fixed;inset:0;z-index:600;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
@@ -4842,7 +4911,12 @@ function cfgRemuneracaoEditar(id){
     <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-remun').remove()">Cancelar</button><button class="btn btn-primary btn-sm" onclick="cfgRemuneracaoSalvar()">Salvar</button></div>
   </div>`;
   document.body.appendChild(ov);
-  if(!f.usa_comissao_vendas) _rmRenderFaixas();
+  _rmRenderFaixas();   // sempre monta (o bloco simples só fica escondido, não removido, se usaComVendasIni)
+}
+function _rmToggleUsaComVendas(){
+  const on = document.getElementById('rm-usa-comvendas').checked;
+  const bv = document.getElementById('rm-com-vendas'); if(bv) bv.style.display = on?'block':'none';
+  const bs = document.getElementById('rm-com-simples'); if(bs) bs.style.display = on?'none':'block';
 }
 function _rmToggleMeta(){
   const on=document.getElementById('rm-pormeta').checked;
@@ -4871,10 +4945,12 @@ function _rmDelFaixa(i){ _rmFaixas.splice(i,1); _rmRenderFaixas(); }
 async function cfgRemuneracaoSalvar(){
   const id=document.getElementById('rm-id').value;
   const erro=document.getElementById('rm-erro');
+  const usaComVendas = document.getElementById('rm-usa-comvendas').checked;
   const body={ salario_fixo: parseFloat(document.getElementById('rm-fixo').value)||0,
-    comissao_fixa: parseFloat(document.getElementById('rm-comfixa').value)||0, beneficios:{} };
+    comissao_fixa: parseFloat(document.getElementById('rm-comfixa').value)||0, beneficios:{},
+    usa_comissao_vendas: usaComVendas };
   ['at','va','ps'].forEach(k=>{ body.beneficios[k]={on:document.getElementById('rm-b-'+k+'-on').checked, valor:parseFloat(document.getElementById('rm-b-'+k+'-val').value)||0}; });
-  if(document.getElementById('rm-pormeta')){   // não-Consultor: comissão editável aqui
+  if(!usaComVendas){   // comissão simples/por-meta só é relevante fora do motor da loja
     const pm=document.getElementById('rm-pormeta').checked;
     body.comissao={ por_meta:pm, base:document.getElementById('rm-base').value };
     if(pm) body.comissao.faixas=_rmFaixas; else body.comissao.pct=parseFloat(document.getElementById('rm-pct').value)||0;
@@ -11014,199 +11090,6 @@ function adminCarregarConsole(){
   adminRender();
 }
 
-function adminBreadcrumb(){
-  const parts = ['<span onclick="adminIrNivel(1)" style="cursor:pointer">Plataforma</span>'];
-  if (_adminNav.rede) parts.push(`<span onclick="adminIrNivel(2)" style="cursor:pointer">Rede ${esc(_adminNav.rede.nome||_adminNav.rede.id)}</span>`);
-  if (_adminNav.loja) {
-    const lojaTxt = `Loja ${esc(_adminNav.loja.nome||_adminNav.loja.id)}`;
-    parts.push(_adminNav.projeto
-      ? `<span onclick="adminIrNivel(3)" style="cursor:pointer">${lojaTxt}</span>`
-      : `<span>${lojaTxt}</span>`);
-  }
-  if (_adminNav.projeto) parts.push(`<span>Projeto ${esc(_adminNav.projeto.nome)}</span>`);
-  document.getElementById('admin-breadcrumb').innerHTML = parts.join(' › ');
-}
-
-function adminIrNivel(n){
-  if (n === 1) { _adminNav.rede = null; _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; }
-  if (n === 2) { _adminNav.loja = null; _adminNav.projeto = null; _lojaAtiva = null; }
-  if (n === 3) { _adminNav.projeto = null; }
-  _adminNav.nivel = n;
-  adminRender();
-}
-
-function adminEntrarRede(id, nome){ _adminNav.rede = { id, nome }; _adminNav.nivel = 2; _adminNav.loja = null; _lojaAtiva = null; adminRender(); }
-async function adminEntrarLoja(id, nome){
-  _adminNav.loja = { id, nome };
-  _adminNav.nivel = 3;
-  _lojaAtiva = id;               // super_admin passa a operar DENTRO desta loja (header X-Loja-Ativa)
-  try {
-    const r = await fetch(`/api/admin/lojas/${id}/modulos`, { credentials:'same-origin' });
-    const d = await r.json();
-    _adminNav.loja.modulos = d.ok ? d.ativos : null;   // null -> mostra tudo (nunca esconde por erro)
-  } catch(e){ _adminNav.loja.modulos = null; }
-  adminRender();
-}
-
-function adminRender(){
-  // Painel Admin plano: sempre as 4 abas da empresa selecionada (o drill-down foi p/ o Painel Orizon).
-  const bc = document.getElementById('admin-breadcrumb'); if (bc) bc.innerHTML = '';
-  const box = document.getElementById('admin-console');
-  adminRenderLoja(box);
-}
-
-function adminEntrarProjeto(nome, status){
-  _adminNav.projeto = { nome, status };
-  _adminNav.nivel = 4;
-  adminRender();
-}
-
-async function adminRenderPlataforma(box){
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const [redes, avulsas] = await Promise.all([
-    fetch('/api/admin/redes', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({redes:[]})),
-    fetch('/api/admin/lojas?rede_id=avulsas', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({lojas:[]})),
-  ]);
-  box.innerHTML = `
-    <div class="card" style="padding:14px 16px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <strong style="color:var(--accent)"><i class="ti ti-building"></i> Redes</strong>
-        <button class="btn btn-ghost btn-sm" onclick="adminRedeNova()" style="font-size:11px">+ Nova rede</button>
-      </div>
-      <table class="cli-table"><thead><tr><th>Nome</th><th>CNPJ</th><th></th></tr></thead><tbody>
-      ${(redes.redes||[]).map(r=>`<tr>
-        <td>${esc(r.nome)}</td><td style="color:var(--muted)">${esc(r.cnpj||'—')}</td>
-        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
-          onclick='adminEntrarRede(${r.id}, ${_attrJson(r.nome)})'>Entrar ›</button></td></tr>`).join('')
-        || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma rede.</td></tr>'}
-      </tbody></table>
-    </div>
-    <div class="card" style="padding:14px 16px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <strong style="color:var(--accent)"><i class="ti ti-building-store"></i>Lojas avulsas</strong>
-        <button class="btn btn-ghost btn-sm" onclick="adminLojaNova(null)" style="font-size:11px">+ Nova loja avulsa</button>
-      </div>
-      <table class="cli-table"><thead><tr><th>Nome</th><th>Código</th><th></th></tr></thead><tbody>
-      ${(avulsas.lojas||[]).map(l=>`<tr>
-        <td>${esc(l.nome)}</td><td style="color:var(--muted)">${esc(l.codigo||'—')}</td>
-        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
-          onclick='adminEntrarLoja(${l.id}, ${_attrJson(l.nome)})'>Entrar ›</button></td></tr>`).join('')
-        || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma loja avulsa.</td></tr>'}
-      </tbody></table>
-    </div>`;
-  if (_usuarioAtual && _usuarioAtual.pode_gerir_redes) {
-    const g = await fetch('/api/admin/usuarios?escopo=plataforma', {credentials:'same-origin'})
-      .then(r=>r.json()).catch(()=>({usuarios:[]}));
-    box.insertAdjacentHTML('beforeend', `
-      <div class="card" style="padding:14px 16px">
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-          <strong style="color:var(--accent)"><i class="ti ti-user"></i>Gestores gerais</strong>
-          <button class="btn btn-ghost btn-sm" style="font-size:11px"
-            onclick="abrirModalUsuario({modo:'novo', escopo:'plataforma', onSaved:adminRender})">+ Novo gestor</button>
-        </div>
-        <table class="cli-table"><thead><tr><th>Nome</th><th>Login</th><th></th></tr></thead><tbody>
-        ${(g.usuarios||[]).map(u=>`<tr>
-          <td>${esc(u.nome)}</td><td style="color:var(--muted)">${esc(u.login)}</td>
-          <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
-            onclick='abrirModalUsuarioEditar(${_attrJson(u)}, adminRender)'>Editar</button></td></tr>`).join('')
-          || '<tr><td colspan="3" style="color:var(--muted)">Nenhum gestor geral.</td></tr>'}
-        </tbody></table>
-      </div>`);
-    // Credenciais e Tokens — Núcleo/Plataforma; só Administrador do Sistema (super_admin) enxerga.
-    box.insertAdjacentHTML('beforeend', `
-      <div class="card" style="margin-top:16px">
-        <div class="card-title">Credenciais e Tokens</div>
-        <div style="max-width:420px">
-          <label class="field-label">Omie — App Key</label>
-          <input type="text" id="app_key" placeholder="App Key">
-          <label class="field-label" style="margin-top:10px">Omie — App Secret</label>
-          <input type="password" id="app_secret" placeholder="App Secret">
-          <label class="field-label" style="margin-top:10px">Intervalo (s)</label>
-          <input type="number" id="intervalo" min="0.3" max="10" step="0.1" value="0.5">
-          <div class="actions"><button class="btn btn-primary btn-sm" onclick="saveConfig()">Salvar credenciais</button></div>
-          <div class="sb-save-hint" id="save-hint" style="text-align:left"></div>
-        </div>
-      </div>`);
-    loadConfig();  // preenche os inputs recém-inseridos com os valores salvos
-  }
-}
-
-async function adminRedeNova(){
-  const nome = prompt('Nome da rede:'); if(!nome) return;
-  const cnpj = prompt('CNPJ (opcional):') || '';
-  const r = await fetch('/api/admin/redes', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, cnpj})});
-  const d = await r.json();
-  if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Redes'}); return; }
-  showToast('Rede criada.', false); adminRender();
-}
-
-async function adminRenderRede(box){
-  const rid = _adminNav.rede?.id;
-  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const lojas = await fetch('/api/admin/lojas?rede_id='+rid, {credentials:'same-origin'})
-    .then(r=>r.json()).catch(()=>({lojas:[]}));
-  box.innerHTML = `
-    <div class="card" style="padding:14px 16px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <strong style="color:var(--accent)"><i class="ti ti-building-store"></i>Lojas da rede</strong>
-        <button class="btn btn-ghost btn-sm" onclick="adminLojaNova(${rid})" style="font-size:11px">+ Nova loja</button>
-      </div>
-      <table class="cli-table"><thead><tr><th>Nome</th><th>Código</th><th></th></tr></thead><tbody>
-      ${(lojas.lojas||[]).map(l=>`<tr>
-        <td>${esc(l.nome)}</td><td style="color:var(--muted)">${esc(l.codigo||'—')}</td>
-        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
-          onclick='adminEntrarLoja(${l.id}, ${_attrJson(l.nome)})'>Entrar ›</button></td></tr>`).join('')
-        || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma loja nesta rede.</td></tr>'}
-      </tbody></table>
-    </div>`;
-  const podeAdmins = _usuarioAtual && (_usuarioAtual.pode_gerir_redes
-    || (_usuarioAtual.nivel === 'admin_rede'));
-  if (podeAdmins) {
-    const a = await fetch('/api/admin/usuarios?escopo=rede&rede_id='+rid, {credentials:'same-origin'})
-      .then(r=>r.json()).catch(()=>({usuarios:[]}));
-    box.insertAdjacentHTML('beforeend', `
-      <div class="card" style="padding:14px 16px">
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-          <strong style="color:var(--accent)"><i class="ti ti-user"></i>Gestores da rede</strong>
-          <button class="btn btn-ghost btn-sm" style="font-size:11px"
-            onclick="abrirModalUsuario({modo:'novo', escopo:'rede', rede_id:${rid}, onSaved:adminRender})">+ Novo gestor de rede</button>
-        </div>
-        <table class="cli-table"><thead><tr><th>Nome</th><th>Login</th><th></th></tr></thead><tbody>
-        ${(a.usuarios||[]).map(u=>`<tr>
-          <td>${esc(u.nome)}</td><td style="color:var(--muted)">${esc(u.login)}</td>
-          <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
-            onclick='abrirModalUsuarioEditar(${_attrJson(u)}, adminRender)'>Editar</button></td></tr>`).join('')
-          || '<tr><td colspan="3" style="color:var(--muted)">Nenhum administrador.</td></tr>'}
-        </tbody></table>
-      </div>`);
-  }
-  if (podeAdmins) {
-    box.insertAdjacentHTML('beforeend', `
-      <div class="card" style="padding:14px 16px">
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:4px">
-          <strong style="color:var(--accent)"><i class="ti ti-receipt"></i>Fiscal da rede — Emitente central</strong>
-          <button class="btn btn-ghost btn-sm" style="font-size:11px"
-            onclick="adminFiscalCarregar('rede', ${rid})">Configurar</button>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Configuração fiscal do CNPJ central da rede e o perfil de emissão padrão.</div>
-        <div id="rede-panel-fiscal"><em style="color:var(--muted);font-size:12px">Clique em “Configurar” para carregar.</em></div>
-      </div>`);
-  }
-}
-
-async function adminLojaNova(redeId){
-  const nome   = prompt('Nome da loja:'); if(!nome) return;
-  const codigo = prompt('Código (3 letras, único — usado na numeração do contrato):'); if(!codigo) return;
-  const body = { nome, codigo };
-  if (redeId) body.rede_id = redeId;
-  const r = await fetch('/api/admin/lojas', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  const d = await r.json();
-  if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Lojas'}); return; }
-  showToast('Loja criada.', false); adminRender();
-}
-
 // ── Seletor de empresa (topo de Admin e Config) — "terminal de acesso" à empresa/grupo ──
 let _empresas = null;   // cache [{loja_id,nome,rede_id,rede_nome}]
 function _empresaAtivaId(){ return _lojaAtiva || (_usuarioAtual && _usuarioAtual.loja_id) || null; }
@@ -12025,9 +11908,18 @@ async function orizonAbrirModalLoja(loja){
   setv('ml-dir-nome',''); setv('ml-dir-login',''); document.getElementById('ml-erro').textContent='';
   document.getElementById('ml-codigo').disabled = ed;                 // código não muda na edição
   document.getElementById('ml-diretor-sec').style.display = ed ? 'none' : '';
-  const dr = await fetch('/api/admin/redes',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({redes:[]}));
-  const rsel = document.getElementById('ml-rede');
-  rsel.innerHTML = `<option value="">— Avulsa —</option>`+(dr.redes||[]).map(r=>`<option value="${r.id}" ${String(r.id)===String(loja.rede_id)?'selected':''}>${esc(r.nome)}</option>`).join('');
+  // Gestor de Rede (admin_rede) só gerencia a PRÓPRIA rede — nem enxerga /api/admin/redes (lista
+  // todas, exclusivo de gerir_redes) — e o backend já força rede_id = a dele em qualquer loja que
+  // criar/editar. O seletor não faz sentido pra esse perfil: esconde (o value fica "", o backend
+  // ignora e usa a rede da sessão de qualquer forma).
+  const rselWrap = document.getElementById('ml-rede').closest('label');
+  const _souGestorRede = _usuarioAtual && _usuarioAtual.nivel === 'admin_rede';
+  if (rselWrap) rselWrap.style.display = _souGestorRede ? 'none' : '';
+  if (!_souGestorRede) {
+    const dr = await fetch('/api/admin/redes',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({redes:[]}));
+    const rsel = document.getElementById('ml-rede');
+    rsel.innerHTML = `<option value="">— Avulsa —</option>`+(dr.redes||[]).map(r=>`<option value="${r.id}" ${String(r.id)===String(loja.rede_id)?'selected':''}>${esc(r.nome)}</option>`).join('');
+  }
   const mbox = document.getElementById('ml-modulos');
   mbox.innerHTML = '<span style="color:var(--muted);font-size:12px">Carregando…</span>';
   let doms = [];
@@ -12082,8 +11974,8 @@ async function orizonRedesCarregar(){
         <button class="btn btn-ghost btn-sm" onclick="orizonRedeNova()" style="font-size:11px">+ Nova rede</button>
       </div>
       <table class="cli-table"><thead><tr><th>Nome</th><th>CNPJ</th><th></th></tr></thead><tbody>
-      ${(d.redes||[]).map(r=>`<tr><td>${esc(r.nome)}</td><td style="color:var(--muted)">${esc(r.cnpj||'—')}</td>
-        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick='orizonAbrirModalLoja({rede_id:${r.id}})'>+ Loja nesta rede</button></td></tr>`).join('')
+      ${(d.redes||[]).map(r=>`<tr style="cursor:pointer" title="Duplo clique para abrir" ondblclick='goPageRede(${r.id}, ${_attrJson(r.nome)})'><td>${esc(r.nome)}</td><td style="color:var(--muted)">${esc(r.cnpj||'—')}</td>
+        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick='event.stopPropagation(); orizonAbrirModalLoja({rede_id:${r.id}})'>+ Nova loja</button></td></tr>`).join('')
         || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma rede.</td></tr>'}
       </tbody></table>
     </div>`;
@@ -12121,25 +12013,155 @@ async function orizonLojasCarregar(){
     </div>`;
 }
 
+let _orzGestorFiltro = '';   // '' = todos; ou nivel (super_admin | admin_rede | master)
+function _orzContato(u){
+  const tel = u.telefone || '', wpp = u.whatsapp || '';
+  if (tel && wpp && tel !== wpp) return esc(tel) + ' <span style="color:var(--muted);font-size:10px">(zap: '+esc(wpp)+')</span>';
+  return esc(tel || wpp || '—');
+}
 async function orizonGestoresCarregar(){
   const box = document.getElementById('orz-panel-gestores'); if(!box) return;
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const g = await fetch('/api/admin/usuarios?escopo=plataforma', {credentials:'same-origin'})
+  const g = await fetch('/api/admin/usuarios?escopo=gestores', {credentials:'same-origin'})
     .then(r=>r.json()).catch(()=>({usuarios:[]}));
+  let gestores = g.usuarios || [];
+  if (_orzGestorFiltro) gestores = gestores.filter(u => u.nivel === _orzGestorFiltro);
+  const filtroOpts = `<option value="">Todos</option>
+    <option value="super_admin" ${_orzGestorFiltro==='super_admin'?'selected':''}>Plataforma</option>
+    <option value="admin_rede" ${_orzGestorFiltro==='admin_rede'?'selected':''}>Gestor de Rede</option>
+    <option value="master" ${_orzGestorFiltro==='master'?'selected':''}>Master (loja)</option>`;
   box.innerHTML = `
     <div class="card" style="padding:14px 16px">
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-        <strong style="color:var(--accent)"><i class="ti ti-user"></i>Gestores gerais</strong>
-        <button class="btn btn-ghost btn-sm" style="font-size:11px"
-          onclick="abrirModalUsuario({modo:'novo', escopo:'plataforma', onSaved:orizonGestoresCarregar})">+ Novo gestor</button>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <strong style="color:var(--accent)"><i class="ti ti-user"></i>Gestores</strong>
+        <span style="color:var(--muted);font-size:12px">Tipo:</span>
+        <select onchange="_orzGestorFiltro=this.value; orizonGestoresCarregar()" style="padding:4px 8px">${filtroOpts}</select>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="orizonNovoGestor()">+ Novo gestor</button>
       </div>
-      <table class="cli-table"><thead><tr><th>Nome</th><th>Login</th><th></th></tr></thead><tbody>
-      ${(g.usuarios||[]).map(u=>`<tr><td>${esc(u.nome)}</td><td style="color:var(--muted)">${esc(u.login)}</td>
-        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px"
+      <table class="cli-table"><thead><tr><th>Nome</th><th>Perfil</th><th>Telefone/WhatsApp</th><th>E-mail</th><th>CPF</th><th></th></tr></thead><tbody>
+      ${gestores.map(u=>`<tr><td>${esc(u.nome)}</td><td style="color:var(--muted)">${esc(u.rotulo||u.nivel)}</td>
+        <td style="color:var(--muted)">${_orzContato(u)}</td>
+        <td style="color:var(--muted)">${esc(u.email||'—')}</td>
+        <td style="color:var(--muted)">${esc(u.cpf||'—')}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px"
+          onclick='orizonAbrirPermissoes(${_attrJson(u)})'>Permissões</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px"
           onclick='abrirModalUsuarioEditar(${_attrJson(u)}, orizonGestoresCarregar)'>Editar</button></td></tr>`).join('')
-        || '<tr><td colspan="3" style="color:var(--muted)">Nenhum gestor geral.</td></tr>'}
+        || '<tr><td colspan="6" style="color:var(--muted)">Nenhum gestor neste filtro.</td></tr>'}
       </tbody></table>
     </div>`;
+}
+
+// ── "+ Novo gestor": tipo → (rede/loja: busca por nome ou CNPJ) → abrirModalUsuario ──────
+function orizonNovoGestor(){
+  document.getElementById('modal-tipo-gestor').style.display = 'flex';
+}
+function _gestorEscolherTipo(tipo){
+  document.getElementById('modal-tipo-gestor').style.display = 'none';
+  if (tipo === 'plataforma') {
+    abrirModalUsuario({modo:'novo', escopo:'plataforma', onSaved:orizonGestoresCarregar});
+    return;
+  }
+  _buscaVinculoAbrir(tipo);
+}
+
+let _bvTipo = null, _bvItens = [];   // 'rede' | 'loja'; itens crus da busca em curso
+async function _buscaVinculoAbrir(tipo){
+  _bvTipo = tipo;
+  document.getElementById('mbv-titulo').textContent = tipo === 'rede'
+    ? 'Escolher a rede do Gestor de Rede' : 'Escolher a loja do Master';
+  document.getElementById('mbv-busca').value = '';
+  document.getElementById('mbv-lista').innerHTML = '<em style="color:var(--muted);font-size:12px;padding:8px;display:block">Carregando…</em>';
+  document.getElementById('modal-busca-vinculo').style.display = 'flex';
+  const url = tipo === 'rede' ? '/api/admin/redes' : '/api/admin/lojas';
+  const chave = tipo === 'rede' ? 'redes' : 'lojas';
+  const d = await fetch(url, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({[chave]:[]}));
+  _bvItens = d[chave] || [];
+  _buscaVinculoFiltrar();
+  document.getElementById('mbv-busca').focus();
+}
+function _buscaVinculoFiltrar(){
+  const raw = document.getElementById('mbv-busca').value || '';
+  const q = raw.trim().toLowerCase(), qd = raw.replace(/\D/g, '');
+  const match = _bvItens.filter(it =>
+    (!q && !qd) || (q && (it.nome||'').toLowerCase().indexOf(q) !== -1) ||
+    (qd && (it.cnpj||'').replace(/\D/g,'').indexOf(qd) !== -1));
+  const lista = document.getElementById('mbv-lista');
+  lista.innerHTML = match.map(it =>
+    `<div onclick='_buscaVinculoEscolher(${it.id}, ${_attrJson(it.nome)})' style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border)">
+       <div>${esc(it.nome)}</div><div style="color:var(--muted);font-size:11px">${esc(it.cnpj||'—')}</div>
+     </div>`).join('')
+    || '<div style="padding:12px;color:var(--muted);font-size:12px">Nada encontrado.</div>';
+}
+function _buscaVinculoEscolher(id, nome){
+  document.getElementById('modal-busca-vinculo').style.display = 'none';
+  if (_bvTipo === 'rede') {
+    abrirModalUsuario({modo:'novo', escopo:'rede', rede_id:id, onSaved:orizonGestoresCarregar});
+  } else {
+    abrirModalUsuario({modo:'novo', escopo:'loja', loja_id:id, loja_nome:nome, onSaved:orizonGestoresCarregar});
+  }
+}
+
+// ── Botão "Permissões" na aba Gestores ────────────────────────────────────────
+// super_admin: sempre pleno (god-mode), só mostra info. admin_rede: override por CONTA,
+// editável aqui (allowlist em auth/perfis.CAPACIDADES_OVERRIDAVEIS_REDE). master: usa o
+// sistema de perfil por loja que já existe — o botão leva direto pra lá.
+const _PERM_ROTULO = {gerir_usuarios:'Gerenciar usuários', gerir_perfis:'Gerenciar perfis de acesso',
+  editar_dados_loja:'Editar dados da loja/rede', acesso_admin:'Acessar painel Admin', acesso_config:'Acessar painel Config'};
+let _permAlvo = null;
+async function orizonAbrirPermissoes(u){
+  _permAlvo = u;
+  document.getElementById('modal-permissoes').style.display = 'flex';
+  const corpo = document.getElementById('mperm-corpo');
+  const acoes = document.getElementById('mperm-acoes');
+  corpo.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  acoes.innerHTML = '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'modal-permissoes\').style.display=\'none\'">Fechar</button>';
+
+  if (u.nivel === 'super_admin') {
+    corpo.innerHTML = '<div style="font-size:12px;color:var(--muted)">Super Admin tem acesso pleno ao sistema — não é possível restringir por conta (garante que sempre exista um jeito de corrigir qualquer configuração).</div>';
+    return;
+  }
+  if (u.nivel === 'master') {
+    corpo.innerHTML = '<div style="font-size:12px;color:var(--muted)">Master usa o sistema de Perfis de Usuário da própria loja.</div>';
+    acoes.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-permissoes').style.display='none'">Fechar</button>
+      <button class="btn btn-primary btn-sm" onclick="_gestorAbrirPerfisDaLoja(${u.loja_id})">Abrir Perfis de Usuário</button>`;
+    return;
+  }
+  // admin_rede
+  const d = await fetch('/api/admin/usuarios/'+u.id+'/permissoes', {credentials:'same-origin'})
+    .then(r=>r.json()).catch(()=>({ok:false}));
+  if (!d.ok) { corpo.innerHTML = '<em style="color:var(--muted)">'+esc(d.erro||'Erro ao carregar.')+'</em>'; return; }
+  if (!d.editavel) {
+    corpo.innerHTML = '<div style="font-size:12px;color:var(--muted)">Você não pode editar as permissões desta conta.</div>';
+    return;
+  }
+  corpo.innerHTML = (d.allowlist||[]).map(cap =>
+    `<label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12px">
+       <input type="checkbox" data-permcap="${cap}" ${d.capacidades[cap] ? 'checked' : ''}> ${esc(_PERM_ROTULO[cap]||cap)}
+     </label>`).join('') +
+    '<div id="mperm-erro" style="font-size:12px;color:var(--err);min-height:16px;margin-top:6px"></div>';
+  acoes.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-permissoes').style.display='none'">Cancelar</button>
+    <button class="btn btn-primary btn-sm" onclick="_permissoesSalvar()">Salvar</button>`;
+}
+async function _permissoesSalvar(){
+  if (!_permAlvo) return;
+  const cap = {};
+  document.querySelectorAll('#mperm-corpo input[data-permcap]').forEach(el => { cap[el.getAttribute('data-permcap')] = el.checked; });
+  const r = await fetch('/api/admin/usuarios/'+_permAlvo.id+'/permissoes', {method:'PUT', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({capacidades: cap})});
+  const d = await r.json();
+  if (!d.ok) { document.getElementById('mperm-erro').textContent = d.erro || 'Erro ao salvar.'; return; }
+  showToast('Permissões salvas.', false);
+  document.getElementById('modal-permissoes').style.display = 'none';
+}
+async function _gestorAbrirPerfisDaLoja(lojaId){
+  document.getElementById('modal-permissoes').style.display = 'none';
+  if (!lojaId) return;
+  _lojaAtiva = lojaId;
+  localStorage.setItem('loja_ativa', String(lojaId));
+  goPage(7);
+  const box = document.getElementById('admin-console');
+  if (box) { await adminRenderLoja(box); adminLojaTab('perfis'); }
 }
 
 async function orizonRedeNova(){
@@ -12150,6 +12172,99 @@ async function orizonRedeNova(){
   const d = await r.json();
   if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Redes'}); return; }
   showToast('Rede criada.', false); orizonRedesCarregar();
+}
+
+// ── Painel da Rede: administração de UMA rede — lojas + dados cadastrais. Gestor de Rede
+// (admin_rede) só vê a própria (Usuario.rede_id); super_admin entra em qualquer uma via duplo
+// clique numa rede no Painel Orizon (goPageRede(id, nome)). /api/admin/lojas e
+// /api/admin/redes/<id> já vêm escopados pelo backend (mod_tenancy.pode_ver_loja/pode_ver_rede).
+let _redeAtiva = null;   // {id, nome} — rede sendo visualizada agora
+
+function goPageRede(redeId, redeNome){
+  if (redeId) {
+    _redeAtiva = { id: redeId, nome: redeNome || '' };
+  } else if (_usuarioAtual && _usuarioAtual.rede_id) {
+    _redeAtiva = { id: _usuarioAtual.rede_id, nome: '' };
+  }
+  const nav = document.getElementById('nav-rede');
+  if (nav && nav.classList.contains('locked')) return;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg = document.getElementById('page-rede'); if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  if (nav) nav.classList.add('active');
+  const sbParams = document.getElementById('sb-params'); if (sbParams) sbParams.style.display = 'none';
+  _sbModuloAberto = null; _sbSecaoAtiva = null;
+  if (_usuarioAtual && _usuarioAtual.nivel === 'admin_rede') {   // volta à visão da rede: esconde Admin/Config da loja
+    ['nav-07','nav-cfg'].forEach(nid => { const n = document.getElementById(nid); if(n) n.style.display='none'; });
+  }
+  const titulo = document.getElementById('rede-page-titulo');
+  if (titulo) titulo.textContent = (_redeAtiva && _redeAtiva.nome) ? 'Painel da Rede — ' + _redeAtiva.nome : 'Painel da Rede';
+  if (typeof sbNavRender === 'function') sbNavRender();
+  redeTab('lojas');
+}
+
+function redeTab(qual){
+  ['lojas','dados'].forEach(q => {
+    const t = document.getElementById('rede-tab-'+q), p = document.getElementById('rede-panel-'+q);
+    if (t) t.classList.toggle('ativo', q===qual);
+    if (p) p.style.display = q===qual ? '' : 'none';
+  });
+  if (qual==='lojas') redeLojasCarregar();
+  if (qual==='dados') redeDadosCarregar();
+}
+
+async function redeLojasCarregar(){
+  const box = document.getElementById('rede-panel-lojas'); if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const redeId = _redeAtiva && _redeAtiva.id;
+  const dl = await fetch('/api/admin/lojas', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({lojas:[]}));
+  const lojas = (dl.lojas || []).filter(l => !redeId || String(l.rede_id) === String(redeId));
+  box.innerHTML = `
+    <div class="card" style="padding:14px 16px">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <strong style="color:var(--accent)"><i class="ti ti-building-store"></i>Lojas da rede</strong>
+        <button class="btn btn-ghost btn-sm" onclick="orizonAbrirModalLoja(${redeId ? '{rede_id:'+redeId+'}' : 'null'})" style="font-size:11px">+ Nova loja</button>
+      </div>
+      <table class="cli-table"><thead><tr><th>Nome</th><th>Código</th><th></th></tr></thead><tbody>
+      ${lojas.map(l=>`<tr><td>${esc(l.nome)}</td><td style="color:var(--muted)">${esc(l.codigo||'—')}</td>
+        <td style="text-align:right"><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick='orizonAdministrarLoja(${l.id})'>Administrar</button> <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick='orizonAbrirModalLoja(${_attrJson(l)})'>Editar</button></td></tr>`).join('')
+        || '<tr><td colspan="3" style="color:var(--muted)">Nenhuma loja nesta rede ainda.</td></tr>'}
+      </tbody></table>
+    </div>`;
+}
+
+async function redeDadosCarregar(){
+  const box = document.getElementById('rede-panel-dados'); if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const redeId = _redeAtiva && _redeAtiva.id;
+  if (!redeId) { box.innerHTML = '<em style="color:var(--muted)">Conta sem rede vinculada.</em>'; return; }
+  const d = await fetch('/api/admin/redes/'+redeId, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if (!d.ok) { box.innerHTML = '<em style="color:var(--muted)">'+esc(d.erro||'Erro ao carregar.')+'</em>'; return; }
+  const r = d.rede;
+  _redeAtiva.nome = r.nome;   // completa o nome (duplo clique já traz, aterrissagem própria não)
+  const titulo = document.getElementById('rede-page-titulo');
+  if (titulo) titulo.textContent = 'Painel da Rede — ' + r.nome;
+  box.innerHTML = `
+    <div class="card" style="padding:14px 16px;max-width:480px">
+      <div class="grid2" style="gap:14px">
+        <div><label class="field-label">Nome da rede</label><input id="rd-nome" value="${esc(r.nome)}" style="width:100%;box-sizing:border-box"></div>
+        <div><label class="field-label">CNPJ</label><input id="rd-cnpj" value="${esc(r.cnpj)}" style="width:100%;box-sizing:border-box"></div>
+      </div>
+      <div id="rd-erro" style="font-size:12px;color:var(--err);min-height:16px;margin:8px 0"></div>
+      <button class="btn btn-primary btn-sm" onclick="redeDadosSalvar()">Salvar</button>
+    </div>`;
+}
+
+async function redeDadosSalvar(){
+  const redeId = _redeAtiva && _redeAtiva.id;
+  const erro = document.getElementById('rd-erro');
+  const nome = (document.getElementById('rd-nome').value || '').trim();
+  const cnpj = (document.getElementById('rd-cnpj').value || '').trim();
+  const r = await fetch('/api/admin/redes/'+redeId, {method:'PATCH', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, cnpj})});
+  const d = await r.json();
+  if (!d.ok) { erro.textContent = d.erro || 'Erro ao salvar.'; return; }
+  showToast('Dados da rede salvos.', false);
 }
 
 async function adminRenderLoja(box){
@@ -13614,15 +13729,72 @@ async function finLancar(){
   _finSugestao = null; showToast('Lançamento registrado'); lancamentosCarregar();
 }
 
-async function planoContasCarregar(){
-  const box = document.getElementById('plano-contas-box');
+// Árvore de Plano de Contas/Centro de Custo — mesmo componente, config por aba (Centro de
+// Custo/Natureza, 2026-08-08). _PC_CFGS injeta endpoint + rótulos; a árvore em si (_pcNode/
+// pcNovo/pcRenomear/pcRemover) é genérica.
+const _PC_CFGS = {
+  contas: {boxId:'plano-contas-box', listUrl:'/api/financeiro/contas', itemsKey:'contas',
+           criarUrl:'/api/financeiro/contas', putUrlBase:'/api/financeiro/contas/',
+           removerUrlBase:'/api/financeiro/contas/', mostraSelo:true, rotuloItem:'conta'},
+  centrocusto: {boxId:'centrocusto-box', listUrl:'/api/financeiro/centro-custo', itemsKey:'centros_custo',
+           criarUrl:'/api/financeiro/centro-custo', putUrlBase:'/api/financeiro/centro-custo/',
+           removerUrlBase:'/api/financeiro/centro-custo/', mostraSelo:false, rotuloItem:'centro de custo'},
+};
+
+// 3 abas do Plano de Contas (2026-08-08): Contas (padrão) / Centro de Custos / Natureza dos
+// Custos. Mesmo padrão de toggle in-panel já usado em Reconciliação (_reconPainel).
+let _pcAba = 'contas';   // 'contas' | 'centrocusto' | 'naturezacusto'
+function _pcAbaSetor(v){ _pcAba = v; _pcAbaRenderizar(); }
+function _pcAbaSeletorHtml(){
+  const btn = (v,lbl) => '<button class="btn '+(_pcAba===v?'btn-primary':'btn-ghost')+' btn-sm" onclick="_pcAbaSetor(\''+v+'\')">'+lbl+'</button>';
+  return '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'
+    +btn('contas','Contas')+btn('centrocusto','Centro de Custos')+btn('naturezacusto','Natureza dos Custos')+'</div>';
+}
+
+function planoContasCarregar(){
+  const shell = document.getElementById('plano-contas-shell');
+  if(!shell) return;
+  shell.innerHTML = _pcAbaSeletorHtml()
+    + '<div id="plano-contas-box"></div>'
+    + '<div id="centrocusto-box" style="display:none"></div>'
+    + '<div id="naturezacusto-box" style="display:none"></div>';
+  _pcAbaRenderizar();
+}
+
+function _pcAbaRenderizar(){
+  const boxes = {contas:'plano-contas-box', centrocusto:'centrocusto-box', naturezacusto:'naturezacusto-box'};
+  Object.entries(boxes).forEach(([aba,id]) => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (aba === _pcAba) ? '' : 'none';
+  });
+  if(_pcAba === 'naturezacusto') _naturezaCustoRenderizar();
+  else _pcCarregar(_pcAba);
+}
+
+// Natureza dos Custos: lista fixa, não editável, sem round-trip de API (só 3 itens).
+const _NATUREZA_CUSTO_ITENS = [
+  {nome:'Fixo', desc:'Não varia com o volume de vendas/produção — ex.: aluguel, salários administrativos.'},
+  {nome:'Variável', desc:'Varia proporcionalmente ao volume — ex.: comissões, frete, insumos.'},
+  {nome:'Semivariável', desc:'Tem uma parte fixa e uma parte que varia com o volume.'},
+];
+function _naturezaCustoRenderizar(){
+  const box = document.getElementById('naturezacusto-box');
   if(!box) return;
-  const r = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
+  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Lista fixa — não editável. Classifica o comportamento do custo diante do volume de vendas.</div>'
+    + _NATUREZA_CUSTO_ITENS.map(it => '<div style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:12px">'
+      + '<b style="color:var(--text)">'+esc(it.nome)+'</b> <span style="color:var(--muted)">— '+esc(it.desc)+'</span></div>').join('');
+}
+
+async function _pcCarregar(cfgKey){
+  const cfg = _PC_CFGS[cfgKey];
+  const box = document.getElementById(cfg.boxId);
+  if(!box) return;
+  const r = await fetch(cfg.listUrl, {credentials:'same-origin'});
   if(r.status === 403){ box.innerHTML = '<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const d = await r.json().catch(()=>({}));
-  if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar o plano.</em>'; return; }
-  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative uma conta. Contas com lançamento nunca são apagadas — só inativadas.</div>'
-    + d.contas.map(c => _pcNode(c, 0)).join('');
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
+  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
+    + d[cfg.itemsKey].map(c => _pcNode(cfgKey, c, 0)).join('');
 }
 
 // Selo de posição no Balanço (§2.3): grupo 1–5 -> Ativo/Passivo/PL/Receita/Despesa
@@ -13633,44 +13805,48 @@ function _finSeloBadge(grupo){
     +'border:1px solid var(--border);border-radius:6px;padding:1px 5px;margin-left:8px">'+esc(_finSelo(grupo))+'</span>';
 }
 
-function _pcNode(c, nivel){
+function _pcNode(cfgKey, c, nivel){
+  const cfg = _PC_CFGS[cfgKey];
   const pad = 12 + nivel*18;
-  const sint = c.tipo === 'sintetica';
+  const sint = (c.filhos||[]).length > 0;
   const cod  = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(c.codigo)+'</span>';
-  const nome = '<span style="font-weight:'+(sint?700:400)+';color:var(--text)">'+esc(c.nome)+'</span>'+_finSeloBadge(c.grupo);
+  const nome = '<span style="font-weight:'+(sint?700:400)+';color:var(--text)">'+esc(c.nome)+'</span>'+(cfg.mostraSelo?_finSeloBadge(c.grupo):'');
   const acoes = '<span style="margin-left:auto;display:flex;gap:6px">'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcNovo('+c.id+')">+ filho</button>'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcRenomear('+c.id+')">renomear</button>'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcRemover('+c.id+')">inativar/apagar</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcNovo(\''+cfgKey+'\','+c.id+')">+ filho</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcRenomear(\''+cfgKey+'\','+c.id+')">renomear</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\''+cfgKey+'\','+c.id+')">inativar/apagar</button>'
     + '</span>';
   const linha = '<div style="display:flex;align-items:center;padding:5px 10px 5px '+pad+'px;border-bottom:1px solid var(--border);font-size:12px">'+cod+nome+acoes+'</div>';
-  const filhos = (c.filhos||[]).map(f => _pcNode(f, nivel+1)).join('');
+  const filhos = (c.filhos||[]).map(f => _pcNode(cfgKey, f, nivel+1)).join('');
   return linha + filhos;
 }
 
-async function pcNovo(paiId){
-  const nome = prompt('Nome da nova conta:');
+async function pcNovo(cfgKey, paiId){
+  const cfg = _PC_CFGS[cfgKey];
+  const nome = prompt('Nome do novo item:');
   if(!nome) return;
-  const r = await fetch('/api/financeiro/contas', {method:'POST', headers:{'Content-Type':'application/json'},
+  const r = await fetch(cfg.criarUrl, {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome})});
   const d = await r.json().catch(()=>({}));
   if(!d.ok) showToast(d.erro || 'Falha ao criar', true);
-  planoContasCarregar();
+  _pcCarregar(cfgKey);
 }
-async function pcRenomear(id){
-  const nome = prompt('Novo nome da conta:');
+async function pcRenomear(cfgKey, id){
+  const cfg = _PC_CFGS[cfgKey];
+  const nome = prompt('Novo nome:');
   if(!nome) return;
-  await fetch('/api/financeiro/contas/'+id, {method:'PUT', headers:{'Content-Type':'application/json'},
+  await fetch(cfg.putUrlBase+id, {method:'PUT', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({nome})});
-  planoContasCarregar();
+  _pcCarregar(cfgKey);
 }
-async function pcRemover(id){
-  if(!confirm('Remover esta conta? (com filhos/lançamento será apenas inativada)')) return;
-  const r = await fetch('/api/financeiro/contas/'+id+'/remover', {method:'POST', headers:{'Content-Type':'application/json'},
+async function pcRemover(cfgKey, id){
+  const cfg = _PC_CFGS[cfgKey];
+  if(!confirm('Remover este item? (com filhos/uso será apenas inativado)')) return;
+  const r = await fetch(cfg.removerUrlBase+id+'/remover', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body:'{}'});
   const d = await r.json().catch(()=>({}));
-  if(d.ok) showToast(d.acao === 'apagada' ? 'Conta apagada' : 'Conta inativada');
-  planoContasCarregar();
+  if(d.ok) showToast((d.acao === 'apagada' || d.acao === 'apagado') ? 'Item apagado' : 'Item inativado');
+  _pcCarregar(cfgKey);
 }
 
 let _cfgFin = null;

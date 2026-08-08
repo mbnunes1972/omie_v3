@@ -24,7 +24,7 @@ RUBRICAS = {
     "insumos":             ("1.1.06.09", "2.1.04.09", "5.2.09"),
     "com_medidor":         ("1.1.06.10", "2.1.04.10", "5.3.18"),
     "com_proj_exec":       ("1.1.06.11", "2.1.04.11", "5.3.19"),
-    "retencao_com_vendas": ("1.1.06.12", "2.1.04.12", "5.3.20"),
+    "retencao_com_vendas": ("1.1.06.12", "2.1.04.12", "5.3.01"),   # 5.3.20 removida (Centro de Custo/Natureza, 2026-08-08)
 }
 VALORES = {"montagem": 1000.0, "garantia": 200.0, "assistencia": 300.0, "custo_fabrica": 60000.0,
            "frete_fabrica": 400.0, "frete_local": 150.0, "insumos": 100.0, "com_medidor": 250.0,

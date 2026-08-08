@@ -96,7 +96,7 @@ MODULOS = {
     "financeiro":  {"camada": "dominio", "depende_de": ["comercial"], "rotulo": "Financeiro", "faixa": "financeiro",
                     "arquivos": ["mod_provisoes.py", "mod_contabil.py", "mod_ajustes_fabrica.py",
                                  "mod_indicadores.py", "mod_recebiveis.py"],
-                    "tabelas": ["provisao_registro", "conta", "lancamento", "periodo_contabil",
+                    "tabelas": ["provisao_registro", "conta", "centro_custo", "lancamento", "periodo_contabil",
                                 "acordo_fabrica", "ajuste_fabrica", "ajuste_fabrica_aplicacao",
                                 "acordo_movimento", "contraparte_financeira", "recebivel",
                                 "provisao_data_prevista"],

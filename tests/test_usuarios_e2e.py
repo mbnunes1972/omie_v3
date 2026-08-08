@@ -52,6 +52,47 @@ def test_lista_inclui_campos_contato(http_client_factory, seed):
     assert "email" in u and "cpf" in u and "whatsapp" in u
 
 
+def test_lista_escopo_gestores_inclui_super_admin_rede_e_master(http_client_factory, seed):
+    """Painel Orizon › Gestores (2026-08-08): TODO gestor do sistema — antes 'Gestores gerais'
+    só mostrava super_admin (escopo=plataforma). Agora junta os 3 tipos que administram algo."""
+    c = _login(http_client_factory, "super")
+    st, body = c.get("/api/admin/usuarios?escopo=gestores")
+    assert st == 200 and body["ok"], (st, body)
+    niveis = {u["nivel"] for u in body["usuarios"]}
+    assert niveis == {"super_admin", "admin_rede", "master"}
+
+
+def test_lista_escopo_gestores_exclusivo_de_gerir_redes(http_client_factory, seed):
+    """CPF vaza nesse endpoint — exclusivo de quem tem gerir_redes (só super_admin), mesmo que
+    o gestor de rede/diretor de loja também tenham gerir_usuarios."""
+    for who in ("adm_rede", "dir_l1"):
+        c = _login(http_client_factory, who)
+        st, _ = c.get("/api/admin/usuarios?escopo=gestores")
+        assert st == 403, (who, st)
+
+
+def test_override_por_conta_do_gestor_de_rede_bloqueia_endpoint_real(http_client_factory, seed, app_db):
+    """Ponta a ponta do achado de 2026-08-08: desligar gerir_usuarios NA CONTA (não no nível) de
+    um admin_rede específico precisa realmente bloquear um endpoint gated por essa capacidade —
+    sem afetar outros admin_rede (o override é por Usuario, não por nível)."""
+    import json
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="adm_rede").first()
+    u.capacidades_override_json = json.dumps({"gerir_usuarios": False})
+    db.commit()
+    db.close()
+    try:
+        c = _login(http_client_factory, "adm_rede")
+        st, _ = c.get("/api/admin/usuarios?escopo=loja&loja_id=%d" % seed["loja1_id"])
+        assert st == 403
+    finally:
+        db = app_db.get_session()
+        u = db.query(app_db.Usuario).filter_by(login="adm_rede").first()
+        u.capacidades_override_json = None   # não vaza pro resto da suíte (fixture é module-scoped)
+        db.commit()
+        db.close()
+
+
 # Task 6 — POST /api/admin/usuarios grava contato e admin_rede cria par
 
 def test_diretor_cria_usuario_loja_com_contato(http_client_factory, seed):
@@ -177,3 +218,82 @@ def test_super_admin_cria_outro_super_admin(http_client_factory, seed):
     assert st == 200 and body["ok"], body
     st, lst = c.get("/api/admin/usuarios?escopo=plataforma")
     assert any(u["login"] == "super2" for u in lst["usuarios"])
+
+
+# ── Permissões por CONTA (2026-08-08) — GET/PUT /api/admin/usuarios/<id>/permissoes ─────────
+
+def test_permissoes_get_admin_rede_mostra_padrao_sem_override(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    alvo = db.query(app_db.Usuario).filter_by(login="adm_rede").first()
+    alvo_id = alvo.id
+    db.close()
+    c = _login(http_client_factory, "super")
+    st, body = c.get(f"/api/admin/usuarios/{alvo_id}/permissoes")
+    assert st == 200 and body["ok"], body
+    assert body["nivel"] == "admin_rede" and body["editavel"] is True
+    assert body["capacidades"] == body["capacidades_padrao"]
+
+
+def test_permissoes_get_master_nao_editavel(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    alvo = db.query(app_db.Usuario).filter_by(login="dir_l1").first()
+    alvo_id = alvo.id
+    db.close()
+    c = _login(http_client_factory, "super")
+    st, body = c.get(f"/api/admin/usuarios/{alvo_id}/permissoes")
+    assert st == 200 and body["ok"] and body["editavel"] is False
+
+
+def test_permissoes_put_super_admin_grava_e_reflete_em_pode_usuario(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    alvo = db.query(app_db.Usuario).filter_by(login="adm_rede").first()
+    alvo_id = alvo.id
+    db.close()
+    c = _login(http_client_factory, "super")
+    try:
+        st, body = c.put(f"/api/admin/usuarios/{alvo_id}/permissoes",
+                         {"capacidades": {"gerir_perfis": True, "gerir_usuarios": False}})
+        assert st == 200 and body["ok"], body
+        assert body["capacidades"]["gerir_perfis"] is True
+        assert body["capacidades"]["gerir_usuarios"] is False
+        # a mesma conta perde acesso a um endpoint gated por gerir_usuarios de verdade
+        c2 = _login(http_client_factory, "adm_rede")
+        st2, _ = c2.get("/api/admin/usuarios?escopo=loja&loja_id=%d" % seed["loja1_id"])
+        assert st2 == 403
+    finally:
+        db = app_db.get_session()
+        alvo = db.get(app_db.Usuario, alvo_id)
+        alvo.capacidades_override_json = None
+        db.commit(); db.close()
+
+
+def test_permissoes_put_rejeita_capacidade_fora_da_allowlist(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    alvo_id = db.query(app_db.Usuario).filter_by(login="adm_rede").first().id
+    db.close()
+    c = _login(http_client_factory, "super")
+    st, body = c.put(f"/api/admin/usuarios/{alvo_id}/permissoes",
+                     {"capacidades": {"gerir_lojas": False}})
+    assert st == 400 and "gerir_lojas" in body["erro"]
+
+
+def test_permissoes_put_rejeitado_para_master(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    alvo_id = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+    db.close()
+    c = _login(http_client_factory, "super")
+    st, body = c.put(f"/api/admin/usuarios/{alvo_id}/permissoes",
+                     {"capacidades": {"gerir_usuarios": False}})
+    assert st == 400
+
+
+def test_permissoes_diretor_de_loja_nao_acessa(http_client_factory, seed, app_db):
+    """dir_l1 (master, sem gerir_redes/gerir_lojas) não enxerga a rota — nem GET nem PUT."""
+    db = app_db.get_session()
+    alvo_id = db.query(app_db.Usuario).filter_by(login="adm_rede").first().id
+    db.close()
+    c = _login(http_client_factory, "dir_l1")
+    st, _ = c.get(f"/api/admin/usuarios/{alvo_id}/permissoes")
+    assert st == 404
+    st2, _ = c.put(f"/api/admin/usuarios/{alvo_id}/permissoes", {"capacidades": {}})
+    assert st2 == 404

@@ -218,7 +218,11 @@ def _funcao_do_usuario(u):
 
 def _usuario_dict(u: Usuario) -> dict:
     _funcao_nome, _funcao_papeis = _funcao_do_usuario(u)
-    return {
+    try:
+        _override = json.loads(getattr(u, "capacidades_override_json", None) or "{}")
+    except (TypeError, ValueError):
+        _override = {}
+    d = {
         "id":                u.id,
         "nome":              u.nome,
         "login":             u.login,
@@ -229,14 +233,14 @@ def _usuario_dict(u: Usuario) -> dict:
         "loja_id":           u.loja_id,
         "rede_id":           u.rede_id,
         "limite_desconto":   u.limite_desconto,
+        # capacidades_override (2026-08-08): override POR CONTA, só admin_rede — as funções
+        # *_usuario abaixo o consultam; precisa estar no dict ANTES delas serem chamadas.
+        "capacidades_override": _override,
         "pode_ver_parametros": perfis.pode(u.nivel, "ver_parametros"),
         "pode_gerir_documentos": perfis.pode(u.nivel, "gerir_documentos"),
         "rotulo":              perfis.rotulo(u.nivel),
-        "pode_gerir_usuarios": perfis.pode(u.nivel, "gerir_usuarios"),
-        "pode_gerir_perfis":  perfis.pode(u.nivel, "gerir_perfis"),
         "pode_gerir_redes":    perfis.pode(u.nivel, "gerir_redes"),
         "pode_gerir_lojas":    perfis.pode(u.nivel, "gerir_lojas"),
-        "pode_editar_dados_loja": perfis.pode(u.nivel, "editar_dados_loja"),
         # 2026-07-24: o frontend só pede senha gerencial quando o LOGADO não tem a permissão
         "pode_autorizar":           perfis.pode(u.nivel, "autorizar"),
         "pode_aprovar_financeiro":  perfis.pode(u.nivel, "aprovar_financeiro"),
@@ -245,6 +249,12 @@ def _usuario_dict(u: Usuario) -> dict:
         "pode_ver_todas_conversas": perfis.pode(u.nivel, "ver_todas_conversas"),  # Orizon Chat F2
         "precisa_trocar_senha": bool(getattr(u, "senha_provisoria", 0)),
     }
+    # Capacidades OVERRIDÁVEIS por conta pra admin_rede (2026-08-08) — usam pode_usuario(d, ...),
+    # que lê d["capacidades_override"] acima; demais níveis caem em pode() sem mudança nenhuma.
+    d["pode_gerir_usuarios"]    = perfis.pode_usuario(d, "gerir_usuarios")
+    d["pode_gerir_perfis"]      = perfis.pode_usuario(d, "gerir_perfis")
+    d["pode_editar_dados_loja"] = perfis.pode_usuario(d, "editar_dados_loja")
+    return d
 
 
 def set_tema(usuario_id: int, tema: str) -> bool:

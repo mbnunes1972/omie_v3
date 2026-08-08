@@ -224,6 +224,26 @@ def test_endpoint_conciliar_barrado_por_retido(http_client_factory, app_db, seed
     assert st == 409 and "retido" in (b.get("erro") or "").lower()
 
 
+def test_endpoint_conciliar_barrado_por_etapas_pendentes(http_client_factory, app_db, seed):
+    """Achado do usuário (2026-08-08, bateria de teste da Vera): a Etapa 21 (Conciliação Final)
+    não tinha NENHUM gate sequencial — só o de ambiente retido. Dava pra concluí-la (e ENCERRAR o
+    projeto) com 16-20 ("Entrega no cliente".."Aprovação final") ainda pendentes; reproduzido em
+    vários projetos da bateria. A Etapa 15 (NF-e) segue destravada de propósito (decisão do
+    usuário) — só a Etapa 20, a imediatamente anterior na sequência canônica, precisa estar
+    concluída."""
+    _proj_amb(app_db, seed, "RET_seq", 1)   # sem retido — passa no gate de ambiente, cai no de etapa
+    db = app_db.get_session()
+    for cod in ("1", "2", "3", "4", "7", "8", "9", "10", "11", "12", "13", "14"):
+        db.add(app_db.CicloEtapa(projeto_nome="RET_seq", etapa_codigo=cod, status="concluido"))
+    db.commit(); db.close()
+
+    ger = _login(http_client_factory, "dir_l1")
+    st, b = ger.post("/api/projetos/RET_seq/ciclo/21/conciliar", {})
+    assert st == 409
+    assert "anterior" in (b.get("erro") or "").lower()
+    assert "aprovação final" in (b.get("erro") or "").lower()   # nome da Etapa 20
+
+
 def test_endpoint_sinalizar_e_permissao(http_client_factory, app_db, seed):
     ids = _proj_amb(app_db, seed, "RET_ep", 2)
     op = _login(http_client_factory, "cons_l1")                            # operador tem registrar_medicao

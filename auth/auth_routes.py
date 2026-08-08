@@ -115,8 +115,8 @@ def handle_auth_get(handler, path: str) -> bool:
                 _acessiveis = set(m for m in _ativos if _perfis.acessa_modulo(_niv, m))
                 usuario["modulos_ativos"] = sorted(_acessiveis)
                 usuario["modulos_bloqueados"] = sorted(_ativos - _acessiveis)
-                usuario["acessa_admin"] = _perfis.acessa_painel(_niv, "admin")
-                usuario["acessa_config"] = _perfis.acessa_painel(_niv, "config")
+                usuario["acessa_admin"] = _perfis.acessa_painel_usuario(usuario, "admin")
+                usuario["acessa_config"] = _perfis.acessa_painel_usuario(usuario, "config")
                 # Hub sobre TODOS os módulos ativos da loja, marcando os que o perfil não acessa
                 # (front mostra bloqueado com cadeado → step-up por senha). rev3 §2.
                 usuario["hub"] = [
@@ -276,7 +276,7 @@ def handle_auth_post(handler, path: str, body: bytes) -> bool:
             u = db.query(Usuario).filter_by(login=login).first()
             if not u or not u.ativo or not u.check_senha(senha):
                 _send_json(handler, {"ok": False, "erro": "Usuário ou senha inválidos."}, 401); return True
-            tem = (perfis.acessa_painel(u.nivel, recurso) if recurso in ("admin", "config")
+            tem = (perfis.acessa_painel_usuario(u, recurso) if recurso in ("admin", "config")
                    else perfis.acessa_modulo(u.nivel, recurso))
             if not tem:
                 _send_json(handler, {"ok": False, "erro": f"{u.nome} não tem acesso a este recurso."}, 403); return True

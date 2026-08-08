@@ -235,6 +235,11 @@ def funcao_aplicar(db, f, req, loja_id):
         f.salario_fixo = _f(req.get("salario_fixo"))
     if "comissao_fixa" in req:
         f.comissao_fixa = _f(req.get("comissao_fixa"))
+    if "usa_comissao_vendas" in req:
+        # 2026-08-08 (achado da Vera): antes só o seed inicial gravava isto (por nome exato
+        # "Consultor de Vendas") — função nova/custom nunca conseguia ligar a comissão de
+        # vendas por metas da loja (o mesmo motor que o Consultor usa) via API.
+        f.usa_comissao_vendas = 1 if req.get("usa_comissao_vendas") else 0
     if "comissao" in req:
         cm = req.get("comissao") or {}
         base = cm.get("base"); base = base if base in ("liquido", "fabrica") else "liquido"

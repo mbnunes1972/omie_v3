@@ -67,6 +67,14 @@ class Usuario(Base):
     criado_em     = Column(DateTime,    default=datetime.utcnow)
     loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True)  # usuário de loja
     rede_id       = Column(Integer,     ForeignKey("redes.id"), nullable=True)  # admin de rede (loja_id NULL)
+    # Permissões por CONTA (2026-08-08) — só admin_rede: PerfilAcesso é por LOJA (loja_id
+    # nullable=False), então não serve pra Gestor de Rede (sem loja própria). NULL = usa os
+    # padrões do nível (auth.perfis.PERFIS["admin_rede"]); {} ou dict parcial = overrides,
+    # só nas capacidades da allowlist (auth.perfis.CAPACIDADES_OVERRIDAVEIS_REDE — não inclui
+    # gerir_redes/gerir_lojas, que definem a IDENTIDADE de admin_rede pra mod_tenancy). Master
+    # usa o mecanismo que já existe (slug próprio em PerfilAcesso, por loja); super_admin é
+    # sempre pleno (god-mode, perfis.pode() nunca olha override pra esse nível).
+    capacidades_override_json = Column(Text, nullable=True)
 
     sessoes       = relationship("Sessao",          back_populates="usuario", cascade="all, delete-orphan")
     autorizacoes  = relationship("LogAutorizacao",  back_populates="autorizador", foreign_keys="LogAutorizacao.autorizador_id")
@@ -1007,7 +1015,32 @@ class Conta(Base):
     ordem      = Column(Integer, default=0)
     criado_em     = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Centro de Custo/Natureza (2026-08-08): duas etiquetas independentes, só usadas nas contas do
+    # grupo 5 (Despesas/Custos). centro_custo_id aponta pra CentroCusto (árvore própria, mesmo
+    # owner). natureza_custo é um slug fixo (ver NATUREZA_CUSTO em mod_contabil.py) — não precisa
+    # de tabela, é lista fechada de 3. Nome deliberadamente diferente de `natureza` (devedora/
+    # credora) — conceito totalmente diferente.
+    centro_custo_id = Column(Integer, ForeignKey("centro_custo.id"), nullable=True)
+    natureza_custo  = Column(String(16), nullable=True)
     __table_args__ = (UniqueConstraint("owner_tipo", "owner_id", "codigo", name="uq_conta_owner_codigo"),)
+
+
+class CentroCusto(Base):
+    """Árvore de Centro de Custo ("quem gastou"), por owner (rede|loja) — mesmo molde de Conta,
+    mas sem partida dobrada própria: só é referenciada por Conta.centro_custo_id. Módulo
+    Financeiro — Centro de Custo/Natureza (2026-08-08)."""
+    __tablename__ = "centro_custo"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    owner_tipo = Column(String(10), nullable=False)   # 'rede' | 'loja'
+    owner_id   = Column(Integer,    nullable=False)
+    codigo     = Column(String(20), nullable=False)   # hierárquico: '1', '1.1'
+    nome       = Column(Text,       nullable=False)
+    pai_id     = Column(Integer, ForeignKey("centro_custo.id"), nullable=True)
+    ativo      = Column(Integer, default=1)
+    ordem      = Column(Integer, default=0)
+    criado_em     = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("owner_tipo", "owner_id", "codigo", name="uq_centro_custo_owner_codigo"),)
 
 
 class Lancamento(Base):
@@ -2072,6 +2105,12 @@ def _migrar_colunas_pg():
         # de 30 chars (achado ao vivo 2026-08-07, StringDataRightTruncation em
         # 'reconhecimento_despesa_retencao_com_vendas' e afins — a coluna larga só existia no papel).
         "ALTER TABLE lancamento ALTER COLUMN origem TYPE VARCHAR(64)",
+        # Permissões por conta do Gestor de Rede (2026-08-08) — ver docstring de Usuario.
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS capacidades_override_json TEXT",
+        # Centro de Custo/Natureza (2026-08-08): 2 etiquetas novas na conta — a tabela centro_custo
+        # nasce completa via create_all (marcador); só as 2 colunas em `conta` precisam de ADD.
+        "ALTER TABLE conta ADD COLUMN IF NOT EXISTS centro_custo_id INTEGER",
+        "ALTER TABLE conta ADD COLUMN IF NOT EXISTS natureza_custo VARCHAR(16)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

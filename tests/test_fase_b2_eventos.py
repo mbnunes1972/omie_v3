@@ -219,7 +219,7 @@ def test_eventos_e_contas_b24_existem(app_db):
         assert ev in mc.EVENTOS and mc.EVENTOS[ev][0] == d and mc.EVENTOS[ev][1] == c, ev
     db = app_db.get_session(); mc.seed_plano(db, "loja", 400)
     cods = {x.codigo for x in db.query(mc.Conta).filter_by(owner_tipo="loja", owner_id=400).all()}
-    for cod in ("5.1.02", "5.2.08", "5.2.09", "5.3.18", "5.3.19", "5.3.20"):
+    for cod in ("5.1.02", "5.2.08", "5.2.09", "5.3.18", "5.3.19"):   # 5.3.20 removida (Centro de Custo/Natureza, 2026-08-08)
         assert cod in cods, cod
     db.close()
 

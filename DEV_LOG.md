@@ -3277,6 +3277,149 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 178 — Painel da Rede + Permissões por conta do Gestor de Rede + Painel Gestores ampliado + Etapa 21 exige sequência + docs de transição
+
+Lote de achados/pedidos do mesmo dia (2026-08-08), independente da Sessão 177 (Centro de
+Custo/Natureza) mas indo no mesmo commit por já estarem prontos/testados juntos.
+
+**Painel da Rede (tela própria do Gestor de Rede):** `admin_rede` caía no mesmo aterrissamento do
+`super_admin` — Admin de LOJA, "Loja não identificada", já que nenhum dos dois tem loja própria.
+`GET /api/admin/redes/<id>` (novo — antes só existia o GET de todas, exclusivo de `gerir_redes`)
++ `PATCH /api/admin/redes/<id>` ampliado pro **dono** da rede editar nome/CNPJ — mas não `ativo`
+(fail-soft: ignora esse campo específico do corpo, não erra a requisição inteira; isso segue
+exclusivo de plataforma/`super_admin`).
+
+**Permissões por CONTA do Gestor de Rede:** `admin_rede` não tem `loja_id` pra pendurar num
+`PerfilAcesso` (é por loja, `nullable=False`) — em vez de forçar esse nível no sistema de slug por
+loja, override por conta em `Usuario.capacidades_override_json` (coluna nova). Allowlist
+`CAPACIDADES_OVERRIDAVEIS_REDE` (`gerir_usuarios`, `gerir_perfis`, `editar_dados_loja`,
+`acesso_admin`, `acesso_config`) — **`gerir_redes`/`gerir_lojas` ficam de fora de propósito**: são
+o que `mod_tenancy._eh_super_admin`/`_eh_admin_rede` usam pra reconhecer a IDENTIDADE do nível;
+tornar overridável deixaria uma conta se passar por outro nível ou perder acesso à própria rede
+por engano. `perfis.pode_usuario`/`acessa_painel_usuario` (novo, aceita dict de sessão OU objeto
+`Usuario`) substituem `pode`/`acessa_painel` nos pontos que precisam honrar o override; demais
+níveis caem direto no comportamento de sempre. `GET/PUT /api/admin/usuarios/<id>/permissoes`
+edita o override (só quem tem `gerir_perfis` sobre a conta).
+
+**Painel Orizon › Gestores:** escopo `?escopo=gestores` só listava `super_admin` — agora junta os
+3 tipos que administram algo (`super_admin`+`admin_rede`+`master`). Segue exclusivo de
+`gerir_redes` (só `super_admin` — o CPF vaza nesse endpoint).
+
+**Etapa 21 (Conciliação Final) ganha gate sequencial (achado da bateria de testes da Vera):**
+faltava validar a sequência — dava pra concluir a Etapa 21 (e **encerrar o projeto**) com as
+etapas 16–20 ("Entrega no Cliente".."Aprovação Final") ainda pendentes. A Etapa 15 (NF-e) segue
+destravada de propósito (decisão do usuário já tomada antes); só a Etapa 20 — a imediatamente
+anterior na sequência canônica (`mod_ciclo.etapa_anterior("21")`) — precisa estar concluída agora;
+`409` com o nome da etapa faltante na mensagem.
+
+**Outros 3 🔴 de uma rodada anterior da mesma bateria da Vera, também pendentes de commit:** (1)
+loja/PDV nova criada em runtime ficava sem NENHUMA função — `FUNCOES_PADRAO` (13 cargos) só
+nascia no seed inicial do banco/backfill de boot; `POST /api/admin/lojas` e `.../pdvs` agora
+chamam `seed.criar_funcoes_seed` antes do commit final. (2) `_contabil_ctx` resolvia o owner pela
+sessão bruta (`usuario.loja_id`) — `super_admin` nunca tem `loja_id` na sessão, então **todo**
+painel financeiro explodia (`ValueError`) pra esse perfil, mesmo com `X-Loja-Ativa` setado; fix
+usa `active_loja_id` (já resolvido via header, mesmo mecanismo que o resto do Admin usa pra
+`super_admin` "entrar" numa loja) — sem header, preserva o 400 claro de hoje (não regride pra 500
+nem finge sucesso). (3) `funcao_aplicar` nunca lia `usa_comissao_vendas` do payload — só o seed
+inicial (por nome exato "Consultor de Vendas") ligava a comissão por metas da loja; função nova/
+custom não tinha como ligar isso via API. Frontend (`cfgRemuneracaoEditar`): checkbox liga/desliga
+o bloco de comissão por metas em qualquer função, não só a de nome exato.
+
+**Testes:** `tests/test_painel_rede.py` (novo, 8), extensões em `tests/test_perfis.py` (override
+por conta, 10), `tests/test_usuarios_e2e.py` (escopo gestores + permissões por conta, ponta a
+ponta incl. bloqueio real de endpoint), `tests/test_retido.py` (gate sequencial da Etapa 21),
+`tests/test_loja_cadastro.py` (loja/PDV novos ganham funções), `tests/test_super_admin_god_mode.py`
+(`super_admin` abre financeiro da loja ativa), `tests/test_funcao_remuneracao.py` (comissão de
+vendas via API em função custom).
+
+**Docs de transição (`docs/transicao/`):** rascunho de apoio ao Plano de Transição do usuário
+(`Plano-Transicao-Orizon.docx`, 2026-08-05) — passagem de "só Marcelo + Claude Code" pra equipe
+(Juliana líder técnica, Wesley dev): arquitetura+fluxo de ambientes (PR → Instância A → Instância
+B → Produção), processo de branch/PR (substitui o push direto na `main` de hoje), checklist de
+acessos (inventário sem segredo nenhum em texto) e backlog extraído do DEV_LOG/specs pro Gira.
+**Achado ao preparar:** `docs/arquitetura/`, `docs/processos/`, `docs/modulos/*/SPEC.md` e
+`docs/historias/BACKLOG.md` estão **mortos** (sem atualização desde antes da migração Postgres/
+Orizon Chat/FASE D2) — não usar como referência; decidir apagar ou marcar como arquivo morto.
+
+**Spec parada (não implementada ainda):** `docs/superpowers/specs/ciclo/2026-08-01-ciclo-fichario-
+*` — orientação de redesign visual/interação do Ciclo do Projeto ("formato Fichário"), frente
+independente (branch própria), sem mudança de regra de negócio (`mod_ciclo.py`/backend intactos).
+Documentado aqui só porque estava pendente de commit; **não** foi codado nesta sessão.
+
+**Arquivos:** `auth/auth.py`, `auth/auth_routes.py`, `auth/perfis.py`, `database.py`, `main.py`,
+`mod_cadastro.py`, `static/index.html`, `tests/test_painel_rede.py` (novo), `tests/test_perfis.py`,
+`tests/test_usuarios_e2e.py`, `tests/test_retido.py`, `tests/test_loja_cadastro.py`,
+`tests/test_super_admin_god_mode.py`, `tests/test_funcao_remuneracao.py`, `docs/transicao/`
+(novo), `docs/superpowers/specs/ciclo/2026-08-01-*` (novo, não implementado).
+
+## Sessão 177 — Centro de Custo + Natureza no Plano de Contas
+
+Pedido do usuário: classificar cada conta de despesa (grupo "5 DESPESAS/CUSTOS") por duas
+etiquetas independentes — **Centro de Custo** ("quem gastou": Operacional/Comercial/Pós-venda/
+Suporte + sub-ramos) e **Natureza** (Fixo/Variável/Semivariável, lista fechada). Tela Financeiro →
+Plano de Contas ganha 3 abas: Contas (sem mudança), Centro de Custos (árvore nova, totalmente
+editável, mesmo componente da árvore de Contas generalizado), Natureza dos Custos (lista fixa,
+somente leitura). **Classificação final é proposta revisável — não grava direto**; só depois da
+aprovação do usuário e da Juliana.
+
+**Achado antes de codar, resolvido via pergunta ao usuário:** `5.3.20 "Retenção de Comissão de
+Vendas"` (uma das contas a remover) era o alvo automático de débito de
+`EVENTOS["reconhecimento_despesa_retencao_com_vendas"]` — apagar sem mais nada quebraria a
+efetivação da provisão homônima. **Decidido:** o evento passa a debitar `5.3.01 Comissão de
+Vendedor` (já usado por `folha_variavel` pro mesmo conceito — "Comissão de Vendedor").
+
+**Passo 1 — ajustes pontuais no Plano de Contas (migração idempotente `migrar_centro_custo_
+natureza_v1`, roda no boot em TODOS os owners, ANTES do backfill — mesmo padrão de
+`migrar_plano_formalismo`):** `5.2.06` "Combustível de Depósito" → "Combustível" (única conta de
+combustível daí em diante); todo o histórico de lançamentos de `5.3.10` "Combustível de Venda"
+reclassificado pra `5.2.06`; `5.2.11` "Viagens de Supervisão", `5.3.10` e `5.3.20` saem do plano —
+apaga de fato onde não há lançamento, inativa onde há (regra já existente de `remover_conta`); 2
+contas novas em Despesas Administrativas (`5.4.19` "Licenças Promob e Sketchup", `5.4.20` "Outras
+Despesas"); 7 contas renomeadas pro nome final da classificação (ex.: `CMV Fábrica (Dal Mobile)` →
+`CMV Fábrica`, `Sindicato` → `Sindicato e Contribuições`) — só quando o nome ainda é o padrão
+antigo, nunca sobrescreve customização do usuário.
+
+**Passo 2 — Centro de Custo (tabela `centro_custo` nova, mesmo molde de `Conta` sem tipo/
+natureza/lançamento):** árvore própria por owner (`CENTRO_CUSTO_PADRAO`, 16 nós), `seed_centro_
+custo`/CRUD completo (`criar/editar/remover_centro_custo`, mesma regra "sem filho e sem uso →
+apaga; senão inativa" trocando "tem lançamento" por "tem `Conta.centro_custo_id` apontando pra
+ele"). `Conta` ganha 2 colunas nullable: `centro_custo_id` (FK) e `natureza_custo` (slug fixo —
+nome deliberadamente diferente do `Conta.natureza` existente, que é devedora/credora, conceito
+totalmente diferente). `NATUREZA_CUSTO` = 3 slugs fixos, sem tabela própria.
+
+**Ajuste do mesmo dia, pedido depois de revisar a proposta:** "Produtivo" → "Operacional";
+Instalações/Infraestrutura muda de Suporte pra Operacional (`1.5`); Projetos/Design muda de
+Comercial pra Pós-venda (`3.2`). 2ª migração idempotente `migrar_centro_custo_v2` — **move os
+MESMOS nós** (id preservado, reparenta/recodifica em vez de recriar — se algum dia uma `Conta` já
+apontar pro `centro_custo_id`, o vínculo sobrevive intacto), roda no boot logo antes do backfill de
+Centro de Custo.
+
+**Passo 3 — frontend, 3 abas:** as 5 funções da árvore de Contas (`_pcNode`/`pcNovo`/`pcRenomear`/
+`pcRemover`/`planoContasCarregar`) generalizadas por config (`_PC_CFGS`) em vez de hardcoded —
+Contas e Centro de Custos reusam o MESMO componente; toggle in-panel (`_pcAba`) no mesmo padrão já
+usado em Reconciliação (`_reconPainel`). Natureza dos Custos é lista estática, sem round-trip de
+API.
+
+**Passo 4 — bulk-classify (pronto, NÃO chamado por nenhum fluxo automático):**
+`mod_contabil.classificar_contas_lote`/`POST /api/financeiro/plano-contas/classificar-lote` —
+valida TUDO antes de gravar qualquer item (tudo ou nada), aceita valor vazio pra limpar
+classificação. Só é invocado quando o usuário pedir explicitamente, depois da aprovação.
+
+**Proposta publicada como Artifact** (não commitada — é uma página externa) com as 59 contas
+classificadas, agrupadas por Centro de Custo, com selo visual nos 2 itens que o usuário marcou
+"ainda em revisão" (Brindes `5.3.12`, Ajuste de Provisões `5.6.10`).
+
+**Testes:** `tests/test_centro_custo_natureza.py` (novo, 19 — migração v1/v2 incl. idempotência e
+preservação de id/vínculo, CRUD de Centro de Custo, endpoints HTTP, bulk-classify com validação
+tudo-ou-nada), ajustes no redirecionamento 5.3.20→5.3.01 em `tests/test_fase_b2_eventos.py`,
+`tests/test_fase_d2_nfe.py`, `tests/test_plano_formalismo.py`. `modulos.py` ganha `centro_custo` no
+manifesto do domínio financeiro (achado pelo próprio `test_arquitetura_modulos`). Verificado ao
+vivo (restart local, migração rodou sem erro, dados batendo, CRUD real via API+QA da Vera).
+
+**Arquivos:** `database.py`, `mod_contabil.py`, `main.py`, `static/index.html`, `modulos.py`,
+`tests/test_centro_custo_natureza.py` (novo), `tests/test_fase_b2_eventos.py`,
+`tests/test_fase_d2_nfe.py`, `tests/test_plano_formalismo.py`.
+
 ## Sessão 176 — Fiscal: CNPJ do emitente + horário UTC-3 da NF-e; servidor multi-thread; recebíveis robustos ao plano de pagamento tardio
 
 Fecha a rodada de emissão de NF-e em homologação (retomada da Sessão 175) mais dois achados de

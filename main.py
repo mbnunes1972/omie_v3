@@ -438,7 +438,16 @@ def _contabil_ctx(handler, exige_edicao, consolidado_ok=False):
     if not usuario:
         handler.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return None
     db = get_session()
-    loja = db.get(Loja, usuario.get("loja_id")) if usuario.get("loja_id") else None
+    # 2026-08-08 (achado da Vera): sessão de super_admin/admin_rede não tem loja_id/rede_id
+    # próprios — resolver_owner(usuario) explodia sempre, pra qualquer painel financeiro, com
+    # ou sem header. `_ator_dict` já resolve `active_loja_id` via X-Loja-Ativa (com tratamento
+    # dedicado pra super_admin — mod_tenancy.resolver_loja_ativa) exatamente do jeito que o
+    # resto do console Admin já usa pra esses perfis "entrarem" numa loja; só o Financeiro não
+    # olhava isso. `efetiva_loja_id` é só um FALLBACK — usuário comum (loja_id já na sessão)
+    # segue 100% igual a antes.
+    ator = _ator_dict(db, usuario)
+    efetiva_loja_id = usuario.get("loja_id") or ator.get("active_loja_id")
+    loja = db.get(Loja, efetiva_loja_id) if efetiva_loja_id else None
     if loja is not None and getattr(loja, "loja_mae_id", None):
         # PDV: o painel financeiro não existe na UI do PDV e a API acompanha — o financeiro
         # é operado pela loja-mãe em visão unificada. Os LANÇAMENTOS do razão do PDV seguem
@@ -456,7 +465,7 @@ def _contabil_ctx(handler, exige_edicao, consolidado_ok=False):
         if not (perfis.pode(niv, "aprovar_financeiro") or perfis.pode(niv, "editar_dados_loja")):
             db.close(); handler.send_json({"ok": False, "erro": "Sem permissão."}, code=403); return None
     try:
-        ot, oid = mod_contabil.resolver_owner(db, usuario)
+        ot, oid = mod_contabil.resolver_owner(db, {"loja_id": efetiva_loja_id, "rede_id": usuario.get("rede_id")})
     except ValueError as e:
         db.close(); handler.send_json({"ok": False, "erro": str(e)}, code=400); return None
     from urllib.parse import parse_qs as _pq
@@ -467,7 +476,6 @@ def _contabil_ctx(handler, exige_edicao, consolidado_ok=False):
         if not consolidado_ok:
             db.close(); handler.send_json({"ok": False, "erro": "Este painel não tem visão "
                                            "consolidada — escolha uma unidade."}, code=400); return None
-        ator = _ator_dict(db, usuario)
         unidades = _lojas_do_escopo(db, ator)
         if len(unidades) < 2:
             db.close(); handler.send_json({"ok": False, "erro": "Sem Pontos de Venda para "
@@ -479,7 +487,6 @@ def _contabil_ctx(handler, exige_edicao, consolidado_ok=False):
                 vistos.add(o); owners.append(o)
         return usuario, db, "consolidado", owners
     if unid is not None:
-        ator = _ator_dict(db, usuario)
         if not str(unid).isdigit() or int(unid) not in _lojas_do_escopo(db, ator):
             db.close(); handler.send_json({"ok": False, "erro": "Unidade fora do escopo."},
                                           code=403); return None
@@ -926,6 +933,19 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 contas = mod_contabil.listar_contas(db, ot, oid, incluir_inativas=inc)
                 self.send_json({"ok": True, "contas": contas})
+            finally:
+                db.close()
+            return
+        if path == "/api/financeiro/centro-custo":
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            inc = (parse_qs(urlparse(self.path).query).get("incluir_inativos") or ["0"])[0] == "1"
+            try:
+                ccs = mod_contabil.listar_centros_custo(db, ot, oid, incluir_inativos=inc)
+                self.send_json({"ok": True, "centros_custo": ccs})
             finally:
                 db.close()
             return
@@ -2379,7 +2399,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/api/admin/usuarios":
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
                 return
             db = get_session()
@@ -2417,6 +2437,15 @@ class Handler(BaseHTTPRequestHandler):
                     visiveis = [u for u in visiveis
                                 if u.nivel == "super_admin"
                                 and u.loja_id is None and u.rede_id is None]
+                elif escopo == "gestores":
+                    # Painel Orizon › Gestores (2026-08-08): TODOS os gestores do sistema — quem
+                    # tem uma conta que administra algo (plataforma/rede/loja), não só a plataforma.
+                    # Exclusivo de gerir_redes (só super_admin): mesmo o pré-filtro de tenancy do
+                    # loop acima já reduziria o que um não-super_admin veria aqui, mas isso devolve
+                    # CPF — defesa em profundidade, não depende só do pré-filtro.
+                    if not perfis.pode(usuario.get("nivel"), "gerir_redes"):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    visiveis = [u for u in visiveis if u.nivel in ("super_admin", "admin_rede", "master")]
                 vis_ids = [u.id for u in visiveis]
                 memb = {}
                 if vis_ids:
@@ -2453,25 +2482,25 @@ class Handler(BaseHTTPRequestHandler):
             # Admin › Perfis de Usuário: matriz perfil × capacidades da LOJA do ator (Task 7),
             # DB-backed via perfis.matriz_loja. Gate: gerir_usuarios (mesma audiência de Usuários).
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             lid = _loja_admin_alvo(usuario)
             _m = perfis.matriz_loja(lid)
             self.send_json({"ok": True, "perfis": _m["perfis"], "capacidades": _m["capacidades"],
                             "caps_selecionaveis": _m["caps_selecionaveis"],
-                            "pode_editar": perfis.pode(usuario.get("nivel"), "gerir_perfis")})
+                            "pode_editar": perfis.pode_usuario(usuario, "gerir_perfis")})
 
         elif path == "/api/admin/perfis":
             # CRUD de perfis de acesso configuráveis por loja (Task 7). Leitura: gerir_usuarios;
             # criação/edição (POST/PATCH abaixo): gerir_perfis (só Master).
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             _m = perfis.matriz_loja(_loja_admin_alvo(usuario))
             self.send_json({"ok": True, "perfis": _m["perfis"], "capacidades": _m["capacidades"],
                             "caps_selecionaveis": _m["caps_selecionaveis"],
                             "modulos_opcoes": mod_perfis_opcoes(),
-                            "pode_editar": perfis.pode(usuario.get("nivel"), "gerir_perfis")})
+                            "pode_editar": perfis.pode_usuario(usuario, "gerir_perfis")})
 
         elif path == "/api/admin/empresas":
             # Lojas que o ator pode administrar — alimenta o seletor de empresa (topo de Admin/Config).
@@ -2497,7 +2526,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/api/admin/usuarios/perfis-permitidos":
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
                 return
             from urllib.parse import parse_qs
@@ -2533,10 +2562,65 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "redes": [_rede_dict(r) for r in redes]})
             finally:
                 db.close()
+
+        elif re.match(r'^/api/admin/usuarios/(\d+)/permissoes$', path):
+            # Permissões por CONTA (2026-08-08) — "Permissões" na aba Gestores. Só faz sentido
+            # editar pra admin_rede (Gestor de Rede): super_admin é sempre pleno (god-mode) e
+            # master usa o sistema de perfil por loja que já existe (tela Perfis de Usuário).
+            usuario = get_usuario_sessao(self)
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            m_perm = re.match(r'^/api/admin/usuarios/(\d+)/permissoes$', path)
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                alvo = db.get(Usuario, int(m_perm.group(1)))
+                if not alvo:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                rede_da_loja = db.get(Loja, alvo.loja_id).rede_id if alvo.loja_id else None
+                if not (mod_tenancy._eh_super_admin(ator)
+                        or (mod_tenancy._eh_admin_rede(ator) and (
+                            alvo.rede_id == ator.get("rede_id")
+                            or (alvo.loja_id is not None and mod_tenancy.pode_ver_loja(
+                                ator, {"id": alvo.loja_id, "rede_id": rede_da_loja}))))
+                        or (alvo.loja_id is not None and alvo.loja_id == ator.get("loja_id"))):
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if alvo.nivel != "admin_rede":
+                    self.send_json({"ok": True, "nivel": alvo.nivel, "editavel": False,
+                                    "capacidades": {}}); return
+                editavel = mod_tenancy._eh_super_admin(ator) or (
+                    mod_tenancy._eh_admin_rede(ator) and alvo.rede_id == ator.get("rede_id"))
+                self.send_json({"ok": True, "nivel": alvo.nivel, "editavel": editavel,
+                                "capacidades_padrao": perfis.capacidades_efetivas_rede({"nivel": "admin_rede"}),
+                                "capacidades": perfis.capacidades_efetivas_rede(alvo),
+                                "allowlist": list(perfis.CAPACIDADES_OVERRIDAVEIS_REDE)})
+            finally:
+                db.close()
+
+        elif re.match(r'^/api/admin/redes/(\d+)$', path):
+            # GET de UMA rede — Painel da Rede (Gestor de Rede vê/edita só a própria; super_admin
+            # vê qualquer uma). Diferente do GET .../redes (lista todas, exclusivo de gerir_redes).
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            m_gr = re.match(r'^/api/admin/redes/(\d+)$', path)
+            rede_id = int(m_gr.group(1))
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                if not mod_tenancy.pode_ver_rede(ator, rede_id):
+                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                r = db.get(Rede, rede_id)
+                if not r:
+                    self.send_json({"ok": False, "erro": "Rede não encontrada"}, code=404); return
+                self.send_json({"ok": True, "rede": _rede_dict(r)})
+            finally:
+                db.close()
+
         elif path == "/api/admin/lojas":
             usuario = get_usuario_sessao(self)
             if not usuario or not (perfis.pode(usuario.get("nivel"), "gerir_lojas")
-                                   or perfis.pode(usuario.get("nivel"), "editar_dados_loja")):
+                                   or perfis.pode_usuario(usuario, "editar_dados_loja")):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
                 return
             from urllib.parse import parse_qs
@@ -2563,7 +2647,7 @@ class Handler(BaseHTTPRequestHandler):
             # Pontos de Venda da loja (spec 2026-07-22): o lojista com editar_dados_loja
             # VISUALIZA seus PDVs; criar/editar é só super_admin (POST/PUT).
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             m_pdv = re.match(r'^/api/admin/lojas/(\d+)/pdvs$', path)
             db = get_session()
@@ -2582,7 +2666,7 @@ class Handler(BaseHTTPRequestHandler):
         elif re.match(r'^/api/admin/acordos-fabrica/(\d+)/extrato$', path):
             # Extrato do acordo (spec: implantação, aplicações por loja/projeto, acertos)
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             m_ex = re.match(r'^/api/admin/acordos-fabrica/(\d+)/extrato$', path)
             db = get_session()
@@ -2618,7 +2702,7 @@ class Handler(BaseHTTPRequestHandler):
 
         elif path == "/api/admin/contrapartes-financeiras":
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             db = get_session()
             try:
@@ -2632,7 +2716,7 @@ class Handler(BaseHTTPRequestHandler):
             # Ajustes Excepcionais de Fábrica: lista de acordos visíveis com os TRÊS saldos
             # (contábil, pendente de acerto, disponível) + ajustes aninhados + avulsos (custo).
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             db = get_session()
             try:
@@ -2663,7 +2747,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/api/admin/lojas/") and path.endswith("/config-financeira"):
             import re as _re, mod_provisoes
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             m = _re.match(r"^/api/admin/lojas/(\d+)/config-financeira$", path)
             if not m:
@@ -4374,7 +4458,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 db = get_session()
                 try:
@@ -5244,7 +5328,7 @@ class Handler(BaseHTTPRequestHandler):
                 or re.match(r'^/api/admin/(acordos|ajustes)-fabrica/', path):
             import mod_contabil as _mcaf
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             db = get_session()
             try:
@@ -5605,7 +5689,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin/ajustes-fabrica":
             # cria a REGRA de consumo (% por loja). Validações da spec.
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             db = get_session()
             try:
@@ -7504,6 +7588,41 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/centro-custo":
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                dd = json.loads(body or b'{}')
+                novo = mod_contabil.criar_centro_custo(db, ot, oid, dd.get("pai_id"), dd.get("nome", ""))
+                self.send_json({"ok": True, "centro_custo": novo}, code=201)
+            except PermissionError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=403)
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
+        if path == "/api/financeiro/plano-contas/classificar-lote":
+            # Centro de Custo/Natureza (2026-08-08): endpoint PRONTO mas não chamado por nenhum
+            # fluxo automático — a classificação em lote só é acionada depois da aprovação
+            # explícita do usuário (e da Juliana) sobre a proposta revisada fora do banco.
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                dd = json.loads(body or b'{}')
+                r = mod_contabil.classificar_contas_lote(db, ot, oid, dd.get("itens") or [])
+                self.send_json({"ok": True, **r})
+            except PermissionError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=403)
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/sugerir-conta":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return
@@ -7613,6 +7732,18 @@ class Handler(BaseHTTPRequestHandler):
                 if retidos:
                     self.send_json({"ok": False, "erro": "Há ambientes retidos pela obra (%d): libere-os "
                                     "antes da Conciliação Final." % len(retidos)}, code=409); return
+                # Gate sequencial (achado 2026-08-08, testando a bateria da Vera): faltava — dava pra
+                # concluir a Etapa 21 com 16-20 ("Entrega no cliente".."Aprovação final") ainda
+                # pendentes, encerrando o projeto sem elas terem rodado. A Etapa 15 (NF-e) segue
+                # DESTRAVADA de propósito (decisão do usuário) — só a Etapa 20 (a anterior de 21 na
+                # sequência canônica) precisa estar concluída.
+                todas = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()
+                status_por_codigo = {e.etapa_codigo: e.status for e in todas}
+                if not mod_ciclo.pode_avancar("21", status_por_codigo):
+                    ant = mod_ciclo.etapa_anterior("21")
+                    nome_ant = mod_ciclo.ETAPA_NOME.get(ant, ant)
+                    self.send_json({"ok": False, "erro": "Conclua a etapa anterior (%s) antes da "
+                                    "Conciliação Final." % nome_ant}, code=409); return
                 resolvido = mod_contabil.conciliar_final(db, ot, oid, nome_safe, ref_base="cf:" + nome_safe)
                 _set_etapa_status(db, nome_safe, "21", "concluido", usuario.get("id"))
                 db.commit()
@@ -7797,6 +7928,22 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             try:
                 r = mod_contabil.remover_conta(db, ot, oid, int(m_conta_rm.group(1)))
+                self.send_json({"ok": True, **r})
+            except PermissionError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=403)
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
+        m_cc_rm = re.match(r"^/api/financeiro/centro-custo/(\d+)/remover$", path)
+        if m_cc_rm:
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                r = mod_contabil.remover_centro_custo(db, ot, oid, int(m_cc_rm.group(1)))
                 self.send_json({"ok": True, **r})
             except PermissionError as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=403)
@@ -9740,7 +9887,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/admin/usuarios":
                 usuario = get_usuario_sessao(self)
-                if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+                if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
                     return
                 req = json.loads(body) if body else {}
@@ -9793,7 +9940,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/admin/perfis":
                 usuario = get_usuario_sessao(self)
-                if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_perfis"):
+                if not usuario or not perfis.pode_usuario(usuario, "gerir_perfis"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 req = json.loads(body) if body else {}
                 db = get_session()
@@ -9889,6 +10036,13 @@ class Handler(BaseHTTPRequestHandler):
                                     email=dir_login, nivel="master", loja_id=l.id, ativo=1, senha_provisoria=1)
                         u.set_senha(senha_ini); db.add(u); db.flush()
                         db.add(UsuarioLoja(usuario_id=u.id, loja_id=l.id))
+                    # Tabela de Funções (2026-08-08, achado da Vera): sem isto, loja nascida
+                    # depois do boot do servidor fica sem cargo nenhum — os 13 padrão só nasciam
+                    # no seed inicial do banco ou no backfill de start, nunca na criação em
+                    # runtime. Roda por último (depois de toda validação) porque a função tem
+                    # commit próprio — não quero um commit parcial se o diretor falhar acima.
+                    import seed as _seed
+                    _seed.criar_funcoes_seed(db, l.id)
                     db.commit()
                     self.send_json({"ok": True, "loja": _loja_dict(l)})
                 finally:
@@ -9951,6 +10105,10 @@ class Handler(BaseHTTPRequestHandler):
                     # do PDV cai no fallback hardcoded.
                     from auth import perfil_store
                     perfil_store.seed_perfis_loja(db, pdv.id)
+                    # Tabela de Funções (2026-08-08, achado da Vera) — mesmo bug do PDV que já
+                    # existia pra Perfis: PDV nasce em runtime, sem os 13 cargos padrão.
+                    import seed as _seed
+                    _seed.criar_funcoes_seed(db, pdv.id)
                     db.commit()
                     perfis.recarregar()
                     self.send_json({"ok": True, "pdv": _loja_dict(pdv)})
@@ -11204,7 +11362,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 arquivos, campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
                 db = get_session()
@@ -11489,7 +11647,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import mod_nfe, mapa_fiscal, nfe_emissao, mod_fiscal
                 try:
@@ -11578,7 +11736,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import mapa_fiscal, nfe_emissao, mod_fiscal
                 try:
@@ -11680,7 +11838,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import nfe_emissao
                 try:
@@ -11719,7 +11877,7 @@ class Handler(BaseHTTPRequestHandler):
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                if not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+                if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import nfe_emissao
                 try:
@@ -11781,12 +11939,32 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        # ── PUT /api/financeiro/centro-custo/<id> (renomear/reordenar) ────────
+        m_cc = re.match(r"^/api/financeiro/centro-custo/(\d+)$", path)
+        if m_cc:
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                dd = json.loads(body) if body else {}
+                r = mod_contabil.editar_centro_custo(db, ot, oid, int(m_cc.group(1)),
+                                                     nome=dd.get("nome"), ordem=dd.get("ordem"))
+                self.send_json({"ok": True, "centro_custo": r})
+            except PermissionError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=403)
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
+
         # ── PUT /api/admin/lojas/<id>/config-financeira ───────────────────────
         m_cfg = re.match(r"^/api/admin/lojas/(\d+)/config-financeira$", path)
         if m_cfg:
             import mod_provisoes
             usuario = get_usuario_sessao(self)
-            if not usuario or not perfis.pode(usuario.get("nivel"), "editar_dados_loja"):
+            if not usuario or not perfis.pode_usuario(usuario, "editar_dados_loja"):
                 self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
             try:
                 req = json.loads(body) if body else {}
@@ -11804,6 +11982,46 @@ class Handler(BaseHTTPRequestHandler):
                 loja.config_financeira_json = json.dumps(req, ensure_ascii=False)
                 db.commit()
                 self.send_json({"ok": True})
+            finally:
+                db.close()
+            return
+
+        # ── PUT /api/admin/usuarios/<id>/permissoes — override por CONTA (só admin_rede) ──
+        m_perm = re.match(r"^/api/admin/usuarios/(\d+)/permissoes$", path)
+        if m_perm:
+            usuario = get_usuario_sessao(self)
+            if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido"}, code=400); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                alvo = db.get(Usuario, int(m_perm.group(1)))
+                if not alvo:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if alvo.nivel != "admin_rede":
+                    self.send_json({"ok": False, "erro": "Este nível não tem permissão por conta "
+                                    "(Master usa Perfis de Usuário; Super Admin é sempre pleno)."},
+                                   code=400); return
+                editavel = mod_tenancy._eh_super_admin(ator) or (
+                    mod_tenancy._eh_admin_rede(ator) and alvo.rede_id == ator.get("rede_id"))
+                if not editavel:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                cap = req.get("capacidades")
+                if not isinstance(cap, dict):
+                    self.send_json({"ok": False, "erro": "capacidades deve ser um objeto."}, code=400); return
+                invalidas = [k for k in cap if k not in perfis.CAPACIDADES_OVERRIDAVEIS_REDE]
+                if invalidas:
+                    self.send_json({"ok": False, "erro": "Capacidade(s) não editável(is): "
+                                    + ", ".join(invalidas)}, code=400); return
+                alvo.capacidades_override_json = json.dumps(
+                    {k: bool(v) for k, v in cap.items()}, ensure_ascii=False)
+                db.commit()
+                self.send_json({"ok": True,
+                                "capacidades": perfis.capacidades_efetivas_rede(alvo)})
             finally:
                 db.close()
             return
@@ -12658,7 +12876,7 @@ class Handler(BaseHTTPRequestHandler):
             m_perfil = re.match(r"^/api/admin/perfis/([a-z0-9_]+)$", path)
             if m_perfil:
                 usuario = get_usuario_sessao(self)
-                if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_perfis"):
+                if not usuario or not perfis.pode_usuario(usuario, "gerir_perfis"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 req = json.loads(body) if body else {}
                 db = get_session()
@@ -12678,7 +12896,7 @@ class Handler(BaseHTTPRequestHandler):
             m_user = re.match(r"^/api/admin/usuarios/(\d+)$", path)
             if m_user:
                 usuario = get_usuario_sessao(self)
-                if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_usuarios"):
+                if not usuario or not perfis.pode_usuario(usuario, "gerir_usuarios"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
                     return
                 req = json.loads(body) if body else {}
@@ -12771,14 +12989,22 @@ class Handler(BaseHTTPRequestHandler):
 
             m_rede = re.match(r"^/api/admin/redes/(\d+)$", path)
             if m_rede:
+                # Painel da Rede (2026-08-08): Gestor de Rede edita nome/CNPJ da PRÓPRIA rede —
+                # antes só super_admin (gerir_redes) podia, mesmo dono da rede não conseguia mexer
+                # nos dados dela. `ativo` (desativar a rede inteira) segue exclusivo de gerir_redes:
+                # é decisão de plataforma, não algo que o próprio gestor deveria conseguir fazer.
                 usuario = get_usuario_sessao(self)
-                if not usuario or not perfis.pode(usuario.get("nivel"), "gerir_redes"):
-                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
-                    return
-                req = json.loads(body) if body else {}
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                rede_id = int(m_rede.group(1))
                 db = get_session()
                 try:
-                    r = db.get(Rede, int(m_rede.group(1)))
+                    ator = _ator_dict(db, usuario)
+                    eh_plataforma = perfis.pode(usuario.get("nivel"), "gerir_redes")
+                    if not eh_plataforma and not mod_tenancy.pode_editar_dados_rede(ator, rede_id):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    req = json.loads(body) if body else {}
+                    r = db.get(Rede, rede_id)
                     if not r:
                         self.send_json({"ok": False, "erro": "Rede não encontrada"}, code=404)
                         return
@@ -12795,7 +13021,8 @@ class Handler(BaseHTTPRequestHandler):
                             self.send_json({"ok": False, "erro": _e}, code=400)
                             return
                         r.cnpj = (req["cnpj"] or "").strip() or None
-                    if "ativo" in req: r.ativo = 1 if req["ativo"] else 0
+                    if "ativo" in req and eh_plataforma:
+                        r.ativo = 1 if req["ativo"] else 0
                     db.commit()
                     self.send_json({"ok": True, "rede": _rede_dict(r)})
                 finally:
@@ -14754,7 +14981,14 @@ def main():
             # códigos formais; se o backfill rodasse antes, criaria as contas formais vazias e
             # forçaria o caminho de merge à toa. Idempotentes os dois.
             _mc.migrar_plano_formalismo(_dbp)
+            # Centro de Custo/Natureza (2026-08-08): rename/move/remove pontuais ANTES do backfill
+            # (senão o backfill recriaria 5.2.11/5.3.10/5.3.20, já tiradas de PLANO_PADRAO). Idempotente.
+            _mc.migrar_centro_custo_natureza_v1(_dbp)
             _mc.backfill_plano_todos_owners(_dbp)
+            # Ajuste da árvore de Centro de Custo (2026-08-08): move nós ANTES do backfill, senão
+            # o backfill recriaria "1.5"/"3.2" faltando e deixaria "4.1"/"2.2" velhos órfãos.
+            _mc.migrar_centro_custo_v2(_dbp)
+            _mc.backfill_centro_custo_todos_owners(_dbp)
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

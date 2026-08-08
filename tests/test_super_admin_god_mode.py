@@ -163,3 +163,26 @@ def test_auth_me_super_admin_reflete_modulos_da_loja_ativa(http_client_factory, 
         db = app_db.get_session()
         db.get(app_db.Loja, l1).modulos_ativos = orig
         db.commit(); db.close()
+
+
+def test_super_admin_abre_financeiro_da_loja_ativa(http_client_factory, seed, app_db):
+    """🔴 achado da Vera (2026-08-08): _contabil_ctx resolvia owner pela sessão BRUTA
+    (usuario.loja_id) antes de olhar X-Loja-Ativa — super_admin nunca tem loja_id na
+    sessão, então TODO painel financeiro explodia (ValueError) pra esse perfil, com ou
+    sem header. Fix: usa active_loja_id (já resolvido via X-Loja-Ativa, mesmo mecanismo
+    que o resto do Admin já usa pra super_admin "entrar" numa loja)."""
+    db = app_db.get_session()
+    l1 = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id
+    db.close()
+    c = http_client_factory(); c.login("super", "senha123")
+    c.loja_ativa = l1
+    st, body = c.get("/api/financeiro/balanco")
+    assert st == 200 and body["ok"], (st, body)
+
+
+def test_super_admin_sem_loja_ativa_ainda_barra_com_erro_claro(http_client_factory, seed):
+    """Sem X-Loja-Ativa não tem como saber DE QUAL loja mostrar o Financeiro — preserva o
+    erro 400 de hoje (não regride pra 500 nem finge sucesso)."""
+    c = http_client_factory(); c.login("super", "senha123")
+    st, body = c.get("/api/financeiro/balanco")
+    assert st == 400 and body["ok"] is False

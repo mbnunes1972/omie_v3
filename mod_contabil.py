@@ -1,6 +1,6 @@
 """mod_contabil.py — motor contábil (domínio financeiro). Sub-projeto #1: Plano de Contas.
 Fonte de verdade: Especificacao_Financeiro_Orizon_v2.docx §2/§2.1."""
-from database import get_session, Conta, Loja, Lancamento, PeriodoContabil
+from database import get_session, Conta, CentroCusto, Loja, Lancamento, PeriodoContabil
 
 # Plano-padrão (codigo, nome) — pai = prefixo; tipo/natureza derivados. Ordem = ordem contábil.
 PLANO_PADRAO = [
@@ -96,21 +96,21 @@ PLANO_PADRAO = [
     # granularidade desnecessária e duplicava conceitos. O reconhecimento na NF-e (matching
     # pleno) debita DIRETO nestas contas; lançamento avulso usa as mesmas.
     ("5.1", "CMV"),
-    ("5.1.01", "CMV Fábrica (Dal Mobile)"),
+    ("5.1.01", "CMV Fábrica"),
     ("5.1.02", "Frete de Fábrica"),
     ("5.2", "Custo de Serviço"),
-    ("5.2.01", "Montagem"), ("5.2.02", "Comissão Executivo de Montagem"),
-    ("5.2.03", "Viagens de Pedido"), ("5.2.04", "Salários Operacionais"),
-    ("5.2.05", "Ajudante Semanal"), ("5.2.06", "Combustível de Depósito"),
+    ("5.2.01", "Montagem"), ("5.2.02", "Comissão de Montagem"),
+    ("5.2.03", "Viagens de Montagens"), ("5.2.04", "Salários Operacionais"),
+    ("5.2.05", "Ajudante Eventual"), ("5.2.06", "Combustível"),
     ("5.2.07", "Pedágio"), ("5.2.08", "Frete Local"), ("5.2.09", "Insumos Locais"),
-    ("5.2.10", "Manutenção de Veículos"), ("5.2.11", "Viagens de Supervisão"),
+    ("5.2.10", "Manutenção de Veículos"),
     ("5.2.12", "Garantia"), ("5.2.13", "Assistência Técnica"),
     ("5.3", "Despesas Comerciais"),
     ("5.3.01", "Comissão de Vendedor"), ("5.3.02", "Comissão de Indicador"),
-    ("5.3.03", "Comissão Administrativa"), ("5.3.04", "Pontos Programa de Indicação"),
+    ("5.3.03", "Comissão Administrativa"), ("5.3.04", "Pontos Programa de Relacionamento"),
     ("5.3.05", "Premiação de Vendedores"), ("5.3.06", "Salários de Vendas"),
     ("5.3.07", "Marketing/Campanhas de Divulgação"), ("5.3.08", "Salário Marketing"),
-    ("5.3.09", "Site e Hospedagem"), ("5.3.10", "Combustível de Venda"),
+    ("5.3.09", "Site e Hospedagem"),
     ("5.3.11", "Uniformes"), ("5.3.12", "Brindes"), ("5.3.13", "Suprimento a Cliente"),
     ("5.3.14", "Viagens de Especificador"), ("5.3.15", "Comissão de Arquiteto"),   # FASE A: despesa da comissão de arquiteto (NF-e)
     ("5.3.16", "Benefícios a Funcionários (AT/VA/PS)"),   # Folha Fase 3: benefícios (conta provisória, a validar c/ contabilidade)
@@ -118,7 +118,6 @@ PLANO_PADRAO = [
     # Formalismo (Sessão 109): comissões de execução saem da família 5.6 para Despesas Comerciais
     ("5.3.18", "Comissão de Medidor"),
     ("5.3.19", "Comissão de Projeto/Executivo"),
-    ("5.3.20", "Retenção de Comissão de Vendas"),
     # Assistência/Garantia avulsa fora da cobertura (2026-08-07): cortesia ao cliente, sem projeto
     # e sem provisão associada (é uma despesa nova, não uma execução do que já foi provisionado).
     ("5.3.21", "Concessão a Cliente"),
@@ -129,8 +128,10 @@ PLANO_PADRAO = [
     ("5.4.08", "Segurança e Seguros"), ("5.4.09", "Material de Limpeza/Expediente"),
     ("5.4.10", "Sistemas (ERP, CRM, assinatura digital)"), ("5.4.11", "Salários Administrativos"),
     ("5.4.12", "Pró-labore"), ("5.4.13", "Encargos sobre Folha"),
-    ("5.4.14", "Vale-Transporte"), ("5.4.15", "Sindicato"), ("5.4.16", "Rescisões"),
+    ("5.4.14", "Vale-Transporte"), ("5.4.15", "Sindicato e Contribuições"), ("5.4.16", "Rescisões"),
     ("5.4.17", "IPVA/IPTU/Licenciamentos"), ("5.4.18", "Manutenção (loja, veículos, informática)"),
+    # Centro de Custo/Natureza (2026-08-08): 2 contas novas pedidas pra fechar a classificação
+    ("5.4.19", "Licenças Promob e Sketchup"), ("5.4.20", "Outras Despesas"),
     ("5.5", "Despesas Financeiras"),
     ("5.5.01", "Tarifas Bancárias"), ("5.5.02", "Juros de Empréstimos"),
     ("5.5.03", "Custo de Antecipação de Recebíveis"),
@@ -157,7 +158,8 @@ _FORMALISMO_5_6 = {
     "5.6.06": ("5.2.09", "5.2", "Insumos Locais"),
     "5.6.07": ("5.3.18", "5.3", "Comissão de Medidor"),
     "5.6.08": ("5.3.19", "5.3", "Comissão de Projeto/Executivo"),
-    "5.6.09": ("5.3.20", "5.3", "Retenção de Comissão de Vendas"),
+    # 5.6.09 removida (Centro de Custo/Natureza, 2026-08-08): apontava pra 5.3.20, que deixou de
+    # existir (evento redirecionado pra 5.3.01 — ver migrar_centro_custo_natureza_v1).
 }
 
 # Todos os nomes que uma conta destas já teve em QUALQUER geração de seed (original
@@ -179,8 +181,6 @@ _NOMES_HISTORICOS = {
                "Comissão de Medidor — Despesa Reconhecida", "Comissão de Medidor"},
     "5.6.08": {"Constituição — Provisão de Comissão de Projeto/Executivo",
                "Comissão de Projeto/Executivo — Despesa Reconhecida", "Comissão de Projeto/Executivo"},
-    "5.6.09": {"Constituição — Provisão de Retenção de Comissão de Vendas",
-               "Retenção de Comissão de Vendas — Despesa Reconhecida", "Retenção de Comissão de Vendas"},
 }
 
 _NOMES_HISTORICOS_GRUPO_5_6 = ("Constituição de Provisões", "Despesas Reconhecidas de Provisões",
@@ -246,6 +246,116 @@ def migrar_plano_formalismo(db):
             grupos += 1
     db.commit()
     return {"recodificadas": recodificadas, "mescladas": mescladas, "grupos_renomeados": grupos}
+
+
+# ── Centro de Custo + Natureza (decisão do usuário, 2026-08-08) ──────────────────────────────
+# Passo 1 do pedido: ajustes pontuais no plano ANTES de classificar por Centro de Custo/Natureza.
+# Renomeia só quem ainda carrega o nome antigo (nome customizado pelo usuário não é sobrescrito —
+# mesmo cuidado de _NOMES_HISTORICOS).
+_RENOMEIA_CENTRO_CUSTO_V1 = {
+    "5.1.01": ("CMV Fábrica (Dal Mobile)", "CMV Fábrica"),
+    "5.2.02": ("Comissão Executivo de Montagem", "Comissão de Montagem"),
+    "5.2.03": ("Viagens de Pedido", "Viagens de Montagens"),
+    "5.2.05": ("Ajudante Semanal", "Ajudante Eventual"),
+    "5.2.06": ("Combustível de Depósito", "Combustível"),
+    "5.3.04": ("Pontos Programa de Indicação", "Pontos Programa de Relacionamento"),
+    "5.4.15": ("Sindicato", "Sindicato e Contribuições"),
+}
+_REMOVE_CENTRO_CUSTO_V1 = ("5.2.11", "5.3.10", "5.3.20")
+_CRIAR_CENTRO_CUSTO_V1 = [("5.4.19", "Licenças Promob e Sketchup"), ("5.4.20", "Outras Despesas")]
+
+
+def migrar_centro_custo_natureza_v1(db):
+    """Centro de Custo/Natureza (decisão do usuário, 2026-08-08) em TODOS os owners, idempotente
+    — roda no boot logo depois de migrar_plano_formalismo e ANTES de backfill_plano_todos_owners
+    (senão o backfill recriaria 5.2.11/5.3.10/5.3.20, já tiradas de PLANO_PADRAO). Por owner:
+    (1) renomeia contas cujo nome ainda é o padrão antigo; (2) reponta os lançamentos de 5.3.10
+    "Combustível de Venda" pra 5.2.06 "Combustível" (única conta de combustível daqui pra frente);
+    (3) remove 5.2.11/5.3.10/5.3.20 — apaga se puder (sem filho/lançamento, mesma regra de
+    remover_conta), senão inativa; (4) cria as 2 contas novas que ainda faltarem."""
+    ordem_seed = {cod: i for i, (cod, _n) in enumerate(PLANO_PADRAO)}
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    renomeadas = combustivel_unificado = removidas = inativadas = criadas = 0
+    for ot, oid in owners:
+        contas = {c.codigo: c for c in db.query(Conta)
+                  .filter_by(owner_tipo=ot, owner_id=oid).all()}
+        for cod, (nome_antigo, nome_novo) in _RENOMEIA_CENTRO_CUSTO_V1.items():
+            c = contas.get(cod)
+            if c is not None and c.nome == nome_antigo:
+                c.nome = nome_novo
+                renomeadas += 1
+        origem = contas.get("5.3.10")
+        destino = contas.get("5.2.06")
+        if origem is not None and destino is not None:
+            n1 = db.query(Lancamento).filter(Lancamento.conta_debito_id == origem.id)\
+                   .update({"conta_debito_id": destino.id}, synchronize_session=False)
+            n2 = db.query(Lancamento).filter(Lancamento.conta_credito_id == origem.id)\
+                   .update({"conta_credito_id": destino.id}, synchronize_session=False)
+            db.flush()
+            if n1 or n2:
+                combustivel_unificado += 1
+        for cod in _REMOVE_CENTRO_CUSTO_V1:
+            c = contas.get(cod)
+            if c is None:
+                continue
+            if not _tem_filhos(db, c) and not _tem_lancamentos(db, c):
+                db.delete(c)
+                db.flush()
+                removidas += 1
+            else:
+                c.ativa = 0
+                inativadas += 1
+            del contas[cod]
+        for cod, nome in _CRIAR_CENTRO_CUSTO_V1:
+            if cod in contas:
+                continue
+            pai = contas.get(_pai_codigo(cod))
+            if pai is not None and pai.tipo == "analitica":
+                pai.tipo = "sintetica"
+            grupo = int(cod.split(".")[0])
+            c = Conta(owner_tipo=ot, owner_id=oid, codigo=cod, nome=nome, grupo=grupo,
+                      tipo="analitica", natureza=_natureza(grupo),
+                      pai_id=pai.id if pai is not None else None,
+                      ativa=1, ordem=ordem_seed.get(cod, 999))
+            db.add(c)
+            db.flush()
+            contas[cod] = c
+            criadas += 1
+    db.commit()
+    return {"renomeadas": renomeadas, "combustivel_unificado": combustivel_unificado,
+            "removidas": removidas, "inativadas": inativadas, "criadas": criadas}
+
+
+def migrar_centro_custo_v2(db):
+    """Ajuste do usuário na árvore de Centro de Custo (2026-08-08, revisão do dia): "Produtivo"
+    vira "Operacional"; Instalações/Infraestrutura sai de Suporte (4.1) e entra em Operacional
+    (1.5); Projetos/Design sai de Comercial (2.2) e entra em Pós-venda (3.2). Move os MESMOS nós
+    (id preservado — se uma Conta já apontar pro centro_custo_id, o vínculo sobrevive intacto) —
+    só recodifica/reparenta, não recria. Roda no boot, em TODOS os owners, ANTES do backfill
+    (senão o backfill recriaria os nós na posição velha, já que ficariam "faltando" lá).
+    Idempotente: a 2ª chamada não acha mais nada em "4.1"/"2.2" (já foram recodificados) e não
+    faz nada."""
+    owners = db.query(CentroCusto.owner_tipo, CentroCusto.owner_id).distinct().all()
+    renomeados = movidos = 0
+    for ot, oid in owners:
+        ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=ot, owner_id=oid).all()}
+        raiz1 = ccs.get("1")
+        if raiz1 is not None and raiz1.nome == "Produtivo":
+            raiz1.nome = "Operacional"
+            renomeados += 1
+        inst = ccs.get("4.1")
+        if inst is not None and inst.nome == "Instalações/Infraestrutura" and raiz1 is not None:
+            inst.codigo = "1.5"
+            inst.pai_id = raiz1.id
+            movidos += 1
+        raiz3 = ccs.get("3")
+        proj = ccs.get("2.2")
+        if proj is not None and proj.nome == "Projetos/Design" and raiz3 is not None:
+            proj.codigo = "3.2"
+            proj.pai_id = raiz3.id
+            movidos += 1
+    db.commit()
+    return {"renomeados": renomeados, "movidos": movidos}
 
 
 def _pai_codigo(codigo):
@@ -417,6 +527,183 @@ def remover_conta(db, owner_tipo, owner_id, conta_id):
     c.ativa = 0
     db.commit()
     return {"acao": "inativada", "id": conta_id}
+
+
+# ── Centro de Custo + Natureza (decisão do usuário, 2026-08-08) ──────────────────────────────
+# "Quem gastou" — árvore própria por owner, só referenciada por Conta.centro_custo_id (sem
+# lançamento próprio). Escopo do pedido: só as contas do grupo "5 DESPESAS/CUSTOS" são
+# classificadas, mas a árvore em si não impõe essa restrição (validação fica no bulk-classify).
+CENTRO_CUSTO_PADRAO = [
+    ("1", "Operacional"),
+    ("1.1", "Produção própria"), ("1.2", "Fábricas e Fornecedores"),
+    ("1.3", "Montagem"), ("1.4", "Logística/Expedição"),
+    ("1.5", "Instalações/Infraestrutura"),   # 2026-08-08: mudou de Suporte pra Operacional
+    ("2", "Comercial"),
+    ("2.1", "Vendas/Loja"), ("2.3", "Marketing"),   # 2.2 (Projetos/Design) mudou pra Pós-venda
+    ("3", "Pós-venda"),
+    ("3.1", "Assistência Técnica/Pós-venda"),
+    ("3.2", "Projetos/Design"),   # 2026-08-08: mudou de Comercial pra Pós-venda
+    ("4", "Suporte"),
+    ("4.2", "Sistemas e TI"),
+    ("4.3", "Administrativo-financeiro"), ("4.4", "Diretoria/Gestão"),
+    ("4.5", "Custos Distribuídos"),
+]
+
+# Natureza do custo — lista fechada (3 itens), sem tabela própria: só um slug em Conta.natureza_custo.
+NATUREZA_CUSTO = [("fixo", "Fixo"), ("variavel", "Variável"), ("semivariavel", "Semivariável")]
+
+
+def seed_centro_custo(db, owner_tipo, owner_id):
+    """Materializa/atualiza a árvore-padrão do owner — backfill idempotente, mesmo padrão de
+    seed_plano. Retorna nº de nós criados (0 se nada faltava)."""
+    existentes = {c.codigo: c for c in db.query(CentroCusto)
+                  .filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    id_por_codigo = {cod: c.id for cod, c in existentes.items()}
+    criados = 0
+    for ordem, (codigo, nome) in enumerate(CENTRO_CUSTO_PADRAO):
+        if codigo in existentes:
+            continue
+        pai_cod = _pai_codigo(codigo)
+        c = CentroCusto(owner_tipo=owner_tipo, owner_id=owner_id, codigo=codigo, nome=nome,
+                        pai_id=id_por_codigo.get(pai_cod), ativo=1, ordem=ordem)
+        db.add(c)
+        db.flush()
+        id_por_codigo[codigo] = c.id
+        criados += 1
+    if criados:
+        db.commit()
+    return criados
+
+
+def backfill_centro_custo_todos_owners(db):
+    """Backfill idempotente da árvore de Centro de Custo em TODOS os owners que já têm Plano de
+    Contas — reusa seed_centro_custo. Retorna nº total de nós criados."""
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    return sum(seed_centro_custo(db, ot, oid) for ot, oid in owners)
+
+
+def _serial_cc(c):
+    return {"id": c.id, "codigo": c.codigo, "nome": c.nome, "pai_id": c.pai_id, "ativo": bool(c.ativo)}
+
+
+def listar_centros_custo(db, owner_tipo, owner_id, incluir_inativos=False):
+    """Árvore (lista de raízes com 'filhos'), ordenada por 'ordem'/codigo. Seed-on-first-access."""
+    seed_centro_custo(db, owner_tipo, owner_id)
+    q = db.query(CentroCusto).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
+    if not incluir_inativos:
+        q = q.filter(CentroCusto.ativo == 1)
+    itens = q.order_by(CentroCusto.ordem, CentroCusto.codigo).all()
+    nodes = {c.id: {**_serial_cc(c), "filhos": []} for c in itens}
+    raizes = []
+    for c in itens:
+        if c.pai_id and c.pai_id in nodes:
+            nodes[c.pai_id]["filhos"].append(nodes[c.id])
+        else:
+            raizes.append(nodes[c.id])
+    return raizes
+
+
+def _get_own_cc(db, owner_tipo, owner_id, cc_id):
+    c = db.get(CentroCusto, cc_id)
+    if c is None:
+        raise ValueError("centro de custo inexistente")
+    if c.owner_tipo != owner_tipo or c.owner_id != owner_id:
+        raise PermissionError("centro de custo de outro owner")
+    return c
+
+
+def _cc_tem_filhos(db, cc):
+    return db.query(CentroCusto).filter_by(owner_tipo=cc.owner_tipo, owner_id=cc.owner_id,
+                                           pai_id=cc.id).first() is not None
+
+
+def _cc_tem_uso(db, cc):
+    return db.query(Conta).filter_by(owner_tipo=cc.owner_tipo, owner_id=cc.owner_id,
+                                     centro_custo_id=cc.id).first() is not None
+
+
+def _proximo_codigo_cc(db, pai):
+    filhos = db.query(CentroCusto).filter_by(owner_tipo=pai.owner_tipo, owner_id=pai.owner_id,
+                                             pai_id=pai.id).all()
+    usados = set()
+    for f in filhos:
+        try:
+            usados.add(int(f.codigo.rsplit(".", 1)[-1]))
+        except ValueError:
+            pass
+    seq = 1
+    while seq in usados:
+        seq += 1
+    return f"{pai.codigo}.{seq}"
+
+
+def criar_centro_custo(db, owner_tipo, owner_id, pai_id, nome):
+    pai = _get_own_cc(db, owner_tipo, owner_id, pai_id)
+    if not (nome or "").strip():
+        raise ValueError("nome obrigatório")
+    c = CentroCusto(owner_tipo=owner_tipo, owner_id=owner_id, codigo=_proximo_codigo_cc(db, pai),
+                    nome=nome.strip(), pai_id=pai.id, ativo=1, ordem=999)
+    db.add(c)
+    db.commit()
+    return _serial_cc(c)
+
+
+def editar_centro_custo(db, owner_tipo, owner_id, cc_id, nome=None, ordem=None):
+    c = _get_own_cc(db, owner_tipo, owner_id, cc_id)
+    if nome is not None:
+        if not nome.strip():
+            raise ValueError("nome obrigatório")
+        c.nome = nome.strip()
+    if ordem is not None:
+        c.ordem = int(ordem)
+    db.commit()
+    return _serial_cc(c)
+
+
+def remover_centro_custo(db, owner_tipo, owner_id, cc_id):
+    """Folha sem filho e sem conta apontando pra ele -> apaga; senão inativa (mesma regra de
+    remover_conta — Centro de Custo não tem lançamento próprio, só é referenciado por Conta)."""
+    c = _get_own_cc(db, owner_tipo, owner_id, cc_id)
+    if not _cc_tem_filhos(db, c) and not _cc_tem_uso(db, c):
+        db.delete(c)
+        db.commit()
+        return {"acao": "apagado", "id": cc_id}
+    c.ativo = 0
+    db.commit()
+    return {"acao": "inativado", "id": cc_id}
+
+
+def classificar_contas_lote(db, owner_tipo, owner_id, itens):
+    """Aplica Centro de Custo + Natureza em lote nas contas do owner. `itens` =
+    [{codigo, centro_custo_codigo, natureza_custo}] — os dois últimos aceitam None/"" pra
+    LIMPAR a classificação da conta. Valida TUDO antes de gravar qualquer item (tudo ou nada —
+    uma linha ruim no meio da lista não deixa a classificação pela metade). Endpoint pronto,
+    mas só é chamado depois da aprovação do usuário (Centro de Custo/Natureza, 2026-08-08) —
+    a revisão da proposta acontece fora do banco (Artifact), não aqui."""
+    contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    naturezas_validas = {slug for slug, _ in NATUREZA_CUSTO}
+    resolvidos = []
+    for item in itens or []:
+        cod = item.get("codigo")
+        conta = contas.get(cod)
+        if conta is None:
+            raise ValueError(f"conta inexistente: {cod}")
+        cc_cod = (item.get("centro_custo_codigo") or "").strip() or None
+        cc = None
+        if cc_cod is not None:
+            cc = ccs.get(cc_cod)
+            if cc is None:
+                raise ValueError(f"centro de custo inexistente: {cc_cod} (conta {cod})")
+        nat = (item.get("natureza_custo") or "").strip() or None
+        if nat is not None and nat not in naturezas_validas:
+            raise ValueError(f"natureza inválida: {nat} (conta {cod})")
+        resolvidos.append((conta, cc, nat))
+    for conta, cc, nat in resolvidos:
+        conta.centro_custo_id = cc.id if cc else None
+        conta.natureza_custo = nat
+    db.commit()
+    return {"classificadas": len(resolvidos)}
 
 
 # ── Livro de Lançamentos (sub-projeto #2) ────────────────────────────────────
@@ -629,7 +916,10 @@ EVENTOS = {
     "reconhecimento_despesa_insumos":             ("5.2.09", "1.1.06.09", "Reconhecimento de despesa na NF-e — Insumos Locais"),
     "reconhecimento_despesa_com_medidor":         ("5.3.18", "1.1.06.10", "Reconhecimento de despesa na NF-e — Comissão de Medidor"),
     "reconhecimento_despesa_com_proj_exec":       ("5.3.19", "1.1.06.11", "Reconhecimento de despesa na NF-e — Comissão de Projeto/Executivo"),
-    "reconhecimento_despesa_retencao_com_vendas": ("5.3.20", "1.1.06.12", "Reconhecimento de despesa na NF-e — Retenção de Comissão de Vendas"),
+    # 2026-08-08 (Centro de Custo/Natureza): 5.3.20 foi removida do plano — a retenção de
+    # comissão de vendas é conceitualmente uma variação de comissão de vendedor, então passa a
+    # debitar 5.3.01 (mesma conta usada por "comissao_venda"/folha_variavel).
+    "reconhecimento_despesa_retencao_com_vendas": ("5.3.01", "1.1.06.12", "Reconhecimento de despesa na NF-e — Retenção de Comissão de Vendas"),
     "reconhecimento_despesa_custo_fabrica":       ("5.1.01", "1.1.06.06", "CMV Fábrica — reconhecimento na NF-e (baixa do ativo diferido)"),
     "reconhecimento_despesa_outros_fornecedores": ("5.1.01", "1.1.06.14", "CMV Outros Fornecedores — reconhecimento na NF-e (baixa do ativo diferido)"),
     # FASE A: matching dos custos adicionais na NF-e — despesa comercial × baixa do ativo diferido

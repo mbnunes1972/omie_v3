@@ -158,6 +158,61 @@ def desconto_max(slug):
     return PERFIS.get(_base(slug), _DEFAULT)["desconto_max"]
 
 
+# Permissões por CONTA do Gestor de Rede (2026-08-08, pedido do usuário — "Permissões" na
+# criação/edição). admin_rede não tem loja_id pra pendurar num PerfilAcesso (é por LOJA,
+# nullable=False) — por isso um mecanismo à parte, em Usuario.capacidades_override_json, em vez
+# de forçar esse nível dentro do sistema de slug por loja. Master reusa o slug por loja que já
+# existe (cada Master pode ganhar seu próprio slug em PerfilAcesso); super_admin nunca tem
+# override (god-mode, ver `pode()`).
+#
+# gerir_redes fica de fora de propósito: é FALSE fixo pra admin_rede e é o que
+# `mod_tenancy._eh_super_admin` usa pra distinguir os dois níveis — tornar overridável deixaria
+# um Gestor de Rede se passar por super_admin em qualquer checagem que use essa função.
+# gerir_lojas também fica de fora: é o que `_eh_admin_rede` usa pra reconhecer a identidade do
+# nível — desligar por engano tiraria a conta de todo o tenancy de rede (nem loja, nem rede).
+CAPACIDADES_OVERRIDAVEIS_REDE = (
+    "gerir_usuarios", "gerir_perfis", "editar_dados_loja", "acesso_admin", "acesso_config")
+
+
+def capacidades_efetivas_rede(usuario):
+    """Capacidades de UM admin_rede específico: default do nível (PERFIS["admin_rede"]) com o
+    override da conta por cima, só nas capacidades da allowlist. `usuario` = dict de sessão
+    (tem "nivel" e "capacidades_override") ou o objeto Usuario (tem .nivel e
+    .capacidades_override_json). Não faz sentido pra outro nível — devolve a base pura."""
+    import json as _json
+    nivel = usuario.get("nivel") if isinstance(usuario, dict) else usuario.nivel
+    base_caps = {c: PERFIS.get("admin_rede", _DEFAULT).get(c, False) for c in CAPACIDADES_OVERRIDAVEIS_REDE}
+    if nivel != "admin_rede":
+        return base_caps
+    if isinstance(usuario, dict):
+        override = usuario.get("capacidades_override") or {}
+    else:
+        try:
+            override = _json.loads(usuario.capacidades_override_json or "{}")
+        except (TypeError, ValueError):
+            override = {}
+    base_caps.update({k: bool(v) for k, v in override.items() if k in CAPACIDADES_OVERRIDAVEIS_REDE})
+    return base_caps
+
+
+def pode_usuario(usuario, capacidade):
+    """Como pode(), mas honra o override POR CONTA do admin_rede (capacidade fora da allowlist,
+    ou nível ≠ admin_rede, cai direto em pode() — comportamento de sempre, sem mudança)."""
+    nivel = usuario.get("nivel") if isinstance(usuario, dict) else usuario.nivel
+    if nivel == "admin_rede" and capacidade in CAPACIDADES_OVERRIDAVEIS_REDE:
+        return capacidades_efetivas_rede(usuario).get(capacidade, False)
+    return pode(nivel, capacidade)
+
+
+def acessa_painel_usuario(usuario, painel):
+    """Como acessa_painel(), mas honra o override por conta do admin_rede (acesso_admin/config
+    estão na allowlist de CAPACIDADES_OVERRIDAVEIS_REDE)."""
+    nivel = usuario.get("nivel") if isinstance(usuario, dict) else usuario.nivel
+    if nivel == "admin_rede":
+        return pode_usuario(usuario, "acesso_admin" if painel == "admin" else "acesso_config")
+    return acessa_painel(nivel, painel)
+
+
 # Metadados legíveis das capacidades — dão nome/descrição aos slugs para a tela Admin › Perfis de
 # Usuário FORMALIZAR o que perfis.py já governa. A fonte única de VERDADE continua sendo PERFIS; isto
 # é só a camada de apresentação. Toda capacidade booleana usada em PERFIS deve ter entrada aqui.

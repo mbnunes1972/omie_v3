@@ -11393,7 +11393,11 @@ class Handler(BaseHTTPRequestHandler):
                     _fname, data = arquivos["arquivo"]
                     preview = mod_nfe.preview(data, markup)
                     ref = "TESTE-" + datetime.utcnow().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
-                    data_emissao = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
+                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
+                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
+                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
+                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
                     nota = mapa_fiscal.montar_nota(emitente, cliente, preview["itens"], ref, data_emissao)
                     res = nfe_emissao.emitir(db, loja.id, projeto_nome, nota, tipo_documento="produto",
                                              emitente_id=emitente.id)
@@ -11513,7 +11517,11 @@ class Handler(BaseHTTPRequestHandler):
                     if _vseg is not None:
                         preview["itens"] = mod_nfe.rescalar_itens_para_total(preview["itens"], _vseg["mercadoria"])
                     ref = "NFE-" + nome_safe + "-" + str(doc.id)
-                    data_emissao = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
+                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
+                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
+                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
+                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
                     nota = mapa_fiscal.montar_nota(emitente, cliente, preview["itens"], ref, data_emissao)
                     res = nfe_emissao.emitir(db, loja_id, nome_safe, nota, tipo_documento="produto",
                                              emitente_id=emitente.id, fabrica_doc_id=doc.id)
@@ -11605,7 +11613,11 @@ class Handler(BaseHTTPRequestHandler):
                                         "erros": json.loads(reg.erros_json) if reg.erros_json else [],
                                         "xml_doc_id": reg.xml_doc_id, "danfe_doc_id": reg.danfe_doc_id}); return
                     ref = "NFSE-%s-%d" % (nome_safe, len(nfse_regs) + 1)
-                    data_emissao = datetime.now().strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
+                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
+                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
+                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
+                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
                     discriminacao = req.get("discriminacao") or "Serviço de montagem/instalação de móveis planejados"
                     # FASE B2.3 (T4): valor da NFS-e = parcela Serviço (pct_serv × Val_Cont), complemento da
                     # NF-e produto (juntos fecham o Val_Cont). Sem contrato/Val_Cont → mantém o valor informado.

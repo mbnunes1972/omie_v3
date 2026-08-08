@@ -19,11 +19,18 @@ import os
 import json
 import platform
 import hashlib
+import threading
 from datetime import datetime
 
 _THIS_DIR            = os.path.dirname(os.path.abspath(__file__))
 CONTRATOS_DIR        = os.path.join(_THIS_DIR, "CONTRATOS")
 CONTRATO_TEMPLATE_DIR = os.path.join(_THIS_DIR, "contrato_template")
+
+# WeasyPrint não garante thread-safety pra chamadas concorrentes (cache de fontes/Cairo
+# compartilhado no processo) — servidor virou multi-thread (2026-08-08) e dois PDFs (contrato,
+# proposta, export de chat) podem ser pedidos ao mesmo tempo por usuários diferentes. Serializa
+# só a chamada write_pdf em si (rápida o bastante pra não virar gargalo real).
+PDF_LOCK = threading.Lock()
 
 _TRACO = "--------"  # preenche slots de parcela inexistentes
 
@@ -961,8 +968,9 @@ def gerar_pdf_contrato(contrato_id: int, ctx: dict, destino: str = None) -> str:
     os.makedirs(destino, exist_ok=True)
     html = _montar_html_contrato(ctx)
     pdf_path = os.path.join(destino, f"contrato_{contrato_id}.pdf")
-    HTML(string=html, base_url=CONTRATO_TEMPLATE_DIR,
-         url_fetcher=_url_fetcher_local).write_pdf(pdf_path)
+    with PDF_LOCK:
+        HTML(string=html, base_url=CONTRATO_TEMPLATE_DIR,
+             url_fetcher=_url_fetcher_local).write_pdf(pdf_path)
     return pdf_path
 
 
@@ -1001,8 +1009,9 @@ def gerar_pdf_proposta(ctx: dict, destino_pdf: str) -> str:
     _dir = os.path.dirname(destino_pdf)
     if _dir:
         os.makedirs(_dir, exist_ok=True)
-    HTML(string=montar_html_proposta(ctx), base_url=CONTRATO_TEMPLATE_DIR,
-         url_fetcher=_url_fetcher_local).write_pdf(destino_pdf)
+    with PDF_LOCK:
+        HTML(string=montar_html_proposta(ctx), base_url=CONTRATO_TEMPLATE_DIR,
+             url_fetcher=_url_fetcher_local).write_pdf(destino_pdf)
     return destino_pdf
 
 
@@ -1035,8 +1044,9 @@ def _gerar_pdf_corpo_documento(html_doc: str, destino_pdf: str) -> str:
     _dir = os.path.dirname(destino_pdf)
     if _dir:
         os.makedirs(_dir, exist_ok=True)
-    HTML(string=html_doc, base_url=CONTRATO_TEMPLATE_DIR,
-         url_fetcher=_url_fetcher_local).write_pdf(destino_pdf)
+    with PDF_LOCK:
+        HTML(string=html_doc, base_url=CONTRATO_TEMPLATE_DIR,
+             url_fetcher=_url_fetcher_local).write_pdf(destino_pdf)
     return destino_pdf
 
 

@@ -225,9 +225,12 @@ _REG_BY_LOJA = None   # {loja_id: {slug: <mesma info>}}
 
 
 def _carregar_registro():
-    """Carrega perfil_acesso do banco para os caches. Silencioso se a tabela ainda não existe."""
-    global _REG_BY_SLUG, _REG_BY_LOJA
-    _REG_BY_SLUG, _REG_BY_LOJA = {}, {}
+    """Carrega perfil_acesso do banco para os caches. Silencioso se a tabela ainda não existe.
+    Monta em variáveis locais e só publica nos globais no final (2026-08-08, servidor
+    multi-thread): publicar `{}` no início e povoar aos poucos deixava uma janela em que outra
+    thread via os globais "já carregados" porém vazios — agora ou é o cache antigo completo, ou
+    o novo completo, nunca um estado parcial."""
+    novo_slug, novo_loja = {}, {}
     try:
         from database import Session, PerfilAcesso
         db = Session()
@@ -236,12 +239,14 @@ def _carregar_registro():
                 info = {"base": p.base, "nome": p.nome, "sistema": bool(p.sistema),
                         "loja_id": p.loja_id, "modulos": set(_json.loads(p.modulos_json or "[]")),
                         "caps": _json.loads(p.capacidades_json or "{}")}
-                _REG_BY_SLUG[p.slug] = info
-                _REG_BY_LOJA.setdefault(p.loja_id, {})[p.slug] = info
+                novo_slug[p.slug] = info
+                novo_loja.setdefault(p.loja_id, {})[p.slug] = info
         finally:
             db.close()
     except Exception:
         pass   # DB indisponível/tabela ausente → registro vazio, cai no fallback PERFIS
+    global _REG_BY_SLUG, _REG_BY_LOJA
+    _REG_BY_SLUG, _REG_BY_LOJA = novo_slug, novo_loja
 
 
 def recarregar():

@@ -131,11 +131,13 @@ def test_super_admin_loja_inexistente_no_header_barra_operacional(http_client_fa
 
 def test_loja_admin_alvo_header_zero_nao_cai_para_loja_propria(servidor, monkeypatch):
     """🟠 #2: distinguir header AUSENTE (None) de header PRESENTE porém 0 — usar
-    `is not None`, não `or` (0 é falsy). Header presente é respeitado verbatim."""
+    `is not None`, não `or` (0 é falsy). Header presente é respeitado verbatim.
+    _REQ_LOJA_ATIVA virou _req_local (threading.local, 2026-08-08) — o estado por-requisição
+    agora mora num atributo da thread atual, não num global do módulo."""
     import main
-    monkeypatch.setattr(main, "_REQ_LOJA_ATIVA", 0)
+    monkeypatch.setattr(main._req_local, "loja_ativa", 0, raising=False)
     assert main._loja_admin_alvo({"nivel": "super_admin", "loja_id": 9}) == 0
-    monkeypatch.setattr(main, "_REQ_LOJA_ATIVA", None)
+    monkeypatch.setattr(main._req_local, "loja_ativa", None, raising=False)
     assert main._loja_admin_alvo({"nivel": "super_admin", "loja_id": 9}) == 9
 
 

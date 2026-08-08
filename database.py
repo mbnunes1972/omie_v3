@@ -29,8 +29,13 @@ _URL_PLACEHOLDER = "postgresql+psycopg2://nao_configurado@localhost:1/nao_config
 # a primeira requisição de cada conexão explode ("SSL connection has been closed
 # unexpectedly"; foi o login da equipe falhando na instância A). pre_ping testa e refaz.
 # pool_recycle recicla proativamente conexões com mais de 30min (higiene do mesmo risco).
+# pool_size/max_overflow (2026-08-08): o server virou ThreadingHTTPServer (era single-thread,
+# uma requisição de cada vez bastava o pool default de 5+10). Sob concorrência real, várias
+# requisições pedem sessão ao mesmo tempo — sem folga aqui, a N+1-ésima trava esperando conexão
+# livre em vez de dar erro claro.
 ENGINE       = create_engine(DATABASE_URL or _URL_PLACEHOLDER, echo=False,
-                             pool_pre_ping=True, pool_recycle=1800)
+                             pool_pre_ping=True, pool_recycle=1800,
+                             pool_size=15, max_overflow=25)
 Session      = sessionmaker(bind=ENGINE)
 
 # ── Base ─────────────────────────────────────────────────────────────────────

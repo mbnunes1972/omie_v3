@@ -9,7 +9,7 @@ import email
 import email.header
 from email import policy as _email_policy
 from datetime import datetime, date, timedelta
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from auth.auth_routes import handle_auth_get, handle_auth_post, get_usuario_sessao
 from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        PoolAmbiente, OrcamentoAmbiente, Projeto, upsert_projeto_status,
@@ -594,11 +594,21 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
         logging.getLogger(__name__).warning("wiring fechamento (provisões+custo fin, ref=%s) falhou: %s", ref_base, e)
 
 
-def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrato, ref_base):
+def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrato, ref_base,
+                                          pagamento_json_str=None):
     """Materializa os recebíveis PREVISTOS do orçamento assinado (2026-08-07, achado da Vera — ver
     mod_recebiveis). Mesmo espírito de `_fin_provisoes_venda_seguro`: fail-soft/isolado/idempotente
     (não aborta a geração do contrato) e roda só uma vez por orçamento (guarda por `orcamento_id`,
-    protege regeração do contrato)."""
+    protege regeração do contrato).
+
+    `pagamento_json_str` (2026-08-08, achado da Vera na rodada de robustez): o plano de pagamento
+    enviado NESTA requisição de geração do contrato — a MESMA fonte que o PDF do contrato usa
+    (`pag_json = pagamento_json_str or orcamento_dict.get("forma_pagamento", "")`). Antes esta
+    função só lia `orc.forma_pagamento` direto do banco; se esse campo nunca tivesse sido gravado
+    no orçamento (só chegou no corpo desta requisição), o PDF saía certo mas os recebíveis saíam
+    ZERO em silêncio — sem exceção, sem warning, sem avisar ninguém. Agora usa a mesma precedência
+    do PDF e, se o orçamento ainda estiver com o campo vazio, faz o backfill (só quando vazio —
+    nunca sobrescreve um valor já gravado)."""
     try:
         orc_id = getattr(orc, "id", None)
         if not orc_id or not loja_id:
@@ -611,9 +621,17 @@ def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrat
             orc2 = db.get(Orcamento, orc_id)
             if orc2 is None:
                 return
+            forma_pag = pagamento_json_str or orc2.forma_pagamento or ""
+            if forma_pag and not orc2.forma_pagamento:
+                orc2.forma_pagamento = forma_pag   # backfill: só quando o orçamento ainda não tinha
+            if not forma_pag and float(orc2.valor_total or 0) > 0:
+                logging.getLogger(__name__).warning(
+                    "recebíveis (ref=%s): orçamento %s tem valor_total>0 mas nenhum plano de "
+                    "pagamento (nem orc.forma_pagamento nem pagamento_json da requisição) — "
+                    "0 recebíveis materializados. Verifique manualmente.", ref_base, orc_id)
             cfg = _cfg_financeira_loja(db, loja_id)
             linhas = mod_recebiveis.materializar(
-                orc2.forma_pagamento, orc2.valor_total,
+                forma_pag, orc2.valor_total,
                 data_contrato.date() if hasattr(data_contrato, "date") else data_contrato,
                 ref_base, prazo_antecipacao=cfg.get("prazo_antecipacao"))
             for linha in linhas:
@@ -737,7 +755,14 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
             "wiring faturamento segmentado (%s, %s, ref=%s) falhou: %s", segmento, projeto_nome, ref_doc, e)
 
 
-_REQ_LOJA_ATIVA = None   # header X-Loja-Ativa da requisição atual (HTTPServer single-thread)
+# Estado por-requisição (header X-Loja-Ativa). Era um global simples (`_REQ_LOJA_ATIVA = None`)
+# quando o servidor era single-thread; virou thread-local no ThreadingHTTPServer (2026-08-08) —
+# um global mutável aqui vazaria a loja ativa de uma requisição pra outra rodando concorrentemente
+# em outra thread (bug de tenancy grave: usuário A veria/editaria dado da loja de B).
+_req_local = threading.local()
+
+def _req_loja_ativa():
+    return getattr(_req_local, "loja_ativa", None)
 
 def _ler_loja_ativa_header(handler):
     raw = (handler.headers.get("X-Loja-Ativa") or "").strip()
@@ -750,7 +775,8 @@ def _loja_admin_alvo(usuario):
     perfis usam a própria loja."""
     if usuario.get("nivel") == "super_admin":
         # header PRESENTE (mesmo 0) vence; só cai pra loja própria quando AUSENTE (None).
-        return _REQ_LOJA_ATIVA if _REQ_LOJA_ATIVA is not None else usuario.get("loja_id")
+        v = _req_loja_ativa()
+        return v if v is not None else usuario.get("loja_id")
     return usuario.get("loja_id")
 
 
@@ -839,8 +865,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.rfile.read(length) if length else b'{}'
 
     def do_GET(self):
-        global _REQ_LOJA_ATIVA
-        _REQ_LOJA_ATIVA = _ler_loja_ativa_header(self)
+        _req_local.loja_ativa = _ler_loja_ativa_header(self)
         path = urlparse(self.path).path
         # Webhook WhatsApp (Fatia 7) — verificação (handshake da Meta). NÃO autenticado (a Meta
         # chama), mas gated pelo ORIZON_WA_VERIFY_TOKEN do ambiente. Dormiente sem o token.
@@ -3368,7 +3393,9 @@ class Handler(BaseHTTPRequestHandler):
                     formato = (_pq_exp(urlparse(self.path).query).get('formato') or ['txt'])[0]
                     if formato == "pdf":
                         from weasyprint import HTML as _WeasyHTML
-                        data = _WeasyHTML(string=mod_chat.exportar_conversa_html(db, conv)).write_pdf()
+                        from mod_contrato import PDF_LOCK as _PDF_LOCK
+                        with _PDF_LOCK:
+                            data = _WeasyHTML(string=mod_chat.exportar_conversa_html(db, conv)).write_pdf()
                         self.send_response(200)
                         self.send_header("Content-Type", "application/pdf")
                         self.send_header("Content-Length", str(len(data)))
@@ -4575,8 +4602,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        global _REQ_LOJA_ATIVA
-        _REQ_LOJA_ATIVA = _ler_loja_ativa_header(self)
+        _req_local.loja_ativa = _ler_loja_ativa_header(self)
         path   = urlparse(self.path).path
         body   = self._ler_body()
         if body is None: return   # 413 já respondido pelo _ler_body
@@ -10932,7 +10958,8 @@ class Handler(BaseHTTPRequestHandler):
                     _fin_provisoes_venda_seguro(_orc_venda, nome_safe, "prov:" + str(contrato.id))
                     # 2026-08-07: materializa os recebíveis previstos (achado da Vera), fail-soft
                     _materializar_recebiveis_venda_seguro(_orc_venda, nome_safe, loja_id,
-                                                          contrato.gerado_em, "receb:" + str(contrato.id))
+                                                          contrato.gerado_em, "receb:" + str(contrato.id),
+                                                          pagamento_json_str=pagamento_json_str)
                     resp = {"ok": True, "contrato_id": contrato.id, "status": "para_assinatura"}
                     self.send_json(resp)
                 except Exception as e:
@@ -11729,8 +11756,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
 
     def do_PUT(self):
-        global _REQ_LOJA_ATIVA
-        _REQ_LOJA_ATIVA = _ler_loja_ativa_header(self)
+        _req_local.loja_ativa = _ler_loja_ativa_header(self)
         path   = urlparse(self.path).path
         body   = self._ler_body()
         if body is None: return   # 413 já respondido pelo _ler_body
@@ -12170,8 +12196,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_PATCH(self):
-        global _REQ_LOJA_ATIVA
-        _REQ_LOJA_ATIVA = _ler_loja_ativa_header(self)
+        _req_local.loja_ativa = _ler_loja_ativa_header(self)
         try:
             path = urlparse(self.path).path
             body = self._ler_body()
@@ -14136,7 +14161,7 @@ def _loja_dict(l) -> dict:
 def _ator_dict(db, usuario_sessao, header_loja_id=None):
     """Re-consulta o usuário logado e resolve a loja ativa (multi-loja)."""
     if header_loja_id is None:
-        header_loja_id = _REQ_LOJA_ATIVA
+        header_loja_id = _req_loja_ativa()
     u = db.get(Usuario, usuario_sessao.get("id"))
     if not u:
         return {"nivel": usuario_sessao.get("nivel"), "loja_id": None,
@@ -14763,7 +14788,12 @@ def main():
     # Host de bind configurável: padrão 127.0.0.1 (dev local seguro);
     # em produção defina ORIZON_HOST=0.0.0.0 para aceitar acesso externo.
     host   = os.environ.get("ORIZON_HOST", "127.0.0.1")
-    server = HTTPServer((host, port), Handler)
+    # ThreadingHTTPServer (2026-08-08): antes era HTTPServer single-thread — uma emissão fiscal
+    # (chamada de rede à Focus/SEFAZ, ~segundos a ~1min) travava a loja inteira, ninguém mais
+    # conseguia nem logar enquanto isso rodava (medido pela Vera). daemon_threads=True já vem
+    # default na classe — Ctrl+C não fica esperando request em voo. O estado por-requisição
+    # (_req_local) virou thread-local pra não vazar loja ativa entre requisições concorrentes.
+    server = ThreadingHTTPServer((host, port), Handler)
     eh_local = host in ("127.0.0.1", "localhost")
     print("\n  Orizon Manager")
     print("  Bind: %s:%d" % (host, port))

@@ -305,11 +305,15 @@ def projetos_dir(app_db, seed, tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def servidor(app_db, seed, projetos_dir):
-    """Sobe main.Handler numa thread, porta efêmera, usando o banco isolado+seed."""
+    """Sobe main.Handler numa thread, porta efêmera, usando o banco isolado+seed.
+    ThreadingHTTPServer (2026-08-08, espelha o main.py real desde o fix da Vera/item 2): usava
+    HTTPServer single-thread aqui, que nunca exerceria de fato uma corrida de threads mesmo que
+    o servidor de produção virasse concorrente — os testes de concorrência real precisam deste
+    fixture já rodando igual à produção."""
     import main
-    from http.server import HTTPServer
+    from http.server import ThreadingHTTPServer
 
-    httpd = HTTPServer(("127.0.0.1", 0), main.Handler)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), main.Handler)
     port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()

@@ -13843,7 +13843,7 @@ async function adminFiscalCarregar(kind, id){
   const tokP = d.token_prod_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
   panel.innerHTML =
     sec('Identificação fiscal') +
-    `<div class="grid2" style="gap:14px">${inp('razao_social','Razão social')}${inp('inscricao_estadual','Inscrição estadual')}${inp('inscricao_municipal','Inscrição municipal')}</div>` +
+    `<div class="grid2" style="gap:14px">${inp('cnpj','CNPJ do emitente')}${inp('razao_social','Razão social')}${inp('inscricao_estadual','Inscrição estadual')}${inp('inscricao_municipal','Inscrição municipal')}</div>` +
     sec('Regime tributário') +
     `<div class="grid2" style="gap:14px">${sel('regime_tributario','Regime',[['simples','Simples Nacional'],['simples_excesso','Simples — Excesso sublimite'],['normal','Regime Normal'],['mei','MEI']])}${inp('csosn_padrao','CSOSN não-contribuinte')}${inp('csosn_contribuinte','CSOSN contribuinte')}</div>` +
     sec('Endereço do emitente') +
@@ -13882,6 +13882,7 @@ async function adminFiscalSalvar(){
   const v = k => { const el = document.getElementById('pf-'+k); return el ? el.value : undefined; };
   const iss = v('aliquota_iss');
   const payload = {
+    cnpj: v('cnpj'),
     razao_social: v('razao_social'), inscricao_estadual: v('inscricao_estadual'),
     inscricao_municipal: v('inscricao_municipal'), regime_tributario: v('regime_tributario'),
     csosn_padrao: v('csosn_padrao'), csosn_contribuinte: v('csosn_contribuinte'),

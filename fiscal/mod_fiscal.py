@@ -26,6 +26,11 @@ def emitente_padrao_teste():
 
 def validar_config(req):
     """(ok, erro) para os campos não-secretos do PUT de config."""
+    cnpj = req.get("cnpj")
+    if cnpj:
+        from validacao_doc import valida_cnpj
+        if not valida_cnpj(cnpj):
+            return (False, "CNPJ do emitente inválido")
     reg = req.get("regime_tributario")
     if reg is not None and reg not in REGIMES:
         return (False, "regime_tributario inválido")

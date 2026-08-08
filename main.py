@@ -14458,7 +14458,7 @@ def _fiscal_get(em):
                 "token_homolog_definido": False, "token_prod_definido": False,
                 "cert_validade": None, "cert_cnpj": None}
     perfil = {c: getattr(em, c) for c in (
-        "razao_social", "inscricao_estadual", "inscricao_municipal", "regime_tributario",
+        "cnpj", "razao_social", "inscricao_estadual", "inscricao_municipal", "regime_tributario",
         "csosn_padrao", "csosn_contribuinte", "cfop_dentro_uf", "cfop_fora_uf",
         "serie_nfe", "discrimina_impostos", "cnae_servico", "cod_servico_municipio",
         "aliquota_iss", "retencao_json", "municipio_ibge", "papel_cnpj",
@@ -14474,7 +14474,7 @@ def _fiscal_get(em):
 
 def _fiscal_put_config(em, req):
     """Aplica a allowlist de config não-secreta no Emitente (já resolvido/criado)."""
-    for c in ("razao_social", "inscricao_estadual", "inscricao_municipal", "regime_tributario",
+    for c in ("cnpj", "razao_social", "inscricao_estadual", "inscricao_municipal", "regime_tributario",
               "csosn_padrao", "csosn_contribuinte", "cfop_dentro_uf", "cfop_fora_uf",
               "serie_nfe", "discrimina_impostos", "cnae_servico", "cod_servico_municipio",
               "aliquota_iss", "retencao_json", "municipio_ibge", "papel_cnpj",

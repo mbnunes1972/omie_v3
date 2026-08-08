@@ -1790,6 +1790,7 @@ def init_db():
     _migrar_colunas_pg()      # ADD COLUMN das colunas novas (create_all não altera existentes)
     _seed_loja_padrao()       # loja seed + backfill de loja_id (idempotente)
     _backfill_funcao_flags()  # liga usa_comissao_vendas na função Consultor de Vendas (idempotente)
+    _backfill_emitente_cnpj() # copia Loja.cnpj p/ Emitente.cnpj quando ainda vazio (idempotente)
     _sess = get_session()
     try:
         backfill_funcoes_todas_lojas(_sess)   # funções novas do catálogo em todas as lojas (idempotente)
@@ -1810,6 +1811,24 @@ def _backfill_funcao_flags():
         for fn in db.query(Funcao).filter(Funcao.nome.ilike("consultor de vendas")).all():
             if not fn.usa_comissao_vendas:
                 fn.usa_comissao_vendas = 1
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _backfill_emitente_cnpj():
+    """O painel Fiscal não tinha campo de CNPJ (achado 2026-08-08): todo Emitente criado por ele
+    ficou com cnpj vazio, e a Focus recusa a emissão ('CNPJ do emitente não autorizado'). Copia
+    Loja.cnpj pro Emitente vinculado quando o Emitente ainda não tem CNPJ próprio. Idempotente;
+    não mexe em Emitente que já tem cnpj preenchido (pode ser ≠ da loja, ex. distribuidora)."""
+    db = Session()
+    try:
+        for loja in db.query(Loja).filter(Loja.emitente_id.isnot(None), Loja.cnpj.isnot(None)).all():
+            em = db.get(Emitente, loja.emitente_id)
+            if em and not (em.cnpj or "").strip():
+                em.cnpj = loja.cnpj
         db.commit()
     except Exception:
         db.rollback()

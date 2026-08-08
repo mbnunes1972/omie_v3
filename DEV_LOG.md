@@ -3277,6 +3277,75 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 176 — Fiscal: CNPJ do emitente + horário UTC-3 da NF-e; servidor multi-thread; recebíveis robustos ao plano de pagamento tardio
+
+Fecha a rodada de emissão de NF-e em homologação (retomada da Sessão 175) mais dois achados de
+robustez que a Vera trouxe numa 2ª rodada de QA (`Projeto_M_11`–`Projeto_M_20`, priorizados pelo
+usuário por causa da v1 comercial). Pipeline: local testado (suíte completa a cada passo) → **VPS
+A/B** (167.88.33.121) → **produção** (179.197.77.9), tudo a pedido explícito do usuário.
+
+**Fiscal — emissão de NF-e destravada (2 bugs reais, achados testando de verdade em
+homologação):** (1) `Emitente.cnpj` nascia sempre vazio — o painel Admin › Fiscal não tinha o
+campo, nem na allowlist do backend (`_fiscal_get`/`_fiscal_put_config`) nem no formulário; Focus
+recusava com "CNPJ do emitente não autorizado". Fix: campo novo + validação de dígito verificador
+(`validacao_doc.valida_cnpj`) + `database._backfill_emitente_cnpj()` (idempotente, copia
+`Loja.cnpj` pro Emitente vinculado só quando ainda vazio, nunca sobrescreve um CNPJ diferente —
+preserva o caso da 2ª pessoa jurídica/distribuidora). (2) `data_emissao` usava `datetime.now()` +
+sufixo `"-03:00"` grudado — nas VPS o relógio do sistema roda em UTC puro, então toda nota saía 3h
+no futuro e a SEFAZ rejeitava ("Data-Hora de Emissão posterior ao horário de recebimento"); não
+pegou antes porque a máquina local roda em `America/Sao_Paulo`, mascarando o bug. Fix: `UTC-3`
+calculado a partir de `datetime.utcnow()`, imune ao fuso do SO, nos 3 pontos de emissão (NF-e
+teste, NF-e produto, NFS-e serviço). **1ª NF-e real autorizada em homologação** (chave SEFAZ
+`NFe35260819152134000156550010000000021422931976`); confirmado em volume na 2ª rodada da Vera:
+5/5 emissões de produto autorizadas, zero recorrência dos dois erros.
+
+**Item 2 (urgente pra v1 comercial) — servidor virou `ThreadingHTTPServer`:** era
+`HTTPServer` single-thread — a Vera mediu que uma emissão fiscal (chamada de rede à Focus/SEFAZ)
+travava a **loja inteira** por até ~1 minuto, ninguém conseguia nem logar. O estado por-requisição
+do header `X-Loja-Ativa` (global `_REQ_LOJA_ATIVA`, seguro só porque o servidor era single-thread)
+virou `main._req_local` (`threading.local()`) — um global ali vazaria a loja ativa de uma
+requisição pra outra rodando concorrentemente numa thread diferente (bug de tenancy grave:
+usuário A veria/editaria dado da loja de B). Também: pool do Postgres alargado (era o default
+5+10; virou 15+25 — sob concorrência real várias requisições pedem sessão ao mesmo tempo), race
+de inicialização lazy do cache de perfis fechada (`auth/perfis.py`: monta em variável local, só
+publica no global no final — nunca mais um estado parcial visível a outra thread), e as chamadas
+ao WeasyPrint (contrato/proposta/documento genérico/export de conversa em PDF) serializadas por um
+lock (`mod_contrato.PDF_LOCK`) — a lib não garante thread-safety em geração concorrente.
+
+**Item 3 — recebíveis de venda não somem mais em silêncio:**
+`_materializar_recebiveis_venda_seguro` só lia `Orcamento.forma_pagamento` direto do banco; o PDF
+do contrato (mesma requisição) usa outra fonte com prioridade (`pagamento_json_str` do corpo). Se
+o orçamento nunca tivesse o campo gravado (só chegou no corpo desta requisição), o PDF saía certo
+e os recebíveis saíam ZERO, sem exceção, sem log — reproduzido pela Vera nos 5 projetos
+`M_16`–`M_20`. Fix: usa a mesma precedência do PDF, faz backfill do orçamento (só quando vazio,
+nunca sobrescreve) e loga uma anomalia clara (`logging.warning`) se, mesmo assim, sobrar uma venda
+com `valor_total>0` sem nenhuma fonte de plano de pagamento.
+
+**Testes de robustez novos** (pedido explícito do usuário, "um teste pra cada item"):
+`tests/test_servidor_concorrencia.py` (thread-local não vaza entre threads concorrentes via
+`threading.Barrier`; prova em nível de socket — conexão com headers incompletos não bloqueia uma
+segunda conexão completa; checagem estrutural que `main()` usa `ThreadingHTTPServer`) e
+`tests/test_recebiveis_pagamento_backfill.py` (5 cenários: fallback pro `pagamento_json`, warning
+de anomalia, backfill do orçamento, não-sobrescrita de um valor já gravado, e o caso legítimo de
+venda de valor zero que não deve disparar o warning). `tests/conftest.py`: fixture `servidor`
+também virou `ThreadingHTTPServer`, pra os testes HTTP da suíte baterem no mesmo comportamento de
+produção. Suíte **1825 → 1835 passed**.
+
+**Verificação em produção:** backup (`bash /root/backup_orizon.sh`) → tag `v2026.08.08b-prod`
+(commit `1d0e67b`) → `git reset --hard` + `systemctl restart orizon`. `journalctl` sem erro, `GET /`
+→ 302, `POST /api/auth/login` credencial inválida → 401 estruturado, e um smoke test de
+concorrência real via socket cru batendo direto na 8765 do processo (não só no nginx) — confirmado
+que uma conexão lenta não trava uma rápida concorrente, em produção de verdade.
+
+**Achado NÃO resolvido nesta rodada (fora do pedido do usuário, anotado):** NFS-e de serviço ficou
+em `processando` por >10min em 2 tentativas na VPS B — pode ser só lentidão normal do webservice
+municipal em homologação (nosso polling reflete o status real, testado ao vivo), não um bug
+identificado no código. Verificar de novo antes de dar a emissão de serviço como validada.
+
+**Arquivos:** `main.py`, `database.py`, `fiscal/mod_fiscal.py`, `auth/perfis.py`,
+`mod_contrato.py`, `static/index.html`, `tests/conftest.py`, `tests/test_super_admin_god_mode.py`,
+`tests/test_servidor_concorrencia.py` (novo), `tests/test_recebiveis_pagamento_backfill.py` (novo).
+
 ## Sessão 175 — Deploy em produção: Agenda + Recebimento de Venda + Não-recebimento + painel Provisões/Recebíveis
 
 Fecha a frente iniciada na Sessão 170 (Agenda: Assistências) e que passou pelas Sessões 171-174

@@ -3277,6 +3277,51 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 174 — Polish do painel Provisões/Recebíveis: renomear, data prevista por provisão, formato de data, cor de vencido
+
+4 ajustes pedidos sobre o painel das Sessões 171-173. Suíte 1819→**1825**.
+
+**(1) Renomear:** botão "Reconciliação" no cabeçalho do projeto (ao lado de "Etapas do Projeto") e o
+título do modal viram "Provisões" — só o texto, `id`s e nomes de função ficam iguais.
+
+**(2) Data prevista por provisão (nova coluna):** provisão não é linha persistida —
+`mod_contabil.reconciliacao()` computa provisionado/efetivado/saldo NA HORA a partir do razão, sem
+onde pendurar uma data. Tabela nova `ProvisaoDataPrevista` (loja_id, projeto_nome, codigo_conta,
+data_prevista — upsert por projeto+conta), **fora do motor contábil** (`mod_contabil.py` continua
+importando só `Conta`/`Loja`/`Lancamento`/`PeriodoContabil` — o enriquecimento acontece em `main.py`,
+depois de chamar `reconciliacao()`). Só faz sentido POR PROJETO — sem `?projeto=` (Financeiro
+consolidado) a data fica `None` pras 11 rubricas. Endpoint novo
+`POST /api/financeiro/provisao-data-prevista` — **gate leve** (`_contabil_ctx(exige_edicao=True)`,
+sem popup de senha), igual às ações irmãs desta área (`efetivar-provisao`/`resolver-saldo-provisao`)
+— diferente do padrão de reauth completo usado nas ações de Recebível (Confirmar/Reprogramar/
+Duvidoso), que são movimentações de dinheiro de verdade; aqui é só um lembrete.
+
+**(3) Formato de data nos Recebíveis:** `_fluxoDataBR` (dia/mês + dia da semana) fazia sentido na
+grade dia-a-dia do Fluxo de Caixa (um único mês), mas perdia o ano nos Recebíveis (datas podem ser
+de qualquer mês, inclusive reprogramadas pra outro ano). `_dataBRCompleta` (dd/mm/aaaa puro) nova,
+substituída nos 3 usos de Recebível; a grade do Fluxo de Caixa manteve `_fluxoDataBR`.
+
+**(4) Cor âmbar (vencida):** provisão com `data_prevista` no passado E `saldo_aberto` ainda aberto →
+`vencido:true` no payload, linha/input em `var(--warn)` + tag "VENCIDA" — mesmo token do "duvidoso"
+dos Recebíveis, mas semântica diferente aqui (atrasada, não incerta). Provisão já resolvida
+(`saldo_aberto` ~0) nunca fica vencida, mesmo com data passada.
+
+**Achado de processo:** apresentei o plano inicial liderando com decisões técnicas (onde a tabela
+mora, por que não pode ser filha de 1.1.02) — usuário respondeu "Não entendi a proposta". Reexpliquei
+em 4 bullets simples ("o botão X vira Y", "aparece uma coluna de Data") e ele confirmou na hora.
+Registrado em memória (`feedback-planos-linguagem-simples`): todo plano deve liderar com resumo
+visual/concreto, técnico só depois.
+
+**Opinião sobre "Despesas Recorrentes" (3ª aba) — dada diretamente ao usuário, não só no plano:**
+sim, vale construir, e cabe como 3ª aba no mesmo painel (mesmo público, mesmo idioma visual). Mas é
+frente própria — precisa de um "template" (nome, conta de despesa, valor padrão, dia de vencimento)
+que Recebível não tem (recebível nasce de um evento — contrato; despesa recorrente só tem calendário)
+e um seletor de conta de ORIGEM por lançamento (varia a cada pagamento, diferente de Recebível que
+sempre teve destino fixo em 1.1.01). Não implementado nesta rodada.
+
+**Arquivos:** `database.py`, `main.py`, `modulos.py`, `static/index.html`,
+`tests/test_provisao_data_prevista.py` (novo).
+
 ## Sessão 173 — Não-recebimento: Reprogramar ou Recebíveis Duvidosos (+ achado ao vivo: origem VARCHAR(30) preso desde 2026-07-15)
 
 Fecha o pedido do usuário: confirmar recebimento OU **não-recebimento**. Não-recebimento tem duas

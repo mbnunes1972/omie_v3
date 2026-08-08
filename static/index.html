@@ -955,7 +955,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
         <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
         <button id="btn-conversa-proj" class="btn btn-ghost btn-sm" onclick="abrirConversaProjeto()" title="Orizon Chat do projeto (chat interno)"><i class="ti ti-messages"></i> Orizon Chat</button>
-        <button id="btn-recon-proj" class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Reconciliação de provisões deste projeto">Reconciliação</button>
+        <button id="btn-recon-proj" class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Provisões e Recebíveis deste projeto">Provisões</button>
       </div>
     </div>
 
@@ -986,9 +986,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- FASE D: Reconciliação de provisões do PROJETO (granular; mesma fonte que o Financeiro) -->
     <div id="modal-recon-proj" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-      <div class="modal-box" style="max-width:1040px;width:94%;max-height:88vh;overflow:auto">
+      <div class="modal-box" style="max-width:1200px;width:94%;max-height:88vh;overflow:auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Reconciliação — <span id="recon-proj-nome"></span></div>
+          <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Provisões — <span id="recon-proj-nome"></span></div>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-recon-proj').style.display='none'">Fechar</button>
         </div>
         <div id="recon-proj-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
@@ -12529,11 +12529,25 @@ function _reconProvTabelaHtml(provisoes, opts){
     }
     // "Saldo" exibido = saldo_aberto (líquido, o que falta resolver); bruto vai no tooltip p/ auditoria.
     const celSaldo='<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:10px 16px;font-family:var(--font-mono);'+_reconColBorda+';color:'+_reconSaldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
+    // Data prevista de efetivação (2026-08-07, pedido do usuário — mesma ideia dos recebíveis):
+    // metadado só (não lança nada). Vencida (passou a data, ainda tem saldo aberto) → âmbar
+    // (var(--warn) — mesmo token do "duvidoso" dos Recebíveis, mas aqui significa "atrasada",
+    // não "incerta"). Editável só quando a tela já é editável (input+botão, mesmo padrão de
+    // Efetivar); só-leitura mostra o texto puro.
+    const corData = p.vencido ? 'var(--warn)' : 'var(--text)';
+    const celData = editavel
+      ? '<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
+        +'<input type="date" id="provdata-'+prefixo+p.codigo+'" value="'+esc(p.data_prevista||'')+'" style="width:132px;background:var(--surface);border:1px solid '+(p.vencido?'var(--warn)':'var(--border)')+';border-radius:6px;padding:4px 7px;color:'+corData+';font-size:11px">'
+        +' <button class="btn btn-sm" onclick="reconProvSalvarData(\''+p.codigo+'\',\''+prefixo+'\')" style="font-size:11px">Salvar</button>'
+        +(p.vencido?' <span style="color:var(--warn);font-size:10px;font-weight:700">VENCIDA</span>':'')
+        +'</td>'
+      : '<td style="text-align:right;padding:10px 16px;'+_reconColBorda+';color:'+corData+'">'+_dataBRCompleta(p.data_prevista)
+        +(p.vencido?' <span style="color:var(--warn);font-size:9px;font-weight:700">VENCIDA</span>':'')+'</td>';
     // Resolvido: `resolvido_liquido` já vem com sinal do backend (+ sobra/receita, − falta/despesa)
     // — antes usava `resolvido` (magnitude sempre positiva) e por isso nunca ficava vermelho.
     return '<tr style="border-top:1px solid var(--border);font-size:12px">'
       +'<td style="padding:10px 16px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(p.nome)+'">'+esc(p.nome)+'</td>'
-      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido_liquido,_reconSaldoCor(p.resolvido_liquido))+acao+'</tr>';
+      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido_liquido,_reconSaldoCor(p.resolvido_liquido))+celData+acao+'</tr>';
   };
   // table-layout:fixed + larguras explícitas (2026-08-06, pedido do usuário) SÓ na leitura: cada
   // seção (A/B/C/D/O) é uma <table> SEPARADA — sem isso, cada uma auto-dimensiona as colunas pelo
@@ -12543,15 +12557,17 @@ function _reconProvTabelaHtml(provisoes, opts){
   // fixo cortava o botão "Resolver" na borda — ali o auto-layout de sempre respira melhor; poucas
   // linhas por vez, não precisa alinhar entre tabelas.
   const alinhar = !editavel;
-  const wProvisao = alinhar ? 'width:32%;' : '', wNum = alinhar ? 'width:15%;' : '';
+  // Larguras recalculadas (2026-08-07) pra caber a coluna Data Prevista nova sem estourar.
+  const wProvisao = alinhar ? 'width:26%;' : '', wNum = alinhar ? 'width:13%;' : '', wData = alinhar ? 'width:12%;' : '';
   const head='<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
     +'<th style="text-align:left;padding:10px 16px;'+wProvisao+'">Provisão</th>'
     +'<th style="text-align:right;padding:10px 16px;'+wNum+_reconColBorda+'">Provisionado</th><th style="text-align:right;padding:10px 16px;'+wNum+_reconColBorda+'">Efetivado</th>'
     +'<th style="text-align:right;padding:10px 16px;'+wNum+_reconColBorda+'">Saldo</th><th style="text-align:right;padding:10px 16px;'+wNum+_reconColBorda+'">Resolvido</th>'
+    +'<th style="text-align:right;padding:10px 16px;'+wData+_reconColBorda+'">Data Prevista</th>'
     +(editavel?'<th style="text-align:right;padding:10px 16px;'+_reconColBorda+'">Ação</th>':'')+'</tr>';
   return ['A','B','C','D','O'].filter(t=>grupos[t]).map(t=>
     '<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);font-weight:700;margin:16px 0 4px">'+t+' · '+TIPOS[t]+'</div>'
-    +'<div style="overflow-x:auto"><table style="width:100%;min-width:'+(alinhar?'760':'660')+'px;border-collapse:collapse'+(alinhar?';table-layout:fixed':'')+'">'+head+grupos[t].map(linha).join('')+'</table></div>').join('');
+    +'<div style="overflow-x:auto"><table style="width:100%;min-width:'+(alinhar?'900':'820')+'px;border-collapse:collapse'+(alinhar?';table-layout:fixed':'')+'">'+head+grupos[t].map(linha).join('')+'</table></div>').join('');
 }
 
 // ── Recebimento de Venda dentro da Reconciliação (2026-08-07, pedido do usuário: "achei que
@@ -12581,12 +12597,12 @@ function _recebiveisTabelaHtml(recebiveis, opts){
           + '</td>';
       } else {
         acao = '<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
-          + '<span style="font-size:11px;color:var(--status-ok)">✓ '+_fluxoDataBR(r.confirmado_em)+'</span></td>';
+          + '<span style="font-size:11px;color:var(--status-ok)">✓ '+_dataBRCompleta(r.confirmado_em)+'</span></td>';
       }
     }
     return '<tr style="border-top:1px solid var(--border);font-size:12px">'
       + (consolidado ? '<td style="padding:10px 16px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.projeto||'')+'">'+esc(r.projeto||'')+'</td>' : '')
-      + '<td style="padding:10px 16px">'+_fluxoDataBR(r.data_prevista)+'</td>'
+      + '<td style="padding:10px 16px">'+_dataBRCompleta(r.data_prevista)+'</td>'
       + '<td style="padding:10px 16px">'+esc(_RECEB_TIPO_LABEL[r.tipo]||r.tipo)+(r.numero?' '+r.numero:'')+'</td>'
       + '<td style="padding:10px 16px;color:var(--muted)">'+esc(r.forma||'—')+'</td>'
       + '<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);'+_reconColBorda+';color:'+_recebCor(r)+'">'+_fBRL(r.status==='confirmado'?r.valor_confirmado:r.valor_previsto)+'</td>'
@@ -12730,6 +12746,14 @@ async function reconProvResolver(conta){
   const d=await fetch('/api/financeiro/resolver-saldo-provisao',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projeto:_reconProvProj,conta:conta})}).then(r=>r.json());
   if(d.ok){ showToast('Saldo resolvido.'); _reconReloadAtivo(); } else { await avisoPopup(d.erro||'Erro',{titulo:'Resolver saldo'}); }
 }
+async function reconProvSalvarData(conta, prefixo){
+  if(!_reconProvProj) return;
+  const el = document.getElementById('provdata-'+prefixo+conta);
+  const dataPrevista = el ? el.value : '';
+  if(!dataPrevista){ showToast('Escolha a data prevista.', true); return; }
+  const d=await fetch('/api/financeiro/provisao-data-prevista',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projeto:_reconProvProj,conta:conta,data_prevista:dataPrevista})}).then(r=>r.json());
+  if(d.ok){ showToast('Data prevista salva.'); _reconReloadAtivo(); } else { await avisoPopup(d.erro||'Erro',{titulo:'Data prevista'}); }
+}
 // Reconciliação dentro do PROJETO (modal; mesma fonte que o Financeiro, escopada por projeto)
 async function abrirReconciliacaoProjeto(){
   if(!projetoAtivo){ showToast('Abra um projeto.', true); return; }
@@ -12806,6 +12830,14 @@ function _fluxoDataBR(iso){
   const [a,m,d] = iso.split('-');
   return d+'/'+m+' <span style="color:var(--muted);font-size:10px">'+nomes[dt.getDay()]+'</span>';
 }
+// dd/mm/aaaa completo (2026-08-07, pedido do usuário) — usado onde a data pode ser de qualquer mês/ano
+// (Recebíveis, data prevista de provisão); _fluxoDataBR (dia da semana, sem ano) fica só pra grade
+// dia-a-dia do Fluxo de Caixa, onde o período é sempre um único mês.
+function _dataBRCompleta(iso){
+  if(!iso) return '—';
+  const [a,m,d] = iso.split('-');
+  return d+'/'+m+'/'+a;
+}
 async function fluxoCaixaCarregar(){   // entry do módulo: FIN_SECOES o chama ao abrir a aba
   const box = document.getElementById('fluxo-caixa-box');
   if(!box) return;
@@ -12847,7 +12879,7 @@ function _fluxoPrevistosHtml(d){
   }
   const linhas = previstos.map(p => {
     const cor = p.vencido ? 'var(--status-err)' : 'var(--text)';
-    return '<tr><td style="padding:7px 10px">'+_fluxoDataBR(p.data_prevista)+(p.vencido?' <span style="color:var(--status-err);font-size:10px;font-weight:700">VENCIDO</span>':'')+'</td>'
+    return '<tr><td style="padding:7px 10px">'+_dataBRCompleta(p.data_prevista)+(p.vencido?' <span style="color:var(--status-err);font-size:10px;font-weight:700">VENCIDO</span>':'')+'</td>'
     +'<td style="padding:7px 10px">'+esc(p.projeto||'')+'</td>'
     +'<td style="padding:7px 10px">'+esc(_RECEB_TIPO_LABEL[p.tipo]||p.tipo)+(p.numero?' '+p.numero:'')+'</td>'
     +'<td style="padding:7px 10px;color:var(--muted)">'+esc(p.forma||'—')+'</td>'

@@ -945,6 +945,25 @@ class Recebivel(Base):
     criado_em         = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class ProvisaoDataPrevista(Base):
+    """Data prevista de efetivação de uma provisão (2026-08-07, pedido do usuário — mesma ideia do
+    Recebível, aplicada às provisões). NÃO é lançamento contábil — é só agenda/lembrete: uma provisão
+    (`mod_contabil.reconciliacao`) é computada NA HORA a partir do razão, não é uma linha persistida,
+    então essa data não tem onde morar dentro do motor contábil. Só faz sentido POR PROJETO (agregar
+    a data entre vários projetos não tem sentido) — upsert por (projeto_nome, codigo_conta)."""
+    __tablename__ = "provisao_data_prevista"
+
+    id                = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    projeto_nome      = Column(Text,     nullable=False)
+    codigo_conta      = Column(Text,     nullable=False)
+    data_prevista     = Column(Date,     nullable=False)
+    atualizado_em     = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+
+    __table_args__ = (UniqueConstraint("projeto_nome", "codigo_conta", name="uq_provisao_data_prevista"),)
+
+
 class ProvisaoRegistro(Base):
     """Provisões registradas por versão (venda/rev1/rev2) de um orçamento.
     venda = snapshot na geração do contrato; rev1/rev2 = aprovação financeira I/II."""

@@ -24,7 +24,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
-                       ContraparteFinanceira, Recebivel)
+                       ContraparteFinanceira, Recebivel, ProvisaoDataPrevista)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -1343,7 +1343,23 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             try:
                 proj = (parse_qs(urlparse(self.path).query).get("projeto") or [None])[0]
-                self.send_json({"ok": True, "reconciliacao": mod_contabil.reconciliacao(db, ot, oid, projeto_id=proj)})
+                rec = mod_contabil.reconciliacao(db, ot, oid, projeto_id=proj)
+                # Data prevista de efetivação (2026-08-07): metadado fora do motor contábil — só faz
+                # sentido POR PROJETO (agregar entre projetos não tem sentido), então só enxerta
+                # quando ?projeto= foi passado (consolidado fica sem data/vencido).
+                if proj:
+                    hoje = date.today()
+                    datas = {d.codigo_conta: d.data_prevista for d in
+                             db.query(ProvisaoDataPrevista).filter_by(projeto_nome=proj).all()}
+                    for p in rec["provisoes"]:
+                        dp = datas.get(p["codigo"])
+                        p["data_prevista"] = dp.isoformat() if dp else None
+                        p["vencido"] = bool(dp and dp < hoje and abs(p["saldo_aberto"]) > 0.005)
+                else:
+                    for p in rec["provisoes"]:
+                        p["data_prevista"] = None
+                        p["vencido"] = False
+                self.send_json({"ok": True, "reconciliacao": rec})
             finally:
                 db.close()
             return
@@ -7600,6 +7616,45 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/provisao-data-prevista":
+            # Data prevista de efetivação de uma provisão (2026-08-07, pedido do usuário — mesma
+            # ideia dos recebíveis). NÃO é lançamento — só agenda; mesmo gate leve das ações irmãs
+            # desta área (efetivar-provisao/resolver-saldo-provisao — sem reauth de senha, a
+            # sessão com aprovar_financeiro/editar_dados_loja já basta).
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                dd = json.loads(body or b'{}')
+                conta = (dd.get("conta") or "").strip()
+                proj = (dd.get("projeto") or "").strip()
+                if not proj:
+                    self.send_json({"ok": False, "erro": "Informe o projeto."}, code=400); return
+                if not conta.startswith(mod_contabil.GRUPO_PROVISOES + "."):
+                    self.send_json({"ok": False, "erro": "Conta não é provisão (%s.x)." % mod_contabil.GRUPO_PROVISOES}, code=400); return
+                data_str = (dd.get("data_prevista") or "").strip()
+                try:
+                    nova_dt = datetime.strptime(data_str[:10], "%Y-%m-%d").date() if data_str else None
+                except ValueError:
+                    nova_dt = None
+                if nova_dt is None:
+                    self.send_json({"ok": False, "erro": "Informe a data prevista (AAAA-MM-DD)."}, code=400); return
+                row = (db.query(ProvisaoDataPrevista)
+                       .filter_by(projeto_nome=proj, codigo_conta=conta).first())
+                if row is None:
+                    row = ProvisaoDataPrevista(loja_id=(usuario.get("loja_id")), projeto_nome=proj,
+                                               codigo_conta=conta)
+                    db.add(row)
+                row.data_prevista = nova_dt
+                row.atualizado_em = datetime.utcnow()
+                row.atualizado_por_id = usuario.get("id")
+                db.commit()
+                self.send_json({"ok": True, "data_prevista": row.data_prevista.isoformat()})
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/pagar-fornecedor":
             # FASE D: paga a obrigação com fornecedor (2.1.01 × 1.1.01).
             ctx = _contabil_ctx(self, exige_edicao=True)

@@ -12690,7 +12690,7 @@ async function finReconProvCarregar(){
     +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
     +'<span style="font-size:12px;color:var(--muted)">Projeto:</span>'
     +'<select id="reconprov-sel" onchange="_reconProvProj=this.value||null;finReconProvCarregar()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:12px">'+opts+'</select>'
-    +'<span style="font-size:11px;color:var(--muted)">Só leitura — para efetivar/resolver/confirmar, abra o projeto (botão Reconciliação, ou Etapa 21)</span></div>';
+    +'<span style="font-size:11px;color:var(--muted)">Só leitura — para efetivar/resolver/confirmar, abra o projeto (botão Provisões, ou Etapa 21)</span></div>';
   if(_reconPainel === 'recebiveis'){
     const qs = _reconProvProj ? ('?projeto='+encodeURIComponent(_reconProvProj)) : '';
     const d = await fetch('/api/financeiro/recebiveis'+qs, {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));

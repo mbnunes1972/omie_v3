@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  MOCKUP — Ciclo do Projeto em formato "Fichário"
+  Orizon Manager | Dalmóbile
+  Data: 2026-08-01
+  Spec companheira: docs/superpowers/specs/ciclo/2026-08-01-ciclo-fichario-design.md
+  ============================================================================
+
+  O QUE É ISTO
+  Protótipo estático e interativo (HTML/CSS/JS puro, sem build, sem backend) do
+  novo layout da tela de Ciclo do Projeto. Dados de exemplo (fake) — não lê nem
+  grava nada real. Serve só para validar CONCEITO VISUAL e INTERAÇÃO antes da
+  implementação em static/index.html. Aprovado pelo Marcelo em 2026-08-01, nos
+  dois temas (claro e escuro).
+
+  COMO USAR
+  Abra este arquivo em qualquer navegador. Clique nas abas da lombada à
+  esquerda para trocar de etapa. Clique em "11 · Projeto executivo" (etapa
+  aberta por padrão) para ver as sub-abas de 11a-11e. Use o botão
+  ☀️/🌙 no canto superior direito para alternar tema. Clique em "ℹ️ Notas de
+  design" (canto inferior direito) para ver a documentação de decisões dentro
+  da própria página.
+
+  ESCOPO DO QUE ESTE MOCKUP REPRESENTA (ver spec para detalhe/linhas de código)
+  - Ciclo INTERNO por projeto (não é o Funil cross-project).
+  - Substitui a lista vertical de cards em acordeão (renderCiclo(), hoje em
+    static/index.html ~linha 13537) por: lombada de abas (uma por etapa
+    PRINCIPAL) + área de conteúdo em tela cheia para a etapa selecionada.
+  - Modelo de 3 status por etapa (já existe nos dados hoje — ver
+    mod_ciclo.py::STATUS_CONCLUSIVOS e o cálculo _etapaBloqueada() no front):
+      não iniciada / em andamento / concluída — cada um com cor própria.
+  - Sub-etapas (11a-11e, 17a) NÃO viram abas de primeiro nível — aparecem como
+    uma tira de sub-abas dentro da etapa-mãe quando ela está selecionada.
+  - Etapa futura (não iniciada) é clicável, mas mostra só um placeholder
+    "Etapa não iniciada" — sem formulário/ação real.
+  - Barra de ações do projeto (Grupo de Acompanhamento, Equipe, Cronograma,
+    Auditoria Contábil, Mapa de Atribuições, Retenção por Obra) fica FIXA
+    acima da lombada+conteúdo, igual hoje — independe da etapa selecionada.
+  - SEM drag-and-drop livre. Navegação só por clique; gating sequencial
+    continua 100% definido pelo backend (mod_ciclo.py, inalterado).
+
+  MAPEAMENTO DE COR → TOKEN REAL DO PROJETO
+  (design-system/orizon-tokens.css — nenhuma cor aqui é inventada; os hex
+  abaixo são cópia literal dos tokens para os dois temas, só para o mockup
+  poder rodar standalone sem carregar o CSS do projeto. NA IMPLEMENTAÇÃO REAL,
+  usar sempre var(--token), nunca hex — regra inegociável do projeto.)
+
+    Status         | token cor      | token fundo suave | token borda/linha
+    ---------------|----------------|--------------------|--------------------
+    Não iniciada   | --text-3       | --surface-2        | --border-strong
+    Em andamento   | --info         | --info-soft        | --info-line
+    Concluída      | --ok           | --ok-soft           | --ok-line
+
+  DECISÕES JÁ CONFIRMADAS COM O MARCELO (não reabrir sem necessidade)
+  1. Sub-etapas como mini-abas aninhadas dentro da etapa-mãe (não promovidas
+     a abas de 1º nível) — confirmado ao ver este mockup.
+  2. Etapa futura clicável → placeholder "Etapa não iniciada", sem vazar o
+     formulário/ação real da etapa ainda travada — confirmado.
+  3. Barra de ações do projeto fixa, independente da etapa aberta — confirmado.
+  4. Etapas puláveis (toggleavel: true — 9, 11b, 16, 17, 17a, 18, 19, 20)
+     seguem o MESMO mecanismo de hoje (botão "Marcar como Concluída"/
+     "Reabrir" dentro de _renderCardGenerico) — só relocalizado para dentro
+     da tela cheia da etapa. Sem sinal visual novo na aba da lombada.
+  5. Paleta de 3 cores semânticas (não iniciada/andamento/concluída) aprovada
+     nos dois temas — ver tabela acima.
+  6. Frente implementada em branch separada (independente das frentes de
+     chat legado / fila de triagem), sem mudança nenhuma em mod_ciclo.py,
+     database.py ou endpoints — é redesign de apresentação, não de regra de
+     negócio.
+
+  NÃO-OBJETIVOS (explícito, para não reintroduzir por engano)
+  - Drag-and-drop de etapas.
+  - Qualquer alteração de gating/regra sequencial do ciclo.
+  - Qualquer mudança na tela de Funil (cross-project) — é OUTRA tela.
+============================================================================ -->
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<title>Mockup documentado — Ciclo em Fichário (Orizon Manager)</title>
+<style>
+  /* ====================================================================
+     TOKENS — cópia literal de design-system/orizon-tokens.css (claro +
+     escuro). Ver cabeçalho do arquivo para a tabela de mapeamento status→
+     token. Na implementação real: usar var(--token) do projeto, não hex.
+     ==================================================================== */
+  :root, [data-theme="light"]{
+    --bg:#FAF8F6; --surface:#FFFFFF; --surface-2:#F5F1EC;
+    --border:#E5DFD8; --border-strong:#D3CAC0;
+    --text:#2B2621; --text-2:#6B6259; --text-3:#948A7F; --text-inverse:#FFFFFF;
+    --accent:#8C5230; --accent-hover:#6E3F22; --accent-soft:rgba(140,82,48,.12); --accent-line:#6E3F22;
+    --btn-primary-bg:#5C5650; --btn-primary-text:#FFFFFF; --btn-primary-shadow:0 2px 8px rgba(0,0,0,.12);
+    --ok:#1E7F4F; --ok-soft:#E3F3EA; --ok-line:#9CC7AD;
+    --info:#21618F; --info-soft:#E4EFF7; --info-line:#A9C3D8;
+    --shadow:0 1px 3px rgba(0,0,0,.08); --shadow-md:0 4px 12px rgba(0,0,0,.10);
+  }
+  [data-theme="dark"]{
+    --bg:#121111; --surface:#1A1918; --surface-2:#211F1D;
+    --border:#2B2926; --border-strong:#3B3833;
+    --text:#EAE8E5; --text-2:#A9A6A2; --text-3:#78746F; --text-inverse:#171514;
+    --accent:#A56B45; --accent-hover:#B87E55; --accent-soft:rgba(83,42,20,.22); --accent-line:#532A14;
+    --btn-primary-bg:#1C1613; --btn-primary-text:#E7DCD0; --btn-primary-shadow:0 6px 16px rgba(0,0,0,.65);
+    --ok:#86B394; --ok-soft:rgba(134,179,148,.12); --ok-line:#3E5C49;
+    --info:#8BA6BD; --info-soft:rgba(139,166,189,.12); --info-line:#3C5468;
+    --shadow:0 1px 3px rgba(0,0,0,.35); --shadow-md:0 6px 16px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Inter",-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);
+       transition:background .15s,color .15s}
+
+  .toolbar{max-width:1180px;margin:16px auto 0;display:flex;justify-content:space-between;align-items:center;padding:0 4px}
+  .toolbar .titulo-mock{font-size:11px;color:var(--text-3);font-weight:700;letter-spacing:.3px}
+  .theme-toggle{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px}
+  .theme-toggle button{border:none;background:transparent;font-size:11.5px;font-weight:700;color:var(--text-2);
+                        padding:6px 14px;border-radius:16px;cursor:pointer;font-family:inherit}
+  .theme-toggle button.on{background:var(--accent);color:var(--text-inverse)}
+
+  .app{max-width:1180px;margin:14px auto 30px;background:var(--surface);border-radius:14px;
+       box-shadow:var(--shadow-md);overflow:hidden;border:1px solid var(--border)}
+
+  /* Barra de ações do projeto — FIXA, independente da etapa selecionada (decisão 3) */
+  .topbar{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);
+          flex-wrap:wrap;background:var(--surface-2)}
+  .topbar h1{font-size:15px;margin:0;font-weight:800;letter-spacing:.2px;color:var(--text)}
+  .topbar .proj{font-size:12px;color:var(--text-2);margin-left:2px}
+  .actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .ghost{font-size:11.5px;color:var(--text-2);background:var(--surface);border:1px solid var(--border);
+         padding:6px 10px;border-radius:7px;cursor:default;white-space:nowrap}
+  .legend{display:flex;gap:14px;padding:8px 18px;font-size:11px;color:var(--text-2);border-bottom:1px solid var(--border);
+          background:var(--surface-2);flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+
+  .body{display:flex;min-height:560px}
+
+  /* Lombada — uma aba por etapa PRINCIPAL de ETAPAS_PRINCIPAIS (mod_ciclo.py) */
+  .lombada{width:270px;background:var(--surface-2);border-right:1px solid var(--border);
+           padding:14px 0 14px 10px;position:relative;flex-shrink:0}
+  .rings{position:absolute;left:-1px;top:0;bottom:0;width:12px;display:flex;flex-direction:column;
+         justify-content:space-evenly;align-items:center}
+  .rings i{width:9px;height:9px;border-radius:50%;background:var(--border-strong);box-shadow:0 0 0 3px var(--bg)}
+
+  /* .tab.st-* = as 3 cores do mapeamento status→token do cabeçalho */
+  .tab{display:flex;align-items:center;gap:9px;padding:9px 12px;margin:3px 0 3px 8px;border-radius:9px 0 0 9px;
+       cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-2);border:1px solid transparent;
+       border-right:none;background:transparent;position:relative}
+  .tab .num{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;
+            justify-content:center;font-size:10.5px;font-weight:800;color:var(--text-inverse);background:var(--text-3)}
+  .tab.st-andamento .num{background:var(--info)}
+  .tab.st-concluida .num{background:var(--ok);font-size:0}
+  .tab.st-concluida .num::before{content:"✓";font-size:11px}
+
+  .tab:hover{background:var(--border)}
+  .tab.active{background:var(--surface);border-color:var(--border);box-shadow:-2px 0 0 0 var(--surface);color:var(--text)}
+  .tab.active::after{content:"";position:absolute;right:-1px;top:0;bottom:0;width:1px;background:var(--surface)}
+  .tab .nome{flex:1;line-height:1.25}
+  .tab.sub{margin-left:30px;font-weight:500;font-size:11.5px;padding:6px 10px}
+  .tab.sub .num{width:16px;height:16px;font-size:9px}
+
+  /* Sub-abas (decisão 1): só aparecem quando a etapa-mãe está ativa */
+  .subgroup{margin:2px 0 8px}
+  .subgroup-label{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-3);
+                  margin:2px 0 2px 38px;font-weight:800}
+
+  /* Área de conteúdo — "tela cheia" da etapa selecionada */
+  .content{flex:1;padding:26px 30px;background:var(--surface)}
+  .content-head{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+  .content-head .badge{font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .badge.st-nao_iniciada{background:var(--surface-2);color:var(--text-3);border:1px solid var(--border-strong)}
+  .badge.st-andamento{background:var(--info-soft);color:var(--info)}
+  .badge.st-concluida{background:var(--ok-soft);color:var(--ok)}
+  .content-head h2{font-size:20px;margin:0;color:var(--text)}
+  .content-sub{font-size:12px;color:var(--text-2);margin:4px 0 22px}
+
+  .card{border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:14px;background:var(--surface-2)}
+  .row{display:flex;gap:26px;flex-wrap:wrap}
+  .field{min-width:160px}
+  .field label{display:block;font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;font-weight:700}
+  .field .val{font-size:14px;font-weight:600;color:var(--text)}
+
+  .btn-primary{background:var(--btn-primary-bg);color:var(--btn-primary-text);border:none;padding:10px 18px;
+              border-radius:8px;font-size:13px;font-weight:700;cursor:default;margin-top:4px;box-shadow:var(--btn-primary-shadow)}
+  .btn-ghost2{background:var(--surface);border:1px solid var(--border);padding:10px 16px;border-radius:8px;
+              font-size:13px;font-weight:600;color:var(--text-2);cursor:default;margin-top:4px;margin-left:8px}
+
+  /* Placeholder de etapa futura (decisão 2) — sem formulário/ação real */
+  .placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:90px 20px;color:var(--text-2);text-align:center}
+  .placeholder .lock{width:52px;height:52px;border-radius:50%;background:var(--surface-2);border:1px solid var(--border-strong);
+                     display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px;color:var(--text-3)}
+  .placeholder .titulo{font-size:15px;font-weight:800;color:var(--text-2);margin-bottom:6px}
+  .placeholder .sub{font-size:12px;max-width:320px}
+
+  .concl-strip{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ok);font-weight:700;
+              background:var(--ok-soft);border-radius:8px;padding:8px 12px;margin-bottom:16px}
+
+  .note{font-size:11px;color:var(--text-3);margin-top:18px;font-style:italic}
+
+  /* ====================================================================
+     Painel "Notas de design" — documentação visível DENTRO da própria
+     página (não só no source), para quem abrir o arquivo sem ler o HTML.
+     ==================================================================== */
+  .notas-fab{position:fixed;right:20px;bottom:20px;background:var(--btn-primary-bg);color:var(--btn-primary-text);
+             border:none;border-radius:24px;padding:11px 18px;font-size:12.5px;font-weight:700;cursor:pointer;
+             box-shadow:var(--shadow-md);font-family:inherit;z-index:50}
+  .notas-painel{position:fixed;right:20px;bottom:70px;width:380px;max-height:70vh;overflow-y:auto;
+               background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-md);
+               padding:18px 20px;z-index:50;display:none;font-size:12px;line-height:1.6;color:var(--text-2)}
+  .notas-painel.aberto{display:block}
+  .notas-painel h3{font-size:13px;margin:0 0 10px;color:var(--text)}
+  .notas-painel h4{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);margin:16px 0 6px}
+  .notas-painel h4:first-of-type{margin-top:0}
+  .notas-painel table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px}
+  .notas-painel td{padding:4px 4px;border-bottom:1px solid var(--border)}
+  .notas-painel ol,.notas-painel ul{margin:4px 0;padding-left:18px}
+  .notas-painel code{background:var(--surface-2);padding:1px 4px;border-radius:4px;font-size:10.5px}
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <span class="titulo-mock">MOCKUP — Ciclo em Fichário · dados fake · 2026-08-01</span>
+  <div class="theme-toggle">
+    <button id="btn-light" class="on" onclick="setTheme('light')">☀️ Claro</button>
+    <button id="btn-dark" onclick="setTheme('dark')">🌙 Escuro</button>
+  </div>
+</div>
+
+<div class="app">
+  <div class="topbar">
+    <h1>Ciclo do Projeto</h1>
+    <span class="proj">— Família Nakamura · Cozinha + Dormitórios</span>
+    <div class="actions">
+      <span class="ghost">👥 Grupo de Acompanhamento</span>
+      <span class="ghost">🧑‍🤝‍🧑 Equipe</span>
+      <span class="ghost">📅 Cronograma</span>
+      <span class="ghost">💰 Auditoria Contábil</span>
+      <span class="ghost">🗺️ Mapa de Atribuições</span>
+      <span class="ghost">🏗️ Retenção por Obra</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--text-3)"></i> Não iniciada</span>
+    <span><i class="dot" style="background:var(--info)"></i> Em andamento</span>
+    <span><i class="dot" style="background:var(--ok)"></i> Concluída</span>
+  </div>
+
+  <div class="body">
+    <div class="lombada" id="lombada"></div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<button class="notas-fab" onclick="toggleNotas()">ℹ️ Notas de design</button>
+<div class="notas-painel" id="notas-painel">
+  <h3>Notas de design — Ciclo em Fichário</h3>
+
+  <h4>Mapeamento cor → token (design-system/orizon-tokens.css)</h4>
+  <table>
+    <tr><td><span class="swatch" style="background:var(--text-3)"></span>Não iniciada</td><td><code>--text-3</code> / <code>--surface-2</code> / <code>--border-strong</code></td></tr>
+    <tr><td><span class="swatch" style="background:var(--info)"></span>Em andamento</td><td><code>--info</code> / <code>--info-soft</code> / <code>--info-line</code></td></tr>
+    <tr><td><span class="swatch" style="background:var(--ok)"></span>Concluída</td><td><code>--ok</code> / <code>--ok-soft</code> / <code>--ok-line</code></td></tr>
+  </table>
+
+  <h4>Decisões confirmadas (2026-08-01)</h4>
+  <ol>
+    <li>Sub-etapas (11a-e, 17a) são mini-abas dentro da etapa-mãe, não abas de 1º nível.</li>
+    <li>Etapa futura clicável mostra só "Etapa não iniciada" — sem formulário real.</li>
+    <li>Barra de ações do projeto fixa, independe da etapa aberta.</li>
+    <li>Etapas puláveis seguem o mecanismo atual (<code>toggleSalvarEtapa</code>), só relocalizado.</li>
+    <li>Paleta de 3 cores acima aprovada nos dois temas.</li>
+    <li>Frente em branch separada; zero mudança em <code>mod_ciclo.py</code>/backend.</li>
+  </ol>
+
+  <h4>Não-objetivos</h4>
+  <ul>
+    <li>Sem drag-and-drop de etapas.</li>
+    <li>Sem alteração de gating/regra sequencial.</li>
+    <li>Não é a tela de Funil (cross-project) — é o Ciclo interno por projeto.</li>
+  </ul>
+
+  <h4>Spec completa</h4>
+  <p><code>docs/superpowers/specs/ciclo/2026-08-01-ciclo-fichario-design.md</code></p>
+</div>
+
+<script>
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('btn-light').classList.toggle('on', t==='light');
+  document.getElementById('btn-dark').classList.toggle('on', t==='dark');
+}
+function toggleNotas(){
+  document.getElementById('notas-painel').classList.toggle('aberto');
+}
+
+/* Dados de exemplo (fake) — simula um projeto com o Projeto Executivo (11) em
+   andamento: 1-10 concluídas, 11 em andamento com sub-etapas mistas, 12-21
+   ainda não iniciadas. Ilustra os 3 status + o aninhamento de sub-etapas. */
+const ETAPAS = [
+  {codigo:"1",  nome:"Cadastro do Cliente",                status:"concluida"},
+  {codigo:"2",  nome:"Criação do projeto",                 status:"concluida"},
+  {codigo:"3",  nome:"Briefing",                            status:"concluida"},
+  {codigo:"4",  nome:"Orçamento",                           status:"concluida"},
+  {codigo:"7",  nome:"Contrato",                            status:"concluida"},
+  {codigo:"8",  nome:"Aprovação financeira I",              status:"concluida"},
+  {codigo:"9",  nome:"Solicitação de medição",              status:"concluida"},
+  {codigo:"10", nome:"Medição",                             status:"concluida"},
+  {codigo:"11", nome:"Projeto executivo",                   status:"andamento", sub:[
+    {codigo:"11a", nome:"Planta de pontos de PE",          status:"concluida"},
+    {codigo:"11b", nome:"Reunião de alinhamento",          status:"andamento"},
+    {codigo:"11c", nome:"Revisão de PE",                    status:"nao_iniciada"},
+    {codigo:"11d", nome:"Aprovação financeira II",         status:"nao_iniciada"},
+    {codigo:"11e", nome:"Aprovação do PE pelo cliente",    status:"nao_iniciada"},
+  ]},
+  {codigo:"12", nome:"Conferência e Implantação do Pedido",status:"nao_iniciada"},
+  {codigo:"13", nome:"Produção",                            status:"nao_iniciada"},
+  {codigo:"14", nome:"Entrega no depósito",                 status:"nao_iniciada"},
+  {codigo:"15", nome:"Emissão da NFe do cliente",          status:"nao_iniciada"},
+  {codigo:"16", nome:"Entrega no cliente",                  status:"nao_iniciada"},
+  {codigo:"17", nome:"Montagem",                            status:"nao_iniciada", sub:[
+    {codigo:"17a", nome:"Pendências de montagem",          status:"nao_iniciada"},
+  ]},
+  {codigo:"18", nome:"Assistência pós Montagem",            status:"nao_iniciada"},
+  {codigo:"19", nome:"Vistoria final",                      status:"nao_iniciada"},
+  {codigo:"20", nome:"Aprovação final",                     status:"nao_iniciada"},
+  {codigo:"21", nome:"Conciliação Final",                   status:"nao_iniciada"},
+];
+
+const DETALHE = {
+  "4":  {concl:"Concluída em 03/07/2026 por Marina Alves", campos:[["Valor final","R$ 48.320,00"],["Ambientes","Cozinha, 2 Dormitórios"],["Versão aprovada","v3"]]},
+  "10": {concl:"Concluída em 22/07/2026 por Equipe de Medição", campos:[["Responsável","Carlos Medeiros (terceiro)"],["Ambientes medidos","3/3"],["Relatório","medicao_final.pdf"]]},
+  "11b":{acao:"Marcar reunião como concluída", campos:[["Responsável","Equipe de PE"],["Prazo previsto","05/08/2026"],["Relatório da reunião","— aguardando upload"]]},
+};
+
+let ativo = "11";   // etapa selecionada por padrão = onde o projeto "está" no exemplo
+
+function principaisComPai(codigo){
+  for (const e of ETAPAS){ if (e.codigo===codigo) return {etapa:e, sub:null};
+    if (e.sub) for (const s of e.sub) if (s.codigo===codigo) return {etapa:e, sub:s}; }
+  return null;
+}
+
+function renderLombada(){
+  const el = document.getElementById('lombada');
+  let html = '<div class="rings"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>';
+  for (const e of ETAPAS){
+    const isActiveMain = ativo===e.codigo || (e.sub && e.sub.some(s=>s.codigo===ativo));
+    html += `<div class="tab st-${e.status} ${isActiveMain?'active':''}" onclick="selecionar('${e.codigo}')">
+               <span class="num"></span><span class="nome">${e.codigo} · ${e.nome}</span>
+             </div>`;
+    // Sub-abas só renderizam quando a etapa-mãe está ativa (decisão 1)
+    if (e.sub && isActiveMain){
+      html += `<div class="subgroup"><div class="subgroup-label">Subfases</div>`;
+      for (const s of e.sub){
+        html += `<div class="tab sub st-${s.status} ${ativo===s.codigo?'active':''}" onclick="selecionar('${s.codigo}')">
+                   <span class="num"></span><span class="nome">${s.codigo} · ${s.nome}</span>
+                 </div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function badgeLabel(st){ return st==="concluida"?"Concluída":st==="andamento"?"Em andamento":"Não iniciada"; }
+
+function renderConteudo(){
+  const {etapa, sub} = principaisComPai(ativo);
+  const alvo = sub || etapa;
+  let html = `<div class="content-head">
+      <span class="badge st-${alvo.status}">${badgeLabel(alvo.status)}</span>
+      <h2>${alvo.codigo} · ${alvo.nome}</h2>
+    </div>
+    <div class="content-sub">${sub ? 'Subfase de "'+etapa.nome+'"' : 'Etapa principal do ciclo'}</div>`;
+
+  if (alvo.status === "nao_iniciada"){
+    // Decisão 2: placeholder, sem chamar o equivalente de _renderCard* real
+    html += `<div class="placeholder">
+        <div class="lock">🔒</div>
+        <div class="titulo">Etapa não iniciada</div>
+        <div class="sub">Esta etapa é liberada automaticamente quando a etapa anterior do ciclo é concluída. Nenhuma ação disponível ainda.</div>
+      </div>`;
+  } else if (alvo.status === "concluida"){
+    const d = DETALHE[alvo.codigo] || {concl:"Concluída", campos:[]};
+    html += `<div class="concl-strip">✓ ${d.concl}</div><div class="card"><div class="row">`;
+    for (const [k,v] of d.campos) html += `<div class="field"><label>${k}</label><div class="val">${v}</div></div>`;
+    html += `</div></div><div class="note">Etapa passada — dados exibidos em modo histórico (somente leitura).</div>`;
+  } else {
+    const d = DETALHE[alvo.codigo] || {acao:"Concluir etapa", campos:[]};
+    html += `<div class="card"><div class="row">`;
+    for (const [k,v] of d.campos) html += `<div class="field"><label>${k}</label><div class="val">${v}</div></div>`;
+    html += `</div>
+        <button class="btn-primary">${d.acao}</button>
+        <button class="btn-ghost2">Transferir responsável</button>
+      </div>`;
+  }
+  document.getElementById('content').innerHTML = html;
+}
+
+function selecionar(codigo){
+  ativo = codigo;
+  renderLombada();
+  renderConteudo();
+}
+
+renderLombada();
+renderConteudo();
+</script>
+</body>
+</html>

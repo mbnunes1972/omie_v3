@@ -3277,6 +3277,30 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 175 — Deploy em produção: Agenda + Recebimento de Venda + Não-recebimento + painel Provisões/Recebíveis
+
+Fecha a frente iniciada na Sessão 170 (Agenda: Assistências) e que passou pelas Sessões 171-174
+(Recebimento de Venda completo — materialização, confirmação, Reconciliação com seletor
+Provisões/Recebíveis, Não-recebimento com Recebíveis Duvidosos, data prevista por provisão). Pipeline
+seguido: local testado → **VPS A/B** (167.88.33.121) → Vera rodou 2 rodadas exaustivas em VPS B
+pós-deploy (`Projeto_AB_1`/`Projeto_AB_2`, ponta a ponta incluindo Etapa 21/Conciliação Final) → zero
+achados 🔴/🟠, 1 achado 🟡 (copy desatualizada pós-rename do botão, corrigido e redeployado em A/B) →
+**promovido pra produção** (179.197.77.9) a pedido do usuário.
+
+**Deploy de produção:** backup (`bash /root/backup_orizon.sh`) → tag `v2026.08.08-prod` (commit
+`cf80ee8`) → `git reset --hard` + `systemctl restart orizon`. Verificado: serviço `active`, sem erro
+no `journalctl`, `GET /` → 302 (redirect pro login, esperado), `POST /api/auth/login` com credencial
+inválida → 401 estruturado (confirma que o roteamento/app está respondendo de verdade, não só de pé).
+
+**Achado da Vera nesta rodada, ponto que valia checar (sem achado — comportamento limpo):**
+interação entre a Etapa 21 (Conciliação Final, `mod_contabil.conciliar_final`) e a tabela `Recebivel`
+(conceito novo, não existia quando `conciliar_final` foi desenhado) — confirmado que
+`conciliar_final` só itera contas `2.1.04.%` (nunca toca `1.1.02`/`1.1.10`/`Recebivel`), e que um
+recebível `previsto` num projeto já `concluido` continua confirmável normalmente depois.
+
+**Arquivos desta sessão:** só tags/deploy — nenhum código novo (o commit promovido é o mesmo `cf80ee8`
+da Sessão 174 + o fix de copy).
+
 ## Sessão 174 — Polish do painel Provisões/Recebíveis: renomear, data prevista por provisão, formato de data, cor de vencido
 
 4 ajustes pedidos sobre o painel das Sessões 171-173. Suíte 1819→**1825**.

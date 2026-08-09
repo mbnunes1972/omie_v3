@@ -3300,6 +3300,22 @@ Sem incidente de dado — só custou tempo de espera.
 
 **Arquivos:** `fiscal/mod_nfe.py`, `tests/test_nfe.py`.
 
+## Sessão 183 — Lançamentos (Despesa/Receita): tabela de sugestões vira grid de colunas fixas
+
+Achado do usuário revisando antes do deploy (screenshot): a lista "Despesas com lançamento no mês
+passado" (Financeiro › Lançamentos › Despesa) era um flex row por linha — o nome da conta crescia
+pro próprio tamanho ("Pontos Programa de Relacionamento", "Telefonia Fixa/Móvel e Internet") e
+empurrava Valor/Data/Contrapartida pra uma posição horizontal diferente em cada linha, virando
+zigue-zague em vez de tabela. `_lancSugestoesHtml` (`static/index.html`) reescrita como CSS grid
+com **colunas fixas** (`minmax(260px,2fr) 120px 150px minmax(220px,1.3fr) 130px`) e **cabeçalho
+único** (Conta/Valor/Data/Contrapartida) substituindo o rótulo repetido por linha; separador de
+linha vira `grid-column:1/-1` (linha cheia, não mais borda por célula). `overflow-x:auto` no
+wrapper pra telas estreitas. Verificado com Playwright (`node --check` do script extraído +
+screenshot com dados sintéticos reproduzindo os nomes longos do achado) — colunas alinham em todas
+as linhas, incl. a linha desabilitada "já lançado este mês". Só o form `_lancFormaHtml` (linha
+única) e a lista "Lançamentos Contábeis" (`lancamentosCarregar`, já right-aligned) não precisaram
+de mudança — o problema era específico da lista repetida de sugestões.
+
 ## Sessão 181 — Painel Estratégico (fase 1): indicadores consolidados do negócio + correção do sinal de variação em métrica negativa
 
 Branch `fix/painel-estrategico-variacao-negativa` (a partir da `main` pós-Sessão 180). Pedido do

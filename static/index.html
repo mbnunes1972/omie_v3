@@ -14003,6 +14003,13 @@ async function _lancDespesaCarregar(){
 function _lancSugestoesHtml(sugestoes, flat){
   if(!sugestoes.length) return '<div style="font-size:12px;color:var(--muted);padding:8px 0">Nenhuma despesa do mês passado pra sugerir.</div>';
   const contraItens = flat.filter(n=>n.grupo===1||n.grupo===2).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
+  // Tabela de verdade (2026-08-09, achado do usuário): antes cada linha era um flex row que
+  // crescia pro tamanho do PRÓPRIO nome de conta — nomes longos ("Pontos Programa de
+  // Relacionamento") empurravam Valor/Data/Contrapartida pra uma posição diferente por linha
+  // (zigue-zague, sem coluna de verdade). Grid com colunas FIXAS (mesmo template no cabeçalho
+  // e em cada linha) alinha tudo verticalmente; o cabeçalho substitui o rótulo repetido por linha.
+  const cols = 'minmax(260px,2fr) 120px 150px minmax(220px,1.3fr) 130px';
+  const th = txt => '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:0 0 6px">'+esc(txt)+'</div>';
   const linha = s => {
     const dis = s.ja_lancado_mes_atual;
     // contrapartida sugerida pode ter sido inativada depois — não pré-seleciona às cegas
@@ -14013,24 +14020,21 @@ function _lancSugestoesHtml(sugestoes, flat){
         +(s.natureza_custo==='variavel'?' title="Custo variável — confira se o valor do mês passado ainda se aplica"':'')+'>'+esc(natLbl)+'</span>'
       : '';
     const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:6px">'+esc(s.codigo)+'</span>';
-    // Valor/Data/Contrapartida têm label EM CIMA do campo (linha extra) — nome da conta e botão
-    // não tinham, então ficavam mais "curtos" que os outros itens da linha, e qualquer align-items
-    // (center OU end) media a altura ERRADA: cada item se alinha pela própria caixa, não pelo campo
-    // de fato. Fix: rótulo invisível do mesmo tamanho em cima do nome/botão também — aí todo item
-    // tem a MESMA altura total (rótulo + conteúdo) e align-items:end alinha o conteúdo de verdade.
-    const rotuloFantasma = '<label class="field-label" style="visibility:hidden">.</label>';
-    return '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:8px 4px;border-bottom:1px solid var(--border);opacity:'+(dis?'.55':'1')+'">'
-      +'<div style="min-width:210px;font-size:12px">'+rotuloFantasma+'<div style="padding:7px 0">'+cod+esc(s.nome)+natBadge+'</div></div>'
-      +'<div style="width:110px"><label class="field-label">Valor</label><input id="sug-valor-'+s.conta_id+'" type="number" step="0.01" value="'+s.valor_sugerido+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
-      +'<div><label class="field-label">Data</label><input id="sug-data-'+s.conta_id+'" type="date" value="'+_hojeISO()+'"'+(dis?' disabled':'')+' style="'+_finInput+';width:auto"></div>'
-      +'<div style="min-width:220px"><label class="field-label">Contrapartida</label>'+_selBuscavelHtml('sug-contra-'+s.conta_id, contraItens, {placeholder:'Digite pra buscar…', selecionadoId:selId, disabled:dis})+'</div>'
-      +'<div>'+rotuloFantasma
-        +(dis?'<div style="font-size:11px;color:var(--muted);padding:7px 0">já lançado este mês</div>'
+    const cel = 'padding:7px 0;opacity:'+(dis?'.55':'1');
+    return '<div style="'+cel+';font-size:12px;align-self:center">'+cod+esc(s.nome)+natBadge+'</div>'
+      +'<div style="'+cel+'"><input id="sug-valor-'+s.conta_id+'" type="number" step="0.01" value="'+s.valor_sugerido+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
+      +'<div style="'+cel+'"><input id="sug-data-'+s.conta_id+'" type="date" value="'+_hojeISO()+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
+      +'<div style="'+cel+'">'+_selBuscavelHtml('sug-contra-'+s.conta_id, contraItens, {placeholder:'Digite pra buscar…', selecionadoId:selId, disabled:dis})+'</div>'
+      +'<div style="'+cel+';align-self:center">'
+        +(dis?'<span style="font-size:11px;color:var(--muted)">já lançado este mês</span>'
              :'<button class="btn btn-primary btn-sm" onclick="_lancSugestaoLancar('+s.conta_id+',this)">Lançar</button>')
       +'</div>'
-      +'</div>';
+      +'<div style="grid-column:1/-1;border-bottom:1px solid var(--border)"></div>';
   };
-  return sugestoes.map(linha).join('');
+  return '<div style="overflow-x:auto"><div style="display:grid;grid-template-columns:'+cols+';gap:6px 14px;min-width:840px">'
+    + th('Conta') + th('Valor') + th('Data') + th('Contrapartida') + th('')
+    + sugestoes.map(linha).join('')
+    + '</div></div>';
 }
 async function _lancSugestaoLancar(contaId, btn){
   if(btn){ if(btn.disabled) return; btn.disabled = true; }

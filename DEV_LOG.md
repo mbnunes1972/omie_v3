@@ -3277,6 +3277,29 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 182 — fiscal: parse_nfe trata XML inválido/sem infNFe como erro tratado (400), não crash cru (500)
+
+Achado incidental da Vera (2026-08-09) ao simular emissão de NF-e em homolog (VPS B) com um XML
+placeholder no lugar do XML real da fábrica: `mod_nfe.parse_nfe` (`fiscal/mod_nfe.py`) localiza o
+bloco `<infNFe>` via `root.find(".//infNFe")` sem checar se achou algo — um XML sem esse bloco (ou
+mal formado, sem nem ser XML válido) fazia `None.find("ide")` estourar `AttributeError`, que os dois
+endpoints de emissão (`POST .../ciclo/15/emitir-nfe` e o endpoint de preview de teste) só capturavam
+no `except Exception` genérico, devolvendo `HTTP 500 "Falha na emissão: 'NoneType' object has no
+attribute 'find'"` — uma exceção Python crua vazando pro cliente em vez de um erro de validação.
+
+**Fix:** `parse_nfe` agora levanta `ValueError` com mensagem em português nos dois casos (XML mal
+formado — captura `ET.ParseError` — e XML bem formado mas sem `<infNFe>`), que os dois endpoints já
+tratavam como 400 (o padrão usado em todo o resto do módulo, ex. `mod_fiscal.resolver_emitente`) —
+não precisou mexer em `main.py`, só na fonte do erro. **Testes:** 2 novos em `tests/test_nfe.py`
+(XML mal formado, XML sem infNFe) — suíte **1951 passed**.
+
+**Nota de processo:** frente rodou em paralelo com outra sessão trabalhando no mesmo worktree local
+(Sessão 181, Painel Estratégico) — duas rodadas da suíte colidiram no mesmo Postgres de teste
+(`orizon_test`, `DROP SCHEMA CASCADE` por módulo) antes de eu perceber e esperar a outra terminar.
+Sem incidente de dado — só custou tempo de espera.
+
+**Arquivos:** `fiscal/mod_nfe.py`, `tests/test_nfe.py`.
+
 ## Sessão 181 — Painel Estratégico (fase 1): indicadores consolidados do negócio + correção do sinal de variação em métrica negativa
 
 Branch `fix/painel-estrategico-variacao-negativa` (a partir da `main` pós-Sessão 180). Pedido do

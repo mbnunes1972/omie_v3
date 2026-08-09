@@ -20,7 +20,13 @@ from sqlalchemy.exc import IntegrityError
 
 from database import DocumentoModelo, DocumentoTipo
 
-TIPOS = ("contrato", "proposta", "termo_aditivo", "aprovacao_pe")
+TIPOS = ("contrato", "proposta", "termo_aditivo", "aprovacao_pe",
+         # 2026-08-09, pedido do usuário: documentos de processo além do contrato/proposta —
+         # todos corpo-só (sem capa), mesmo mecanismo genérico de termo_aditivo/aprovacao_pe.
+         # A geração PARA UM PROJETO REAL (marcadores preenchidos, botão na tela do projeto)
+         # é frente futura — isto aqui só habilita o CADASTRO do modelo em Config > Documentos.
+         "termo_vistoria", "termo_responsabilidade", "solicitacao_medicao",
+         "checklist_eletros", "autorizacao_foto_video", "carta_agradecimento")
 
 # ── Tipos CUSTOMIZADOS ("Novo Documento", spec 2026-07-22) ────────────────────
 # O slug vira componente de DIRETÓRIO em documentos_loja/<loja>/<tipo>/ — a forma

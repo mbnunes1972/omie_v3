@@ -88,6 +88,41 @@ def test_tipo_invalido_e_recusado(db):
         mod_documentos.criar_versao(db, 1, "custom", "a", "x.docx", 1)
 
 
+# ── Documentos de processo novos (2026-08-09, pedido do usuário) ────────────────────────────
+# Aprovação de PE já era reconhecida pelo backend sem card na tela; as outras 6 são novas —
+# todas corpo-só (mesmo mecanismo genérico de termo_aditivo), sem capa.
+_NOVOS_TIPOS = ("aprovacao_pe", "termo_vistoria", "termo_responsabilidade", "solicitacao_medicao",
+                "checklist_eletros", "autorizacao_foto_video", "carta_agradecimento")
+
+
+@pytest.mark.parametrize("tipo", _NOVOS_TIPOS)
+def test_novos_tipos_de_documento_sao_aceitos(db, tipo):
+    m = mod_documentos.criar_versao(db, loja_id=1, tipo=tipo,
+                                    corpo_md="# Texto\nConteúdo do modelo.\n",
+                                    origem_nome="m.docx", usuario_id=1)
+    assert m.versao == 1 and m.tipo == tipo
+    assert mod_documentos.tipo_forma_valida(tipo)
+
+
+def test_novo_tipo_ativa_e_resolve_como_os_nativos_antigos(db):
+    m = mod_documentos.criar_versao(db, loja_id=1, tipo="termo_responsabilidade",
+                                    corpo_md="Corpo do termo.", origem_nome="t.docx", usuario_id=1)
+    mod_documentos.ativar(db, m.id)
+    resolvido = mod_documentos.resolver_modelo(db, 1, "termo_responsabilidade")
+    assert resolvido == "Corpo do termo."
+
+
+def test_novos_tipos_nao_colidem_entre_si_na_mesma_loja(db):
+    """Cada tipo novo tem a própria sequência de versão — ativar um não mexe no outro
+    (mesmo comportamento já coberto para os tipos antigos em test_ativar_nao_mexe_em_outro_tipo)."""
+    m1 = mod_documentos.criar_versao(db, 1, "termo_vistoria", "a", "a.docx", 1)
+    m2 = mod_documentos.criar_versao(db, 1, "carta_agradecimento", "b", "b.docx", 1)
+    mod_documentos.ativar(db, m1.id)
+    mod_documentos.ativar(db, m2.id)
+    assert mod_documentos.ativo_de(db, 1, "termo_vistoria").id == m1.id
+    assert mod_documentos.ativo_de(db, 1, "carta_agradecimento").id == m2.id
+
+
 def test_corpo_vazio_e_recusado(db):
     with pytest.raises(ValueError):
         mod_documentos.criar_versao(db, 1, "contrato", "   ", "c.docx", 1)

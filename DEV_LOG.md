@@ -3277,6 +3277,80 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 180 — Painel guiado de Lançamentos vira 3 sub-abas (Despesa/Receita/Contábeis) + correção Brindes/Ajuste de Provisões + 6 documentos de processo
+
+Continuação da Sessão 179 (mesmo dia seguinte, 2026-08-09): o botão "Lançamento de Receitas e
+Despesas" da Sessão 179 virou modal de 3 passos dentro de Contas — usuário achou confuso ("duas
+páginas iguais") e pediu redesenho completo em vários rounds de feedback com screenshot.
+
+**Correção de classificação (pedido do usuário):** Brindes (5.3.12) e Ajuste de Provisões (5.6.10)
+saem de Fixo pra **Variável** — "ambos parecem ser associados a venda"; Ajuste de Provisões também
+muda o Centro de Custo de Administrativo-financeiro pra **Custos Distribuídos** ("caráter mais de
+custos distribuídos"). `mod_contabil.migrar_classificacao_grupo5_v2` (mesmo padrão idempotente das
+migrações anteriores: só corrige quem ainda está no default antigo, nunca sobrescreve
+reclassificação manual). 3 testes novos em `test_centro_custo_natureza.py`.
+
+**Redesenho da aba Lançamentos — 3 sub-abas** (`_lancAba`, mesmo padrão de toggle já usado em
+`_pcAba`): **Despesa** | **Receita** | **Lançamentos Contábeis** (ordem pedida pelo usuário,
+esquerda→direita). A tela antiga (formulário cru débito/crédito + lista) foi **preservada
+byte-a-byte** dentro de "Lançamentos Contábeis", só reorganizada:
+- Vira uma linha de filtro única (Conta buscável — traz tudo associado àquela conta nos dois lados,
+  débito OU crédito — Projeto, período); `listar_lancamentos` ganhou o parâmetro `conta_id`
+  (`OR conta_debito_id/conta_credito_id`, 1 query, sem N+1).
+- O formulário de lançar saiu da linha de filtro e virou botão **"Realizar Lançamento"** central
+  que abre um modal (Débito/Crédito/Valor/Data/Motivo).
+
+**Despesa:** lista as despesas com movimento no mês anterior (`sugestoes_despesas_mes_anterior`,
+já existente da Sessão 179) pra relançar com 1 clique — valor e contrapartida pré-preenchidos,
+data default hoje, editável. **Receita:** formulário guiado (conta do grupo 4 + contrapartida),
+direção débito/crédito calculada sozinha a partir do tipo.
+
+**Box de seleção buscável, componente reusável** (pedido explícito — "deve permitir digitar e na
+medida que a digitação ocorrer o sistema apresenta as opções que combinam... mecanismo que pode
+ser padrão para todo box de seleção"): `_selBuscavelHtml/_selBuscavelFiltrar/_selBuscavelEscolher`
+— filtro em memória (listas de conta são pequenas, sem debounce de rede), input visível + hidden
+com o id de verdade (mesmo contrato de sempre) + dropdown; `onmousedown` nas opções (não `onclick`)
+pra vencer a corrida do blur, padrão já usado em `empBusca`. Aplicado nos 2 formulários guiados e
+na sugestão de contrapartida.
+
+**Bugs achados e corrigidos na mesma rodada (sem browser disponível — diagnóstico só por leitura
+de código + simulação jsdom da Vera):**
+- **Colisão de id Despesa×Receita:** os dois formulários guiados ficam montados ao mesmo tempo no
+  DOM (só `display:none` alterna) — ids fixos (`lan-forma-conta` etc.) faziam a Receita ler/escrever
+  nos campos escondidos da Despesa depois de visitar as duas abas. Achado pela Vera via simulação
+  jsdom real das funções extraídas (método mais rigoroso que a réplica de payload HTTP usada até
+  então). Fix: prefixo `lan-forma-<tipo>-` em todo id.
+- **Modal preso numa página:** `#modal-lanc-contabil` tinha sido colado dentro de
+  `<div class="page" id="page-chat">` (ponto de inserção copiado de outro modal sem checar o
+  escopo) — `.page{display:none}` escondia o modal inteiro fora do Chat. Movido pra área de modais
+  globais (fim do body, junto do `#modal-briefing`).
+- **Destaque de sub-aba travado no primeiro botão:** `_lancAbaSetor`/`_pcAbaSetor` trocavam o
+  conteúdo mas nunca re-renderizavam os próprios botões — o `btn-primary` ficava sempre no botão
+  inicial. Fix aplicado nos dois (`_pcAba` teve o mesmo defeito, corrigido proativamente por
+  consistência mesmo sem reclamação explícita).
+- **Alinhamento vertical da linha "Despesas do mês passado":** `align-items:center` tentado
+  primeiro piorou (centraliza cada item pela PRÓPRIA caixa — nome da conta e botão "Lançar" não
+  tinham rótulo em cima como Valor/Data/Contrapartida, então ficavam caixas de altura diferente).
+  Fix certo: rótulo invisível do mesmo tamanho acima do nome/botão, igualando a altura de todo item
+  da linha, com `align-items:end`.
+
+**Documentos de processo (pedido à parte, mesmo dia):** `mod_documentos.TIPOS` ganha 6 tipos novos
+(`termo_vistoria`, `termo_responsabilidade`, `solicitacao_medicao`, `checklist_eletros`,
+`autorizacao_foto_video`, `carta_agradecimento`) — todos corpo-só (sem capa), mesmo mecanismo
+genérico de `termo_aditivo`/`aprovacao_pe`. Só habilita o CADASTRO do modelo em Config > Documentos;
+geração pra um projeto real fica pra frente futura.
+
+**Testes:** suíte **1928 passed** (+30 desde a Sessão 179: 3 da migração v2, 3 dos novos tipos de
+documento, filtro `conta_id` em `test_lancamentos_api.py`, `test_lancamentos_sugestoes.py` já
+existia da Sessão 179 sem mudança de contrato).
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `mod_documentos.py`, `static/index.html`,
+`tests/test_centro_custo_natureza.py`, `tests/test_lancamentos_api.py`,
+`tests/test_lancamentos_sugestoes.py`, `tests/test_documentos_registro.py`.
+
+**Pendente, fora de escopo desta rodada:** setup de MCP Playwright pra verificação de browser real
+(usuário mencionou "vou fazer o playright" — deferido, sem ação até ser retomado).
+
 ## Sessão 179 — Centro de Custo/Natureza: classificação aplicada + relatórios + Lançamento guiado de Receita/Despesa
 
 Fecha o ciclo da Sessão 177: a proposta de classificação (59 contas do grupo 5 → Centro de

@@ -2616,6 +2616,49 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             </div>
           </div>
 
+          <!-- Lançamento guiado de Receita/Despesa (2026-08-08) -->
+          <div id="modal-lanc-novo" class="modal-overlay" style="display:none">
+            <div class="modal-box" style="max-width:420px;max-height:88vh;overflow-y:auto">
+              <div class="modal-hdr">
+                <div class="modal-title" id="lanc-novo-titulo">Lançamento de Receitas e Despesas</div>
+                <span class="modal-close" onclick="lancNovoFechar()">&#x2715;</span>
+              </div>
+
+              <div id="lanc-novo-step1">
+                <label class="field-label">O que você quer lançar?</label>
+                <div style="display:flex;gap:10px;margin-top:10px">
+                  <button class="btn btn-primary" style="flex:1;padding:16px" onclick="lancNovoEscolherTipo('receita')">Receita</button>
+                  <button class="btn btn-primary" style="flex:1;padding:16px" onclick="lancNovoEscolherTipo('despesa')">Despesa</button>
+                </div>
+              </div>
+
+              <div id="lanc-novo-step2" style="display:none">
+                <label class="field-label" id="lanc-novo-step2-lbl">Escolha a conta</label>
+                <div id="lanc-novo-contas" style="max-height:280px;overflow-y:auto;margin-top:6px"></div>
+              </div>
+
+              <div id="lanc-novo-step3" style="display:none">
+                <label class="field-label">Conta escolhida</label>
+                <div id="lanc-novo-conta-ctx" style="font-size:13px;color:var(--text);margin:2px 0 12px"></div>
+                <label class="field-label">Data</label>
+                <input id="lanc-novo-data" type="date" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
+                <label class="field-label">Valor</label>
+                <input id="lanc-novo-valor" type="number" step="0.01" min="0" placeholder="0,00" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
+                <label class="field-label" id="lanc-novo-contrapartida-lbl">Origem/Destino</label>
+                <select id="lanc-novo-contrapartida" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px"></select>
+                <label class="field-label">Observação <small style="color:var(--muted);text-transform:none">(opcional)</small></label>
+                <input id="lanc-novo-obs" type="text" placeholder="Ex.: aluguel de fevereiro" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
+              </div>
+
+              <div id="lanc-novo-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+                <button class="btn btn-ghost btn-sm" id="lanc-novo-voltar" style="display:none" onclick="lancNovoVoltar()">Voltar</button>
+                <button class="btn btn-ghost btn-sm" onclick="lancNovoFechar()">Cancelar</button>
+                <button class="btn btn-primary btn-sm" id="lanc-novo-primario" style="display:none" onclick="lancNovoSalvar()">Lançar</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Modelos de Mensagem -->
           <div class="ochat-scr active" id="ochat-scr-modelos">
             <div class="ochat-cards" id="ochat-tpl-cards"></div>
@@ -13768,21 +13811,141 @@ function _pcAbaRenderizar(){
     if(el) el.style.display = (aba === _pcAba) ? '' : 'none';
   });
   if(_pcAba === 'naturezacusto') _naturezaCustoRenderizar();
+  else if(_pcAba === 'centrocusto') _ccRelatorioCarregar();
   else _pcCarregar(_pcAba);
 }
 
-// Natureza dos Custos: lista fixa, não editável, sem round-trip de API (só 3 itens).
-const _NATUREZA_CUSTO_ITENS = [
-  {nome:'Fixo', desc:'Não varia com o volume de vendas/produção — ex.: aluguel, salários administrativos.'},
-  {nome:'Variável', desc:'Varia proporcionalmente ao volume — ex.: comissões, frete, insumos.'},
-  {nome:'Semivariável', desc:'Tem uma parte fixa e uma parte que varia com o volume.'},
-];
-function _naturezaCustoRenderizar(){
+// Recarrega a aba certa depois de uma ação de CRUD (+filho/renomear/apagar) — Centro de Custos
+// usa o relatório (com totais), as demais usam a listagem simples.
+function _pcRefresh(cfgKey){
+  if(cfgKey === 'centrocusto') _ccRelatorioCarregar();
+  else _pcCarregar(cfgKey);
+}
+
+// Centro de Custos: relatório com total consolidado por nó + contas escondidas por padrão,
+// expandindo ao clicar no nome (2026-08-08). CRUD (+filho/renomear/apagar) continua nos mesmos
+// endpoints de sempre — só a FONTE de dados pra exibir muda de listar_centros_custo pro relatório.
+let _ccIniFiltro = null, _ccFimFiltro = null;
+let _ccExpandidos = new Set();       // ids de nó (ou 'nc' p/ não-classificado) expandidos
+let _ccUltimoRelatorio = null;       // cache — expandir/recolher não refaz fetch
+
+async function _ccRelatorioCarregar(){
+  const box = document.getElementById('centrocusto-box');
+  if(!box) return;
+  const qs = [];
+  if(_ccIniFiltro) qs.push('ini='+encodeURIComponent(_ccIniFiltro));
+  if(_ccFimFiltro) qs.push('fim='+encodeURIComponent(_ccFimFiltro));
+  const url = '/api/financeiro/centro-custo/relatorio'+(qs.length?'?'+qs.join('&'):'');
+  const r = await fetch(url, {credentials:'same-origin'});
+  if(r.status === 403){ box.innerHTML = '<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
+  _ccUltimoRelatorio = d;
+  _ccRenderizarArvore();
+}
+
+function _ccToggle(id){
+  if(_ccExpandidos.has(id)) _ccExpandidos.delete(id); else _ccExpandidos.add(id);
+  _ccRenderizarArvore();
+}
+
+function _periodoFiltroHtml(iniVar, fimVar, onIni, onFim){
+  return '<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'
+    + '<div><label class="field-label">De</label><input type="date" value="'+esc(iniVar||'')+'" onchange="'+onIni+'" style="'+_finInput+';width:auto"></div>'
+    + '<div><label class="field-label">Até</label><input type="date" value="'+esc(fimVar||'')+'" onchange="'+onFim+'" style="'+_finInput+';width:auto"></div>'
+    + '</div>';
+}
+
+function _ccRenderizarArvore(){
+  const box = document.getElementById('centrocusto-box');
+  if(!box || !_ccUltimoRelatorio) return;
+  const rel = _ccUltimoRelatorio;
+  let html = _periodoFiltroHtml(_ccIniFiltro, _ccFimFiltro,
+      "_ccIniFiltro=this.value||null;_ccRelatorioCarregar()", "_ccFimFiltro=this.value||null;_ccRelatorioCarregar()")
+    + '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Clique no nome de um centro pra ver as contas classificadas nele. Adicione filho, renomeie ou inative um centro pelos botões.</div>'
+    + rel.centros_custo.map(n => _ccNode(n, 0)).join('');
+  if(rel.nao_classificado && rel.nao_classificado.total !== 0){
+    const exp = _ccExpandidos.has('nc');
+    html += '<div style="display:flex;align-items:center;padding:5px 10px;border-bottom:1px solid var(--border);font-size:12px;margin-top:10px">'
+      + '<span onclick="_ccToggle(\'nc\')" style="cursor:pointer;font-weight:700;color:var(--text)">'+(exp?'▾':'▸')+' Não classificado</span>'
+      + '<span style="margin-left:8px;font-size:11px;color:var(--muted);font-family:var(--font-mono)">'+_dashBRL(rel.nao_classificado.total)+'</span></div>';
+    if(exp) html += rel.nao_classificado.contas.map(c => _ccContaLinha(c, 1)).join('');
+  }
+  box.innerHTML = html;
+}
+
+function _ccNode(node, nivel){
+  const pad = 12 + nivel*18;
+  const sint = (node.filhos||[]).length > 0;
+  const temContas = (node.contas||[]).length > 0;
+  const exp = _ccExpandidos.has(node.id);
+  const seta = temContas
+    ? '<span onclick="_ccToggle('+node.id+')" style="display:inline-block;width:14px;color:var(--muted);cursor:pointer">'+(exp?'▾':'▸')+'</span>'
+    : '<span style="display:inline-block;width:14px"></span>';
+  const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(node.codigo)+'</span>';
+  const nomeStyle = 'font-weight:'+(sint?700:400)+';color:var(--text)'+(temContas?';cursor:pointer':'');
+  const nomeClick = temContas ? ' onclick="_ccToggle('+node.id+')"' : '';
+  const nome = '<span style="'+nomeStyle+'"'+nomeClick+'>'+esc(node.nome)+'</span>';
+  const total = '<span style="margin-left:8px;font-size:11px;color:var(--muted);font-family:var(--font-mono)">'+_dashBRL(node.total)+'</span>';
+  const acoes = '<span style="margin-left:auto;display:flex;gap:6px">'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcNovo(\'centrocusto\','+node.id+')">+ filho</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcRenomear(\'centrocusto\','+node.id+')">renomear</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\'centrocusto\','+node.id+')">inativar/apagar</button>'
+    + '</span>';
+  const linha = '<div style="display:flex;align-items:center;padding:5px 10px 5px '+pad+'px;border-bottom:1px solid var(--border);font-size:12px">'+seta+cod+nome+total+acoes+'</div>';
+  const contasHtml = exp ? (node.contas||[]).map(c => _ccContaLinha(c, nivel+1)).join('') : '';
+  const filhosHtml = (node.filhos||[]).map(f => _ccNode(f, nivel+1)).join('');
+  return linha + contasHtml + filhosHtml;
+}
+
+function _ccContaLinha(c, nivel){
+  const pad = 12 + nivel*18 + 14;
+  const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(c.codigo)+'</span>';
+  const nome = '<span style="color:var(--muted)">'+esc(c.nome)+'</span>';
+  const valor = '<span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text)">'+_dashBRL(c.valor)+'</span>';
+  return '<div style="display:flex;align-items:center;padding:4px 10px 4px '+pad+'px;border-bottom:1px solid var(--border);font-size:11.5px">'+cod+nome+valor+'</div>';
+}
+
+// Natureza dos Custos: relatório real (2026-08-08) — Fixo/Variável em colunas, contas com
+// movimento no período, total por coluna. Semivariável/Não classificado só aparecem se tiverem
+// alguma conta com valor (nada some em silêncio, mas também não força coluna vazia sempre).
+let _natIniFiltro = null, _natFimFiltro = null;
+const _NATUREZA_LABELS = {fixo:'Fixo', variavel:'Variável', semivariavel:'Semivariável', nao_classificado:'Não classificado'};
+
+async function _naturezaCustoRenderizar(){
   const box = document.getElementById('naturezacusto-box');
   if(!box) return;
-  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Lista fixa — não editável. Classifica o comportamento do custo diante do volume de vendas.</div>'
-    + _NATUREZA_CUSTO_ITENS.map(it => '<div style="padding:8px 10px;border-bottom:1px solid var(--border);font-size:12px">'
-      + '<b style="color:var(--text)">'+esc(it.nome)+'</b> <span style="color:var(--muted)">— '+esc(it.desc)+'</span></div>').join('');
+  const filtro = _periodoFiltroHtml(_natIniFiltro, _natFimFiltro,
+      "_natIniFiltro=this.value||null;_naturezaCustoRenderizar()", "_natFimFiltro=this.value||null;_naturezaCustoRenderizar()");
+  const qs = [];
+  if(_natIniFiltro) qs.push('ini='+encodeURIComponent(_natIniFiltro));
+  if(_natFimFiltro) qs.push('fim='+encodeURIComponent(_natFimFiltro));
+  const url = '/api/financeiro/plano-contas/natureza-relatorio'+(qs.length?'?'+qs.join('&'):'');
+  const r = await fetch(url, {credentials:'same-origin'});
+  if(r.status === 403){ box.innerHTML = filtro+'<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ box.innerHTML = filtro+'<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
+
+  const colunas = ['fixo', 'variavel', 'semivariavel', 'nao_classificado']
+    .filter(k => k === 'fixo' || k === 'variavel' || (d[k] && d[k].contas.length > 0));
+  const colunaHtml = (chave) => {
+    const balde = d[chave] || {contas: [], total: 0};
+    const linhas = balde.contas.map(c =>
+      '<div style="display:flex;align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:12px">'
+      + '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(c.codigo)+'</span>'
+      + '<span style="color:var(--text)">'+esc(c.nome)+'</span>'
+      + '<span style="margin-left:auto;font-family:var(--font-mono);font-size:11px">'+_dashBRL(c.valor)+'</span></div>'
+    ).join('') || '<div style="padding:10px;font-size:11px;color:var(--muted)">Nenhuma conta com movimento no período.</div>';
+    return '<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">'
+      + '<div style="padding:8px 10px;font-weight:700;font-size:12px;border-bottom:1px solid var(--border)">'+esc(_NATUREZA_LABELS[chave])+'</div>'
+      + linhas
+      + '<div style="display:flex;padding:8px 10px;font-weight:700;font-size:12px;border-top:1px solid var(--border)"><span>Total</span>'
+      + '<span style="margin-left:auto;font-family:var(--font-mono)">'+_dashBRL(balde.total)+'</span></div></div>';
+  };
+  box.innerHTML = filtro
+    + '<div style="margin-bottom:10px;font-size:11px;color:var(--muted)">Só contas com movimento no período aparecem.</div>'
+    + '<div style="display:grid;grid-template-columns:repeat('+colunas.length+',1fr);gap:14px">'
+    + colunas.map(colunaHtml).join('') + '</div>';
 }
 
 async function _pcCarregar(cfgKey){
@@ -13793,7 +13956,10 @@ async function _pcCarregar(cfgKey){
   if(r.status === 403){ box.innerHTML = '<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const d = await r.json().catch(()=>({}));
   if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
-  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
+  const botaoLanc = cfgKey === 'contas'
+    ? '<div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="lancNovoAbrir()">Lançamento de Receitas e Despesas</button></div>' : '';
+  box.innerHTML = botaoLanc
+    + '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
     + d[cfg.itemsKey].map(c => _pcNode(cfgKey, c, 0)).join('');
 }
 
@@ -13829,7 +13995,7 @@ async function pcNovo(cfgKey, paiId){
     credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome})});
   const d = await r.json().catch(()=>({}));
   if(!d.ok) showToast(d.erro || 'Falha ao criar', true);
-  _pcCarregar(cfgKey);
+  _pcRefresh(cfgKey);
 }
 async function pcRenomear(cfgKey, id){
   const cfg = _PC_CFGS[cfgKey];
@@ -13837,7 +14003,7 @@ async function pcRenomear(cfgKey, id){
   if(!nome) return;
   await fetch(cfg.putUrlBase+id, {method:'PUT', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({nome})});
-  _pcCarregar(cfgKey);
+  _pcRefresh(cfgKey);
 }
 async function pcRemover(cfgKey, id){
   const cfg = _PC_CFGS[cfgKey];
@@ -13846,7 +14012,101 @@ async function pcRemover(cfgKey, id){
     credentials:'same-origin', body:'{}'});
   const d = await r.json().catch(()=>({}));
   if(d.ok) showToast((d.acao === 'apagada' || d.acao === 'apagado') ? 'Item apagado' : 'Item inativado');
-  _pcCarregar(cfgKey);
+  _pcRefresh(cfgKey);
+}
+
+// Lançamento guiado de Receita/Despesa (2026-08-08, aba Contas) — 3 passos: tipo -> conta
+// específica -> data/valor/contrapartida/observação. Sem endpoint novo: reusa
+// POST /api/financeiro/lancamentos (já aceita `data`), calculando débito/crédito sozinho a
+// partir do tipo escolhido (despesa é devedora: debita a despesa, credita a contrapartida;
+// receita é credora: credita a receita, debita a contrapartida).
+let _lancNovoStep = 1;
+let _lancNovoTipo = null;          // 'receita' | 'despesa'
+let _lancNovoContaId = null;
+let _lancNovoContaLabel = '';
+
+function lancNovoAbrir(){
+  _lancNovoStep = 1; _lancNovoTipo = null; _lancNovoContaId = null; _lancNovoContaLabel = '';
+  document.getElementById('lanc-novo-aviso').textContent = '';
+  _lancNovoMostrarStep(1);
+  document.getElementById('modal-lanc-novo').style.display = 'flex';
+}
+function lancNovoFechar(){ document.getElementById('modal-lanc-novo').style.display = 'none'; }
+
+function _lancNovoMostrarStep(n){
+  _lancNovoStep = n;
+  [1,2,3].forEach(i=>{ const e = document.getElementById('lanc-novo-step'+i); if(e) e.style.display = i===n?'':'none'; });
+  document.getElementById('lanc-novo-voltar').style.display = n>1 ? '' : 'none';
+  document.getElementById('lanc-novo-primario').style.display = n===3 ? '' : 'none';
+  document.getElementById('lanc-novo-aviso').textContent = '';
+}
+
+function lancNovoVoltar(){
+  if(_lancNovoStep===3) _lancNovoMostrarStep(2);
+  else if(_lancNovoStep===2) _lancNovoMostrarStep(1);
+}
+
+async function lancNovoEscolherTipo(tipo){
+  _lancNovoTipo = tipo;
+  document.getElementById('lanc-novo-step2-lbl').textContent = tipo==='receita' ? 'Escolha a receita' : 'Escolha a despesa';
+  document.getElementById('lanc-novo-contas').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  _lancNovoMostrarStep(2);
+  const r = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ document.getElementById('lanc-novo-contas').innerHTML = '<em style="color:var(--muted)">Falha ao carregar contas.</em>'; return; }
+  const grupoAlvo = tipo==='receita' ? 4 : 5;
+  const flat = [];
+  (function walk(ns){ (ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(d.contas);
+  const itens = flat.filter(n => n.grupo === grupoAlvo);
+  document.getElementById('lanc-novo-contas').innerHTML = itens.map(n =>
+    '<div class="btn btn-ghost btn-sm" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:4px" '
+    + 'onclick="lancNovoEscolherConta('+n.id+',\''+esc(n.codigo+' — '+n.nome).replace(/'/g,"\\'")+'\')">'
+    + '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(n.codigo)+'</span>'+esc(n.nome)+'</div>'
+  ).join('') || '<em style="color:var(--muted);font-size:12px">Nenhuma conta cadastrada.</em>';
+}
+
+async function lancNovoEscolherConta(id, label){
+  _lancNovoContaId = id; _lancNovoContaLabel = label;
+  document.getElementById('lanc-novo-conta-ctx').textContent = label;
+  document.getElementById('lanc-novo-data').value = _hojeISO();
+  document.getElementById('lanc-novo-valor').value = '';
+  document.getElementById('lanc-novo-obs').value = '';
+  document.getElementById('lanc-novo-contrapartida-lbl').textContent =
+    _lancNovoTipo==='receita' ? 'Origem (de onde veio)' : 'Destino (pra onde foi)';
+  document.getElementById('lanc-novo-primario').textContent = _lancNovoTipo==='receita' ? 'Lançar receita' : 'Lançar despesa';
+  document.getElementById('lanc-novo-titulo').textContent =
+    _lancNovoTipo==='receita' ? 'Lançar Receita' : 'Lançar Despesa';
+  const sel = document.getElementById('lanc-novo-contrapartida');
+  sel.innerHTML = '<option value="">Carregando…</option>';
+  const r = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({}));
+  const flat = [];
+  (function walk(ns){ (ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(d.contas||[]);
+  const contrapartidas = flat.filter(n => n.grupo === 1 || n.grupo === 2);
+  sel.innerHTML = '<option value="">— selecione —</option>' + contrapartidas.map(n =>
+    '<option value="'+n.id+'">'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>').join('');
+  _lancNovoMostrarStep(3);
+}
+
+async function lancNovoSalvar(){
+  const aviso = document.getElementById('lanc-novo-aviso');
+  const data = document.getElementById('lanc-novo-data').value;
+  const valor = parseFloat(document.getElementById('lanc-novo-valor').value || '0');
+  const contrapartidaId = +document.getElementById('lanc-novo-contrapartida').value;
+  const obs = document.getElementById('lanc-novo-obs').value || '';
+  if(!valor || valor <= 0){ aviso.textContent = 'Informe um valor > 0.'; return; }
+  if(!contrapartidaId){ aviso.textContent = 'Escolha a origem/destino.'; return; }
+  const receita = _lancNovoTipo === 'receita';
+  const conta_debito_id  = receita ? contrapartidaId : _lancNovoContaId;
+  const conta_credito_id = receita ? _lancNovoContaId : contrapartidaId;
+  const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+    credentials:'same-origin', body: JSON.stringify({conta_debito_id, conta_credito_id, valor, data, historico: obs})});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao lançar.'; return; }
+  showToast((receita ? 'Receita lançada' : 'Despesa lançada'));
+  lancNovoFechar();
+  if(_pcAba === 'centrocusto') _ccRelatorioCarregar();
+  else if(_pcAba === 'naturezacusto') _naturezaCustoRenderizar();
 }
 
 let _cfgFin = null;
@@ -14666,6 +14926,7 @@ document.addEventListener('keydown', function(e){
   // Cada entrada: [id, fn_cancelar]
   const ESC_MAP = [
     ['modal-atd-novo',         ocAtdNovoFechar],
+    ['modal-lanc-novo',        lancNovoFechar],
     ['modal-atd-concluir',     ocConcluirFechar],
     ['modal-autorizacao',      () => fecharModalAutorizacao(false)],
     ['modal-perfil-acesso',    fecharModalPerfilAcesso],

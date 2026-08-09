@@ -325,6 +325,50 @@ def test_classificar_lote_valida_tudo_antes_de_gravar(app_db):
     db.close()
 
 
+# ── migrar_classificacao_grupo5_v1 (aprovada por Marcelo e Juliana, 2026-08-08) ─────────────────
+def test_migracao_classificacao_grupo5_preenche_conforme_a_tabela(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 990
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    # a migração roda em TODOS os owners — outros testes do módulo já deixaram owners com
+    # contas grupo 5 pendentes de classificar, então o contador GLOBAL não é 59 (mesma pegadinha
+    # já resolvida em test_migracao_idempotente pra migrar_centro_custo_natureza_v1). O que
+    # importa é o estado DESTE owner (990), checado direto abaixo.
+    out = mc.migrar_classificacao_grupo5_v1(db)
+    assert out["centro_custo_setado"] >= 59 and out["natureza_setado"] >= 59
+    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
+    todas_g5 = [c for cod, c in contas.items() if cod in mc.CLASSIFICACAO_GRUPO5_V1]
+    assert len(todas_g5) == 59
+    assert all(c.centro_custo_id is not None and c.natureza_custo is not None for c in todas_g5)
+    montagem = contas["5.2.01"]
+    assert montagem.centro_custo_id == ccs["1.3"].id and montagem.natureza_custo == "variavel"
+    aluguel = contas["5.4.01"]
+    assert aluguel.centro_custo_id == ccs["1.5"].id and aluguel.natureza_custo == "fixo"
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_nao_sobrescreve_classificacao_manual(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 991
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
+    # classifica manualmente 5.2.01 num centro DIFERENTE do que a tabela padrão diria (1.3)
+    contas["5.2.01"].centro_custo_id = ccs["4.4"].id
+    contas["5.2.01"].natureza_custo = "fixo"
+    db.commit()
+    mc.migrar_classificacao_grupo5_v1(db)
+    conta = _contas(db, ot, oid)["5.2.01"]
+    assert conta.centro_custo_id == ccs["4.4"].id and conta.natureza_custo == "fixo"   # intocado
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_idempotente(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 992
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    out2 = mc.migrar_classificacao_grupo5_v1(db)
+    assert out2 == {"centro_custo_setado": 0, "natureza_setado": 0}
+    db.close()
+
+
 def test_endpoint_classificar_lote(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.get("/api/financeiro/contas")

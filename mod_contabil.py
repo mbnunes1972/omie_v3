@@ -706,6 +706,57 @@ def classificar_contas_lote(db, owner_tipo, owner_id, itens):
     return {"classificadas": len(resolvidos)}
 
 
+# código da conta -> (código do centro de custo, slug de natureza) — as 59 contas do grupo 5,
+# proposta aprovada por Marcelo e Juliana (Artifact de 2026-08-08, ver DEV_LOG Sessão 177).
+CLASSIFICACAO_GRUPO5_V1 = {
+    "5.1.01": ("1.2", "variavel"), "5.1.02": ("1.4", "variavel"),
+    "5.2.01": ("1.3", "variavel"), "5.2.02": ("1.3", "variavel"), "5.2.03": ("1.3", "variavel"),
+    "5.2.04": ("1.4", "fixo"),     "5.2.05": ("1.3", "variavel"), "5.2.06": ("1.4", "variavel"),
+    "5.2.07": ("1.4", "variavel"), "5.2.08": ("1.4", "variavel"), "5.2.09": ("1.3", "variavel"),
+    "5.2.10": ("1.4", "fixo"),     "5.2.12": ("3.1", "variavel"), "5.2.13": ("3.1", "variavel"),
+    "5.3.01": ("2.1", "variavel"), "5.3.02": ("2.1", "variavel"), "5.3.03": ("4.3", "variavel"),
+    "5.3.04": ("2.3", "variavel"), "5.3.05": ("2.1", "variavel"), "5.3.06": ("2.1", "fixo"),
+    "5.3.07": ("2.3", "fixo"),     "5.3.08": ("2.3", "fixo"),     "5.3.09": ("2.3", "fixo"),
+    "5.3.11": ("2.3", "fixo"),     "5.3.12": ("2.3", "fixo"),     "5.3.13": ("2.1", "variavel"),
+    "5.3.14": ("2.3", "fixo"),     "5.3.15": ("2.1", "variavel"), "5.3.16": ("4.3", "fixo"),
+    "5.3.17": ("3.2", "variavel"), "5.3.18": ("3.2", "variavel"), "5.3.19": ("3.2", "variavel"),
+    "5.3.21": ("2.1", "variavel"), "5.4.01": ("1.5", "fixo"),     "5.4.02": ("1.5", "fixo"),
+    "5.4.03": ("1.5", "fixo"),     "5.4.04": ("4.2", "fixo"),     "5.4.05": ("4.3", "fixo"),
+    "5.4.06": ("4.3", "fixo"),     "5.4.07": ("4.3", "fixo"),     "5.4.08": ("1.5", "fixo"),
+    "5.4.09": ("1.5", "fixo"),     "5.4.10": ("4.2", "fixo"),     "5.4.11": ("4.3", "fixo"),
+    "5.4.12": ("4.4", "fixo"),     "5.4.13": ("4.3", "fixo"),     "5.4.14": ("4.3", "fixo"),
+    "5.4.15": ("4.3", "fixo"),     "5.4.16": ("4.3", "fixo"),     "5.4.17": ("4.5", "fixo"),
+    "5.4.18": ("4.5", "fixo"),     "5.4.19": ("4.2", "fixo"),     "5.4.20": ("4.5", "fixo"),
+    "5.5.01": ("4.3", "fixo"),     "5.5.02": ("4.3", "fixo"),     "5.5.03": ("4.3", "variavel"),
+    "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "fixo"),     "5.6.10": ("4.3", "fixo"),
+}
+
+
+def migrar_classificacao_grupo5_v1(db):
+    """Aplica CLASSIFICACAO_GRUPO5_V1 em TODOS os owners — idempotente, só preenche
+    centro_custo_id/natureza_custo que ainda estiverem None; uma classificação manual feita
+    depois (classificar_contas_lote ou edição direta) nunca é sobrescrita. Roda no boot DEPOIS
+    de backfill_centro_custo_todos_owners (precisa da árvore de Centro de Custo já semeada, pra
+    achar os códigos "1.2"/"1.3"/etc.)."""
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    cc_setado = nat_setado = 0
+    for ot, oid in owners:
+        contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+        ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=ot, owner_id=oid).all()}
+        for cod, (cc_cod, nat) in CLASSIFICACAO_GRUPO5_V1.items():
+            conta = contas.get(cod)
+            if conta is None:
+                continue
+            if conta.centro_custo_id is None and cc_cod in ccs:
+                conta.centro_custo_id = ccs[cc_cod].id
+                cc_setado += 1
+            if conta.natureza_custo is None:
+                conta.natureza_custo = nat
+                nat_setado += 1
+    db.commit()
+    return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
+
+
 # ── Livro de Lançamentos (sub-projeto #2) ────────────────────────────────────
 def _lanc_serial(l):
     return {"id": l.id, "data": l.data.isoformat() if l.data else None, "valor": l.valor,
@@ -2110,6 +2161,67 @@ def dre(db, owner_tipo, owner_id, ini=None, fim=None):
             "outras_receitas": det("4.4", "credor"),
         },
     }
+
+
+def relatorio_centro_custo(db, owner_tipo, owner_id, ini=None, fim=None):
+    """Árvore de Centro de Custo com valor por conta (grupo 5, no período) e total consolidado
+    por nó — a soma das contas classificadas direto nele + a soma recursiva dos filhos.
+    `incluir_inativos=True` de propósito: um Centro de Custo inativado depois de já ter conta
+    classificada nele não pode fazer o valor dela sumir do relatório sem aviso. Débito/crédito
+    de TODAS as contas do grupo 5 vêm de uma tacada só via `_somas_por_conta` (não é N+1)."""
+    arvore = listar_centros_custo(db, owner_tipo, owner_id, incluir_inativos=True)
+    contas_g5 = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, grupo=5).all()
+    ids = [c.id for c in contas_g5]
+    debs = _somas_por_conta(db, owner_tipo, owner_id, ids, "debito", ini, fim)
+    creds = _somas_por_conta(db, owner_tipo, owner_id, ids, "credito", ini, fim)
+    por_cc = {}
+    nao_classificado = []
+    for c in contas_g5:
+        v = round(debs.get(c.id, 0.0) - creds.get(c.id, 0.0), 2)   # despesa: sempre devedora
+        if v == 0:
+            continue
+        item = {"id": c.id, "codigo": c.codigo, "nome": c.nome, "valor": v}
+        if c.centro_custo_id:
+            por_cc.setdefault(c.centro_custo_id, []).append(item)
+        else:
+            nao_classificado.append(item)
+
+    def aumenta(node):
+        contas = sorted(por_cc.get(node["id"], []), key=lambda x: x["codigo"])
+        filhos = [aumenta(f) for f in node["filhos"]]
+        total = round(sum(x["valor"] for x in contas) + sum(f["total"] for f in filhos), 2)
+        return {**node, "filhos": filhos, "contas": contas, "total": total}
+
+    nao_classificado.sort(key=lambda x: x["codigo"])
+    return {
+        "periodo": {"ini": ini.isoformat() if ini else None, "fim": fim.isoformat() if fim else None},
+        "centros_custo": [aumenta(r) for r in arvore],
+        "nao_classificado": {"contas": nao_classificado,
+                              "total": round(sum(x["valor"] for x in nao_classificado), 2)},
+    }
+
+
+def relatorio_natureza(db, owner_tipo, owner_id, ini=None, fim=None):
+    """Contas de despesa (grupo 5) agrupadas por Conta.natureza_custo, valor no período — só as
+    com movimento (valor 0 fica de fora, não polui o relatório). `nao_classificado` pega quem
+    ainda não tem natureza_custo definida, pra nada sumir em silêncio."""
+    contas_g5 = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, grupo=5).all()
+    ids = [c.id for c in contas_g5]
+    debs = _somas_por_conta(db, owner_tipo, owner_id, ids, "debito", ini, fim)
+    creds = _somas_por_conta(db, owner_tipo, owner_id, ids, "credito", ini, fim)
+    baldes = {slug: [] for slug, _ in NATUREZA_CUSTO}
+    baldes["nao_classificado"] = []
+    for c in contas_g5:
+        v = round(debs.get(c.id, 0.0) - creds.get(c.id, 0.0), 2)
+        if v == 0:
+            continue
+        chave = c.natureza_custo if c.natureza_custo in baldes else "nao_classificado"
+        baldes[chave].append({"id": c.id, "codigo": c.codigo, "nome": c.nome, "valor": v})
+    out = {"periodo": {"ini": ini.isoformat() if ini else None, "fim": fim.isoformat() if fim else None}}
+    for chave, itens in baldes.items():
+        itens = sorted(itens, key=lambda x: x["codigo"])
+        out[chave] = {"contas": itens, "total": round(sum(x["valor"] for x in itens), 2)}
+    return out
 
 
 def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):

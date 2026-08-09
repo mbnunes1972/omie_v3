@@ -949,6 +949,40 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/centro-custo/relatorio":
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            qs = parse_qs(urlparse(self.path).query)
+            ini = _parse_data((qs.get("ini") or [None])[0])
+            fim = _parse_data((qs.get("fim") or [None])[0])
+            if fim is not None:
+                fim = datetime.combine(fim.date(), datetime.max.time())
+            try:
+                rel = mod_contabil.relatorio_centro_custo(db, ot, oid, ini=ini, fim=fim)
+                self.send_json({"ok": True, **rel})
+            finally:
+                db.close()
+            return
+        if path == "/api/financeiro/plano-contas/natureza-relatorio":
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            qs = parse_qs(urlparse(self.path).query)
+            ini = _parse_data((qs.get("ini") or [None])[0])
+            fim = _parse_data((qs.get("fim") or [None])[0])
+            if fim is not None:
+                fim = datetime.combine(fim.date(), datetime.max.time())
+            try:
+                rel = mod_contabil.relatorio_natureza(db, ot, oid, ini=ini, fim=fim)
+                self.send_json({"ok": True, **rel})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/lancamentos":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return
@@ -14989,6 +15023,9 @@ def main():
             # o backfill recriaria "1.5"/"3.2" faltando e deixaria "4.1"/"2.2" velhos órfãos.
             _mc.migrar_centro_custo_v2(_dbp)
             _mc.backfill_centro_custo_todos_owners(_dbp)
+            # Classificação Centro de Custo/Natureza aprovada por Marcelo e Juliana (2026-08-08) —
+            # roda DEPOIS do backfill acima (precisa da árvore de Centro de Custo já semeada).
+            _mc.migrar_classificacao_grupo5_v1(_dbp)
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

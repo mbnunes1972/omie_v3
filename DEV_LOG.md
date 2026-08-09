@@ -3277,6 +3277,67 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 179 — Centro de Custo/Natureza: classificação aplicada + relatórios + Lançamento guiado de Receita/Despesa
+
+Fecha o ciclo da Sessão 177: a proposta de classificação (59 contas do grupo 5 → Centro de
+Custo + Natureza) já tinha sido aprovada por Marcelo e pela Juliana — só faltava gravar de
+verdade e fazer ela aparecer nas telas.
+
+**Classificação gravada (migração idempotente, mesmo padrão das 3 anteriores):**
+`mod_contabil.migrar_classificacao_grupo5_v1` — `CLASSIFICACAO_GRUPO5_V1` (dict código da conta →
+(código do centro de custo, slug de natureza), as 59 entradas da proposta aprovada) aplicado em
+TODOS os owners no boot, logo depois de `backfill_centro_custo_todos_owners`. Só preenche
+`centro_custo_id`/`natureza_custo` que ainda estiverem `None` — nunca sobrescreve uma
+reclassificação manual feita depois.
+
+**Relatório de Centro de Custo (`relatorio_centro_custo`, `GET /api/financeiro/centro-custo/
+relatorio?ini=&fim=`):** percorre a árvore de Centro de Custo (`incluir_inativos=True` de
+propósito — um centro inativado depois de já ter conta classificada não pode fazer o valor dela
+sumir do relatório) e usa `_somas_por_conta` (já existia, usado pelo DRE) pra pegar débito/
+crédito de TODAS as contas do grupo 5 numa tacada só. Cada nó ganha `contas` (as classificadas
+direto nele, valor ≠ 0 no período) e `total` (soma das próprias + soma recursiva dos filhos).
+Contas sem centro de custo viram um bucket `nao_classificado` à parte — nada some em silêncio.
+
+**Relatório de Natureza (`relatorio_natureza`, `GET /api/financeiro/plano-contas/natureza-
+relatorio?ini=&fim=`):** mesma técnica, contas do grupo 5 agrupadas por `natureza_custo`
+(fixo/variavel/semivariavel + `nao_classificado`), valor 0 no período fica de fora.
+
+**Frontend — Financeiro → Plano de Contas:**
+- **Centro de Custos** deixou de ser só a árvore editável — cada nó mostra o total do período ao
+  lado do nome; as contas ficam escondidas por padrão, expandindo ao clicar no nome (estado local,
+  não refaz fetch). Filtro De/Até no topo. CRUD (+filho/renomear/apagar) intacto — só a fonte de
+  dados pra EXIBIR mudou de `listar_centros_custo` pro relatório (`_pcRefresh` decide qual
+  recarregar depois de uma ação).
+- **Natureza dos Custos** virou relatório de verdade — 2 colunas (Fixo/Variável) com as contas
+  com movimento no período + total por coluna; Semivariável/Não-classificado só aparecem se
+  tiverem alguma conta (não força coluna vazia, mas também não esconde se um dia tiver algo ali).
+  Filtro de período.
+- **Contas** ganhou o botão **"Lançamento de Receitas e Despesas"** — modal de 3 passos (Receita/
+  Despesa → conta específica → data/valor/contrapartida/observação). Sem endpoint novo: reusa
+  `POST /api/financeiro/lancamentos` (já aceitava `data`, só o formulário antigo da aba
+  Lançamentos nunca mandava esse campo). Débito/crédito calculado sozinho a partir do tipo
+  escolhido (despesa debita a despesa e credita a contrapartida; receita credita a receita e
+  debita a contrapartida).
+
+**Achados da Vera na revisão (2 🟠, corrigidos):** (1) o campo Data do lançamento vinha
+pré-preenchido com `new Date().toISOString().slice(0,10)` — em UTC, então de ~21h à meia-noite
+(horário de Brasília) o default já vinha com o dia SEGUINTE, sem avisar; trocado pelo helper
+`_hojeISO()` que o resto do app já usa exatamente pra evitar esse bug. (2) o `<select>` de
+contrapartida não tinha opção vazia inicial — o HTML pré-seleciona a primeira conta da lista
+sozinho, então dava pra confirmar sem escolher e o lançamento saía contra a conta errada em
+silêncio; adicionado `<option value="">— selecione —</option>`.
+
+**Testes:** `tests/test_centro_custo_natureza.py` (+3 — migração da classificação: preenche
+certo, não sobrescreve manual, idempotente); novo `tests/test_centro_custo_relatorios.py` (8 —
+os dois relatórios: consolidação por nó, filtro de período, conta zerada some, não-classificado
+não some, agrupamento/totais da Natureza, os 2 endpoints HTTP). Suíte **1898 passed**.
+Verificado ao vivo (restart local, migração rodou sem erro, os 59 códigos batendo no banco,
+totais dos dois relatórios reconciliando entre si, filtro de período zerando fora do intervalo,
+lançamento de teste aparecendo no relatório certo na hora) + QA da Vera.
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `static/index.html`,
+`tests/test_centro_custo_natureza.py`, `tests/test_centro_custo_relatorios.py` (novo).
+
 ## Sessão 178 — Painel da Rede + Permissões por conta do Gestor de Rede + Painel Gestores ampliado + Etapa 21 exige sequência + docs de transição
 
 Lote de achados/pedidos do mesmo dia (2026-08-08), independente da Sessão 177 (Centro de

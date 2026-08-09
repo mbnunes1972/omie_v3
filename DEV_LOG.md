@@ -3277,6 +3277,46 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 184 — Lançamentos Contábeis "não aparecia": N+1 de margem escondido atrás de um filtro de projeto
+
+Achado do usuário (2026-08-09), testando ao vivo no VPS B (`homolog.orizonone.com.br`) depois da
+simulação de 3 meses da Vera na loja Inspirium: clicava em Lançamentos → **Lançamentos Contábeis**,
+a aba destacava certinho, mas o conteúdo ficava em branco pra sempre. Ctrl+F5 não resolveu (não era
+cache de navegador).
+
+**Diagnóstico (sem Playwright disponível ainda nesta sessão — MCP configurado mas precisa reload):**
+leitura de código não achou nada errado; testar `/api/financeiro/lancamentos` isolado também não. O
+que fechou o caso foi montar um repro fiel — `jsdom` carregando o **HTML real inteiro** + o
+`<script>` real inteiro, fazendo login de verdade no VPS B e disparando exatamente a sequência de
+cliques do usuário (`lancamentosShellCarregar()` → `_lancAbaSetor('contabeis')`, sem `await`, igual
+um `onclick` de verdade) — só assim o hang apareceu; chamar `lancamentosCarregar()` direto e
+esperado (`await`) mascarava o problema. Instrumentando cada `fetch` descobri que `/api/financeiro/
+projetos-dre` nunca resolvia dentro de alguns segundos; testado isolado, standalone, **15,9s** —
+`GET /api/financeiro/projetos-dre` (67 projetos na Inspirium hoje) chama `mod_contabil.
+margem_todos_projetos`, que roda `margem_projeto()` (8 agregações + 1 `reconciliacao()` completa)
+**por projeto, em loop** — N+1 clássico, sempre existiu, só nunca doeu antes porque nenhuma loja
+tinha histórico grande o bastante (a própria simulação da Vera, ironicamente, é o que expôs).
+
+**A causa raiz não era a margem em si** — `lancamentosCarregar()` só chamava esse endpoint PESADO
+pra pegar uma lista de **nomes de projeto** pro `<select>` de filtro (nunca mostra valor de margem
+nessa tela). `finReconProvCarregar()` (Reconc. Provisões) tinha o mesmíssimo desperdício. Só
+`projDreCarregar()` (a tela **Margem/Projeto**, que legitimamente precisa da margem calculada)
+ficou apontando pro endpoint original — permanece lento lá (achado anotado, não corrigido agora:
+mexer no motor de cálculo de margem é área sensível, fora do escopo deste fix pontual).
+
+**Fix:** endpoint novo `GET /api/financeiro/lancamentos/projetos`, direto de `mod_contabil.
+projetos_com_lancamento` (já existia, já usado no modo simulado do próprio `/projetos-dre` — zero
+lógica nova, só zero cálculo de margem). `lancamentosCarregar()` e `finReconProvCarregar()` trocam
+pra ele. Testes: `test_get_lancamentos_projetos_lista_so_ids_sem_calcular_margem`,
+`test_get_lancamentos_projetos_sem_login_401`. Suíte **1953 passed**.
+
+**[PENDENTE, anotado]** `margem_todos_projetos`/`margem_projeto` continuam N+1 — a tela Margem/
+Projeto (e qualquer outra visão "todos os projetos" que volte a usar `/projetos-dre`) fica lenta em
+lojas com muito histórico. Precisa de uma passada de batching (mesmo padrão de `_somas_por_conta`)
+antes de crescer mais — fora de escopo aqui por ser o motor de cálculo financeiro (área sensível).
+
+**Arquivos:** `main.py`, `static/index.html`, `tests/test_lancamentos_api.py`.
+
 ## Sessão 182 — fiscal: parse_nfe trata XML inválido/sem infNFe como erro tratado (400), não crash cru (500)
 
 Achado incidental da Vera (2026-08-09) ao simular emissão de NF-e em homolog (VPS B) com um XML

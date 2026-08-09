@@ -12975,9 +12975,10 @@ async function finReconProvCarregar(){
   if(!box) return;
   let projetos = [];
   try{
-    const rp = await fetch('/api/financeiro/projetos-dre', {credentials:'same-origin'});
+    // Lista leve (2026-08-09, achado do usuário) — só nomes pro <select>, não a margem/DRE inteira.
+    const rp = await fetch('/api/financeiro/lancamentos/projetos', {credentials:'same-origin'});
     if(rp.status===403){ box.innerHTML='<em style="color:var(--muted);font-size:12px">Módulo financeiro inativo ou sem acesso.</em>'; return; }
-    projetos = ((await rp.json().catch(()=>({}))).projetos||[]).map(p=>p.projeto_id);
+    projetos = (await rp.json().catch(()=>({}))).projetos||[];
   }catch(e){}
   const opts = ['<option value="">Consolidado (todos os projetos)</option>']
     .concat(projetos.map(p=>'<option value="'+esc(p)+'"'+(p===_reconProvProj?' selected':'')+'>'+esc(p)+'</option>')).join('');
@@ -14066,8 +14067,13 @@ async function lancamentosCarregar(){
     .concat(flat.map(n=>'<option value="'+n.id+'"'+(String(n.id)===String(_lancContaFiltro||'')?' selected':'')+'>'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>')).join('');
   let projetos = [];
   try{
-    const rp = await fetch('/api/financeiro/projetos-dre', {credentials:'same-origin'});
-    projetos = ((await rp.json().catch(()=>({}))).projetos||[]).map(p=>p.projeto_id);
+    // Lista leve (2026-08-09, achado do usuário: "Lançamentos Contábeis não apareceu" — essa aba
+    // usava /projetos-dre só pra montar o <select> de Projeto, mas esse endpoint calcula a margem
+    // de TODOS os projetos (margem_todos_projetos, N+1 real — reconciliacao() por projeto). Numa
+    // loja com muito histórico (Inspirium, ~67 projetos) isso levava ~16s, e a aba ficava em
+    // branco até resolver — parecia quebrada. Endpoint dedicado, sem cálculo nenhum.
+    const rp = await fetch('/api/financeiro/lancamentos/projetos', {credentials:'same-origin'});
+    projetos = (await rp.json().catch(()=>({}))).projetos||[];
   }catch(e){}
   const qsPartes = [];
   if(_lancProjFiltro) qsPartes.push('projeto='+encodeURIComponent(_lancProjFiltro));

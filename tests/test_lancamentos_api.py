@@ -84,6 +84,29 @@ def test_get_lancamentos_conta_id_exclui_lancamentos_de_outra_conta(http_client_
         for l in d["lancamentos"])
 
 
+# ── lista leve de projetos p/ o <select> da aba Lançamentos Contábeis (2026-08-09) ───────────────
+# Achado do usuário: essa aba usava /projetos-dre (margem_todos_projetos — N+1 real, uma
+# reconciliacao() por projeto) só pra montar a lista de nomes do filtro; numa loja com muito
+# histórico isso levava ~16s e a aba parecia quebrada (em branco). Endpoint dedicado, direto de
+# projetos_com_lancamento (já existente, já usado no modo simulado do próprio /projetos-dre).
+def test_get_lancamentos_projetos_lista_so_ids_sem_calcular_margem(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    ids = _ids(c)
+    c.post("/api/financeiro/lancamentos", {
+        "conta_debito_id": ids["1.1.01"], "conta_credito_id": ids["4.1.01"],
+        "valor": 99.0, "projeto_id": "Proj_ListaLeve"})
+    st, d = c.get("/api/financeiro/lancamentos/projetos")
+    assert st == 200 and d["ok"]
+    assert "Proj_ListaLeve" in d["projetos"]
+    assert all(isinstance(p, str) for p in d["projetos"])   # ids crus, não objetos de margem
+
+
+def test_get_lancamentos_projetos_sem_login_401(http_client_factory):
+    c = http_client_factory()
+    st, d = c.get("/api/financeiro/lancamentos/projetos")
+    assert st == 401
+
+
 def test_get_lancamentos_conta_id_invalido_ignora_o_filtro_em_vez_de_quebrar(http_client_factory, seed, app_db):
     """🟡 achado da Vera (2026-08-09): conta_id não-numérico na query derrubava a conexão (exceção
     não tratada) em vez de responder — não alcançável pela tela (o <select> só emite id numérico

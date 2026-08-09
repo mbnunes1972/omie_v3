@@ -1204,6 +1204,21 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/lancamentos/projetos":
+            # Lista leve de projeto_id com lançamento — só pro filtro "Projeto" da aba Lançamentos
+            # Contábeis (2026-08-09, achado do usuário: aquela tela usava /projetos-dre, que calcula
+            # margem_todos_projetos — N+1 real (reconciliacao() por projeto) — só pra montar um
+            # <select> de nomes. Numa loja com muito histórico (Inspirium, ~67 projetos) isso levava
+            # ~16s e a aba ficava em branco até resolver. Endpoint dedicado, sem cálculo nenhum.
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                self.send_json({"ok": True, "projetos": mod_contabil.projetos_com_lancamento(db, ot, oid)})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/periodos":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return

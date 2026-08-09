@@ -55,3 +55,39 @@ def test_razao_endpoint(http_client_factory, seed, app_db):
         "conta_debito_id": ids["1.1.01"], "conta_credito_id": ids["4.1.01"], "valor": 70})
     st, d = c.get("/api/financeiro/contas/" + str(ids["1.1.01"]) + "/razao")
     assert st == 200 and d["razao"]["saldo_final"] >= 70
+
+
+# ── filtro por conta (2026-08-09, aba Lançamentos Contábeis: "Conta" busca tudo associado) ──────
+def test_get_lancamentos_filtra_por_conta_debito_ou_credito(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    ids = _ids(c)
+    c.post("/api/financeiro/lancamentos", {
+        "conta_debito_id": ids["1.1.01"], "conta_credito_id": ids["4.1.01"],
+        "valor": 111.0, "historico": "conta como débito"})
+    c.post("/api/financeiro/lancamentos", {
+        "conta_debito_id": ids["4.1.01"], "conta_credito_id": ids["1.1.01"],
+        "valor": 222.0, "historico": "conta como crédito"})
+    st, d = c.get("/api/financeiro/lancamentos?conta_id=" + str(ids["1.1.01"]))
+    assert st == 200
+    valores = {l["valor"] for l in d["lancamentos"]}
+    assert 111.0 in valores and 222.0 in valores   # aparece nos dois lados
+
+
+def test_get_lancamentos_conta_id_exclui_lancamentos_de_outra_conta(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    ids = _ids(c)
+    c.post("/api/financeiro/lancamentos", {
+        "conta_debito_id": ids["1.1.01"], "conta_credito_id": ids["4.1.01"], "valor": 55.0})
+    st, d = c.get("/api/financeiro/lancamentos?conta_id=" + str(ids["4.1.01"]))
+    assert st == 200 and all(
+        (l["conta_debito_id"] == ids["4.1.01"] or l["conta_credito_id"] == ids["4.1.01"])
+        for l in d["lancamentos"])
+
+
+def test_get_lancamentos_conta_id_invalido_ignora_o_filtro_em_vez_de_quebrar(http_client_factory, seed, app_db):
+    """🟡 achado da Vera (2026-08-09): conta_id não-numérico na query derrubava a conexão (exceção
+    não tratada) em vez de responder — não alcançável pela tela (o <select> só emite id numérico
+    ou vazio), mas destoa do padrão do resto do arquivo de sempre guardar int(qs...) com try/except."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/financeiro/lancamentos?conta_id=abc")
+    assert st == 200 and d["ok"]

@@ -717,7 +717,7 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.3.01": ("2.1", "variavel"), "5.3.02": ("2.1", "variavel"), "5.3.03": ("4.3", "variavel"),
     "5.3.04": ("2.3", "variavel"), "5.3.05": ("2.1", "variavel"), "5.3.06": ("2.1", "fixo"),
     "5.3.07": ("2.3", "fixo"),     "5.3.08": ("2.3", "fixo"),     "5.3.09": ("2.3", "fixo"),
-    "5.3.11": ("2.3", "fixo"),     "5.3.12": ("2.3", "fixo"),     "5.3.13": ("2.1", "variavel"),
+    "5.3.11": ("2.3", "fixo"),     "5.3.12": ("2.3", "variavel"), "5.3.13": ("2.1", "variavel"),
     "5.3.14": ("2.3", "fixo"),     "5.3.15": ("2.1", "variavel"), "5.3.16": ("4.3", "fixo"),
     "5.3.17": ("3.2", "variavel"), "5.3.18": ("3.2", "variavel"), "5.3.19": ("3.2", "variavel"),
     "5.3.21": ("2.1", "variavel"), "5.4.01": ("1.5", "fixo"),     "5.4.02": ("1.5", "fixo"),
@@ -728,7 +728,7 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.4.15": ("4.3", "fixo"),     "5.4.16": ("4.3", "fixo"),     "5.4.17": ("4.5", "fixo"),
     "5.4.18": ("4.5", "fixo"),     "5.4.19": ("4.2", "fixo"),     "5.4.20": ("4.5", "fixo"),
     "5.5.01": ("4.3", "fixo"),     "5.5.02": ("4.3", "fixo"),     "5.5.03": ("4.3", "variavel"),
-    "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "fixo"),     "5.6.10": ("4.3", "fixo"),
+    "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "fixo"),     "5.6.10": ("4.5", "variavel"),
 }
 
 
@@ -755,6 +755,35 @@ def migrar_classificacao_grupo5_v1(db):
                 nat_setado += 1
     db.commit()
     return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
+
+
+def migrar_classificacao_grupo5_v2(db):
+    """Correção pós-aprovação (2026-08-08, decisão do usuário): Brindes (5.3.12) e Ajuste de
+    Provisões (5.6.10) são associadas à VENDA — Variável, não Fixo; 5.6.10 também muda de Centro
+    de Custo, de Administrativo-financeiro (4.3) pra Custos Distribuídos (4.5) — é destino
+    genérico da FALTA na reconciliação (Etapa 21), pode vir de qualquer rubrica, não é um custo
+    administrativo fixo. Só corrige quem AINDA estiver no default antigo (natureza "fixo", e p/
+    5.6.10 também centro de custo ainda "4.3") — uma reclassificação manual feita depois nunca é
+    sobrescrita. Roda no boot logo depois de migrar_classificacao_grupo5_v1."""
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    corrigidos = 0
+    for ot, oid in owners:
+        contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+        ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=ot, owner_id=oid).all()}
+        brindes = contas.get("5.3.12")
+        if brindes is not None and brindes.natureza_custo == "fixo":
+            brindes.natureza_custo = "variavel"
+            corrigidos += 1
+        ajuste = contas.get("5.6.10")
+        admfin = ccs.get("4.3")
+        distrib = ccs.get("4.5")
+        if (ajuste is not None and ajuste.natureza_custo == "fixo" and distrib is not None
+                and admfin is not None and ajuste.centro_custo_id == admfin.id):
+            ajuste.natureza_custo = "variavel"
+            ajuste.centro_custo_id = distrib.id
+            corrigidos += 1
+    db.commit()
+    return {"corrigidos": corrigidos}
 
 
 # ── Livro de Lançamentos (sub-projeto #2) ────────────────────────────────────
@@ -894,10 +923,15 @@ def fluxo_caixa(db, owner_tipo, owner_id, conta_ids, ini, fim):
     return {"saldo_inicial": round(saldo_ini, 2), "dias": dias, "saldo_final": saldo}
 
 
-def listar_lancamentos(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None, limite=500):
+def listar_lancamentos(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None, conta_id=None, limite=500):
+    """`conta_id`: filtra lançamentos onde a conta aparece como débito OU crédito — "todos os
+    lançamentos associados àquela conta" (2026-08-09, filtro da aba Lançamentos Contábeis)."""
     q = db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
     if projeto_id:
         q = q.filter(Lancamento.projeto_id == projeto_id)
+    if conta_id:
+        from sqlalchemy import or_
+        q = q.filter(or_(Lancamento.conta_debito_id == conta_id, Lancamento.conta_credito_id == conta_id))
     q = _filtra_periodo(q, ini, fim).order_by(Lancamento.data.desc(), Lancamento.id.desc())
     return [_lanc_serial(l) for l in q.limit(limite).all()]
 
@@ -2222,6 +2256,90 @@ def relatorio_natureza(db, owner_tipo, owner_id, ini=None, fim=None):
         itens = sorted(itens, key=lambda x: x["codigo"])
         out[chave] = {"contas": itens, "total": round(sum(x["valor"] for x in itens), 2)}
     return out
+
+
+# ── Sugestões de despesa do mês anterior (painel guiado de Lançamentos, 2026-08-09) ──────────
+def _intervalo_mes_anterior(ref=None):
+    """(ini, fim) do mês anterior a `ref` (default agora), dia cheio. replace(day=1) - 1 dia
+    rola sozinho pra dezembro do ano anterior em janeiro, sem caso especial."""
+    from datetime import datetime as _dt, time as _time, timedelta
+    ref = ref or _dt.utcnow()
+    primeiro_atual = ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ultimo_dia_anterior = primeiro_atual - timedelta(days=1)
+    ini = ultimo_dia_anterior.replace(day=1)
+    fim = _dt.combine(ultimo_dia_anterior.date(), _time.max)
+    return ini, fim
+
+
+def _intervalo_mes_atual(ref=None):
+    """(ini, fim) do mês em curso ATÉ `ref` — "já lançado" olha só o que já aconteceu."""
+    from datetime import datetime as _dt
+    ref = ref or _dt.utcnow()
+    return ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0), ref
+
+
+def _contrapartida_mais_recente(db, ot, oid, conta_ids, ini, fim):
+    """{conta_debito_id: conta_credito_id do lançamento MAIS RECENTE na janela} — 1 query
+    (ORDER BY data DESC, id DESC + setdefault na 1ª ocorrência), não N+1 por conta."""
+    if not conta_ids:
+        return {}
+    q = (db.query(Lancamento.conta_debito_id, Lancamento.conta_credito_id)
+           .filter(Lancamento.owner_tipo == ot, Lancamento.owner_id == oid)
+           .filter(Lancamento.conta_debito_id.in_(conta_ids)))
+    q = _filtra_periodo(q, ini, fim).order_by(Lancamento.data.desc(), Lancamento.id.desc())
+    out = {}
+    for deb_id, cred_id in q.all():
+        out.setdefault(deb_id, cred_id)
+    return out
+
+
+def _contas_com_lancamento_debito(db, ot, oid, conta_ids, ini, fim):
+    """Set de conta_ids com QUALQUER lançamento como DÉBITO na janela — 1 query (distinct)."""
+    if not conta_ids:
+        return set()
+    q = (db.query(Lancamento.conta_debito_id)
+           .filter(Lancamento.owner_tipo == ot, Lancamento.owner_id == oid)
+           .filter(Lancamento.conta_debito_id.in_(conta_ids)))
+    q = _filtra_periodo(q, ini, fim)
+    return {row[0] for row in q.distinct().all()}
+
+
+def sugestoes_despesas_mes_anterior(db, owner_tipo, owner_id, ref=None):
+    """Sugestões pro painel guiado de Lançamentos: toda conta analítica ATIVA do grupo 5 com
+    movimento líquido POSITIVO (D−C > 0) no mês anterior a `ref`. contrapartida_sugerida = outra
+    ponta do lançamento mais recente dessa conta na mesma janela. ja_lancado_mes_atual = já tem
+    lançamento como débito no mês em curso (a UI não insiste na sugestão)."""
+    seed_plano(db, owner_tipo, owner_id)
+    ini_ant, fim_ant = _intervalo_mes_anterior(ref)
+    ini_atu, fim_atu = _intervalo_mes_atual(ref)
+    contas_g5 = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
+                 grupo=5, tipo="analitica", ativa=1).all())
+    ids = [c.id for c in contas_g5]
+    debs = _somas_por_conta(db, owner_tipo, owner_id, ids, "debito", ini_ant, fim_ant)
+    creds = _somas_por_conta(db, owner_tipo, owner_id, ids, "credito", ini_ant, fim_ant)
+    contrapartidas = _contrapartida_mais_recente(db, owner_tipo, owner_id, ids, ini_ant, fim_ant)
+    ja_lancadas = _contas_com_lancamento_debito(db, owner_tipo, owner_id, ids, ini_atu, fim_atu)
+    contra_ids = {cid for cid in contrapartidas.values() if cid}
+    contra_map = ({c.id: c for c in db.query(Conta).filter(Conta.id.in_(contra_ids)).all()}
+                  if contra_ids else {})
+    out = []
+    for c in sorted(contas_g5, key=lambda x: x.codigo):
+        valor = round(debs.get(c.id, 0.0) - creds.get(c.id, 0.0), 2)
+        if valor <= 0:
+            continue
+        contra_id = contrapartidas.get(c.id)
+        contra = contra_map.get(contra_id)
+        out.append({
+            "conta_id": c.id, "codigo": c.codigo, "nome": c.nome,
+            "natureza_custo": c.natureza_custo,
+            "valor_sugerido": valor,
+            "contrapartida_sugerida_id": contra_id,
+            "contrapartida_sugerida_nome": (contra.codigo + " — " + contra.nome) if contra else None,
+            "contrapartida_sugerida_ativa": bool(contra and contra.ativa),
+            "ja_lancado_mes_atual": c.id in ja_lancadas,
+        })
+    return {"periodo_referencia": {"ini": ini_ant.isoformat(), "fim": fim_ant.isoformat()},
+            "sugestoes": out}
 
 
 def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):

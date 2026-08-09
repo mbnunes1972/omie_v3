@@ -983,6 +983,17 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/lancamentos/sugestoes-mes-anterior":
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                r = mod_contabil.sugestoes_despesas_mes_anterior(db, ot, oid)
+                self.send_json({"ok": True, **r})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/lancamentos":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return
@@ -993,13 +1004,18 @@ class Handler(BaseHTTPRequestHandler):
             proj = (qs.get("projeto") or [None])[0]
             ini = _parse_data((qs.get("ini") or [None])[0])
             fim = _parse_data((qs.get("fim") or [None])[0])
+            _conta_qs = (qs.get("conta_id") or [None])[0]
+            try:
+                conta_id = int(_conta_qs) if _conta_qs else None
+            except ValueError:
+                conta_id = None
             # `data` é DateTime real (com hora) — um `fim` vindo de <input type=date> chega à
             # meia-noite; sem levar pro fim do dia, um lançamento das 14h do próprio dia ficaria
             # de fora do filtro (achado ao testar o filtro combinado projeto+período, 2026-08-07).
             if fim is not None:
                 fim = datetime.combine(fim.date(), datetime.max.time())
             try:
-                lans = mod_contabil.listar_lancamentos(db, ot, oid, projeto_id=proj, ini=ini, fim=fim)
+                lans = mod_contabil.listar_lancamentos(db, ot, oid, projeto_id=proj, ini=ini, fim=fim, conta_id=conta_id)
                 self.send_json({"ok": True, "lancamentos": lans})
             finally:
                 db.close()
@@ -15026,6 +15042,9 @@ def main():
             # Classificação Centro de Custo/Natureza aprovada por Marcelo e Juliana (2026-08-08) —
             # roda DEPOIS do backfill acima (precisa da árvore de Centro de Custo já semeada).
             _mc.migrar_classificacao_grupo5_v1(_dbp)
+            # Correção pós-aprovação: Brindes/Ajuste de Provisões viram Variável (associadas à
+            # venda); Ajuste de Provisões também muda de Centro de Custo (2026-08-08).
+            _mc.migrar_classificacao_grupo5_v2(_dbp)
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

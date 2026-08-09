@@ -1449,7 +1449,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div style="height:8px"></div>
     <div id="fin-panel-prov"><div id="loja-panel-financeiro"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-plano" style="display:none"><div id="plano-contas-shell"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
-    <div id="fin-panel-lanc" style="display:none"><div id="lancamentos-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="fin-panel-lanc" style="display:none"><div id="lancamentos-shell"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-fluxo" style="display:none"><div id="fluxo-caixa-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-dre" style="display:none"><div id="dre-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-bal" style="display:none"><div id="bal-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
@@ -2612,49 +2612,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 <button class="btn btn-ghost btn-sm" id="atd-novo-voltar" style="display:none" onclick="ocAtdNovoVoltar()">Voltar</button>
                 <button class="btn btn-ghost btn-sm" onclick="ocAtdNovoFechar()">Cancelar</button>
                 <button class="btn btn-primary btn-sm" id="atd-novo-primario" onclick="ocAtdNovoPrimario()">Avançar</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Lançamento guiado de Receita/Despesa (2026-08-08) -->
-          <div id="modal-lanc-novo" class="modal-overlay" style="display:none">
-            <div class="modal-box" style="max-width:420px;max-height:88vh;overflow-y:auto">
-              <div class="modal-hdr">
-                <div class="modal-title" id="lanc-novo-titulo">Lançamento de Receitas e Despesas</div>
-                <span class="modal-close" onclick="lancNovoFechar()">&#x2715;</span>
-              </div>
-
-              <div id="lanc-novo-step1">
-                <label class="field-label">O que você quer lançar?</label>
-                <div style="display:flex;gap:10px;margin-top:10px">
-                  <button class="btn btn-primary" style="flex:1;padding:16px" onclick="lancNovoEscolherTipo('receita')">Receita</button>
-                  <button class="btn btn-primary" style="flex:1;padding:16px" onclick="lancNovoEscolherTipo('despesa')">Despesa</button>
-                </div>
-              </div>
-
-              <div id="lanc-novo-step2" style="display:none">
-                <label class="field-label" id="lanc-novo-step2-lbl">Escolha a conta</label>
-                <div id="lanc-novo-contas" style="max-height:280px;overflow-y:auto;margin-top:6px"></div>
-              </div>
-
-              <div id="lanc-novo-step3" style="display:none">
-                <label class="field-label">Conta escolhida</label>
-                <div id="lanc-novo-conta-ctx" style="font-size:13px;color:var(--text);margin:2px 0 12px"></div>
-                <label class="field-label">Data</label>
-                <input id="lanc-novo-data" type="date" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
-                <label class="field-label">Valor</label>
-                <input id="lanc-novo-valor" type="number" step="0.01" min="0" placeholder="0,00" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
-                <label class="field-label" id="lanc-novo-contrapartida-lbl">Origem/Destino</label>
-                <select id="lanc-novo-contrapartida" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px"></select>
-                <label class="field-label">Observação <small style="color:var(--muted);text-transform:none">(opcional)</small></label>
-                <input id="lanc-novo-obs" type="text" placeholder="Ex.: aluguel de fevereiro" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
-              </div>
-
-              <div id="lanc-novo-aviso" style="font-size:12px;color:var(--err);margin-top:8px"></div>
-              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
-                <button class="btn btn-ghost btn-sm" id="lanc-novo-voltar" style="display:none" onclick="lancNovoVoltar()">Voltar</button>
-                <button class="btn btn-ghost btn-sm" onclick="lancNovoFechar()">Cancelar</button>
-                <button class="btn btn-primary btn-sm" id="lanc-novo-primario" style="display:none" onclick="lancNovoSalvar()">Lançar</button>
               </div>
             </div>
           </div>
@@ -5040,16 +4997,26 @@ async function cfgDocumentosRender(){
     + (_docPodeGerir ? '' : ' <strong style="color:var(--text)">Somente leitura</strong> — sem a capacidade de gerir documentos, os cards abaixo não abrem.')
     + '</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fill,240px);gap:12px">'
-    + _docCardHtml('contrato', 'Contrato', 'ti-file-text', 'HTML + Markdown → PDF (WeasyPrint)')
-    + _docCardHtml('proposta', 'Proposta comercial', 'ti-file-invoice', 'modelo .docx')
-    + _docCardHtml('termo_aditivo', 'Termo Aditivo', 'ti-file-diff', 'complemento de contrato (Fatia 3 PE)')
-    + '<div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:12px;padding:14px 16px;opacity:.7">'
-      +'<i class="ti ti-files" style="font-size:20px;color:var(--muted)"></i>'
-      +'<div style="font-weight:600;font-size:13px;color:var(--text);margin-top:6px">Demais documentos</div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">do processo</div>'
-      +'<div style="font-size:10px;color:var(--warn);margin-top:8px">edição de modelos — em construção</div></div>'
+    + Object.keys(_DOC_TIPO_INFO).map(t => _docCardHtml(t, _DOC_TIPO_INFO[t].titulo, _DOC_TIPO_INFO[t].icone, _DOC_TIPO_INFO[t].desc)).join('')
     +'</div>';
 }
+
+// Fonte única dos tipos NATIVOS de documento (mod_documentos.TIPOS espelha as chaves aqui, exceto
+// os customizados "doc_*" — esses vivem só no banco, spec 2026-07-22, sem card fixo). Achado
+// 2026-08-09: cadastro do MODELO só — gerar o documento preenchido pra um projeto real (marcadores,
+// botão na tela do projeto) é frente futura, feita tipo a tipo conforme entrar em uso.
+const _DOC_TIPO_INFO = {
+  contrato:               {titulo: 'Contrato',                          icone: 'ti-file-text',      desc: 'HTML + Markdown → PDF (WeasyPrint)'},
+  proposta:               {titulo: 'Proposta comercial',                icone: 'ti-file-invoice',   desc: 'modelo .docx'},
+  termo_aditivo:          {titulo: 'Termo Aditivo',                     icone: 'ti-file-diff',      desc: 'complemento de contrato (Fatia 3 PE)'},
+  aprovacao_pe:           {titulo: 'Aprovação de PE',                   icone: 'ti-clipboard-check',desc: 'aprovação do Projeto Executivo pelo cliente'},
+  termo_vistoria:         {titulo: 'Termo de Aprovação de Vistoria',    icone: 'ti-checkbox',       desc: 'vistoria final aprovada pelo cliente'},
+  termo_responsabilidade: {titulo: 'Termo de Responsabilidade',         icone: 'ti-shield-check',   desc: 'responsabilidade do cliente (ex.: instalação elétrica)'},
+  solicitacao_medicao:    {titulo: 'Solicitação de Medição',            icone: 'ti-ruler-measure',  desc: 'agenda a medição do ambiente'},
+  checklist_eletros:      {titulo: 'Checklist de Eletros e Complementos', icone: 'ti-list-check',   desc: 'pontos elétricos e complementos do projeto'},
+  autorizacao_foto_video: {titulo: 'Autorização de Foto e Vídeo',       icone: 'ti-camera',         desc: 'uso de imagem do projeto/cliente'},
+  carta_agradecimento:    {titulo: 'Carta de Agradecimento ao Cliente', icone: 'ti-heart',          desc: 'pós-venda'},
+};
 
 function _docModeloAtivo(tipo){
   return (_docModelos||[]).find(m => m.tipo===tipo && m.ativo);
@@ -5080,8 +5047,7 @@ function _docCardHtml(tipo, titulo, icone, desc){
 function abrirModalDocModelo(tipo){
   if(!_docPodeGerir) return;
   _docmCtx = {tipo, corpo_md:null, origem_nome:null, staging:null, origem_sha256:null, analise:null};
-  document.getElementById('docm-titulo').textContent =
-    tipo==='contrato' ? 'Contrato' : tipo==='termo_aditivo' ? 'Termo Aditivo' : 'Proposta comercial';
+  document.getElementById('docm-titulo').textContent = (_DOC_TIPO_INFO[tipo]||{}).titulo || tipo;
   document.getElementById('docm-arquivo').value = '';
   document.getElementById('docm-importar-btn').disabled = true;
   const status = document.getElementById('docm-importar-status');
@@ -12433,7 +12399,7 @@ async function adminLojaProjetosCarregar(){
 const _FIN_SECOES = [
   {id:'prov',    lbl:'Provisões',       ic:'shield-dollar',   load:()=>finDashboardCarregar()},
   {id:'plano',   lbl:'Plano de Contas', ic:'list-tree',       load:()=>planoContasCarregar()},
-  {id:'lanc',    lbl:'Lançamentos',     ic:'receipt',         load:()=>lancamentosCarregar()},
+  {id:'lanc',    lbl:'Lançamentos',     ic:'receipt',         load:()=>lancamentosShellCarregar()},
   {id:'fluxo',   lbl:'Fluxo de Caixa',  ic:'chart-line',      load:()=>fluxoCaixaCarregar()},
   {id:'dre',     lbl:'DRE',             ic:'report-money',    load:()=>dreCarregar()},
   {id:'bal',     lbl:'Balanço',         ic:'scale',           load:()=>balancoCarregar()},
@@ -13688,6 +13654,228 @@ function _lancDataHoraBR(iso){
 }
 let _lancProjFiltro = null;   // null = todos os projetos (filtro da lista "Últimos lançamentos")
 let _lancIniFiltro = null, _lancFimFiltro = null;   // null = sem restrição de período — combina com o de projeto
+let _lancContaFiltro = null;  // null = todas as contas — filtra lançamentos onde a conta aparece como débito OU crédito
+
+// ── 3 abas em Lançamentos (2026-08-09, revisão pedida pelo usuário — a 1ª versão empilhava um
+// toggle DENTRO de outro toggle na mesma tela e ficou confusa/redundante com o formulário cru
+// logo abaixo). Agora são 3 abas separadas, ESQUERDA→DIREITA: Despesa | Receita | Lançamentos
+// Contábeis (a tela antiga, INTACTA, só renomeada). Mesmo padrão de toggle já usado em Plano de
+// Contas (_pcAba) — um `let` de aba + seletor + boxes trocando `style.display`.
+let _lancAba = 'despesa';   // 'despesa' | 'receita' | 'contabeis'
+
+// 2026-08-09 (achado do usuário): _lancAbaSetor só trocava a visibilidade das caixas de
+// conteúdo — os botões do seletor, escritos uma vez só quando a aba abre, nunca eram
+// atualizados, então "Despesa" ficava com destaque (btn-primary) pra sempre, mesmo depois de
+// clicar em Receita/Lançamentos Contábeis. Agora o seletor tem id próprio e é re-renderizado a
+// cada troca, junto com o conteúdo.
+function _lancAbaSetor(v){
+  _lancAba = v;
+  const sel = document.getElementById('lanc-aba-seletor');
+  if(sel) sel.innerHTML = _lancAbaBotoesHtml();
+  _lancAbaRenderizar();
+}
+function _lancAbaBotoesHtml(){
+  const btn = (v,lbl) => '<button class="btn '+(_lancAba===v?'btn-primary':'btn-ghost')+' btn-sm" onclick="_lancAbaSetor(\''+v+'\')">'+lbl+'</button>';
+  return btn('despesa','Despesa')+btn('receita','Receita')+btn('contabeis','Lançamentos Contábeis');
+}
+function _lancAbaSeletorHtml(){
+  return '<div id="lanc-aba-seletor" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+_lancAbaBotoesHtml()+'</div>';
+}
+
+function lancamentosShellCarregar(){
+  const shell = document.getElementById('lancamentos-shell');
+  if(!shell) return;
+  shell.innerHTML = _lancAbaSeletorHtml()
+    + '<div id="lanc-despesa-box"></div>'
+    + '<div id="lanc-receita-box" style="display:none"></div>'
+    + '<div id="lanc-contabeis-box" style="display:none"><div id="lancamentos-box"></div></div>';
+  _lancAbaRenderizar();
+}
+
+function _lancAbaRenderizar(){
+  const boxes = {despesa:'lanc-despesa-box', receita:'lanc-receita-box', contabeis:'lanc-contabeis-box'};
+  Object.entries(boxes).forEach(([aba,id]) => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (aba === _lancAba) ? '' : 'none';
+  });
+  if(_lancAba === 'despesa') _lancDespesaCarregar();
+  else if(_lancAba === 'receita') _lancReceitaCarregar();
+  else lancamentosCarregar();
+}
+
+// Busca e achata as contas analíticas — usado pelas abas Despesa/Receita (independente do
+// formulário cru, que continua com sua própria busca própria, intacta).
+async function _lancContasFlat(){
+  const rc = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
+  const dc = await rc.json().catch(()=>({}));
+  _contasNomeCachePopular(dc.contas);
+  const flat = [];
+  (function walk(ns){ (ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(dc.contas||[]);
+  return flat;
+}
+// ── Select buscável (2026-08-09): digite e filtra as opções, ao invés de rolar um <select>
+// gigante. Padrão pra qualquer box de seleção com lista já carregada em memória (sem round-trip
+// por tecla — pro caso de buscar em servidor, o padrão já existente é npBuscarCliente/etc., que
+// tem debounce+fetch; este aqui é o equivalente pra listas pequenas já em mão, como contas).
+// `id` continua sendo o id do <input type=hidden> com o valor selecionado — todo código que já
+// lia +document.getElementById(id).value não muda nada.
+window._selBuscavelItens = window._selBuscavelItens || {};   // {id: [{id,label}...]}
+function _selBuscavelHtml(id, itens, opts){
+  opts = opts || {};
+  _selBuscavelItens[id] = itens;
+  const selecionado = opts.selecionadoId != null ? itens.find(it => String(it.id) === String(opts.selecionadoId)) : null;
+  const dis = opts.disabled ? ' disabled' : '';
+  return '<div style="position:relative">'
+    + '<input type="text" id="'+id+'-busca" placeholder="'+esc(opts.placeholder||'Digite para buscar…')+'" autocomplete="off"'+dis
+      + ' value="'+esc(selecionado?selecionado.label:'')+'"'
+      + ' oninput="_selBuscavelFiltrar(\''+id+'\')" onfocus="_selBuscavelFiltrar(\''+id+'\')"'
+      + ' style="'+_finInput+'">'
+    + '<input type="hidden" id="'+id+'" value="'+(selecionado?selecionado.id:'')+'">'
+    + '<div id="'+id+'-drop" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border2);border-radius:8px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.4);margin-top:2px"></div>'
+    + '</div>';
+}
+function _selBuscavelFiltrar(id){
+  const itens = _selBuscavelItens[id] || [];
+  const inputEl = document.getElementById(id+'-busca');
+  const drop = document.getElementById(id+'-drop');
+  if(!inputEl || !drop) return;
+  const termo = (inputEl.value||'').trim().toLowerCase();
+  const filtrados = termo ? itens.filter(it => it.label.toLowerCase().includes(termo)) : itens;
+  drop.innerHTML = filtrados.length ? filtrados.slice(0,50).map(it =>
+      '<div onmousedown="_selBuscavelEscolher(\''+id+'\','+it.id+')" onmouseover="this.style.background=\'var(--accent-soft)\'" onmouseout="this.style.background=\'\'" style="padding:8px 12px;font-size:12px;cursor:pointer">'+esc(it.label)+'</div>'
+    ).join('')
+    : '<div style="padding:8px 12px;font-size:12px;color:var(--muted)">Nada encontrado.</div>';
+  drop.style.display = '';
+}
+function _selBuscavelEscolher(id, valorId){
+  const itens = _selBuscavelItens[id] || [];
+  const item = itens.find(it => String(it.id) === String(valorId));
+  document.getElementById(id).value = valorId;
+  document.getElementById(id+'-busca').value = item ? item.label : '';
+  document.getElementById(id+'-drop').style.display = 'none';
+}
+document.addEventListener('click', function(ev){
+  Object.keys(_selBuscavelItens).forEach(function(id){
+    const inputEl = document.getElementById(id+'-busca'), drop = document.getElementById(id+'-drop');
+    if(inputEl && drop && !inputEl.contains(ev.target) && !drop.contains(ev.target)) drop.style.display = 'none';
+  });
+});
+
+// Formulário simples de lançamento — tipo já vem fixado pela aba (Despesa ou Receita), sem
+// escolher de novo na tela.
+function _lancFormaHtml(flat, tipo){
+  // Prefixo com `tipo` (2026-08-09, achado da Vera): Despesa e Receita são boxes DIFERENTES no
+  // DOM, mas ambas ficam montadas ao mesmo tempo (só a exibição alterna via style.display) — ids
+  // fixos colidiam, e document.getElementById sempre resolvia pro primeiro (Despesa), deixando a
+  // aba Receita completamente inoperante depois de visitar as duas.
+  const pfx = 'lan-forma-'+tipo+'-';
+  const grupoAlvo = tipo === 'receita' ? 4 : 5;
+  const contaItens = flat.filter(n=>n.grupo===grupoAlvo).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
+  const contraItens = flat.filter(n=>n.grupo===1||n.grupo===2).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
+  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+    +'<div><label class="field-label">'+(tipo==='receita'?'Conta de receita':'Conta de despesa')+'</label>'+_selBuscavelHtml(pfx+'conta', contaItens, {placeholder:'Digite pra buscar a conta…'})+'</div>'
+    +'<div><label class="field-label">Contrapartida (caixa/bancos, etc.)</label>'+_selBuscavelHtml(pfx+'contra', contraItens, {placeholder:'Digite pra buscar…'})+'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">'
+    +'<div style="width:130px"><label class="field-label">Valor</label><input id="'+pfx+'valor" type="number" step="0.01" style="'+_finInput+'"></div>'
+    +'<div><label class="field-label">Data</label><input id="'+pfx+'data" type="date" value="'+_hojeISO()+'" style="'+_finInput+';width:auto"></div>'
+    +'<div style="flex:1;min-width:180px"><label class="field-label">Observação</label><input id="'+pfx+'hist" type="text" style="'+_finInput+'"></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="_lancFormaLancar(this,\''+tipo+'\')">Lançar</button>'
+    +'</div>';
+}
+async function _lancFormaLancar(btn, tipo){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }
+  try{
+    const pfx = 'lan-forma-'+tipo+'-';
+    const contaId = +document.getElementById(pfx+'conta').value;
+    const contraId = +document.getElementById(pfx+'contra').value;
+    const valor = parseFloat(document.getElementById(pfx+'valor').value||'0');
+    const data = document.getElementById(pfx+'data').value || null;
+    const hist = document.getElementById(pfx+'hist').value || '';
+    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
+    if(!contaId||!contraId||contaId===contraId){ showToast('Escolha as duas contas.', true); return; }
+    // Receita é credora (credita a receita, debita a contrapartida); despesa é devedora
+    // (debita a despesa, credita a contrapartida) — inversão obrigatória conforme o tipo.
+    const debId = tipo==='receita' ? contraId : contaId;
+    const credId = tipo==='receita' ? contaId : contraId;
+    const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin', body: JSON.stringify({conta_debito_id:debId, conta_credito_id:credId, valor, data, historico:hist})});
+    const d = await r.json().catch(()=>({}));
+    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    showToast('Lançamento registrado'); _lancAbaRenderizar();
+  } finally { if(btn) btn.disabled = false; }
+}
+
+async function _lancReceitaCarregar(){
+  const box = document.getElementById('lanc-receita-box');
+  if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:11px">Carregando…</em>';
+  const flat = await _lancContasFlat();
+  box.innerHTML = _lancFormaHtml(flat, 'receita');
+}
+
+async function _lancDespesaCarregar(){
+  const box = document.getElementById('lanc-despesa-box');
+  if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:11px">Carregando…</em>';
+  const [flat, sd] = await Promise.all([
+    _lancContasFlat(),
+    (async()=>(await fetch('/api/financeiro/lancamentos/sugestoes-mes-anterior', {credentials:'same-origin'})).json().catch(()=>({})))(),
+  ]);
+  box.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Despesas com lançamento no mês passado — confira e lance de novo, ou ajuste.</div>'
+    + _lancSugestoesHtml(sd.sugestoes||[], flat)
+    + '<div style="font-size:12px;font-weight:700;margin:18px 0 10px;padding-top:14px;border-top:1px solid var(--border)">Lançar outra despesa</div>'
+    + _lancFormaHtml(flat, 'despesa');
+}
+function _lancSugestoesHtml(sugestoes, flat){
+  if(!sugestoes.length) return '<div style="font-size:12px;color:var(--muted);padding:8px 0">Nenhuma despesa do mês passado pra sugerir.</div>';
+  const contraItens = flat.filter(n=>n.grupo===1||n.grupo===2).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
+  const linha = s => {
+    const dis = s.ja_lancado_mes_atual;
+    // contrapartida sugerida pode ter sido inativada depois — não pré-seleciona às cegas
+    const selId = (s.contrapartida_sugerida_ativa && s.contrapartida_sugerida_id) || null;
+    const natLbl = s.natureza_custo && _NATUREZA_LABELS[s.natureza_custo];
+    const natBadge = natLbl
+      ? ' <span style="font-size:9px;color:'+(s.natureza_custo==='variavel'?'var(--warn)':'var(--muted)')+';border:1px solid var(--border);border-radius:4px;padding:0 4px"'
+        +(s.natureza_custo==='variavel'?' title="Custo variável — confira se o valor do mês passado ainda se aplica"':'')+'>'+esc(natLbl)+'</span>'
+      : '';
+    const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:6px">'+esc(s.codigo)+'</span>';
+    // Valor/Data/Contrapartida têm label EM CIMA do campo (linha extra) — nome da conta e botão
+    // não tinham, então ficavam mais "curtos" que os outros itens da linha, e qualquer align-items
+    // (center OU end) media a altura ERRADA: cada item se alinha pela própria caixa, não pelo campo
+    // de fato. Fix: rótulo invisível do mesmo tamanho em cima do nome/botão também — aí todo item
+    // tem a MESMA altura total (rótulo + conteúdo) e align-items:end alinha o conteúdo de verdade.
+    const rotuloFantasma = '<label class="field-label" style="visibility:hidden">.</label>';
+    return '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;padding:8px 4px;border-bottom:1px solid var(--border);opacity:'+(dis?'.55':'1')+'">'
+      +'<div style="min-width:210px;font-size:12px">'+rotuloFantasma+'<div style="padding:7px 0">'+cod+esc(s.nome)+natBadge+'</div></div>'
+      +'<div style="width:110px"><label class="field-label">Valor</label><input id="sug-valor-'+s.conta_id+'" type="number" step="0.01" value="'+s.valor_sugerido+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
+      +'<div><label class="field-label">Data</label><input id="sug-data-'+s.conta_id+'" type="date" value="'+_hojeISO()+'"'+(dis?' disabled':'')+' style="'+_finInput+';width:auto"></div>'
+      +'<div style="min-width:220px"><label class="field-label">Contrapartida</label>'+_selBuscavelHtml('sug-contra-'+s.conta_id, contraItens, {placeholder:'Digite pra buscar…', selecionadoId:selId, disabled:dis})+'</div>'
+      +'<div>'+rotuloFantasma
+        +(dis?'<div style="font-size:11px;color:var(--muted);padding:7px 0">já lançado este mês</div>'
+             :'<button class="btn btn-primary btn-sm" onclick="_lancSugestaoLancar('+s.conta_id+',this)">Lançar</button>')
+      +'</div>'
+      +'</div>';
+  };
+  return sugestoes.map(linha).join('');
+}
+async function _lancSugestaoLancar(contaId, btn){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }
+  try{
+    const valor = parseFloat(document.getElementById('sug-valor-'+contaId).value||'0');
+    const data = document.getElementById('sug-data-'+contaId).value || null;
+    const contraId = +document.getElementById('sug-contra-'+contaId).value;
+    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
+    if(!contraId){ showToast('Escolha a contrapartida.', true); return; }
+    const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin', body: JSON.stringify({conta_debito_id:contaId, conta_credito_id:contraId, valor, data,
+        historico:'Despesa recorrente (sugerida a partir do mês anterior)'})});
+    const d = await r.json().catch(()=>({}));
+    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    showToast('Lançamento registrado'); _lancDespesaCarregar();
+  } finally { if(btn) btn.disabled = false; }
+}
+
 async function lancamentosCarregar(){
   const box = document.getElementById('lancamentos-box');
   if(!box) return;
@@ -13697,7 +13885,8 @@ async function lancamentosCarregar(){
   _contasNomeCachePopular(dc.contas);
   const flat=[]; (function walk(ns){(ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); });})(dc.contas);
   const byId={}; flat.forEach(n=>byId[n.id]=n.codigo);
-  const opts = flat.map(n=>'<option value="'+n.id+'">'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>').join('');
+  const optsContaFiltro = ['<option value="">Todas as contas</option>']
+    .concat(flat.map(n=>'<option value="'+n.id+'"'+(String(n.id)===String(_lancContaFiltro||'')?' selected':'')+'>'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>')).join('');
   let projetos = [];
   try{
     const rp = await fetch('/api/financeiro/projetos-dre', {credentials:'same-origin'});
@@ -13707,9 +13896,10 @@ async function lancamentosCarregar(){
   if(_lancProjFiltro) qsPartes.push('projeto='+encodeURIComponent(_lancProjFiltro));
   if(_lancIniFiltro) qsPartes.push('ini='+encodeURIComponent(_lancIniFiltro));
   if(_lancFimFiltro) qsPartes.push('fim='+encodeURIComponent(_lancFimFiltro));
+  if(_lancContaFiltro) qsPartes.push('conta_id='+encodeURIComponent(_lancContaFiltro));
   const qs = qsPartes.length ? ('?'+qsPartes.join('&')) : '';
   const dl = await (await fetch('/api/financeiro/lancamentos'+qs, {credentials:'same-origin'})).json().catch(()=>({}));
-  const filtroAtivo = _lancProjFiltro || _lancIniFiltro || _lancFimFiltro;
+  const filtroAtivo = _lancProjFiltro || _lancIniFiltro || _lancFimFiltro || _lancContaFiltro;
   const lista = (dl.lancamentos||[]).map(l=>{
     const codDeb = byId[l.conta_debito_id]||l.conta_debito_id, codCred = byId[l.conta_credito_id]||l.conta_credito_id;
     return '<div style="display:flex;gap:10px;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px">'
@@ -13721,57 +13911,52 @@ async function lancamentosCarregar(){
   const optsProjFiltro = ['<option value="">Todos os projetos</option>']
     .concat(projetos.map(p=>'<option value="'+esc(p)+'"'+(p===_lancProjFiltro?' selected':'')+'>'+esc(p)+'</option>')).join('');
   box.innerHTML =
-     '<div style="display:grid;grid-template-columns:2fr auto;gap:8px;align-items:end;margin-bottom:8px">'
-    +'<div><label class="field-label">Descreva o evento e a IA sugere a conta (você confirma)</label>'
-    +'<input id="lan-ia-txt" type="text" placeholder="ex.: pagamento do aluguel da loja" style="'+_finInput+'"></div>'
-    +'<button class="btn btn-ghost btn-sm" onclick="finSugerir()">Sugerir conta</button>'
-    +'</div>'
-    +'<div id="lan-ia-out" style="font-size:11px;color:var(--muted);min-height:16px;margin-bottom:8px"></div>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">'
-    +'<div><label class="field-label">Débito</label><select id="lan-deb" style="'+_finInput+'">'+opts+'</select></div>'
-    +'<div><label class="field-label">Crédito</label><select id="lan-cred" style="'+_finInput+'">'+opts+'</select></div>'
-    +'<div><label class="field-label">Projeto</label><select id="lan-proj-sel" onchange="_lancProjFiltro=this.value||null;lancamentosCarregar()" style="'+_finInput+'">'+optsProjFiltro+'</select></div>'
-    +'</div>'
-    +'<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:14px">'
-    +'<div style="width:130px"><label class="field-label">Valor</label><input id="lan-valor" type="number" step="0.01" style="'+_finInput+'"></div>'
-    +'<div style="flex:1;min-width:180px"><label class="field-label">Histórico</label><input id="lan-hist" type="text" style="'+_finInput+'"></div>'
+     '<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:18px">'
+    +'<div style="flex:1;min-width:220px"><label class="field-label">Conta</label><select onchange="_lancContaFiltro=this.value||null;lancamentosCarregar()" style="'+_finInput+'">'+optsContaFiltro+'</select></div>'
+    +'<div style="flex:1;min-width:180px"><label class="field-label">Projeto</label><select onchange="_lancProjFiltro=this.value||null;lancamentosCarregar()" style="'+_finInput+'">'+optsProjFiltro+'</select></div>'
     +'<div><label class="field-label">De</label><input type="date" value="'+esc(_lancIniFiltro||'')+'" onchange="_lancIniFiltro=this.value||null;lancamentosCarregar()" style="'+_finInput+';width:auto"></div>'
     +'<div><label class="field-label">Até</label><input type="date" value="'+esc(_lancFimFiltro||'')+'" onchange="_lancFimFiltro=this.value||null;lancamentosCarregar()" style="'+_finInput+';width:auto"></div>'
-    +'<button class="btn btn-primary btn-sm" onclick="finLancar()">Lançar</button>'
     +'</div>'
+    +'<div style="display:flex;justify-content:center;margin-bottom:18px"><button class="btn btn-primary" onclick="lancContabilAbrir()">Realizar Lançamento</button></div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Últimos lançamentos'+(filtroAtivo?' <span style="color:var(--muted);font-weight:400">(filtrado)</span>':'')+'</div>'
     +lista;
 }
-let _finSugestao = null;   // sugestão da IA registrada junto do lançamento (§6.3)
-async function finSugerir(){
-  const texto = document.getElementById('lan-ia-txt').value.trim();
-  const out = document.getElementById('lan-ia-out');
-  if(!texto){ out.textContent = 'Descreva o evento primeiro.'; return; }
-  const r = await fetch('/api/financeiro/sugerir-conta', {method:'POST', headers:{'Content-Type':'application/json'},
-    credentials:'same-origin', body: JSON.stringify({texto})});
-  const s = (await r.json().catch(()=>({}))).sugestao;
-  if(!s){ _finSugestao=null; out.innerHTML = '<span style="color:var(--muted)">Sem sugestão — escolha manualmente.</span>'; return; }
-  _finSugestao = {texto, sugerida: s.codigo+' '+s.nome};
-  const sel = document.getElementById('lan-deb');
-  sel.value = String(s.conta_id);   // pré-preenche o Débito; funcionário confirma ou troca
-  out.innerHTML = 'Sugestão: <strong style="color:var(--accent)">'+esc(s.codigo+' — '+s.nome)+'</strong> (débito). '
-    +'<span style="color:var(--muted)">Confirme ou troque antes de lançar — a IA nunca lança sozinha.</span>';
-}
-async function finLancar(){
-  const deb=+document.getElementById('lan-deb').value, cred=+document.getElementById('lan-cred').value;
-  const valor=parseFloat(document.getElementById('lan-valor').value||'0');
-  if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
-  // registra a sugestão só se o funcionário manteve o débito sugerido (auditoria: sugerido vs escolhido)
-  const ia = _finSugestao ? {...(_finSugestao), escolhida_id: deb} : null;
-  const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
-    credentials:'same-origin', body: JSON.stringify({conta_debito_id:deb, conta_credito_id:cred, valor,
-      projeto_id: document.getElementById('lan-proj-sel').value||null, historico: document.getElementById('lan-hist').value||'',
-      ia_sugestao: ia})});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
-  _finSugestao = null; showToast('Lançamento registrado'); lancamentosCarregar();
-}
 
+// Modal "Realizar Lançamento" — Débito/Crédito/Valor/Data/Motivo (2026-08-09; a linha de busca
+// acima é só filtro agora, a IA-sugestão de conta saiu por pedido do usuário).
+function lancContabilAbrir(){
+  document.getElementById('modal-lanc-contabil').style.display = 'flex';
+  document.getElementById('lcont-valor').value = '';
+  document.getElementById('lcont-hist').value = '';
+  document.getElementById('lcont-data').value = _hojeISO();
+  _lancContabilCarregarContas();
+}
+function lancContabilFechar(){ document.getElementById('modal-lanc-contabil').style.display = 'none'; }
+async function _lancContabilCarregarContas(){
+  const rc = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
+  const dc = await rc.json().catch(()=>({}));
+  const flat=[]; (function walk(ns){(ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); });})(dc.contas||[]);
+  const opts = flat.map(n=>'<option value="'+n.id+'">'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>').join('');
+  document.getElementById('lcont-deb').innerHTML = opts;
+  document.getElementById('lcont-cred').innerHTML = opts;
+}
+async function lancContabilSalvar(btn){
+  if(btn){ if(btn.disabled) return; btn.disabled = true; }
+  try{
+    const deb = +document.getElementById('lcont-deb').value;
+    const cred = +document.getElementById('lcont-cred').value;
+    const valor = parseFloat(document.getElementById('lcont-valor').value||'0');
+    const data = document.getElementById('lcont-data').value || null;
+    const hist = document.getElementById('lcont-hist').value || '';
+    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
+    if(!deb||!cred||deb===cred){ showToast('Escolha débito e crédito (contas diferentes).', true); return; }
+    const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin', body: JSON.stringify({conta_debito_id:deb, conta_credito_id:cred, valor, data, historico:hist})});
+    const d = await r.json().catch(()=>({}));
+    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    showToast('Lançamento registrado'); lancContabilFechar(); lancamentosCarregar();
+  } finally { if(btn) btn.disabled = false; }
+}
 // Árvore de Plano de Contas/Centro de Custo — mesmo componente, config por aba (Centro de
 // Custo/Natureza, 2026-08-08). _PC_CFGS injeta endpoint + rótulos; a árvore em si (_pcNode/
 // pcNovo/pcRenomear/pcRemover) é genérica.
@@ -13787,11 +13972,20 @@ const _PC_CFGS = {
 // 3 abas do Plano de Contas (2026-08-08): Contas (padrão) / Centro de Custos / Natureza dos
 // Custos. Mesmo padrão de toggle in-panel já usado em Reconciliação (_reconPainel).
 let _pcAba = 'contas';   // 'contas' | 'centrocusto' | 'naturezacusto'
-function _pcAbaSetor(v){ _pcAba = v; _pcAbaRenderizar(); }
-function _pcAbaSeletorHtml(){
+// Mesmo fix do seletor de Lançamentos (2026-08-09): seletor com id próprio, re-renderizado a
+// cada troca — senão o destaque (btn-primary) ficava preso na 1ª aba pra sempre.
+function _pcAbaSetor(v){
+  _pcAba = v;
+  const sel = document.getElementById('pc-aba-seletor');
+  if(sel) sel.innerHTML = _pcAbaBotoesHtml();
+  _pcAbaRenderizar();
+}
+function _pcAbaBotoesHtml(){
   const btn = (v,lbl) => '<button class="btn '+(_pcAba===v?'btn-primary':'btn-ghost')+' btn-sm" onclick="_pcAbaSetor(\''+v+'\')">'+lbl+'</button>';
-  return '<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'
-    +btn('contas','Contas')+btn('centrocusto','Centro de Custos')+btn('naturezacusto','Natureza dos Custos')+'</div>';
+  return btn('contas','Contas')+btn('centrocusto','Centro de Custos')+btn('naturezacusto','Natureza dos Custos');
+}
+function _pcAbaSeletorHtml(){
+  return '<div id="pc-aba-seletor" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">'+_pcAbaBotoesHtml()+'</div>';
 }
 
 function planoContasCarregar(){
@@ -13956,10 +14150,7 @@ async function _pcCarregar(cfgKey){
   if(r.status === 403){ box.innerHTML = '<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const d = await r.json().catch(()=>({}));
   if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
-  const botaoLanc = cfgKey === 'contas'
-    ? '<div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="lancNovoAbrir()">Lançamento de Receitas e Despesas</button></div>' : '';
-  box.innerHTML = botaoLanc
-    + '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
+  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
     + d[cfg.itemsKey].map(c => _pcNode(cfgKey, c, 0)).join('');
 }
 
@@ -14013,100 +14204,6 @@ async function pcRemover(cfgKey, id){
   const d = await r.json().catch(()=>({}));
   if(d.ok) showToast((d.acao === 'apagada' || d.acao === 'apagado') ? 'Item apagado' : 'Item inativado');
   _pcRefresh(cfgKey);
-}
-
-// Lançamento guiado de Receita/Despesa (2026-08-08, aba Contas) — 3 passos: tipo -> conta
-// específica -> data/valor/contrapartida/observação. Sem endpoint novo: reusa
-// POST /api/financeiro/lancamentos (já aceita `data`), calculando débito/crédito sozinho a
-// partir do tipo escolhido (despesa é devedora: debita a despesa, credita a contrapartida;
-// receita é credora: credita a receita, debita a contrapartida).
-let _lancNovoStep = 1;
-let _lancNovoTipo = null;          // 'receita' | 'despesa'
-let _lancNovoContaId = null;
-let _lancNovoContaLabel = '';
-
-function lancNovoAbrir(){
-  _lancNovoStep = 1; _lancNovoTipo = null; _lancNovoContaId = null; _lancNovoContaLabel = '';
-  document.getElementById('lanc-novo-aviso').textContent = '';
-  _lancNovoMostrarStep(1);
-  document.getElementById('modal-lanc-novo').style.display = 'flex';
-}
-function lancNovoFechar(){ document.getElementById('modal-lanc-novo').style.display = 'none'; }
-
-function _lancNovoMostrarStep(n){
-  _lancNovoStep = n;
-  [1,2,3].forEach(i=>{ const e = document.getElementById('lanc-novo-step'+i); if(e) e.style.display = i===n?'':'none'; });
-  document.getElementById('lanc-novo-voltar').style.display = n>1 ? '' : 'none';
-  document.getElementById('lanc-novo-primario').style.display = n===3 ? '' : 'none';
-  document.getElementById('lanc-novo-aviso').textContent = '';
-}
-
-function lancNovoVoltar(){
-  if(_lancNovoStep===3) _lancNovoMostrarStep(2);
-  else if(_lancNovoStep===2) _lancNovoMostrarStep(1);
-}
-
-async function lancNovoEscolherTipo(tipo){
-  _lancNovoTipo = tipo;
-  document.getElementById('lanc-novo-step2-lbl').textContent = tipo==='receita' ? 'Escolha a receita' : 'Escolha a despesa';
-  document.getElementById('lanc-novo-contas').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  _lancNovoMostrarStep(2);
-  const r = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ document.getElementById('lanc-novo-contas').innerHTML = '<em style="color:var(--muted)">Falha ao carregar contas.</em>'; return; }
-  const grupoAlvo = tipo==='receita' ? 4 : 5;
-  const flat = [];
-  (function walk(ns){ (ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(d.contas);
-  const itens = flat.filter(n => n.grupo === grupoAlvo);
-  document.getElementById('lanc-novo-contas').innerHTML = itens.map(n =>
-    '<div class="btn btn-ghost btn-sm" style="width:100%;text-align:left;justify-content:flex-start;margin-bottom:4px" '
-    + 'onclick="lancNovoEscolherConta('+n.id+',\''+esc(n.codigo+' — '+n.nome).replace(/'/g,"\\'")+'\')">'
-    + '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(n.codigo)+'</span>'+esc(n.nome)+'</div>'
-  ).join('') || '<em style="color:var(--muted);font-size:12px">Nenhuma conta cadastrada.</em>';
-}
-
-async function lancNovoEscolherConta(id, label){
-  _lancNovoContaId = id; _lancNovoContaLabel = label;
-  document.getElementById('lanc-novo-conta-ctx').textContent = label;
-  document.getElementById('lanc-novo-data').value = _hojeISO();
-  document.getElementById('lanc-novo-valor').value = '';
-  document.getElementById('lanc-novo-obs').value = '';
-  document.getElementById('lanc-novo-contrapartida-lbl').textContent =
-    _lancNovoTipo==='receita' ? 'Origem (de onde veio)' : 'Destino (pra onde foi)';
-  document.getElementById('lanc-novo-primario').textContent = _lancNovoTipo==='receita' ? 'Lançar receita' : 'Lançar despesa';
-  document.getElementById('lanc-novo-titulo').textContent =
-    _lancNovoTipo==='receita' ? 'Lançar Receita' : 'Lançar Despesa';
-  const sel = document.getElementById('lanc-novo-contrapartida');
-  sel.innerHTML = '<option value="">Carregando…</option>';
-  const r = await fetch('/api/financeiro/contas', {credentials:'same-origin'});
-  const d = await r.json().catch(()=>({}));
-  const flat = [];
-  (function walk(ns){ (ns||[]).forEach(n=>{ if(n.tipo==='analitica') flat.push(n); walk(n.filhos); }); })(d.contas||[]);
-  const contrapartidas = flat.filter(n => n.grupo === 1 || n.grupo === 2);
-  sel.innerHTML = '<option value="">— selecione —</option>' + contrapartidas.map(n =>
-    '<option value="'+n.id+'">'+esc('['+_finSelo(n.grupo)+'] '+n.codigo+' — '+n.nome)+'</option>').join('');
-  _lancNovoMostrarStep(3);
-}
-
-async function lancNovoSalvar(){
-  const aviso = document.getElementById('lanc-novo-aviso');
-  const data = document.getElementById('lanc-novo-data').value;
-  const valor = parseFloat(document.getElementById('lanc-novo-valor').value || '0');
-  const contrapartidaId = +document.getElementById('lanc-novo-contrapartida').value;
-  const obs = document.getElementById('lanc-novo-obs').value || '';
-  if(!valor || valor <= 0){ aviso.textContent = 'Informe um valor > 0.'; return; }
-  if(!contrapartidaId){ aviso.textContent = 'Escolha a origem/destino.'; return; }
-  const receita = _lancNovoTipo === 'receita';
-  const conta_debito_id  = receita ? contrapartidaId : _lancNovoContaId;
-  const conta_credito_id = receita ? _lancNovoContaId : contrapartidaId;
-  const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
-    credentials:'same-origin', body: JSON.stringify({conta_debito_id, conta_credito_id, valor, data, historico: obs})});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ aviso.textContent = d.erro || 'Falha ao lançar.'; return; }
-  showToast((receita ? 'Receita lançada' : 'Despesa lançada'));
-  lancNovoFechar();
-  if(_pcAba === 'centrocusto') _ccRelatorioCarregar();
-  else if(_pcAba === 'naturezacusto') _naturezaCustoRenderizar();
 }
 
 let _cfgFin = null;
@@ -14926,7 +15023,7 @@ document.addEventListener('keydown', function(e){
   // Cada entrada: [id, fn_cancelar]
   const ESC_MAP = [
     ['modal-atd-novo',         ocAtdNovoFechar],
-    ['modal-lanc-novo',        lancNovoFechar],
+    ['modal-lanc-contabil',    lancContabilFechar],
     ['modal-atd-concluir',     ocConcluirFechar],
     ['modal-autorizacao',      () => fecharModalAutorizacao(false)],
     ['modal-perfil-acesso',    fecharModalPerfilAcesso],
@@ -21013,6 +21110,35 @@ function bfFechar() {
             onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
       Entendi
     </button>
+  </div>
+</div>
+
+<!-- ── Realizar Lançamento (2026-08-09) ──────────────────────────────────── -->
+<!-- Movido pra fora de qualquer <div class="page"> (achado do usuário): estava dentro de
+     page-chat, e .page{display:none}/.page.active{display:block} escondia o modal inteiro
+     sempre que o usuário estivesse numa página diferente do Chat — abrir o modal em Financeiro
+     não tinha efeito visual nenhum (a página-mãe já estava display:none). Modais que abrem de
+     qualquer tela do sistema ficam aqui, na área global, junto do Modal Briefing. -->
+<div id="modal-lanc-contabil" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px;max-height:88vh;overflow-y:auto">
+    <div class="modal-hdr">
+      <div class="modal-title">Realizar Lançamento</div>
+      <span class="modal-close" onclick="lancContabilFechar()">&#x2715;</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div><label class="field-label">Débito</label><select id="lcont-deb" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></select></div>
+      <div><label class="field-label">Crédito</label><select id="lcont-cred" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px"></select></div>
+    </div>
+    <label class="field-label">Valor</label>
+    <input id="lcont-valor" type="number" step="0.01" placeholder="0,00" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
+    <label class="field-label">Data</label>
+    <input id="lcont-data" type="date" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin:4px 0 10px">
+    <label class="field-label">Motivo</label>
+    <input id="lcont-hist" type="text" placeholder="ex.: pagamento do aluguel da loja" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:12px;margin-top:4px">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-ghost btn-sm" onclick="lancContabilFechar()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="lancContabilSalvar(this)">Lançar</button>
+    </div>
   </div>
 </div>
 

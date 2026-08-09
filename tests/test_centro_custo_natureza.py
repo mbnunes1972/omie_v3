@@ -369,6 +369,58 @@ def test_migracao_classificacao_grupo5_idempotente(app_db):
     db.close()
 
 
+# ── migrar_classificacao_grupo5_v2 (correção pós-aprovação, 2026-08-08: Brindes/Ajuste de ──────
+# Provisões viram Variável — associadas à venda; Ajuste de Provisões também muda de Centro de
+# Custo, Administrativo-financeiro -> Custos Distribuídos)
+def test_migracao_classificacao_grupo5_v2_corrige_brindes_e_ajuste(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 993
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    # CLASSIFICACAO_GRUPO5_V1 já reflete o valor CORRIGIDO — simula o estado LEGADO (owner
+    # clssificado antes desta correção) sobrescrevendo pro default antigo, como está hoje nas
+    # bases já em produção/homolog.
+    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
+    contas["5.3.12"].natureza_custo = "fixo"
+    contas["5.6.10"].natureza_custo = "fixo"; contas["5.6.10"].centro_custo_id = ccs["4.3"].id
+    db.commit()
+
+    out = mc.migrar_classificacao_grupo5_v2(db)
+    assert out["corrigidos"] == 2
+    contas = _contas(db, ot, oid)
+    assert contas["5.3.12"].natureza_custo == "variavel"
+    assert contas["5.6.10"].natureza_custo == "variavel"
+    assert contas["5.6.10"].centro_custo_id == ccs["4.5"].id
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_v2_nao_sobrescreve_manual(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 994
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
+    # reclassificação manual DEPOIS do v1 — v2 não pode mexer nisso
+    contas["5.3.12"].natureza_custo = "semivariavel"
+    contas["5.6.10"].natureza_custo = "fixo"; contas["5.6.10"].centro_custo_id = ccs["1.3"].id
+    db.commit()
+    mc.migrar_classificacao_grupo5_v2(db)
+    conta1 = _contas(db, ot, oid)["5.3.12"]; conta2 = _contas(db, ot, oid)["5.6.10"]
+    assert conta1.natureza_custo == "semivariavel"                 # intocado
+    assert conta2.natureza_custo == "fixo" and conta2.centro_custo_id == ccs["1.3"].id   # intocado
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_v2_idempotente(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 995
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    mc.migrar_classificacao_grupo5_v2(db)
+    estado1 = {c.codigo: (c.centro_custo_id, c.natureza_custo) for c in _contas(db, ot, oid).values()}
+    mc.migrar_classificacao_grupo5_v2(db)
+    estado2 = {c.codigo: (c.centro_custo_id, c.natureza_custo) for c in _contas(db, ot, oid).values()}
+    assert estado1 == estado2
+    db.close()
+
+
 def test_endpoint_classificar_lote(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.get("/api/financeiro/contas")

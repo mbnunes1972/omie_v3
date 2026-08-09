@@ -3348,8 +3348,17 @@ existia da Sessão 179 sem mudança de contrato).
 `tests/test_centro_custo_natureza.py`, `tests/test_lancamentos_api.py`,
 `tests/test_lancamentos_sugestoes.py`, `tests/test_documentos_registro.py`.
 
+**Manual de implantação (pedido à parte):** `docs/processos/MANUAL_IMPLANTACAO_LOJA.md` — guia
+operacional pra configurar uma loja nova do zero (Dados da empresa → Módulos → Funções → Perfis →
+Remunerações → Usuários → Provisões → Cronograma → Agenda → Fiscal → Documentos), levantado direto
+do código (nomes de tela/campo reais, dependências entre etapas). Cobre só parâmetros/cadastros
+iniciais — migração de dados existentes (clientes, parceiros, projetos em andamento, histórico) é
+frente separada, ainda não iniciada.
+
 **Pendente, fora de escopo desta rodada:** setup de MCP Playwright pra verificação de browser real
-(usuário mencionou "vou fazer o playright" — deferido, sem ação até ser retomado).
+(usuário mencionou "vou fazer o playright" — deferido, sem ação até ser retomado). Geração real dos
+6 documentos de processo novos pra um projeto (marcadores + botão na tela) — feita tipo a tipo
+quando cada um entrar em uso.
 
 ## Sessão 179 — Centro de Custo/Natureza: classificação aplicada + relatórios + Lançamento guiado de Receita/Despesa
 

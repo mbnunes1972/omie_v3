@@ -588,6 +588,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="nav-item" id="nav-00" onclick="goPage(0)"><i class="ti ti-diamond"></i>Projetos</div>
       <div class="nav-item" id="nav-16" onclick="goPage(16)" title="Agenda da Loja"><i class="ti ti-calendar"></i>Agenda</div>
       <div class="nav-item" id="nav-central-com" onclick="ocAbrirPagina('atend')" title="Orizon Chat"><i class="ti ti-messages"></i>Orizon Chat</div>
+      <div class="nav-item" id="nav-estrategico" onclick="goPageEstrategico()" style="display:none" title="Painel Estratégico"><i class="ti ti-chart-infographic"></i>Painel Estratégico</div>
     </div>
 
     <!-- Lista PLANA dos módulos de domínio (Modulos_Orizon_v4): sem cabeçalho de faixa, todo módulo
@@ -2005,6 +2006,29 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
     <div id="rede-panel-lojas"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="rede-panel-dados" style="display:none"></div>
+  </div>
+
+  <!-- Painel Estratégico (2026-08-09): indicadores consolidados do negócio — exclusivo de
+       acesso_estrategico (Master por padrão). 1ª entrega: só o que já é calculável hoje
+       (mod_estrategico.py) — Custos fixos, Econômico-financeiro, Rentabilidade,
+       Comercial/operacional, Comparativo entre lojas. Fora desta entrega: Orçado×Realizado de
+       despesa, Alertas, PMP real por título, Estoque (frentes futuras, decisão do usuário). -->
+  <div class="page" id="page-estrategico">
+    <div class="page-title" style="margin:0">Painel Estratégico</div>
+    <div class="page-sub">Indicadores consolidados do negócio — comparação automática ao período anterior.</div>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 16px">
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <button class="home-tab ativo" id="est-per-mes"       onclick="estPeriodoMudar('mes')">Mês</button>
+        <button class="home-tab"       id="est-per-trimestre" onclick="estPeriodoMudar('trimestre')">Trimestre</button>
+        <button class="home-tab"       id="est-per-ano"       onclick="estPeriodoMudar('ano')">Ano</button>
+      </div>
+      <span id="est-loja-wrap" style="display:none;align-items:center;gap:6px">
+        <label class="field-label" style="margin:0">Loja</label>
+        <select id="est-loja-sel" onchange="estLojaMudar()" style="padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px"></select>
+      </span>
+      <span id="est-periodo-label" style="color:var(--muted);font-size:12px"></span>
+    </div>
+    <div id="est-corpo"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
   </div>
 
   <!-- ===== Orizon Chat — módulo de página cheia (mockup 2026-07-28) ===== -->
@@ -3593,6 +3617,10 @@ async function carregarUsuarioAutenticado(){
     // Painel da Rede: só o Gestor de Rede (admin_rede) — visão escopada à própria rede.
     const _navRede = document.getElementById('nav-rede');
     if (_navRede) _navRede.style.display = _ehGestorRede ? '' : 'none';
+    // Painel Estratégico (2026-08-09): capacidade normal (acesso_estrategico), Master por
+    // padrão — não é nível hardcoded, editável depois via Perfis de Usuário.
+    const _navEstrategico = document.getElementById('nav-estrategico');
+    if (_navEstrategico) _navEstrategico.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_estrategico) ? '' : 'none';
     _aplicarModulosNoMenu();
     sbNavRender();               // monta o acordeão dos módulos (usa _usuarioAtual.hub)
     carregarConsultores();       // seletor de consultor (criação/edição); só gerente+ atribui
@@ -12171,6 +12199,151 @@ async function _gestorAbrirPerfisDaLoja(lojaId){
   goPage(7);
   const box = document.getElementById('admin-console');
   if (box) { await adminRenderLoja(box); adminLojaTab('perfis'); }
+}
+
+// ── Painel Estratégico (2026-08-09) ──────────────────────────────────────────────────────────
+let _estPeriodo = 'mes', _estLojaId = null, _estLojasRede = null;
+
+function goPageEstrategico(){
+  const nav = document.getElementById('nav-estrategico');
+  if (nav && nav.classList.contains('locked')) return;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pg = document.getElementById('page-estrategico'); if (pg) pg.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  if (nav) nav.classList.add('active');
+  const sbParams = document.getElementById('sb-params'); if (sbParams) sbParams.style.display = 'none';
+  _sbModuloAberto = null; _sbSecaoAtiva = null;
+  if (typeof sbNavRender === 'function') sbNavRender();
+  estCarregar();
+}
+
+function estPeriodoMudar(tipo){
+  _estPeriodo = tipo;
+  ['mes','trimestre','ano'].forEach(t => {
+    const b = document.getElementById('est-per-'+t);
+    if (b) b.classList.toggle('ativo', t===tipo);
+  });
+  estCarregar();
+}
+
+function estLojaMudar(){
+  const sel = document.getElementById('est-loja-sel');
+  _estLojaId = sel && sel.value ? parseInt(sel.value, 10) : null;
+  estCarregar();
+}
+
+function _estFmtBRL(v){ return v == null ? '—' : 'R$ ' + _fBRL(v); }
+function _estFmtPct(v){ return v == null ? '—' : (v*100).toFixed(1).replace('.', ',') + '%'; }
+function _estFmtDias(v){ return v == null ? '—' : v.toFixed(1).replace('.', ',') + ' dias'; }
+function _estFmtX(v){ return v == null ? '—' : v.toFixed(2).replace('.', ',') + 'x'; }
+
+function _estVariacaoHtml(pct){
+  if (pct == null) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  const seta = pct > 0.0001 ? '▲' : pct < -0.0001 ? '▼' : '—';
+  const cor = pct > 0.0001 ? 'var(--status-ok)' : pct < -0.0001 ? 'var(--status-err)' : 'var(--muted)';
+  return `<span style="color:${cor};font-size:11px;font-weight:600">${seta} ${Math.abs(pct*100).toFixed(1).replace('.', ',')}%</span>`;
+}
+
+function _estCard(titulo, par, fmt){
+  const valor = par ? fmt(par.atual) : '—';
+  return `<div class="card" style="padding:12px 14px;min-width:180px">
+    <div style="font-size:11px;color:var(--muted)">${esc(titulo)}</div>
+    <div style="font-size:19px;font-weight:700;margin-top:2px;color:var(--text)">${valor}</div>
+    <div style="margin-top:5px">${par ? _estVariacaoHtml(par.variacao_pct) : ''}</div>
+  </div>`;
+}
+
+function _estBloco(titulo, cardsHtml){
+  return `<div style="margin-bottom:22px">
+    <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px">${esc(titulo)}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px">${cardsHtml}</div>
+  </div>`;
+}
+
+async function estCarregar(){
+  const corpo = document.getElementById('est-corpo');
+  corpo.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const q = new URLSearchParams({periodo: _estPeriodo});
+  if (_estLojaId) q.set('loja_id', _estLojaId);
+  const r = await fetch('/api/estrategico/indicadores?' + q.toString(), {credentials:'same-origin'});
+  if (r.status === 403){ corpo.innerHTML = '<em style="color:var(--muted)">Sem acesso ao Painel Estratégico.</em>'; return; }
+  const d = await r.json().catch(()=>({ok:false}));
+  if (!d.ok){ corpo.innerHTML = '<em style="color:var(--err)">'+esc(d.erro||'Erro ao carregar.')+'</em>'; return; }
+  const ind = d.indicadores;
+
+  // seletor de loja: só aparece quando o owner é uma REDE (comparativo_lojas não-nulo indica isso,
+  // OU já veio um loja_id — nesse caso busca a lista de lojas 1x e guarda em cache)
+  const lojaWrap = document.getElementById('est-loja-wrap');
+  if (ind.comparativo_lojas || _estLojaId) {
+    lojaWrap.style.display = 'flex';
+    if (!_estLojasRede) {
+      const dl = await fetch('/api/admin/lojas', {credentials:'same-origin'}).then(x=>x.json()).catch(()=>({lojas:[]}));
+      _estLojasRede = dl.lojas || [];
+    }
+    const sel = document.getElementById('est-loja-sel');
+    sel.innerHTML = '<option value="">Consolidado (rede)</option>' +
+      _estLojasRede.map(l => `<option value="${l.id}" ${String(l.id)===String(_estLojaId)?'selected':''}>${esc(l.nome)}</option>`).join('');
+  } else {
+    lojaWrap.style.display = 'none';
+  }
+
+  document.getElementById('est-periodo-label').textContent =
+    'Período: ' + ind.periodo.ini.split('-').reverse().join('/') + ' a ' + ind.periodo.fim.split('-').reverse().join('/') +
+    ' · anterior: ' + ind.periodo.ini_anterior.split('-').reverse().join('/') + ' a ' + ind.periodo.fim_anterior.split('-').reverse().join('/');
+
+  const cf = ind.custos_fixos, ec = ind.economico_financeiro, rt = ind.rentabilidade, co = ind.comercial_operacional;
+
+  let html = _estBloco('Custos fixos', [
+    _estCard('Custo fixo (período)', {atual: cf.atual_periodo, variacao_pct: cf.variacao_pct}, _estFmtBRL),
+    _estCard('Custo fixo médio (6m)', {atual: cf.medio_6m}, _estFmtBRL),
+  ].join(''));
+
+  html += _estBloco('Econômico-financeiro', [
+    _estCard('Faturamento bruto', ec.faturamento_bruto, _estFmtBRL),
+    _estCard('Faturamento líquido', ec.faturamento_liquido, _estFmtBRL),
+    _estCard('Lucro líquido', ec.lucro_liquido, _estFmtBRL),
+    _estCard('EBITDA', ec.ebitda, _estFmtBRL),
+    _estCard('Ponto de equilíbrio', ec.ponto_equilibrio, _estFmtBRL),
+    _estCard('Liquidez corrente', ec.liquidez_corrente, v => v == null ? '—' : v.toFixed(2).replace('.', ',')),
+    _estCard('Capital de giro', ec.capital_giro, _estFmtBRL),
+    _estCard('Endividamento', ec.endividamento, _estFmtPct),
+  ].join(''));
+
+  html += _estBloco('Rentabilidade e precificação', [
+    _estCard('Markup médio', rt.markup_medio, _estFmtX),
+    _estCard('Margem de contribuição média', rt.margem_contribuicao_media, _estFmtPct),
+    _estCard('Margem bruta', rt.margem_bruta, _estFmtPct),
+    _estCard('Margem líquida', rt.margem_liquida, _estFmtPct),
+  ].join(''));
+
+  html += _estBloco('Comercial e operacional', [
+    _estCard('Ticket médio', co.ticket_medio, _estFmtBRL),
+    _estCard('Taxa de conversão (projetos)', co.taxa_conversao_projetos, _estFmtPct),
+    _estCard('Prazo venda → produção', co.prazo_venda_producao_dias, _estFmtDias),
+    _estCard('Prazo entrega → montagem', co.prazo_entrega_montagem_dias, _estFmtDias),
+    _estCard('Produtividade por loja', {atual: co.produtividade_por_loja}, _estFmtBRL),
+  ].join(''));
+
+  if (ind.comparativo_lojas) {
+    const linhas = ind.comparativo_lojas.map(r => `<tr>
+      <td>${esc(r.nome)}</td>
+      <td class="num" style="font-family:var(--font-mono)">${_estFmtBRL(r.faturamento_liquido)}</td>
+      <td class="num" style="font-family:var(--font-mono)">${_estFmtBRL(r.lucro_liquido)}</td>
+      <td class="num" style="font-family:var(--font-mono)">${_estFmtPct(r.margem_liquida)}</td>
+      <td class="num" style="font-family:var(--font-mono)">${_estFmtBRL(r.ticket_medio)}</td>
+      <td>${_estVariacaoHtml(r.benchmark_vs_media_pct)}</td>
+    </tr>`).join('');
+    html += `<div style="margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px">Comparativo entre lojas</div>
+      <div style="overflow-x:auto"><table class="proj-table" style="width:100%;min-width:640px">
+        <thead><tr><th>Loja</th><th class="num">Faturamento líq.</th><th class="num">Lucro líq.</th>
+          <th class="num">Margem líq.</th><th class="num">Ticket médio</th><th>vs média da rede</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table></div>
+    </div>`;
+  }
+
+  corpo.innerHTML = html;
 }
 
 async function orizonRedeNova(){

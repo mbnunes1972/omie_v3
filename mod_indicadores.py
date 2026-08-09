@@ -78,6 +78,83 @@ def tendencia(serie):
     return {"dir": "alta" if pct > 0 else "queda", "pct": pct}
 
 
+def janela_periodo(tipo, ref):
+    """(ini, fim, ini_anterior, fim_anterior), todos `date`, do período que contém `ref` (date)
+    pro tipo 'mes'|'trimestre'|'ano' — 'anterior' é o período imediatamente anterior de mesmo
+    tamanho, pra comparação automática (Painel Estratégico, pedido do usuário 2026-08-09)."""
+    from datetime import date, timedelta
+
+    def _fim_mes(y, m):
+        return (date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)) - timedelta(days=1)
+
+    if tipo == "ano":
+        ini, fim = date(ref.year, 1, 1), date(ref.year, 12, 31)
+        ini_ant, fim_ant = date(ref.year - 1, 1, 1), date(ref.year - 1, 12, 31)
+    elif tipo == "trimestre":
+        tri = (ref.month - 1) // 3   # 0..3
+        mes_ini = tri * 3 + 1
+        ini, fim = date(ref.year, mes_ini, 1), _fim_mes(ref.year, mes_ini + 2)
+        tri_ant, ano_ant = (tri - 1, ref.year) if tri > 0 else (3, ref.year - 1)
+        mes_ini_ant = tri_ant * 3 + 1
+        ini_ant, fim_ant = date(ano_ant, mes_ini_ant, 1), _fim_mes(ano_ant, mes_ini_ant + 2)
+    else:   # "mes" (default)
+        ini, fim = date(ref.year, ref.month, 1), _fim_mes(ref.year, ref.month)
+        ini_ant, fim_ant = (ini - timedelta(days=1)).replace(day=1), ini - timedelta(days=1)
+    return ini, fim, ini_ant, fim_ant
+
+
+def variacao_pct(atual, anterior):
+    """% de variação de `atual` sobre `anterior` (período corrente vs anterior). Base zero →
+    None (sem % enganoso), espelha a guarda de `_div`.
+
+    Denominador usa `abs(anterior)`, não `anterior` puro (achado do usuário, Painel Estratégico
+    2026-08-09): em métrica que pode ficar negativa (lucro líquido, EBITDA, margem), uma base
+    anterior negativa INVERTE o sinal da fórmula clássica — prejuízo encolhendo (ex.: -30000 →
+    -2660, uma melhora real) dava -91% (lido como piora, seta ▼ vermelha). Com `abs()` no
+    denominador o sinal do resultado sempre acompanha o sinal de `atual − anterior` (delta real),
+    em qualquer combinação de sinais dos dois períodos — só muda a magnitude marginal quando a
+    base é negativa, não a leitura de melhora/piora."""
+    return _div(_f(atual) - _f(anterior), abs(_f(anterior)), nd=1)
+
+
+def media(valores):
+    """Média simples de uma lista de números (ou None se vazia) — usada pra 'X médio' que não é
+    fração de duas somas (markup médio, margem de contribuição média): cada Orcamento já tem o
+    índice PRÓPRIO calculado (motor de negociação); aqui só tira a média entre os do período."""
+    vs = [_f(v) for v in (valores or [])]
+    return round(sum(vs) / len(vs), 4) if vs else None
+
+
+def custo_fixo_stats(serie_mensal):
+    """Custo fixo médio da série + variação do último mês sobre a média dos ANTERIORES (não
+    inclui o próprio último mês na média de comparação, senão a variação se dilui)."""
+    vs = [_f(v) for v in (serie_mensal or [])]
+    if not vs:
+        return {"media": None, "ultimo": None, "variacao_pct": None}
+    media_total = round(sum(vs) / len(vs), 2)
+    if len(vs) < 2:
+        return {"media": media_total, "ultimo": vs[-1], "variacao_pct": None}
+    anteriores = vs[:-1]
+    media_ant = sum(anteriores) / len(anteriores)
+    return {"media": media_total, "ultimo": vs[-1],
+            "variacao_pct": variacao_pct(vs[-1], media_ant)}
+
+
+def ponto_equilibrio(custo_fixo, margem_contribuicao_pct):
+    """Receita necessária pra cobrir os custos fixos: Custo Fixo ÷ % Margem de Contribuição.
+    Margem de contribuição <= 0 → None (não existe ponto de equilíbrio financeiramente válido:
+    cada venda adicional aumentaria o prejuízo, não reduziria)."""
+    mc = _f(margem_contribuicao_pct)
+    if mc <= 0:
+        return None
+    return round(_f(custo_fixo) / mc, 2)
+
+
+def endividamento(passivo_total, ativo_total):
+    """Passivo total ÷ Ativo total (fração; a tela formata em %)."""
+    return _div(passivo_total, ativo_total, nd=4)
+
+
 def kpis_comerciais(status_counts, contratos_periodo):
     """KPIs do funil comercial. status_counts: {status: n} dos projetos;
     contratos_periodo: lista de valores (R$) dos contratos gerados no período."""

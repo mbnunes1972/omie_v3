@@ -95,7 +95,7 @@ MODULOS = {
                     "rotas": ["/api/projetos/", "/api/admin/lojas/", "/api/admin/redes/"]},
     "financeiro":  {"camada": "dominio", "depende_de": ["comercial"], "rotulo": "Financeiro", "faixa": "financeiro",
                     "arquivos": ["mod_provisoes.py", "mod_contabil.py", "mod_ajustes_fabrica.py",
-                                 "mod_indicadores.py", "mod_recebiveis.py"],
+                                 "mod_indicadores.py", "mod_recebiveis.py", "mod_estrategico.py"],
                     "tabelas": ["provisao_registro", "conta", "centro_custo", "lancamento", "periodo_contabil",
                                 "acordo_fabrica", "ajuste_fabrica", "ajuste_fabrica_aplicacao",
                                 "acordo_movimento", "contraparte_financeira", "recebivel",
@@ -107,7 +107,8 @@ MODULOS = {
                               "/api/financeiro/provisoes-venda", "/api/financeiro/dashboard",
                               "/api/admin/acordos-fabrica", "/api/admin/ajustes-fabrica",
                               "/api/financeiro/indicadores", "/api/recebiveis",
-                              "/api/financeiro/recebiveis", "/api/financeiro/provisao-data-prevista"]},
+                              "/api/financeiro/recebiveis", "/api/financeiro/provisao-data-prevista",
+                              "/api/estrategico/indicadores"]},
     # domínios NOVOS — fronteira só (stub, sem código/tabela hoje). Montagem e Assistências substituem
     # o antigo "posvenda" (que virou FAIXA, não módulo — Modulos_Orizon_v4).
     "estoque":     {"camada": "dominio", "depende_de": ["cadastro", "comercial"], "rotulo": "Estoque", "faixa": "expedicao",

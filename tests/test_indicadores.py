@@ -65,6 +65,88 @@ def test_kpis_comerciais():
     assert z["taxa_conversao"] is None and z["ticket_medio"] is None
 
 
+# ── Painel Estratégico (2026-08-09) — funções novas ──────────────────────────────────────────
+
+def test_janela_periodo_mes():
+    from datetime import date
+    ini, fim, ini_ant, fim_ant = mi.janela_periodo("mes", date(2026, 8, 15))
+    assert (ini, fim) == (date(2026, 8, 1), date(2026, 8, 31))
+    assert (ini_ant, fim_ant) == (date(2026, 7, 1), date(2026, 7, 31))
+
+
+def test_janela_periodo_mes_janeiro_vira_dezembro_ano_anterior():
+    from datetime import date
+    ini, fim, ini_ant, fim_ant = mi.janela_periodo("mes", date(2026, 1, 10))
+    assert (ini, fim) == (date(2026, 1, 1), date(2026, 1, 31))
+    assert (ini_ant, fim_ant) == (date(2025, 12, 1), date(2025, 12, 31))
+
+
+def test_janela_periodo_trimestre():
+    from datetime import date
+    # 15/ago cai no Q3 (jul-set)
+    ini, fim, ini_ant, fim_ant = mi.janela_periodo("trimestre", date(2026, 8, 15))
+    assert (ini, fim) == (date(2026, 7, 1), date(2026, 9, 30))
+    assert (ini_ant, fim_ant) == (date(2026, 4, 1), date(2026, 6, 30))
+
+
+def test_janela_periodo_trimestre_primeiro_do_ano_vira_q4_ano_anterior():
+    from datetime import date
+    ini, fim, ini_ant, fim_ant = mi.janela_periodo("trimestre", date(2026, 2, 1))
+    assert (ini, fim) == (date(2026, 1, 1), date(2026, 3, 31))
+    assert (ini_ant, fim_ant) == (date(2025, 10, 1), date(2025, 12, 31))
+
+
+def test_janela_periodo_ano():
+    from datetime import date
+    ini, fim, ini_ant, fim_ant = mi.janela_periodo("ano", date(2026, 8, 15))
+    assert (ini, fim) == (date(2026, 1, 1), date(2026, 12, 31))
+    assert (ini_ant, fim_ant) == (date(2025, 1, 1), date(2025, 12, 31))
+
+
+def test_variacao_pct():
+    # fração, não %-inteiro (mesma convenção do resto do módulo: "a tela formata em %")
+    assert mi.variacao_pct(110, 100) == 0.1
+    assert mi.variacao_pct(90, 100) == -0.1
+    assert mi.variacao_pct(50, 0) is None
+
+
+def test_variacao_pct_base_negativa_nao_inverte_o_sinal():
+    # achado do usuário (Painel Estratégico, 2026-08-09): prejuízo encolhendo é MELHORA, não
+    # pode virar % negativo/seta vermelha só porque a base do período anterior é negativa.
+    assert mi.variacao_pct(-2660.41, -30000.0) > 0          # prejuízo encolheu → melhora (positivo)
+    assert mi.variacao_pct(-30000.0, -2660.41) < 0          # prejuízo cresceu → piora (negativo)
+    assert mi.variacao_pct(1000.0, -500.0) > 0              # saiu do prejuízo pro lucro → melhora
+    assert mi.variacao_pct(-500.0, 1000.0) < 0              # saiu do lucro pro prejuízo → piora
+    # quadrante clássico (base positiva) seguem batendo com a leitura intuitiva de sempre
+    assert mi.variacao_pct(110, 100) == 0.1
+    assert mi.variacao_pct(90, 100) == -0.1
+
+
+def test_media():
+    assert mi.media([1.5, 2.5, 3.5]) == 2.5
+    assert mi.media([]) is None
+
+
+def test_custo_fixo_stats():
+    r = mi.custo_fixo_stats([10000.0, 10000.0, 12000.0])
+    assert r["media"] == round(32000 / 3, 2)
+    assert r["ultimo"] == 12000.0
+    assert r["variacao_pct"] == 0.2                       # 12000 vs média dos 2 anteriores (10000)
+    assert mi.custo_fixo_stats([])["media"] is None
+    assert mi.custo_fixo_stats([500.0])["variacao_pct"] is None   # só 1 mês, sem "anteriores"
+
+
+def test_ponto_equilibrio():
+    assert mi.ponto_equilibrio(custo_fixo=50000.0, margem_contribuicao_pct=0.25) == 200000.0
+    assert mi.ponto_equilibrio(custo_fixo=50000.0, margem_contribuicao_pct=0) is None
+    assert mi.ponto_equilibrio(custo_fixo=50000.0, margem_contribuicao_pct=-0.1) is None
+
+
+def test_endividamento():
+    assert mi.endividamento(passivo_total=40000.0, ativo_total=100000.0) == 0.4
+    assert mi.endividamento(passivo_total=40000.0, ativo_total=0.0) is None
+
+
 def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 

@@ -1334,6 +1334,46 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/estrategico/indicadores":
+            # Painel Estratégico (2026-08-09): snapshot consolidado — custos fixos,
+            # econômico-financeiro, rentabilidade, comercial/operacional, comparativo entre
+            # lojas. Exclusivo de acesso_estrategico (Master, por decisão do usuário — capacidade
+            # normal, não hardcode de nível, editável depois via Perfis de Usuário). Cálculo em
+            # mod_estrategico.snapshot; aqui só autenticação/gate + parsing dos parâmetros.
+            ctx = _contabil_ctx(self, exige_edicao=False, consolidado_ok=False)
+            if ctx is None: return
+            usuario, db, ot, oid = ctx
+            if not perfis.pode_usuario(usuario, "acesso_estrategico"):
+                db.close()
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            import mod_estrategico
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            tipo_periodo = (qs.get("periodo") or ["mes"])[0].strip().lower()
+            if tipo_periodo not in ("mes", "trimestre", "ano"):
+                tipo_periodo = "mes"
+            ref = _parse_data((qs.get("ref") or [None])[0]) or datetime.utcnow()
+            loja_id_q = (qs.get("loja_id") or [None])[0]
+            loja_id = None
+            try:
+                if loja_id_q:
+                    loja_id = int(loja_id_q)
+            except (TypeError, ValueError):
+                loja_id = None
+            try:
+                if loja_id is not None:
+                    lojas_owner = ([l.id for l in db.query(Loja).filter_by(rede_id=oid).all()]
+                                   if ot == "rede" else [oid])
+                    if loja_id not in lojas_owner:
+                        self.send_json({"ok": False, "erro": "Loja fora do escopo"}, code=403); return
+                dados = mod_estrategico.snapshot(db, ot, oid, tipo_periodo, ref.date(), loja_id=loja_id)
+                self.send_json({"ok": True, "indicadores": dados})
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/balanco":
             ctx = _contabil_ctx(self, exige_edicao=False, consolidado_ok=True)
             if ctx is None: return

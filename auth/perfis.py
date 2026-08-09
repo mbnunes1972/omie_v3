@@ -16,7 +16,11 @@ PERFIS = {
         "aprovar_medicao_reprovada": True, "gerir_usuarios": True, "gerir_perfis": True,
         "editar_dados_loja": True, "gerir_documentos": True,
         "executar_pe": True, "revisar_pe": True, "registrar_medicao": True,
-        "ver_todas_conversas": True},    # Orizon Chat Fatia 2 (Gerente/Diretor veem tudo + admin)
+        "ver_todas_conversas": True,     # Orizon Chat Fatia 2 (Gerente/Diretor veem tudo + admin)
+        # Painel Estratégico (2026-08-09): exclusivo do Master por ora — "acesso precisará ser
+        # revisto no futuro" (decisão do usuário), por isso é uma CAPACIDADE normal (editável por
+        # loja via Perfis de Usuário), não um `if nivel == "master"` espalhado pelo código.
+        "acesso_estrategico": True},
     "gerencial": {"rotulo": "Gerente", "desconto_max": 20.0,   # rótulo padronizado 2026-07-22 (slug não muda)
         "acesso_operacional": True, "acesso_financeiro": True, "acesso_fiscal": True,
         "acesso_admin": False, "acesso_config": False,
@@ -57,7 +61,7 @@ _DEFAULT = {"rotulo": "—", "desconto_max": 0.0, "ver_parametros": False,
             "gerir_redes": False, "gerir_lojas": False, "editar_dados_loja": False,
             "gerir_documentos": False,
             "executar_pe": False, "revisar_pe": False,
-            "ver_todas_conversas": False,
+            "ver_todas_conversas": False, "acesso_estrategico": False,
             "acesso_operacional": False, "acesso_financeiro": False, "acesso_fiscal": False,
             "acesso_admin": False, "acesso_config": False}
 
@@ -227,6 +231,8 @@ CAPACIDADES = {
         "descricao": "Abrir o painel de Administração (identidade e acesso)."},
     "acesso_config":             {"rotulo": "Painel Config",              "grupo": "Acesso",
         "descricao": "Abrir o painel de Config (parâmetros de negócio)."},
+    "acesso_estrategico":        {"rotulo": "Painel Estratégico",         "grupo": "Acesso",
+        "descricao": "Abrir o Painel Estratégico (indicadores consolidados do negócio)."},
     "ver_parametros":            {"rotulo": "Ver parâmetros",             "grupo": "Comercial",
         "descricao": "Ver o painel de apoio da negociação (margens/custos internos)."},
     "autorizar":                 {"rotulo": "Autorizar desconto",         "grupo": "Comercial",

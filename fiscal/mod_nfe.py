@@ -42,11 +42,19 @@ def _txt(el, path, default=None):
 
 def parse_nfe(xml):
     """XML (str|bytes) da NF-e da fábrica -> {'cabecalho': {...}, 'itens': [...]}.
-    Namespace-aware (localiza infNFe sob nfeProc OU NFe puro). vIPI ausente -> 0.0."""
+    Namespace-aware (localiza infNFe sob nfeProc OU NFe puro). vIPI ausente -> 0.0.
+    Levanta ValueError (não AttributeError/ParseError) pra XML mal formado ou sem <infNFe> —
+    os dois endpoints de emissão (main.py) só tratam ValueError como 400; sem isso, um XML
+    inválido/placeholder vazava exceção crua pro cliente como 500 (achado da Vera, 2026-08-09)."""
     if isinstance(xml, bytes):
         xml = xml.decode("utf-8")
-    root = ET.fromstring(_strip_ns(xml))
+    try:
+        root = ET.fromstring(_strip_ns(xml))
+    except ET.ParseError as e:
+        raise ValueError("XML da fábrica inválido: não é um XML bem formado (" + str(e) + ").")
     inf = root if root.tag == "infNFe" else root.find(".//infNFe")
+    if inf is None:
+        raise ValueError("XML da fábrica inválido: não encontrei o bloco <infNFe> da NF-e.")
     ide, emit, dest = inf.find("ide"), inf.find("emit"), inf.find("dest")
     cabecalho = {
         "nNF": _txt(ide, "nNF"), "serie": _txt(ide, "serie"),

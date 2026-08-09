@@ -67,6 +67,22 @@ def test_parse_nfe_sem_ipi_e_cpf_e_nfe_puro():
     assert it["vIPI"] == 0.0 and it["vProd"] == 50.0
 
 
+# ── XML inválido/placeholder → ValueError tratado, não AttributeError/ParseError crus ──────────
+# (achado da Vera, 2026-08-09: um XML placeholder na emissão de NF-e em homolog vazava
+# "'NoneType' object has no attribute 'find'" como 500 pro cliente HTTP)
+import pytest
+
+
+def test_parse_nfe_xml_mal_formado_vira_value_error():
+    with pytest.raises(ValueError, match="não é um XML bem formado"):
+        mn.parse_nfe("isto não é xml <<<")
+
+
+def test_parse_nfe_sem_infnfe_vira_value_error():
+    with pytest.raises(ValueError, match="infNFe"):
+        mn.parse_nfe("<algumaCoisa><x>1</x></algumaCoisa>")
+
+
 def test_consolidar_soma_duplicados():
     itens = [
         {"cProd": "50079[2131748]", "xProd": "X", "ncm": "9403", "cfop": "6101", "uCom": "UN",

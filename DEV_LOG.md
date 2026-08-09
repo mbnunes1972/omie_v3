@@ -3277,6 +3277,63 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 181 — Painel Estratégico (fase 1): indicadores consolidados do negócio + correção do sinal de variação em métrica negativa
+
+Branch `fix/painel-estrategico-variacao-negativa` (a partir da `main` pós-Sessão 180). Pedido do
+usuário (2026-08-09): "gerenciar todos os indicadores" — leu-se a spec externa
+`Especificacao-Painel-Estrategico.docx` (8 tabelas, 7 blocos de indicador). Levantamento técnico
+prévio (agente Explore) separou o que já dava pra montar **sem schema novo** (maioria) do que
+exigiria conceito novo (orçamento de despesa por categoria, alertas/notificação, Estoque — stub
+vazio no manifesto —, contas a pagar por título/fornecedor com vencimento). Duas decisões do
+usuário via pergunta objetiva: nome no menu = **"Painel Estratégico"** (não "Painel Master" como a
+spec sugeria — "seu acesso precisará ser revisto no futuro, mas por enquanto fica só com o
+master"); escopo da 1ª entrega = **só o que já está pronto**, excluindo explicitamente
+Orçado×Realizado de despesa, Alertas, PMP real por título e Estoque desta rodada.
+
+**Módulo novo `mod_estrategico.py`** (classificado em `modulos.py` sob o domínio `financeiro`,
+mesma faixa de `mod_contabil`/`mod_indicadores`, que já cobrem tudo que ele consome — sem
+dependência nova): `snapshot(db, ot, oid, tipo_periodo, ref_date, loja_id=None)` monta o payload
+completo reaproveitando `mod_contabil` (razão/DRE/balanço/`relatorio_natureza`) e
+`mod_indicadores` (fórmulas puras) — só levantamento de dado + composição, nenhuma fórmula nova
+fora do que já existia no motor. **`mod_indicadores.py`** ganhou os blocos que faltavam:
+`janela_periodo(tipo, ref)` (Mês/Trimestre/Ano com virada de ano/trimestre correta — 4 valores:
+período atual + o **anterior equivalente**, pra comparação automática que a spec pede),
+`variacao_pct`, `media`, `custo_fixo_stats`, `ponto_equilibrio`, `endividamento`.
+
+**4 blocos entregues** (todos com corte Mês/Trim./Ano · Rede e loja, drill-down por loja dentro da
+rede): Custos fixos (médio 6 meses + variação + série); Econômico-financeiro (faturamento
+bruto/líquido, lucro líquido, EBITDA, ponto de equilíbrio, liquidez corrente, capital de giro,
+endividamento); Rentabilidade (markup médio, margem de contribuição, margem bruta, margem
+líquida); Comercial/operacional (ticket médio, taxa de conversão por projeto, prazos
+venda→produção e entrega→montagem via `CicloEtapa`, produtividade por loja). Quando o owner é
+rede com mais de 1 loja, entra o **Comparativo entre lojas** (ranking por faturamento + benchmark
+vs. média) — só "Rede" (sem corte por loja), como a spec pede pro bloco 5.6. "Taxa de conversão
+por volume" (5.5) ficou de fora por ambiguidade de denominador (`Orcamento` não tem timestamp de
+criação) — precisa decisão de produto antes de implementar, não é só "juntar dado que já existe".
+
+**Acesso:** capacidade nova `acesso_estrategico` em `auth/perfis.py` (não um `if nivel==master`
+espalhado pelo código) — Master tem por padrão, mas é capacidade normal, editável por conta no
+futuro. Endpoint `GET /api/estrategico/indicadores` (`main.py`, gate `perfis.pode_usuario`, query
+`periodo`/`ref`/`loja_id`, 403 se a loja pedida está fora do owner). Frontend: item novo na aba
+Atalhos do menu lateral (não em Admin — é dashboard primário do Master, não config), página com
+seletor Mês/Trimestre/Ano + drill-down de loja + os 4 blocos em cards + tabela do comparativo.
+
+**Achado no smoke test com dado real (corrigido nesta mesma frente):** `variacao_pct` clássica
+(`(atual−anterior)/anterior`) **inverte o sinal quando a base do período anterior é negativa** —
+lucro líquido indo de -30.000 pra -2.660 (prejuízo encolhendo, melhora real) dava **-91%**, lido
+pela tela como piora (seta ▼ vermelha), porque dividir por um número negativo inverte o sinal do
+delta. Usuário confirmou o diagnóstico ("quando for resultado negativo significa uma melhora
+precisa ser tratado") mas não tinha uma forma pronta de tratar — a correção escolhida foi trocar o
+denominador de `anterior` para **`abs(anterior)`**: preserva o sinal do delta real (`atual −
+anterior`) em qualquer combinação de sinais dos dois períodos, só muda a magnitude marginal quando
+a base é negativa. Cobertura: `test_variacao_pct_base_negativa_nao_inverte_o_sinal` (4 quadrantes
+de sinal). Frontend não precisou de mudança — `_estVariacaoHtml` já só lê o sinal do `pct`.
+
+**Testes:** 36 novos/ajustados (`test_indicadores.py` +23, `test_estrategico.py` +10 novo) — todos
+verdes, incl. suíte completa. **Fora de escopo, follow-up anotado:** a leitura de sinal não cobre
+métricas "menor é melhor" (ex. endividamento) — isso é semântica por indicador, não o bug de base
+negativa corrigido aqui; não mexido nesta frente.
+
 ## Sessão 180 — Painel guiado de Lançamentos vira 3 sub-abas (Despesa/Receita/Contábeis) + correção Brindes/Ajuste de Provisões + 6 documentos de processo
 
 Continuação da Sessão 179 (mesmo dia seguinte, 2026-08-09): o botão "Lançamento de Receitas e

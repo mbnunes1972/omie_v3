@@ -73,80 +73,44 @@ O Claude Code lê os arquivos diretamente — não precisa colar o conteúdo.
 - Branch padrão: `main`
 
 ### Servidor de DEV
-- IP: `167.88.33.121` | Porta: `8765` | URL: `http://167.88.33.121:8765`
-- Acesso: `ssh root@167.88.33.121` | Projeto em `/root/orizon-manager`
-- App roda em screen `orizon-manager` (Detached), iniciado com `ORIZON_HOST=0.0.0.0` (bind externo)
-  e log em `app.log`. Ver: `screen -r orizon-manager` (sair sem matar: `Ctrl+A` depois `D`).
-- **Bind:** `main.py` lê `ORIZON_HOST` (padrão `127.0.0.1` no dev local). Em produção
-  é obrigatório `ORIZON_HOST=0.0.0.0`, senão o app fica acessível só por localhost.
-- **Firewall:** a porta 8765/TCP precisa estar liberada (`ufw allow 8765/tcp` e,
-  se houver, no painel do provedor do VPS).
+- IP: `167.88.33.121` | Portas: `8765` (Instância A) / `8766` (Instância B)
+- Acesso: `ssh root@167.88.33.121` (chave ed25519, sem senha)
+- **DESDE 2026-07-20 as duas instâncias rodam como serviços SYSTEMD** (`orizon-a`/`orizon-b`,
+  `enabled` no boot, `Restart=always`, log em `app.log` de cada diretório) — **NÃO screen**. O
+  screen foi aposentado nessa migração; se algo (um comando manual, um runbook velho) subir a
+  app via `screen -dm .../python3 main.py`, o processo manual e o systemd BRIGAM pela mesma porta
+  — o systemd fica em crash-loop (`OSError: Address already in use`) enquanto o processo manual
+  segue servindo por fora do supervisor (sem `Restart=always`, sem sobreviver a reboot).
+  **Achado ao vivo (2026-08-10, Sessão 189):** essa colisão aconteceu de verdade — um deploy
+  manual seguindo um runbook desatualizado (a versão anterior deste arquivo) deixou `orizon-a` e
+  `orizon-b` crash-loopando por **horas** (contador de restart > 1700) sem que ninguém notasse,
+  porque a porta continuava respondendo (via o processo screen por fora). Fix: matar o processo
+  órfão pelo PID (`ss -ltnp | grep 876[56]` acha o PID real) e deixar o systemd reassumir.
+- **Bind:** `main.py` lê `ORIZON_HOST` das envs (`/root/orizon-A.env`/`/root/orizon-B.env`,
+  fora do git) — `0.0.0.0` nas duas (bind externo). **Firewall:** portas 8765/8766 TCP liberadas
+  (`ufw allow`).
 
-#### Runbook de deploy (rodar no servidor via ssh)
-> ⚠️ **Rodar numa sessão SSH interativa** (`ssh root@...` e depois colar), OU salvar num arquivo no VPS e
-> executar (`bash deploy_once.sh`). **NÃO** cole o script inteiro como comando único do `ssh host '<script>'`:
-> o argv da shell passa a conter `main.py`, e o `pkill -f main.py` casa com a própria shell do deploy e a
-> **auto-mata** (o script para logo no primeiro passo). Rodando via arquivo, o argv é `bash deploy_once.sh`
-> (sem `main.py`) e o `pkill` só atinge o app real.
+#### Runbook de deploy — USE O SCRIPT, não comandos manuais
 ```bash
-cd /root/orizon-manager
-pkill -f main.py; sleep 1
-for s in $(screen -ls | grep -oE '[0-9]+\.orizon-manager'); do screen -S "$s" -X quit; done
-screen -wipe
-git fetch origin && git reset --hard origin/main
-# Dependências (Ubuntu 24.04 / PEP 668 — usar apt, não pip):
-apt install -y python3-docx python3-openpyxl python3-requests python3-sqlalchemy python3-psycopg2
-ufw allow 8765/tcp 2>/dev/null
-# Banco: POSTGRES (SQLite APOSENTADO — o app se recusa a subir sem DATABASE_URL). A DATABASE_URL fica
-# em /root/orizon-A.env (fora do git; user orizon / db orizon). Só na 1ª vez cria schema + usuários:
-#   . /root/orizon-A.env && python3 seed.py
-# Sobe em screen (a env traz ORIZON_HOST=0.0.0.0 + DATABASE_URL do Postgres):
-screen -S orizon-manager -dm bash -c 'cd /root/orizon-manager && . /root/orizon-A.env && python3 main.py > app.log 2>&1'
-sleep 3; ss -ltnp | grep 8765; tail -8 app.log
-curl -s -o /dev/null -w "HTTP: %{http_code}\n" http://127.0.0.1:8765   # esperado: 302
+ssh root@167.88.33.121
+bash /root/orizon-manager/scripts/deploy_ab.sh <TAG_DE_HOMOLOG>   # ex.: v2026.08.10a-homolog
 ```
+O script (`scripts/deploy_ab.sh`, versionado) já faz tudo certo: `systemctl stop/start` (nunca
+`pkill`/`screen`), A atualiza pelo `origin/main` (`git reset --hard`), B faz checkout da TAG
+passada como argumento, espera a porta responder (poll, não `sleep` cego) e imprime o resumo
+(commit da A + tag da B). **Não existe mais runbook manual pra isso** — se precisar debugar um
+passo isolado, use `systemctl status/restart orizon-a` (ou `-b`) e `journalctl -u orizon-a -n 50`,
+nunca `pkill -f main.py` (mata a própria sessão SSH se rodado como comando único — o argv contém
+"main.py" — E colide com o systemd se rodado à parte dele).
 
-#### Instância B — PRÉ-HOMOLOGAÇÃO (`:8766`) no MESMO servidor de DEV
+#### Instância B — PRÉ-HOMOLOGAÇÃO (`:8766`), clone e banco separados
 Duas instâncias isoladas no `167.88.33.121` (ver `docs/superpowers/specs/_geral/2026-07-16-plano-de-testes.md`):
-a **A** (INTEGRAÇÃO, `:8765`, `/root/orizon-manager`, auto do `main`) e a **B** (PRÉ-HOMOLOGAÇÃO,
-`:8766`, **clone separado** `/root/orizon-homolog`, roda uma **tag fixada** — não o `main`).
-> **Por que clone separado:** a A faz `git reset --hard origin/main` a cada deploy; se as duas
-> compartilhassem o diretório, o deploy da A trocaria o código da B. Portas via **`ORIZON_PORT`**
-> (implementado 2026-07-16), banco via **`DATABASE_URL`** — cada instância no seu.
-```bash
-# Uma vez: clonar a 2ª cópia e entrar na tag de homologação
-cd /root
-git clone https://github.com/mbnunes1972/orizon-manager.git orizon-homolog
-cd orizon-homolog
-git fetch --tags && git checkout <TAG_DE_HOMOLOG>     # ex.: git checkout v2026.07.16-homolog
-ufw allow 8766/tcp 2>/dev/null
-# Banco PRÓPRIO da B — arquivo SQLite separado (DB_PATH segue a DATABASE_URL sqlite, fix de
-# 2026-07-16: as migracoes sqlite3 miram o arquivo certo, sem tocar o orizon.db da instancia A).
-# FICA FORA da arvore do clone git (nao dentro de /root/orizon-homolog): senao um `git clean -fd`
-# ali apagaria o banco da B, e `git status` mostraria o .db+journal/wal como ruido nao rastreado.
-# Banco PRÓPRIO da B em POSTGRES (db orizon_homolog, mesmo servidor Postgres da A). DATABASE_URL em
-# /root/orizon-B.env (fora do git). Só na 1ª vez cria schema + usuários:  . /root/orizon-B.env && python3 seed.py
-# Sobe em screen proprio (a env traz ORIZON_HOST=0.0.0.0 + ORIZON_PORT=8766 + DATABASE_URL orizon_homolog):
-screen -S orizon-homolog -dm bash -c 'cd /root/orizon-homolog && . /root/orizon-B.env && python3 main.py > app.log 2>&1'
-# Espera por CONDICAO (nao `sleep 3` cego): o 1o boot importa muita coisa e pode passar de 3s —
-# um curl cedo demais devolve 000 (falso alarme de "nao subiu"). Faz poll ate a porta responder.
-for i in $(seq 1 30); do
-  code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8766 || true)
-  [ "$code" = "302" ] && break
-  sleep 1
-done
-ss -ltnp | grep 8766; tail -8 app.log
-echo "HTTP: $code (esperado 302)"   # se ficar em 000 apos 30s, veja o traceback em app.log
-```
-**Atualizar a B (promover novo build):** no `/root/orizon-homolog`, `git fetch --tags && git checkout
-<NOVA_TAG>`, mate o screen `orizon-homolog` e suba de novo (NUNCA `git reset --hard origin/main` aqui —
-a B é build tagueado, não o `main`). **Parar a B sem afetar a A:** `screen -S orizon-homolog -X quit`
-(o `pkill -f main.py` do runbook da A mataria as DUAS — na B use o nome do screen).
-> **Paridade com produção:** ✅ **feito em 2026-07-19** — Postgres 16 instalado no `167.88.33.121`
-> (`apt install postgresql postgresql-contrib python3-psycopg2`), user `orizon`, dbs `orizon` (A) e
-> `orizon_homolog` (B), Postgres escutando só em localhost. As duas instâncias rodam em Postgres via
-> `/root/orizon-A.env` e `/root/orizon-B.env` (senha fora do git). SQLite **aposentado** (os `.db`
-> antigos ficaram como backup). Para migrar DADOS de um SQLite legado, seria um passo à parte (dump/load).
+a **A** (INTEGRAÇÃO, `:8765`, `/root/orizon-manager`, segue o `main`) e a **B** (PRÉ-HOMOLOGAÇÃO,
+`:8766`, **clone separado** `/root/orizon-homolog`, roda uma **tag fixada**, nunca o `main`).
+Banco: Postgres 16 no mesmo host, user `orizon`, dbs `orizon` (A) e `orizon_homolog` (B) — cada
+instância aponta pra um via `DATABASE_URL` no seu `.env` (fora do git). Unit files em
+`/etc/systemd/system/orizon-a.service` / `orizon-b.service` (`WorkingDirectory` de cada um aponta
+pro diretório certo — não precisa mexer neles pra um deploy normal, só pra provisionar do zero).
 
 #### Runbook de migração de nome — UMA vez (`omie_v3` → `orizon-manager`)
 > Rodar **uma única vez** ao migrar o nome. O servidor ainda tem os nomes antigos; depois disto,

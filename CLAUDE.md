@@ -37,6 +37,12 @@ Spec: `docs/superpowers/specs/_geral/2026-07-16-motor-5-reestruturacao-app-desig
   `gio: ... Operation not supported` é inofensiva.
 - **`static/index.html` é lido do disco a cada request** → mudança de frontend = só **Ctrl+F5**, sem
   restart. Mudança em **Python** (`main.py`/módulos) **exige restart** do servidor.
+- **MCP `playwright` (navegador p/ verificação visual):** neste WSL não há Google Chrome instalado
+  (canal `chrome`) nem `sudo` interativo pra instalar — o `@playwright/mcp` sem flag tenta esse
+  canal e falha (`Chromium distribution 'chrome' is not found`). Fix em `.mcp.json`: `--browser
+  chromium` (usa o Chromium que o Playwright já baixa sozinho em `~/.cache/ms-playwright/`, sem
+  precisar de path fixo). Exige **reconectar o MCP** (reiniciar o Claude Code) depois de editar
+  `.mcp.json` — o processo já conectado não recarrega a config sozinho.
 
 ## Testes (rodar ANTES de commitar/mergear)
 - Backend: **`python3 -m pytest -q`** (deve ficar tudo verde). Siga TDD nos módulos Python.

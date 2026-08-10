@@ -153,6 +153,42 @@ class LogAcessoDelegado(Base):
     criado_em      = Column(DateTime, default=datetime.utcnow)
 
 
+class SimuladorAutorizacao(Base):
+    """Autorização por loja (LGPD) pro Simulador de Modelo de Negócios acessar dados sigilosos da
+    loja (folha, salários, margens, dívida) — Sessão 185. No máximo UMA linha `status='ativa'`
+    por loja (invariante de aplicação, checado em mod_simulador_autorizacao.conceder — reconceder
+    após revogação cria uma linha NOVA, preservando o histórico da revogada). Concedida pelo
+    Master da loja com reautenticação por senha (padrão step-up); revogável a qualquer momento,
+    efeito imediato."""
+    __tablename__ = "simulador_autorizacoes"
+
+    id                       = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id                  = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    status                   = Column(String(10), nullable=False, default="ativa")   # ativa | revogada
+    concedido_por_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)   # Master (NULL = seed)
+    beneficiario             = Column(String(40), nullable=False, default="orizon_assessoria")
+    escopo                   = Column(String(40), nullable=False, default="simulacao_leitura")
+    base_legal               = Column(Text,     nullable=True)   # texto do termo aceito
+    concedido_em             = Column(DateTime, nullable=True)
+    revogado_em              = Column(DateTime, nullable=True)
+    ip                       = Column(String(64), nullable=True)
+    criado_em                = Column(DateTime, default=datetime.utcnow)
+
+
+class SimuladorLogAcesso(Base):
+    """Trilha de auditoria PRÓPRIA do Simulador (RF-04) — fora do log operacional: concessão,
+    revogação e cada abertura/levantamento de dados de uma loja pelo Simulador."""
+    __tablename__ = "simulador_log_acessos"
+
+    id         = Column(Integer,  primary_key=True, autoincrement=True)
+    evento     = Column(String(20), nullable=False)   # concessao | revogacao | abertura | levantamento
+    usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    loja_id    = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    contexto   = Column(Text,     nullable=True)
+    ip         = Column(String(64), nullable=True)
+    criado_em  = Column(DateTime, default=datetime.utcnow)
+
+
 class Medicao(Base):
     """Dados de medição por projeto (etapas 9 e 10 do ciclo)."""
     __tablename__ = "medicoes"
@@ -1834,6 +1870,7 @@ def init_db():
         backfill_funcoes_todas_lojas(_sess)   # funções novas do catálogo em todas as lojas (idempotente)
     finally:
         _sess.close()
+    _simulador_autorizacao_seed_v1()   # lojas existentes já nascem autorizadas (idempotente, Sessão 185)
     try:
         from auth import perfis
         perfis.recarregar()   # invalida o cache do registro de perfis (perfil_acesso pode ter mudado)
@@ -1901,6 +1938,35 @@ FUNCOES_PADRAO = [
     "Assistente Logístico", "Conferente", "Supervisor de Montagem", "Assistente Administrativo",
     "Projetista Executivo", "Medidor", "Montador", "Ajudante de Montagem", "SAC",
 ]
+
+
+def _simulador_autorizacao_seed_v1():
+    """Seed idempotente (Sessão 185, decisão do usuário): lojas EXISTENTES nascem autorizadas pro
+    Simulador — sem isso, toda loja de produção viraria 🔒 da noite pro dia na entrada em vigor da
+    autorização por loja. Loja sem NENHUMA linha `simulador_autorizacoes` (nova ou já semeada)
+    ganha uma `ativa` com concedido_por_usuario_id=NULL (marca "seed", não uma concessão real de
+    Master) — idempotente: loja que já tem qualquer linha (ativa OU revogada) não é tocada, porque
+    revogar deliberadamente depois do seed não pode ser desfeito por um restart do servidor."""
+    db = Session()
+    try:
+        ja_tem = {lid for (lid,) in db.query(SimuladorAutorizacao.loja_id).distinct().all()}
+        criadas = 0
+        for (lid,) in db.query(Loja.id).all():
+            if lid in ja_tem:
+                continue
+            db.add(SimuladorAutorizacao(
+                loja_id=lid, status="ativa", concedido_por_usuario_id=None,
+                beneficiario="orizon_assessoria", escopo="simulacao_leitura",
+                base_legal="Seed inicial — lojas existentes migradas já autorizadas (decisão do "
+                           "usuário, Sessão 185).",
+                concedido_em=datetime.utcnow()))
+            criadas += 1
+        if criadas:
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def backfill_funcoes_todas_lojas(db):

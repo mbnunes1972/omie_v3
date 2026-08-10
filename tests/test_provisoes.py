@@ -10,7 +10,8 @@ def test_default_tem_estrutura_completa():
                              "folha",                  # Fase 5: adiantamento oficial
                              "prazo_contratual_dias_uteis",   # Fatia 3: promessa formal (dias úteis)
                              "agenda",                 # Agenda da Loja Fatia 0: capacidade + calendário útil
-                             "prazo_antecipacao"}      # Recebimento de Venda (2026-08-07): dias Cartão/Aymoré
+                             "prazo_antecipacao",      # Recebimento de Venda (2026-08-07): dias Cartão/Aymoré
+                             "amortizacoes", "juros_mensal"}   # Simulador de Modelo de Negócios (Sessão 185)
     assert c["aprovacao_financeira"] == {"limite_af1_pct": 1.0, "limite_af2_pct": 2.0}
     assert c["provisoes"]["frete_fab_pct"] == 0.0
     assert c["provisoes_contabeis"] == {"montagem_pct": 0.0, "garantia_pct": 0.0, "comissao_pct": 0.0}   # v6 §6.4 / v8 Config

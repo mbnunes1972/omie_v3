@@ -242,6 +242,7 @@ def _usuario_dict(u: Usuario) -> dict:
         "pode_gerir_redes":    perfis.pode(u.nivel, "gerir_redes"),
         "pode_gerir_lojas":    perfis.pode(u.nivel, "gerir_lojas"),
         "pode_ver_estrategico": perfis.pode(u.nivel, "acesso_estrategico"),   # Painel Estratégico, 2026-08-09
+        "pode_ver_simulador": perfis.pode(u.nivel, "acesso_simulador"),      # Simulador, Sessão 185 (só super_admin)
         # 2026-07-24: o frontend só pede senha gerencial quando o LOGADO não tem a permissão
         "pode_autorizar":           perfis.pode(u.nivel, "autorizar"),
         "pode_aprovar_financeiro":  perfis.pode(u.nivel, "aprovar_financeiro"),

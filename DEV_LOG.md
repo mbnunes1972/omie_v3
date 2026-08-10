@@ -3277,6 +3277,117 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 186 — Simulador de Modelo de Negócios: implementação completa (F1–F5, motor + LGPD + adapter + UI)
+
+Branch `feat/painel-estrategico`. Implementação da frente desenhada na Sessão 185, seguindo
+`docs/superpowers/specs/financeiro/2026-08-10-ORIENTACAO-CODE-simulador-modelo-negocios.md`
+(F1 motor → F2 autorização → F3 levantamento → F4 UI → F5 fechamento), TDD o tempo todo, suíte
+sempre verde. Suíte final **2006 passed** (era 1953 no início da sessão).
+
+**F1 — Motor puro (`mod_simulador.py`, sem I/O, padrão `mod_indicadores`):** `simular(modelo,
+ajustes) -> resultado` — 6 grupos (A Vendas/B Variáveis+markups/C Folha/D Custos fixos+amortização/
+E Juros-Impostos-Dívida/F Snapshot). RN-01 (Faturamento = Val_Liq) e RN-02 (markup em % adicional,
+2,18× = 118%, imutável por efeito de outras variáveis — só edição direta) implementados à risca.
+Trava (RF-16): demissão redistribui proporcionalmente o volume entre os ativos, mantendo o
+faturamento; livre, o faturamento cai. `tests/test_simulador.py` (31 casos, incl. bordas: loja sem
+vendedor ativo, meses zerados descartados da média, denominador 0 → None/"—").
+
+**F2 — Autorização por loja (LGPD, funcional desde o dia 1):** tabelas `simulador_autorizacoes`
+(no máx. 1 `ativa` por loja — invariante de aplicação, não constraint de banco) e
+`simulador_log_acessos` (trilha PRÓPRIA, fora do log operacional — `LogAcessoDelegado` não é
+tocado). `mod_simulador_autorizacao.py`: `conceder` reautentica SEMPRE a senha do Master da loja
+alvo (mesmo com autorização já ativa — idempotência não pula a validação, achado de teste desta
+sessão) antes de checar duplicidade; `revogar` só o próprio Master, efeito imediato. Seed
+idempotente `_simulador_autorizacao_seed_v1` (em `database.init_db`) autoriza as lojas que já
+existiam no boot — não semeia loja nova depois (comportamento correto: nova loja nasce bloqueada,
+como qualquer outra). Capability `acesso_simulador` nova em `auth/perfis.py`, só `super_admin`
+(`PERFIS["super_admin"]`), nunca `if nivel == "super_admin"` hardcoded — lição da S181.
+`tests/test_simulador_autorizacao.py` (12 casos).
+
+**F3 — Adapter (`mod_simulador_dados.py`) + endpoints:** `montar_modelo(db, loja, cenario,
+janela)` monta o `ModeloLoja` a partir de `config_financeira_json` (provisões — 9 rubricas, RF-17),
+`Funcionario`/`Funcao` (folha + faixas de comissão de vendas), plano de contas (`Conta` grupo 5,
+`mod_contabil.seed_plano`/`_somas_por_conta`) e histórico de vendas (`Orcamento.val_liq/cfo`).
+**Armadilha evitada:** `financeiro` não pode importar `mod_folha.py` (domínio `folha` já depende de
+`financeiro` — importar de volta criaria dependência circular no manifesto `modulos.py`); o adapter
+reimplementa localmente o pedaço mínimo que precisa (`_vendas_liquido_consultor`) em vez de
+importar o módulo. Simplificações v1 sem fonte real melhor (documentadas no código-fonte, achado da
+Vera confirma que são aceitáveis mas merecem nota): amortizações/juros mensal viram config nova
+(`config_financeira_json["amortizacoes"/"juros_mensal"]`, default vazio/zero); markup-com-frete
+estimado aplicando o `frete_fab_pct` ATUAL sobre o CFO histórico; comissão de função não-consultor
+com `por_meta=True` aproximada como atingimento fat/meta da loja nas MESMAS faixas do vendedor
+(sem faixas de gerência distintas no sistema); pró-labore inferido pelo NOME da Função conter
+"diretor/sócio/socio/proprietár" (sem flag própria no cadastro). Endpoints (`main.py`, todos
+gated por `acesso_simulador`): `GET /api/simulador/lojas`, `POST /api/simulador/autorizacao`,
+`POST /api/simulador/autorizacao/revogar` (Master, mesmo sem a capability), `GET
+/api/simulador/modelo` (loga "abertura"), `POST /api/simulador/simular`. `tests/test_simulador_dados.py`
+(13 casos, ModeloLoja levantado de loja seedada bate com as fontes).
+
+**F4 — Frontend:** aba "Simulador" dentro do Painel Estratégico (`static/index.html`,
+`#page-estrategico`), fiel ao mockup (estrutura/medidas/tokens copiados — grupos A-F com
+expandir/agrupar, folha em cards lado a lado, Snapshot sticky, modal de autorização). CSS
+namespaced `sim-*` (o mockup usa nomes genéricos — `.tab`/`.group`/`.badge`/`.btn`/`.modal` — que já
+existem no app inteiro com estilos diferentes; prefixar evita colisão sem mudar 1px do resultado
+visual). Visível só com `_usuarioAtual.pode_ver_simulador` (novo campo em `auth._usuario_dict`).
+Aba extra "Privacidade" em Config (`page-09`, só Master) com botão de revogar — **não está no
+mockup**, é adição pragmática pra RF-03 ("revogável a qualquer momento pelo Master") ter algum
+lugar de acontecer pela sessão do próprio Master. Nenhuma fórmula financeira em JS — todo percentual
+exibido (`pct_fixo`/`pct_variavel`/`subtotal_pct`/`juros_pct`/`impostos_pct_fat`) veio pronto do
+motor especificamente pra isso. `node --check` OK.
+
+**F5 — Auditoria da Vera antes de fechar (achados corrigidos nesta sessão):**
+- 🔴 **`ZeroDivisionError` real na trava:** se os vendedores que sobram ativos somam R$0 em venda-
+  base (ex.: consultor novo sem fechamento ainda) e o desligado carregava todo o volume, a
+  redistribuição proporcional é 0/0 — a requisição morria sem resposta. Fix: nesse caso (sem base
+  pra proporção), o volume retirado é dividido IGUALMENTE entre os que continuam ativos. Bug
+  herdado do próprio mockup aprovado (`vendasBase()` sem guarda), só nunca bateu lá por ser dado
+  fictício estático. Teste novo cobrindo o caso.
+- 🔴 **Revogação não tinha efeito imediato sobre uma simulação já aberta:** `/api/simulador/simular`
+  não conferia autorização (motor puro, D1, não toca o banco) — uma aba aberta antes da revogação
+  continuava recalculando o `modelo` já em cache indefinidamente. Fix: o endpoint (não o motor —
+  D1 preservado) passou a exigir `loja_id` e reconferir `autorizacao_ativa` a cada chamada de
+  `/simular`, não só em `/modelo`. Teste novo cobrindo revogação-no-meio-da-sessão.
+- 🟠 Texto da aba Privacidade estava invertido ("a concessão é feita pela própria assessoria") —
+  corrigido pra descrever o mecanismo real (senha do Master).
+- 🟡 Único hex literal do bloco `sim-*` (~250 linhas) — disco do toggle switch, `#fff` — virou
+  token novo `--switch-thumb` (`design-system/orizon-tokens.css`, mesmo valor nos dois temas: é
+  convenção universal de toggle físico, não teria sentido variar por tema, mas ainda assim vira
+  token pra respeitar a regra "nenhuma cor em hex literal" do próprio arquivo de tokens).
+- 🟡 "Últimos 30 dias" (cenário Atual) é uma ESTIMATIVA (mês fechado × 0,97, mesma aproximação do
+  mockup), não uma consulta real à janela de 30 dias — nota adicionada na tela pra não passar como
+  dado ao vivo.
+
+**[PENDENTE — decisão do usuário, achados da Vera NÃO corrigidos nesta sessão]**
+1. **Fluxo de concessão pede a senha do Master DENTRO da tela do super_admin** (fiel ao mockup
+   aprovado — não é desvio da implementação): tecnicamente um "step-up invertido" — a senha do
+   Master transita pela sessão/navegador do assessor, não é digitada na própria sessão dele. Não
+   existe hoje um caminho pro Master CONCEDER (só revogar) pela própria sessão. Pode ser aceitável
+   (assessoria B2B já estabelecida, fluxo assistido) — mas por tocar senha de terceiro/LGPD,
+   merece confirmação explícita do usuário antes de virar o padrão definitivo.
+2. **Custos fixos/dívida nominal vêm do razão CONSOLIDADO DA REDE** quando a loja pertence a uma
+   cadeia (mesma convenção do resto do Financeiro, `mod_contabil.resolver_owner` — não é bug novo)
+   — mas o Simulador se propõe a simular UMA loja; margem/lucro podem sair distorcidos sem aviso
+   nenhum na tela pra uma loja de rede. Avaliar se merece um badge/aviso em v1.1.
+3. Trilha de auditoria (`simulador_log_acessos`) guarda o autorizador em texto livre no `contexto`
+   (`"autorizador=5"`) em vez de coluna própria — a informação estruturada já existe em
+   `SimuladorAutorizacao.concedido_por_usuario_id`, então não se perde, mas dificulta consulta
+   direta na trilha de auditoria em si.
+4. Ao desligar um consultor NA SIMULAÇÃO, a meta usada no atingimento do GERENTE
+   (`faixa_loja`) continua somando a meta do desligado — atingimento cai mais do que deveria.
+   Reflexo da simplificação #3 do F3 (achado da Vera), não uma regra nova a decidir.
+
+**Fora da v1 (já registrado na S185, reafirmado):** fluxo "quais variáveis fixar" da trava,
+persistência/comparação de cenários, UI multi-segmento (`rotulos` só no contrato), PDF, API externa.
+
+**Arquivos:** `mod_simulador.py`, `mod_simulador_autorizacao.py`, `mod_simulador_dados.py` (novos)
+· `database.py` (`SimuladorAutorizacao`, `SimuladorLogAcesso`, seed) · `auth/perfis.py`
+(`acesso_simulador`) · `auth/auth.py` (`pode_ver_simulador`) · `mod_provisoes.py`
+(`amortizacoes`/`juros_mensal` no config default) · `modulos.py` (classificação `financeiro`) ·
+`main.py` (5 endpoints) · `static/index.html` (aba Simulador + aba Privacidade) ·
+`design-system/orizon-tokens.css` (`--switch-thumb`) · `tests/test_simulador.py`,
+`tests/test_simulador_autorizacao.py`, `tests/test_simulador_dados.py`, `tests/test_provisoes.py`
+(golden test do config default).
+
 ## Sessão 185 — Simulador de Modelo de Negócios: requisitos + spec + mockup aprovado (frente nova, SÓ design — nenhum código de produção)
 
 Frente nova (2026-08-10, sessão Cowork) a partir do `Simulador.docx` do Marcelo. Ferramenta de

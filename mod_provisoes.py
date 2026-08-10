@@ -55,6 +55,12 @@ def config_financeira_default():
         # 'financeira' (Cartão/Aymoré — mod_recebiveis._RAMO). Cartão default 1 (já era o texto
         # hardcoded "1 dia útil" em mod_fin/cartao.py); Aymoré 2 (chute conservador, ajustável).
         "prazo_antecipacao": {"cartao": 1, "aymore": 2},
+        # Simulador de Modelo de Negócios (Sessão 185): não há fonte real pra amortização de
+        # investimento (reforma, mostruário) nem pra juros mensal médio no sistema hoje — viram
+        # config editável da loja, lida pelo adapter (mod_simulador_dados). Default vazio/zero =
+        # loja sem nada configurado ainda (estado real válido, não erro).
+        "amortizacoes": [],          # [{"nome","valor","prazo_meses"}, ...]
+        "juros_mensal": 0.0,
         "cronograma_padrao": [
             {"codigo": "8",  "prazo_dias": 2},   {"codigo": "9",  "prazo_dias": 3},
             {"codigo": "10", "prazo_dias": 5},   {"codigo": "11", "prazo_dias": 10},
@@ -141,6 +147,13 @@ def validar_config_financeira(dados):
             v = (pa or {}).get(k)
             if v is not None and _f(v) < 0:
                 erros.append(f"Prazo de antecipação ({k}) não pode ser negativo.")
+    if _f(d.get("juros_mensal")) < 0:
+        erros.append("Juros mensal não pode ser negativo.")
+    for am in (d.get("amortizacoes") or []):
+        if _f(am.get("valor")) < 0:
+            erros.append("Amortização com valor negativo.")
+        if _f(am.get("prazo_meses")) <= 0:
+            erros.append("Amortização precisa de prazo (meses) maior que zero.")
     ag = d.get("agenda")
     if ag is not None:
         from datetime import datetime as _dt

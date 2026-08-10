@@ -1389,6 +1389,60 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/simulador/lojas":
+            # Simulador de Modelo de Negócios (Sessão 185): seletor de lojas com o estado de
+            # autorização (RF-02) — exclusivo de acesso_simulador (super_admin/assessoria Orizon).
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode_usuario(usuario, "acesso_simulador"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            import mod_simulador_autorizacao as _msa
+            db = get_session()
+            try:
+                lojas = db.query(Loja).filter_by(tipo="loja", ativo=1).order_by(Loja.nome).all()
+                self.send_json({"ok": True, "lojas": _msa.status_lojas(db, lojas)})
+            finally:
+                db.close()
+            return
+
+        if path == "/api/simulador/modelo":
+            # Simulador (Sessão 185): monta e devolve o ModeloLoja da loja pedida — exige
+            # acesso_simulador (super_admin) E autorização ATIVA da loja (RF-02/D5). Cada
+            # abertura registra na trilha própria (RF-04), fora do log operacional.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode_usuario(usuario, "acesso_simulador"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            import mod_simulador_dados as _msd
+            import mod_simulador_autorizacao as _msa
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                loja_id = int((qs.get("loja_id") or [None])[0])
+            except (TypeError, ValueError):
+                self.send_json({"ok": False, "erro": "loja_id inválido."}, code=400); return
+            cenario = (qs.get("cenario") or ["atual"])[0].strip().lower()
+            janela = (qs.get("janela") or ["mes"])[0].strip().lower()
+            db = get_session()
+            try:
+                loja = db.get(Loja, loja_id)
+                if loja is None:
+                    self.send_json({"ok": False, "erro": "Loja não encontrada"}, code=404); return
+                if not _msa.autorizacao_ativa(db, loja_id):
+                    self.send_json({"ok": False, "erro": "Loja sem autorização ativa para o "
+                                    "Simulador — solicite ao Master da loja."}, code=403); return
+                modelo = _msd.montar_modelo(db, loja, cenario=cenario, janela=janela)
+                _msa.registrar_log(db, "abertura", usuario["id"], loja_id,
+                                   ip=self.client_address[0] if self.client_address else None,
+                                   contexto="cenario=%s janela=%s" % (cenario, janela))
+                db.commit()
+                self.send_json({"ok": True, "modelo": modelo})
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/balanco":
             ctx = _contabil_ctx(self, exige_edicao=False, consolidado_ok=True)
             if ctx is None: return
@@ -4843,6 +4897,98 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True}, code=200); return
 
         if handle_auth_post(self, path, body): return
+
+        if path == "/api/simulador/autorizacao":
+            # Simulador (Sessão 185, RF-03): o Master da loja ALVO reautentica a senha e concede
+            # o acesso à assessoria Orizon. Quem SOLICITA precisa ter acesso_simulador (só
+            # super_admin) — é a tela dele que dispara o modal "solicitar acesso".
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode_usuario(usuario, "acesso_simulador"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            import mod_simulador_autorizacao as _msa
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido."}, code=400); return
+            try:
+                loja_id = int(req.get("loja_id"))
+            except (TypeError, ValueError):
+                self.send_json({"ok": False, "erro": "loja_id inválido."}, code=400); return
+            db = get_session()
+            try:
+                ok, autorizacao, erro = _msa.conceder(
+                    db, loja_id, req.get("login_autorizador"), req.get("senha_autorizador"),
+                    usuario["id"], req.get("base_legal") or "Termo padrão do Simulador — acesso "
+                    "de assessoria, escopo simulação/somente leitura.",
+                    ip=self.client_address[0] if self.client_address else None)
+                if not ok:
+                    db.rollback()
+                    code = 401 if "inválid" in (erro or "") else 403
+                    self.send_json({"ok": False, "erro": erro}, code=code); return
+                db.commit()
+                self.send_json({"ok": True, "autorizado": True})
+            finally:
+                db.close()
+            return
+
+        if path == "/api/simulador/simular":
+            # Simulador (Sessão 185, D1): motor puro — o frontend manda o modelo (já obtido de
+            # /api/simulador/modelo) + os ajustes da tela; NENHUMA fórmula fica em JS. Não
+            # extrai dado NOVO da loja (o `modelo` já veio do cliente) — não gera nova entrada na
+            # trilha de acesso (só a ABERTURA em /modelo é logada, RF-04). MAS reconfere a
+            # autorização a cada chamada (achado da Vera): sem isso, revogar (RF-03 "efeito
+            # imediato") não impediria uma aba já aberta de seguir recalculando o modelo já
+            # obtido — o motor em si segue puro/sem I/O, só o endpoint consulta o banco.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if not perfis.pode_usuario(usuario, "acesso_simulador"):
+                self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+            import mod_simulador as _sim
+            import mod_simulador_autorizacao as _msa
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido."}, code=400); return
+            modelo, ajustes = req.get("modelo"), req.get("ajustes")
+            if not isinstance(modelo, dict) or (ajustes is not None and not isinstance(ajustes, dict)):
+                self.send_json({"ok": False, "erro": "modelo/ajustes inválidos."}, code=400); return
+            try:
+                loja_id = int(req.get("loja_id"))
+            except (TypeError, ValueError):
+                self.send_json({"ok": False, "erro": "loja_id inválido."}, code=400); return
+            db = get_session()
+            try:
+                if not _msa.autorizacao_ativa(db, loja_id):
+                    self.send_json({"ok": False, "erro": "Loja sem autorização ativa para o "
+                                    "Simulador — solicite ao Master da loja."}, code=403); return
+            finally:
+                db.close()
+            resultado = _sim.simular(modelo, ajustes)
+            self.send_json({"ok": True, "resultado": resultado})
+            return
+
+        if path == "/api/simulador/autorizacao/revogar":
+            # Revogação: só o Master DA PRÓPRIA LOJA — acessível mesmo SEM acesso_simulador
+            # (design D5/§2), efeito imediato.
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            import mod_simulador_autorizacao as _msa
+            db = get_session()
+            try:
+                ok, erro = _msa.revogar(
+                    db, usuario, ip=self.client_address[0] if self.client_address else None)
+                if not ok:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": erro}, code=403); return
+                db.commit()
+                self.send_json({"ok": True, "autorizado": False})
+            finally:
+                db.close()
+            return
 
         # POST /api/documentos/tipos — cria tipo de documento CUSTOMIZADO ("Novo Documento",
         # spec 2026-07-22): nome + etapa do ciclo associada. Exige gerir_documentos.

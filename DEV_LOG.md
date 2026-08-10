@@ -3277,6 +3277,44 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 189 — QA Vera (revalidação pós-188): migração esquecida do fluxo remoto + loja_id sem validar
+
+Vera chamada pra revalidar tudo de novo do zero (fluxo remoto de autorização + corte do razão)
+depois do deploy da Sessão 188 nas 3 máquinas + local. Achou 2 problemas reais.
+
+**🔴 `_migrar_colunas_pg` sem entrada pras 2 colunas novas de `simulador_autorizacoes`
+(`solicitado_por_usuario_id`/`solicitado_em`, Sessão 187):** `create_all()` só cria tabela que
+não existe — não altera uma já existente. Como a tabela nasceu na Sessão 185/186 (antes das 2
+colunas) e a Sessão 187 só mexeu na classe Python, todo banco que já tinha a tabela ficava com
+`UndefinedColumn` em QUALQUER rota do Simulador — e sem `except` cobrindo isso, o cliente recebia
+conexão resetada, não um 500 limpo. **Checado ao vivo nas 3 máquinas deployadas (VPS A/Instância
+A, VPS A/Instância B, Produção): as 3 nasceram com o schema JÁ COMPLETO**, porque o deploy da
+Sessão 188 foi a PRIMEIRA vez que `simulador_autorizacoes` existiu nelas (create_all rodou direto
+com o modelo atual, colunas inclusas) — só o Postgres LOCAL, que acompanhou o desenvolvimento
+incremental das Sessões 185→187, estava realmente quebrado. Mesmo sem exposição real fora do
+local, é o tipo de lacuna que quebraria o PRÓXIMO deploy incremental (qualquer coluna nova
+futura nessa tabela) — corrigido: as 2 linhas `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` faltando
+em `database.py::_migrar_colunas_pg`. Teste novo: dropa as colunas (simula o banco "antigo"),
+roda a migração de novo, confirma que voltam.
+
+**🟠 `POST /api/simulador/autorizacao/solicitar` não valida se a loja existe antes do INSERT:**
+`loja_id` inexistente estourava `IntegrityError` (violação de FK) cru — mesmo padrão do achado
+acima, conexão resetada em vez de erro limpo. `GET /api/simulador/modelo` já fazia esse check
+(404 "Loja não encontrada"); `solicitar` não seguia o mesmo padrão. Corrigido: mesma checagem
+antes de chamar `mod_simulador_autorizacao.solicitar`. Teste novo.
+
+Corrigido também um cosmético (docstring do corte do razão citava "Sessão 187", era 188).
+
+**Confirmações positivas da revalidação (ver relatório completo):** `ZeroDivisionError` da trava
+(S186) e reconferência de autorização em `/simular` (S186) seguem corrigidos; fluxo remoto
+completo (solicitar→aprovar→revogar) funciona ponta a ponta com usuários reais; corte do razão
+(S188) confirmado — lojas da mesma rede não vazam dado entre si, `/api/estrategico/indicadores`
+com `loja_id` de loja-irmã dá 403; rateio mãe→PDV segue funcionando com o owner novo da mãe.
+Suíte: **2017 passed** (2015 + 2 testes novos). Deploy de novo nas 3 máquinas + local.
+
+**Arquivos:** `database.py` (`_migrar_colunas_pg`), `main.py` (`solicitar`), `mod_contabil.py`
+(cosmético), `tests/test_simulador_autorizacao.py`.
+
 ## Sessão 188 — CORTE: cada loja passa a ter razão contábil PRÓPRIO (fim do razão compartilhado de rede)
 
 Continuação direta da Sessão 187 (esclarecimento sobre custos fixos/dívida de loja de rede no

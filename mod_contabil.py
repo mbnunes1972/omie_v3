@@ -377,7 +377,7 @@ def resolver_owner(db, usuario):
     selecionada) resolve pro owner da REDE em si, um registro à parte, não um pote compartilhado
     entre as lojas dela.
 
-    Corte 2026-08-10 (Sessão 187, decisão do usuário — "cada loja tem vida própria", sem dado real
+    Corte 2026-08-10 (Sessão 188, decisão do usuário — "cada loja tem vida própria", sem dado real
     dependendo do comportamento antigo em nenhum ambiente, auditado antes do corte): ATÉ AQUI, loja
     de rede escrevia direto no razão COMPARTILHADO da rede (`("rede", loja.rede_id)`) — pensado
     pra netar transação intercompany entre lojas-irmãs sem precisar de conta corrente (Sessão 95).

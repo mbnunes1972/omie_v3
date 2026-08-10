@@ -4946,6 +4946,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "loja_id inválido."}, code=400); return
             db = get_session()
             try:
+                if db.get(Loja, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Loja não encontrada"}, code=404); return
                 ok, autorizacao, erro = _msa.solicitar(
                     db, loja_id, usuario["id"],
                     ip=self.client_address[0] if self.client_address else None)

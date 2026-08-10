@@ -123,6 +123,14 @@ def test_solicitante_sem_acesso_simulador_nao_pode_solicitar(http_client_factory
     assert st == 403, body
 
 
+def test_solicitar_loja_inexistente_da_404_nao_crash(http_client_factory, seed):
+    """Achado da Vera: loja_id inexistente estourava IntegrityError (FK) cru — sem validar
+    existência antes do INSERT, a conexão resetava em vez de devolver um erro limpo."""
+    c = _login(http_client_factory, "super")
+    st, body = c.post("/api/simulador/autorizacao/solicitar", {"loja_id": 999999})
+    assert st == 404, body
+
+
 # ── Aprovar (RF-03, o Master reautentica a PRÓPRIA senha, na própria sessão) ────────────────
 def test_master_aprova_o_proprio_pedido_com_a_propria_senha(http_client_factory, seed):
     from database import get_session, SimuladorAutorizacao
@@ -251,6 +259,40 @@ def test_operador_nao_ve_status_de_autorizacao(http_client_factory, seed):
     c = _login(http_client_factory, "cons_l1")
     st, body = c.get("/api/simulador/autorizacao/status")
     assert st == 403, body
+
+
+# ── Migração idempotente das colunas do fluxo remoto (achado da Vera) ──────────────────────
+def test_migracao_recria_colunas_do_fluxo_remoto_em_tabela_antiga(app_db, seed):
+    """`simulador_autorizacoes` nasceu na Sessão 185/186 sem `solicitado_por_usuario_id`/
+    `solicitado_em` (a Sessão 187 as acrescentou ao modelo, mas esqueceu a linha em
+    `_migrar_colunas_pg` — `create_all()` não altera tabela já existente). Simula um banco
+    "antigo" (dropa as 2 colunas) e confirma que rodar a migração de novo as devolve."""
+    import database
+    from sqlalchemy import text
+    with database.ENGINE.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE simulador_autorizacoes DROP COLUMN IF EXISTS solicitado_por_usuario_id")
+        conn.exec_driver_sql(
+            "ALTER TABLE simulador_autorizacoes DROP COLUMN IF EXISTS solicitado_em")
+    db = app_db.get_session()
+    try:
+        cols_antes = {r[0] for r in db.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='simulador_autorizacoes'")).fetchall()}
+        assert "solicitado_por_usuario_id" not in cols_antes   # confirma a premissa do teste
+    finally:
+        db.close()
+
+    database._migrar_colunas_pg()
+
+    db = app_db.get_session()
+    try:
+        cols_depois = {r[0] for r in db.execute(text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='simulador_autorizacoes'")).fetchall()}
+        assert {"solicitado_por_usuario_id", "solicitado_em"} <= cols_depois
+    finally:
+        db.close()
 
 
 # ── Trilha própria (RF-04) ───────────────────────────────────────────────────────────────────

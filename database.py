@@ -2183,6 +2183,12 @@ def _migrar_colunas_pg():
         # nasce completa via create_all (marcador); só as 2 colunas em `conta` precisam de ADD.
         "ALTER TABLE conta ADD COLUMN IF NOT EXISTS centro_custo_id INTEGER",
         "ALTER TABLE conta ADD COLUMN IF NOT EXISTS natureza_custo VARCHAR(16)",
+        # Simulador — fluxo remoto de autorização (Sessão 187): a tabela simulador_autorizacoes já
+        # nasceu na Sessão 185/186 sem essas 2 colunas — achado da Vera (2026-08-10): banco que já
+        # tinha a tabela ficava com UndefinedColumn em toda rota do Simulador (create_all() não
+        # altera tabela existente, só cria as que faltam).
+        "ALTER TABLE simulador_autorizacoes ADD COLUMN IF NOT EXISTS solicitado_por_usuario_id INTEGER",
+        "ALTER TABLE simulador_autorizacoes ADD COLUMN IF NOT EXISTS solicitado_em TIMESTAMP",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

@@ -3277,6 +3277,279 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 188 — CORTE: cada loja passa a ter razão contábil PRÓPRIO (fim do razão compartilhado de rede)
+
+Continuação direta da Sessão 187 (esclarecimento sobre custos fixos/dívida de loja de rede no
+Simulador). Reação do usuário ao entender a origem: **"cada loja tem vida própria... será
+necessário fazer essa revisão com urgência. As operações intercompany deverão ser tratadas
+conforme o padrão geral."** Decisão do usuário, sem investigação prévia minha: **corte daqui pra
+frente** (não reescrever histórico), autorizado a executar em TODAS as bases (local, VPS A —
+instâncias A e B —, produção) porque "não existe dado real... até o momento todos os servidores
+funcionaram com testes."
+
+**Auditoria ANTES do corte (só leitura, nas 4 bases — instrução explícita do usuário: "pode
+executar sem nenhuma preocupação"), confirmando a premissa antes de mexer:**
+- Local dev: 1 rede, 1 loja real + 1 PDV, 170 lançamentos (156 rastreáveis por `projeto_id`, 14
+  sem — despesas fixas tipo aluguel).
+- VPS A / Instância A (`orizon`): **0 redes** — nada a migrar.
+- VPS A / Instância B (`orizon_homolog`): 16 redes, a maioria fixture de UAT automatizado (0
+  lançamento); **2 com histórico real de rede compartilhada** ("Rede Horizonte Homolog" 3 lojas/
+  338 lanc., "Rede Andrômeda Homolog" 2 lojas/234 lanc.) — dado de teste/simulação da Vera, não
+  cliente real.
+- **Produção: 0 redes.** Nenhuma rede cadastrada ainda — corte ali é 100% sem efeito colateral.
+
+**A mudança (`mod_contabil.resolver_owner`):** removida a resolução `loja com rede_id → owner =
+("rede", loja.rede_id)` (decisão da Sessão 95 — pensada pra netar intercompany entre lojas-irmãs
+sem conta de compensação). Agora `loja_id` presente → **sempre** `("loja", lid)`, sem exceção (a
+função nem consulta mais `Loja` no banco — ficou pura). `rede_id` sozinho (sem `loja_id` — ex.:
+admin_rede sem unidade ativa) continua resolvendo pra `("rede", rid)`, um registro à parte —
+comportamento não tocado, e hoje praticamente inatingido na prática (`_contabil_ctx` sempre
+resolve uma unidade ativa antes de chegar aqui). HISTÓRICO já lançado sob `("rede", X)` antes do
+corte **não foi reescrito** — congelado, mesmo princípio de não retroagir cláusula já assinada em
+`mod_documentos`. Intercompany entre lojas-irmãs passa a seguir o MESMO tratamento que já existe
+pra loja×fábrica/empresa externa (`AcordoFabrica`/`ContraparteFinanceira`, conta corrente
+1.1.09×2.1.09) — não precisou de mecanismo novo, só deixou de existir o atalho do "mesmo dono".
+
+**Efeito colateral bom — corrige um bug latente:** o "Comparativo entre lojas" do Painel
+Estratégico (Sessão 181, `mod_estrategico.comparativo_lojas`) já fazia `dre("loja", lid)` por
+loja individualmente — mas pra loja de rede isso sempre batia num livro vazio (tudo ia pro razão
+compartilhado), retornando zero em silêncio. Passa a funcionar de verdade a partir de agora.
+
+**Bug real achado pela suíte ao aplicar o corte:** `mod_contabil.eliminacoes_intercompany` tinha
+um `if c is None: continue` que **nunca executava** — `_conta_por_codigo` sempre levanta
+`ValueError` em vez de devolver `None` (o guard era código morto). Antes do corte isso nunca doía
+porque todo owner passado pra função sempre tinha a conta 1.1.09 (efeito colateral do
+compartilhamento); com cada loja isolada, uma loja sem PDV/rateio genuinamente não tem essa conta,
+e a função quebrava com 500 em vez de simplesmente contar zero pra ela. Corrigido: checa
+`_conta_existe` antes de chamar `_conta_por_codigo` (`GET /api/financeiro/rateios` pra um Master
+sem PDV).
+
+**Testes ajustados (nenhum novo cenário de produto, só a expectativa do owner mudando de
+`("rede", X)` pra `("loja", lid)`):** `test_plano_contas.py`, `test_estrategico.py` (um teste
+inteiro precisou virar — "drill-down pra loja-irmã da mesma rede" deixou de existir: Master de
+uma loja não vê mais dado de outra só por serem da mesma rede, exatamente a intenção do corte),
+`test_pdv_visao_unificada.py`, `test_pdv_consolidacao.py` (4 dos 10 testes tocavam o owner da mãe
+diretamente). `mod_simulador_dados.py` simplificado (removida a duplicação local da regra antiga
+— `_owner_da_loja` virou uma chamada direta a `mod_contabil.resolver_owner`); resolve também a
+pendência #2 anotada no fechamento da Sessão 186 (custos fixos/dívida de loja de rede no
+Simulador) **automaticamente**, sem precisar do aviso na tela cogitado ali. Suíte **2015 passed**
+(mesma contagem da Sessão 187 — troca de comportamento, não de cobertura).
+
+**Deploy nas 3 máquinas** (autorizado explicitamente pelo usuário, auditoria prévia confirmando
+zero dado real em produção): merge `feat/painel-estrategico` → `main` → push → VPS A/Instância A
+(`git reset --hard origin/main`) → VPS A/Instância B (nova tag homolog) → produção (backup +
+nova tag `-prod` + restart do `orizon.service`). Detalhes de cada passo no commit de deploy /
+verificação pós-subida, se algo precisar de nota à parte.
+
+**[PENDENTE, registrado — não é regressão de nada hoje acessível]** Se `admin_rede` ganhar
+`acesso_estrategico`/visão consolidada própria no futuro (ainda não tem — "dashboard consolidado
+= frente futura", decisão antiga), o agregado da REDE como entidade não deve ler um owner
+`("rede", X)` esperando achar lançamento — ele nunca mais vai ter, por design. Precisa somar cada
+loja (mesmo padrão que `comparativo_lojas` e o `unidade=consolidado` do PDV já usam), não ler um
+pote compartilhado.
+
+## Sessão 187 — Simulador: fluxo de autorização vira REMOTO (solicitar → aprovar) + esclarecimento sobre razão de rede
+
+Achado do usuário revisando o fechamento da Sessão 186: o fluxo de concessão (rev1, mockup
+aprovado) pedia a senha do Master **dentro da tela do super_admin** — só funcionava com os dois
+juntos (presencial ou numa chamada). Pedido do usuário: **"o fluxo de concessão deve envolver uma
+troca que possa ser feita de forma remota."**
+
+**Redesenho (`SimuladorAutorizacao` ganha `status='pendente'` + `solicitado_por_usuario_id`/
+`solicitado_em`):**
+1. `POST /api/simulador/autorizacao/solicitar` — o super_admin pede acesso. **Sem senha nenhuma**;
+   cria um pedido `pendente`. Idempotente (loja já `ativa`/`pendente` não duplica).
+2. `POST /api/simulador/autorizacao/aprovar` — o Master vê o pedido na **PRÓPRIA sessão** (aba
+   Config › Privacidade, `GET /api/simulador/autorizacao/status`, endpoint novo — não exige
+   `acesso_simulador`, é o outro lado do fluxo) e aprova reautenticando a **PRÓPRIA senha** (padrão
+   step-up de auto-confirmação, igual o resto do app já pede "confirme sua senha" pra ação
+   sensível) — nunca a de terceiro. Os dois lados só usam a própria conta, na própria sessão: dá
+   pra acontecer em qualquer lugar, em qualquer momento, sem coordenação síncrona.
+3. Revogar (`.../autorizacao/revogar`) passa a cobrir `ativa` OU `pendente` (serve também de
+   "recusar" um pedido) — efeito imediato, inalterado.
+Endpoint antigo `POST /api/simulador/autorizacao` (que recebia `login_autorizador`/
+`senha_autorizador` do solicitante) foi **removido**, não deprecado — era exatamente o padrão que
+motivou o pedido. `mod_simulador_autorizacao.conceder()` virou `solicitar()` + `aprovar()`.
+Frontend: modal "Solicitar acesso" não tem mais campos de senha (só confirma o pedido); dropdown de
+lojas ganha 3 estados (✓ acesso / ⏳ aguardando aprovação / 🔒 solicitar); aba Privacidade em Config
+mostra o pedido pendente com botão Aprovar (pede a própria senha) ou Recusar.
+`tests/test_simulador_autorizacao.py` reescrito (18 casos: solicitar sem senha, idempotência,
+aprovar com senha certa/errada do Master, revogar pendente, trilha separada com eventos
+`solicitacao`+`concessao`). Suíte **2015 passed**.
+
+**Esclarecimento pedido pelo usuário (achado 🟠5 da Vera na S186, "custos fixos/dívida vêm da
+REDE consolidada quando a loja pertence a uma cadeia") — não é regressão da arquitetura
+loja-primeiro:** o Orizon É de baixo pra cima em quase tudo (comercial/ciclo/folha/cadastro —
+loja é a unidade real, rede é filtro/agregação por consulta). A ÚNICA exceção é o razão contábil:
+decisão da **Sessão 95** — loja que pertence a uma rede não tem plano de contas/razão PRÓPRIO, ela
+escreve direto no razão **compartilhado da rede inteira** (`mod_contabil.resolver_owner`: loja com
+`rede_id` → owner vira `("rede", rede_id)`), pra transações intercompany entre lojas-irmãs se
+resolverem sozinhas (mesmo livro = sem conta de compensação). Confirmado ao vivo no banco de dev:
+INSPIRIUM (loja da rede 1) tem **zero** `Lancamento` com `owner_tipo='loja'` — os 170 lançamentos
+dela estão todos sob `owner_tipo='rede'`. O Simulador herda essa mesma limitação (não introduzida
+por ele) — e, de bônus, isso sugere que o "Comparativo entre lojas" do Painel Estratégico (S181,
+`mod_estrategico.comparativo_lojas`, que roda `dre("loja", lid)` por loja) provavelmente já bate
+num livro vazio pra qualquer loja de rede, retornando zero em silêncio. **Não investigado/corrigido
+agora** — registrado pra frente futura. Proposta ainda em aberto pro Simulador (aguardando decisão
+do usuário): aviso visível na tela quando a loja é de rede, sem tocar em `resolver_owner`.
+
+**Arquivos:** `database.py` (`SimuladorAutorizacao` ganha campos), `mod_simulador_autorizacao.py`
+(reescrito), `main.py` (3 endpoints novos, 1 removido), `static/index.html` (modal sem senha,
+dropdown 3 estados, aba Privacidade com aprovar/recusar), `tests/test_simulador_autorizacao.py`
+(reescrito).
+
+## Sessão 186 — Simulador de Modelo de Negócios: implementação completa (F1–F5, motor + LGPD + adapter + UI)
+
+Branch `feat/painel-estrategico`. Implementação da frente desenhada na Sessão 185, seguindo
+`docs/superpowers/specs/financeiro/2026-08-10-ORIENTACAO-CODE-simulador-modelo-negocios.md`
+(F1 motor → F2 autorização → F3 levantamento → F4 UI → F5 fechamento), TDD o tempo todo, suíte
+sempre verde. Suíte final **2006 passed** (era 1953 no início da sessão).
+
+**F1 — Motor puro (`mod_simulador.py`, sem I/O, padrão `mod_indicadores`):** `simular(modelo,
+ajustes) -> resultado` — 6 grupos (A Vendas/B Variáveis+markups/C Folha/D Custos fixos+amortização/
+E Juros-Impostos-Dívida/F Snapshot). RN-01 (Faturamento = Val_Liq) e RN-02 (markup em % adicional,
+2,18× = 118%, imutável por efeito de outras variáveis — só edição direta) implementados à risca.
+Trava (RF-16): demissão redistribui proporcionalmente o volume entre os ativos, mantendo o
+faturamento; livre, o faturamento cai. `tests/test_simulador.py` (31 casos, incl. bordas: loja sem
+vendedor ativo, meses zerados descartados da média, denominador 0 → None/"—").
+
+**F2 — Autorização por loja (LGPD, funcional desde o dia 1):** tabelas `simulador_autorizacoes`
+(no máx. 1 `ativa` por loja — invariante de aplicação, não constraint de banco) e
+`simulador_log_acessos` (trilha PRÓPRIA, fora do log operacional — `LogAcessoDelegado` não é
+tocado). `mod_simulador_autorizacao.py`: `conceder` reautentica SEMPRE a senha do Master da loja
+alvo (mesmo com autorização já ativa — idempotência não pula a validação, achado de teste desta
+sessão) antes de checar duplicidade; `revogar` só o próprio Master, efeito imediato. Seed
+idempotente `_simulador_autorizacao_seed_v1` (em `database.init_db`) autoriza as lojas que já
+existiam no boot — não semeia loja nova depois (comportamento correto: nova loja nasce bloqueada,
+como qualquer outra). Capability `acesso_simulador` nova em `auth/perfis.py`, só `super_admin`
+(`PERFIS["super_admin"]`), nunca `if nivel == "super_admin"` hardcoded — lição da S181.
+`tests/test_simulador_autorizacao.py` (12 casos).
+
+**F3 — Adapter (`mod_simulador_dados.py`) + endpoints:** `montar_modelo(db, loja, cenario,
+janela)` monta o `ModeloLoja` a partir de `config_financeira_json` (provisões — 9 rubricas, RF-17),
+`Funcionario`/`Funcao` (folha + faixas de comissão de vendas), plano de contas (`Conta` grupo 5,
+`mod_contabil.seed_plano`/`_somas_por_conta`) e histórico de vendas (`Orcamento.val_liq/cfo`).
+**Armadilha evitada:** `financeiro` não pode importar `mod_folha.py` (domínio `folha` já depende de
+`financeiro` — importar de volta criaria dependência circular no manifesto `modulos.py`); o adapter
+reimplementa localmente o pedaço mínimo que precisa (`_vendas_liquido_consultor`) em vez de
+importar o módulo. Simplificações v1 sem fonte real melhor (documentadas no código-fonte, achado da
+Vera confirma que são aceitáveis mas merecem nota): amortizações/juros mensal viram config nova
+(`config_financeira_json["amortizacoes"/"juros_mensal"]`, default vazio/zero); markup-com-frete
+estimado aplicando o `frete_fab_pct` ATUAL sobre o CFO histórico; comissão de função não-consultor
+com `por_meta=True` aproximada como atingimento fat/meta da loja nas MESMAS faixas do vendedor
+(sem faixas de gerência distintas no sistema); pró-labore inferido pelo NOME da Função conter
+"diretor/sócio/socio/proprietár" (sem flag própria no cadastro). Endpoints (`main.py`, todos
+gated por `acesso_simulador`): `GET /api/simulador/lojas`, `POST /api/simulador/autorizacao`,
+`POST /api/simulador/autorizacao/revogar` (Master, mesmo sem a capability), `GET
+/api/simulador/modelo` (loga "abertura"), `POST /api/simulador/simular`. `tests/test_simulador_dados.py`
+(13 casos, ModeloLoja levantado de loja seedada bate com as fontes).
+
+**F4 — Frontend:** aba "Simulador" dentro do Painel Estratégico (`static/index.html`,
+`#page-estrategico`), fiel ao mockup (estrutura/medidas/tokens copiados — grupos A-F com
+expandir/agrupar, folha em cards lado a lado, Snapshot sticky, modal de autorização). CSS
+namespaced `sim-*` (o mockup usa nomes genéricos — `.tab`/`.group`/`.badge`/`.btn`/`.modal` — que já
+existem no app inteiro com estilos diferentes; prefixar evita colisão sem mudar 1px do resultado
+visual). Visível só com `_usuarioAtual.pode_ver_simulador` (novo campo em `auth._usuario_dict`).
+Aba extra "Privacidade" em Config (`page-09`, só Master) com botão de revogar — **não está no
+mockup**, é adição pragmática pra RF-03 ("revogável a qualquer momento pelo Master") ter algum
+lugar de acontecer pela sessão do próprio Master. Nenhuma fórmula financeira em JS — todo percentual
+exibido (`pct_fixo`/`pct_variavel`/`subtotal_pct`/`juros_pct`/`impostos_pct_fat`) veio pronto do
+motor especificamente pra isso. `node --check` OK.
+
+**F5 — Auditoria da Vera antes de fechar (achados corrigidos nesta sessão):**
+- 🔴 **`ZeroDivisionError` real na trava:** se os vendedores que sobram ativos somam R$0 em venda-
+  base (ex.: consultor novo sem fechamento ainda) e o desligado carregava todo o volume, a
+  redistribuição proporcional é 0/0 — a requisição morria sem resposta. Fix: nesse caso (sem base
+  pra proporção), o volume retirado é dividido IGUALMENTE entre os que continuam ativos. Bug
+  herdado do próprio mockup aprovado (`vendasBase()` sem guarda), só nunca bateu lá por ser dado
+  fictício estático. Teste novo cobrindo o caso.
+- 🔴 **Revogação não tinha efeito imediato sobre uma simulação já aberta:** `/api/simulador/simular`
+  não conferia autorização (motor puro, D1, não toca o banco) — uma aba aberta antes da revogação
+  continuava recalculando o `modelo` já em cache indefinidamente. Fix: o endpoint (não o motor —
+  D1 preservado) passou a exigir `loja_id` e reconferir `autorizacao_ativa` a cada chamada de
+  `/simular`, não só em `/modelo`. Teste novo cobrindo revogação-no-meio-da-sessão.
+- 🟠 Texto da aba Privacidade estava invertido ("a concessão é feita pela própria assessoria") —
+  corrigido pra descrever o mecanismo real (senha do Master).
+- 🟡 Único hex literal do bloco `sim-*` (~250 linhas) — disco do toggle switch, `#fff` — virou
+  token novo `--switch-thumb` (`design-system/orizon-tokens.css`, mesmo valor nos dois temas: é
+  convenção universal de toggle físico, não teria sentido variar por tema, mas ainda assim vira
+  token pra respeitar a regra "nenhuma cor em hex literal" do próprio arquivo de tokens).
+- 🟡 "Últimos 30 dias" (cenário Atual) é uma ESTIMATIVA (mês fechado × 0,97, mesma aproximação do
+  mockup), não uma consulta real à janela de 30 dias — nota adicionada na tela pra não passar como
+  dado ao vivo.
+
+**[PENDENTE — decisão do usuário, achados da Vera NÃO corrigidos nesta sessão]**
+1. **Fluxo de concessão pede a senha do Master DENTRO da tela do super_admin** (fiel ao mockup
+   aprovado — não é desvio da implementação): tecnicamente um "step-up invertido" — a senha do
+   Master transita pela sessão/navegador do assessor, não é digitada na própria sessão dele. Não
+   existe hoje um caminho pro Master CONCEDER (só revogar) pela própria sessão. Pode ser aceitável
+   (assessoria B2B já estabelecida, fluxo assistido) — mas por tocar senha de terceiro/LGPD,
+   merece confirmação explícita do usuário antes de virar o padrão definitivo.
+2. **Custos fixos/dívida nominal vêm do razão CONSOLIDADO DA REDE** quando a loja pertence a uma
+   cadeia (mesma convenção do resto do Financeiro, `mod_contabil.resolver_owner` — não é bug novo)
+   — mas o Simulador se propõe a simular UMA loja; margem/lucro podem sair distorcidos sem aviso
+   nenhum na tela pra uma loja de rede. Avaliar se merece um badge/aviso em v1.1.
+3. Trilha de auditoria (`simulador_log_acessos`) guarda o autorizador em texto livre no `contexto`
+   (`"autorizador=5"`) em vez de coluna própria — a informação estruturada já existe em
+   `SimuladorAutorizacao.concedido_por_usuario_id`, então não se perde, mas dificulta consulta
+   direta na trilha de auditoria em si.
+4. Ao desligar um consultor NA SIMULAÇÃO, a meta usada no atingimento do GERENTE
+   (`faixa_loja`) continua somando a meta do desligado — atingimento cai mais do que deveria.
+   Reflexo da simplificação #3 do F3 (achado da Vera), não uma regra nova a decidir.
+
+**Fora da v1 (já registrado na S185, reafirmado):** fluxo "quais variáveis fixar" da trava,
+persistência/comparação de cenários, UI multi-segmento (`rotulos` só no contrato), PDF, API externa.
+
+**Arquivos:** `mod_simulador.py`, `mod_simulador_autorizacao.py`, `mod_simulador_dados.py` (novos)
+· `database.py` (`SimuladorAutorizacao`, `SimuladorLogAcesso`, seed) · `auth/perfis.py`
+(`acesso_simulador`) · `auth/auth.py` (`pode_ver_simulador`) · `mod_provisoes.py`
+(`amortizacoes`/`juros_mensal` no config default) · `modulos.py` (classificação `financeiro`) ·
+`main.py` (5 endpoints) · `static/index.html` (aba Simulador + aba Privacidade) ·
+`design-system/orizon-tokens.css` (`--switch-thumb`) · `tests/test_simulador.py`,
+`tests/test_simulador_autorizacao.py`, `tests/test_simulador_dados.py`, `tests/test_provisoes.py`
+(golden test do config default).
+
+## Sessão 185 — Simulador de Modelo de Negócios: requisitos + spec + mockup aprovado (frente nova, SÓ design — nenhum código de produção)
+
+Frente nova (2026-08-10, sessão Cowork) a partir do `Simulador.docx` do Marcelo. Ferramenta de
+**assessoria a lojas**: simula o funcionamento econômico da loja a partir das variáveis reais já
+configuradas (provisões da implantação, folha/comissionamentos, custos fixos históricos, parâmetros
+fiscais, médias do Painel Estratégico). Três cenários (Atual/Histórico/Futuro, janelas com descarte
+de meses zerados), grupos A–F com expandir/agrupar, trava de faturamento com redistribuição
+proporcional na demissão, Snapshot sempre completo (MC, margem líquida, markups).
+
+**Entregáveis (em `docs/superpowers/specs/financeiro/`):** `2026-08-10-simulador-modelo-negocios-`
+`requisitos.md` (RF-01..RF-25 + RN-01/02, rev2), `-design.md` (arquitetura e fases),
+`mockups/2026-08-10-simulador-modelo-negocios-mockup.html` (navegável, interativo, tokens v1.5,
+claro/escuro — 2 rodadas de revisão com o usuário) e `2026-08-10-ORIENTACAO-CODE-simulador-modelo-`
+`negocios.md` (handoff pro Code).
+
+**Decisões do usuário (vinculantes):**
+- **Acesso: módulo EXCLUSIVO do super_admin** (assessoria Orizon), embora apresentado como aba do
+  Painel Estratégico — capability nova `acesso_simulador` (não hardcodar nivel, lição da S181).
+  **Autorização por loja (LGPD/sigilo):** tabela própria + concessão por step-up do Master
+  (reaproveitar `POST /api/auth/step-up` da frente de Perfis) + trilha de auditoria separada +
+  revogação imediata. **Lojas atuais nascem autorizadas** (seed idempotente
+  `simulador_autorizacao_seed_v1`), mas o mecanismo nasce funcional.
+- **RN-01:** "Faturamento" no módulo = **Val_Liq**. **RN-02 (corrigida em rev2):** markup exibido
+  em **% adicional** (2,18× = 118%; 1,8× = 80%) — a rev1 tinha exibido o total (218%) e o usuário
+  corrigiu de volta. Dois markups: **seco** (base fábrica) e **com frete** (base fábrica + frete
+  fábrica); iniciam pela média da janela e SÓ mudam por edição direta.
+- **Folha completa** (todos os colaboradores, incluindo diretor/sócios em pró-labore), cards com
+  componentes lado a lado (mobile empilha), salários e provisões **editáveis**, comissão pela
+  **faixa de meta** da config da loja; mínimo garantido não aparece — vira indicador "Existe
+  comissionamento fixo" somado à componente fixa (sem encargos). Custos fixos sem toggle de plano
+  de contas: todas as contas sempre, zeradas atenuadas.
+- **Arquitetura de acoplamento:** motor **puro** no backend (`mod_simulador.py`, padrão
+  `mod_indicadores`) + contrato `ModeloLoja` (JSON) + adapter de levantamento
+  (`mod_simulador_dados.py`) — front só renderiza; outros sistemas/segmentos = outro adapter
+  (campo `rotulos` reservado, sem UI agora). Fases F1–F5 no design (TDD).
+
+**Fora da v1 (registrado):** fluxo "quais variáveis fixar" da trava (aplica só redistribuição
+padrão), persistência/comparação de cenários, UI multi-segmento, PDF, API externa.
+**Próximo passo:** implementação pelo Code seguindo a ORIENTACAO-CODE (F1 motor → F2 autorização →
+F3 levantamento → F4 UI fiel ao mockup → F5 Vera + fechamento).
+
 ## Sessão 184 — Lançamentos Contábeis "não aparecia": N+1 de margem escondido atrás de um filtro de projeto
 
 Achado do usuário (2026-08-09), testando ao vivo no VPS B (`homolog.orizonone.com.br`) depois da

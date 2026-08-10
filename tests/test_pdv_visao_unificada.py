@@ -49,9 +49,9 @@ def test_razao_do_pdv_e_proprio_mesmo_com_rede(app_db, pdv, seed):
     try:
         assert mod_contabil.resolver_owner(db, {"loja_id": pdv["id"], "rede_id": None}) == \
             ("loja", pdv["id"])
-        # loja plena da rede segue no razão da REDE (comportamento inalterado)
+        # loja plena da rede também tem razão próprio (corte S187 — antes ia pro razão da rede)
         assert mod_contabil.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None}) == \
-            ("rede", seed["rede_id"])
+            ("loja", seed["loja1_id"])
     finally:
         db.close()
 

@@ -368,17 +368,32 @@ def _natureza(grupo):
 
 
 def resolver_owner(db, usuario):
-    """(owner_tipo, owner_id) do usuário: rede da loja se houver; senão a loja; admin de rede -> rede.
-    PDV (loja com mãe, spec 2026-07-22): razão PRÓPRIO sempre — owner ("loja", pdv.id), mesmo com
-    rede herdada da mãe; a individualização por unidade é o que a visão unificada consolida depois."""
+    """`db` não é mais usado (a resolução virou pura, sem consultar `Loja`) — mantido na
+    assinatura só pra não mexer nas ~26 chamadas existentes.
+
+    (owner_tipo, owner_id) do usuário: SEMPRE a própria loja quando há `loja_id` — cada loja
+    tem razão PRÓPRIO, mesmo pertencendo a uma rede (PDV também: owner ("loja", pdv.id), mesmo com
+    rede herdada da mãe). `rede_id` sozinho (sem loja_id — ex.: admin_rede sem unidade ativa
+    selecionada) resolve pro owner da REDE em si, um registro à parte, não um pote compartilhado
+    entre as lojas dela.
+
+    Corte 2026-08-10 (Sessão 187, decisão do usuário — "cada loja tem vida própria", sem dado real
+    dependendo do comportamento antigo em nenhum ambiente, auditado antes do corte): ATÉ AQUI, loja
+    de rede escrevia direto no razão COMPARTILHADO da rede (`("rede", loja.rede_id)`) — pensado
+    pra netar transação intercompany entre lojas-irmãs sem precisar de conta corrente (Sessão 95).
+    Na prática, isso misturava aluguel/dívida/tudo de todas as lojas da rede num livro só, sem
+    jeito de segregar por loja depois (Lancamento não tem loja_id, só projeto_id — e nem todo
+    lançamento tem projeto). Daqui pra frente, TODA loja (de rede ou não) sempre tem seu próprio
+    owner; uma relação real entre duas lojas da mesma rede passa a seguir o MESMO tratamento
+    intercompany que já existe pra loja×fábrica/empresa externa (`AcordoFabrica`/
+    `ContraparteFinanceira`, conta corrente 1.1.09×2.1.09) — não um caso especial de "mesmo dono".
+    HISTÓRICO já lançado sob `("rede", X)` antes do corte NÃO é reescrito (fato passado, congelado
+    — mesmo princípio de não retroagir cláusula já assinada em `mod_documentos`); só afeta os
+    ambientes de homolog/UAT que tinham essa história (nenhuma rede em produção tinha lançamento
+    algum na data do corte — auditado antes de mudar)."""
     rid = usuario.get("rede_id")
     lid = usuario.get("loja_id")
     if lid:
-        loja = db.get(Loja, lid)
-        if loja is not None and getattr(loja, "loja_mae_id", None):
-            return ("loja", lid)
-        if loja and loja.rede_id:
-            return ("rede", loja.rede_id)
         return ("loja", lid)
     if rid:
         return ("rede", rid)
@@ -2501,9 +2516,9 @@ def eliminacoes_intercompany(db, owners, data_corte=None):
     origens (ex.: acordos com lojas fora do perímetro) NÃO são eliminados."""
     total = 0.0
     for ot, oid in owners:
+        if not _conta_existe(db, ot, oid, "1.1.09"):
+            continue   # owner nunca participou de rateio/PDV — sem a conta, sem pendência
         c = _conta_por_codigo(db, ot, oid, "1.1.09")
-        if c is None:
-            continue
         q = (db.query(Lancamento).filter_by(owner_tipo=ot, owner_id=oid)
                .filter(Lancamento.ref.like("rateio:%")))
         if data_corte:

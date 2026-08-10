@@ -1972,6 +1972,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <button class="home-tab"       id="cfg-tab-agenda"     onclick="cfgTab('agenda')">Agenda</button>
       <button class="home-tab"       id="cfg-tab-funcoes"    onclick="cfgTab('funcoes')">Funções</button>
       <button class="home-tab"       id="cfg-tab-documentos" onclick="cfgTab('documentos')">Documentos</button>
+      <button class="home-tab"       id="cfg-tab-privacidade" onclick="cfgTab('privacidade')" style="display:none">Privacidade</button>
     </div>
     <div id="cfg-panel-provisoes"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     <div id="cfg-panel-comissao" style="display:none"></div>
@@ -1979,6 +1980,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="cfg-panel-agenda" style="display:none"></div>
     <div id="cfg-panel-funcoes" style="display:none"></div>
     <div id="cfg-panel-documentos" style="display:none"></div>
+    <div id="cfg-panel-privacidade" style="display:none"></div>
   </div>
 
   <!-- Painel Orizon (só super_admin): administração do sistema — redes, lojas, gestores -->
@@ -2015,21 +2017,298 @@ input[type="date"]::-webkit-calendar-picker-indicator {
        despesa, Alertas, PMP real por título, Estoque (frentes futuras, decisão do usuário). -->
   <div class="page" id="page-estrategico">
     <div class="page-title" style="margin:0">Painel Estratégico</div>
-    <div class="page-sub">Indicadores consolidados do negócio — comparação automática ao período anterior.</div>
-    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 16px">
-      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-        <button class="home-tab ativo" id="est-per-mes"       onclick="estPeriodoMudar('mes')">Mês</button>
-        <button class="home-tab"       id="est-per-trimestre" onclick="estPeriodoMudar('trimestre')">Trimestre</button>
-        <button class="home-tab"       id="est-per-ano"       onclick="estPeriodoMudar('ano')">Ano</button>
-      </div>
-      <span id="est-loja-wrap" style="display:none;align-items:center;gap:6px">
-        <label class="field-label" style="margin:0">Loja</label>
-        <select id="est-loja-sel" onchange="estLojaMudar()" style="padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px"></select>
-      </span>
-      <span id="est-periodo-label" style="color:var(--muted);font-size:12px"></span>
+    <div class="page-sub" id="est-page-sub">Indicadores consolidados do negócio — comparação automática ao período anterior.</div>
+    <div class="sim-tabs" id="est-tabs" style="margin:10px 0 2px">
+      <div class="sim-tab ativo" id="est-tab-indicadores" onclick="estTabMudar('indicadores')">Indicadores</div>
+      <div class="sim-tab" id="est-tab-simulador" onclick="estTabMudar('simulador')" style="display:none">Simulador</div>
     </div>
-    <div id="est-corpo"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+
+    <div id="est-painel-indicadores">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 16px">
+        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <button class="home-tab ativo" id="est-per-mes"       onclick="estPeriodoMudar('mes')">Mês</button>
+          <button class="home-tab"       id="est-per-trimestre" onclick="estPeriodoMudar('trimestre')">Trimestre</button>
+          <button class="home-tab"       id="est-per-ano"       onclick="estPeriodoMudar('ano')">Ano</button>
+        </div>
+        <span id="est-loja-wrap" style="display:none;align-items:center;gap:6px">
+          <label class="field-label" style="margin:0">Loja</label>
+          <select id="est-loja-sel" onchange="estLojaMudar()" style="padding:5px 8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px"></select>
+        </span>
+        <span id="est-periodo-label" style="color:var(--muted);font-size:12px"></span>
+      </div>
+      <div id="est-corpo"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
+    </div>
+
+    <!-- ===== Simulador de Modelo de Negócios (Sessão 185) — mockup como fonte literal:
+         docs/superpowers/specs/financeiro/mockups/2026-08-10-simulador-modelo-negocios-mockup.html
+         Exclusivo de acesso_simulador (super_admin/assessoria Orizon) + autorização por loja (LGPD). ===== -->
+    <div id="est-painel-simulador" style="display:none">
+      <div class="sim-ctxbar" id="sim-ctxbar">
+        <span class="sim-ctx-label">Loja</span>
+        <div class="sim-select" onclick="event.stopPropagation();simToggleDropdown()">
+          <span id="sim-loja-atual">Selecione a loja…</span> <span style="color:var(--text-3)">▾</span>
+          <div class="sim-dropdown" id="sim-dd-loja"></div>
+        </div>
+
+        <span class="sim-ctx-label" style="margin-left:8px">Cenário</span>
+        <div class="sim-seg" id="sim-seg-cenario">
+          <button class="on" onclick="simSetCenario('atual',this)">Atual</button>
+          <button onclick="simSetCenario('historico',this)">Histórico</button>
+          <button onclick="simSetCenario('futuro',this)">Futuro</button>
+        </div>
+
+        <span class="sim-ctx-label" id="sim-lbl-janela" style="margin-left:8px">Base</span>
+        <div class="sim-seg" id="sim-seg-janela"></div>
+
+        <div class="sim-spacer"></div>
+        <div class="sim-lockrow" title="Travado: mudanças redistribuem entre as variáveis mantendo o faturamento">
+          <div class="sim-switch" id="sim-sw-trava" onclick="simToggleTrava()"></div>
+          <span>Travar faturamento</span>
+        </div>
+      </div>
+
+      <div id="sim-vazio" style="padding:28px 4px;color:var(--text-3);font-size:13px">Escolha uma loja autorizada para começar.</div>
+
+      <div id="sim-conteudo" style="display:none">
+        <div class="sim-body">
+          <div class="sim-groups">
+            <div class="sim-toolrow">
+              <button class="sim-mini-btn" onclick="simAllGroups(true)">Expandir tudo</button>
+              <button class="sim-mini-btn" onclick="simAllGroups(false)">Agrupar tudo</button>
+            </div>
+
+            <!-- A. VENDAS -->
+            <div class="sim-group open" id="sim-g-vendas">
+              <div class="sim-g-head" onclick="simToggleGroup('sim-g-vendas')">
+                <span class="sim-chev">▶</span>
+                <div><div class="sim-g-title">Vendas</div><div class="sim-g-tag">unidades de receita</div></div>
+                <div class="sim-g-main"><span class="sim-lbl">Faturamento</span><span class="sim-val" id="sim-m-fat">—</span></div>
+              </div>
+              <div class="sim-g-body">
+                <table class="sim-t" id="sim-tbl-vendas">
+                  <tr><th>Consultor</th><th style="text-align:right">Venda no período</th><th style="text-align:right">% do total</th><th style="width:60px;text-align:center">Ativo</th></tr>
+                </table>
+                <div class="sim-note" id="sim-nota-vendas"></div>
+              </div>
+            </div>
+
+            <!-- B. VARIÁVEIS DO MODELO -->
+            <div class="sim-group open" id="sim-g-var">
+              <div class="sim-g-head" onclick="simToggleGroup('sim-g-var')">
+                <span class="sim-chev">▶</span>
+                <div><div class="sim-g-title">Variáveis do modelo</div><div class="sim-g-tag">provisões sobre o faturamento</div></div>
+                <div class="sim-g-main"><span class="sim-lbl">Total</span><span class="sim-val" id="sim-m-var">—</span><span class="sim-pct" id="sim-m-var-v"></span></div>
+              </div>
+              <div class="sim-g-body">
+                <table class="sim-t" id="sim-tbl-var"></table>
+                <div class="sim-note">Todas as provisões do sistema, mesmo as zeradas — percentuais <b>editáveis</b>. Comissões de pessoal ficam na Folha. Markups iniciam pela média do período e <b>só mudam por edição direta</b>.</div>
+              </div>
+            </div>
+
+            <!-- C. FOLHA -->
+            <div class="sim-group open sim-span2" id="sim-g-folha">
+              <div class="sim-g-head" onclick="simToggleGroup('sim-g-folha')">
+                <span class="sim-chev">▶</span>
+                <div><div class="sim-g-title">Folha de pagamento</div><div class="sim-g-tag">todos os colaboradores — fixo + variável</div></div>
+                <div class="sim-g-main">
+                  <span class="sim-lbl">Fixo</span><span class="sim-val" id="sim-m-folha-f">—</span>
+                  <span class="sim-lbl">Variável</span><span class="sim-val" id="sim-m-folha-v">—</span>
+                  <span class="sim-lbl">Total</span><span class="sim-val" id="sim-m-folha">—</span><span class="sim-pct" id="sim-m-folha-p"></span>
+                </div>
+              </div>
+              <div class="sim-g-body">
+                <div class="sim-empgrid" id="sim-empgrid"></div>
+                <table class="sim-t" id="sim-tbl-folha-tot"></table>
+                <div class="sim-note">Salários <b>editáveis</b> (reestruturação). Comissão calculada pela <b>faixa de meta</b> e valor vendido, conforme configuração da loja. Comissão fixa (quando existir) compõe a parte fixa do salário — sem encargos. Desligar um consultor recalcula o faturamento; travado, redistribui proporcionalmente.</div>
+              </div>
+            </div>
+
+            <!-- D. CUSTOS FIXOS -->
+            <div class="sim-group open" id="sim-g-fixos">
+              <div class="sim-g-head" onclick="simToggleGroup('sim-g-fixos')">
+                <span class="sim-chev">▶</span>
+                <div><div class="sim-g-title">Custos fixos</div><div class="sim-g-tag">todas as contas configuradas</div></div>
+                <div class="sim-g-main"><span class="sim-lbl">Total</span><span class="sim-val" id="sim-m-fixos">—</span><span class="sim-pct" id="sim-m-fixos-p"></span></div>
+              </div>
+              <div class="sim-g-body">
+                <table class="sim-t" id="sim-tbl-fixos"></table>
+                <table class="sim-t" id="sim-tbl-amort"></table>
+                <div class="sim-note">Contempla todas as contas de despesa configuradas na loja, inclusive sem lançamento no período.</div>
+              </div>
+            </div>
+
+            <!-- E. JUROS / IMPOSTOS / DÍVIDA -->
+            <div class="sim-group open" id="sim-g-jid">
+              <div class="sim-g-head" onclick="simToggleGroup('sim-g-jid')">
+                <span class="sim-chev">▶</span>
+                <div><div class="sim-g-title">Juros, Impostos e Dívida</div><div class="sim-g-tag">encargos do contexto</div></div>
+                <div class="sim-g-main"><span class="sim-lbl">Total mensal</span><span class="sim-val" id="sim-m-jid">—</span><span class="sim-pct" id="sim-m-jid-p"></span></div>
+              </div>
+              <div class="sim-g-body">
+                <table class="sim-t" id="sim-tbl-jid"></table>
+                <div class="sim-note">Impostos calculados pelos parâmetros fiscais para o contexto de faturamento simulado. Dívida nominal é saldo — não entra no resultado mensal.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- F. SNAPSHOT -->
+          <div class="sim-snap">
+            <div class="sim-snap-h"><span style="color:var(--accent-vivid)">◈</span><span class="sim-t1">Snapshot</span><span class="sim-always">sempre completo</span></div>
+            <div class="sim-kpi"><div class="sim-k-lbl">Faturamento simulado (líquido)</div><div class="sim-k-val" id="sim-s-fat">—</div><div class="sim-k-sub" id="sim-s-fat-sub"></div></div>
+            <div class="sim-kpi" id="sim-k-mc"><div class="sim-k-lbl">Margem de contribuição</div><div class="sim-k-val" id="sim-s-mc">—</div><div class="sim-k-sub" id="sim-s-mc-sub"></div></div>
+            <div class="sim-kpi" id="sim-k-ml"><div class="sim-k-lbl">Margem de lucro líquido</div><div class="sim-k-val" id="sim-s-ml">—</div><div class="sim-k-sub" id="sim-s-ml-sub"></div></div>
+            <div style="font-size:0">
+              <div class="sim-kpi sim-half" style="border-right:1px solid var(--border)"><div class="sim-k-lbl">Markup seco</div><div class="sim-k-val" id="sim-s-mks">—</div><div class="sim-k-sub" id="sim-s-mks-sub"></div></div><div class="sim-kpi sim-half"><div class="sim-k-lbl">Markup c/ frete</div><div class="sim-k-val" id="sim-s-mkf">—</div><div class="sim-k-sub" id="sim-s-mkf-sub"></div></div>
+            </div>
+            <div class="sim-kpi" style="border-top:1px solid var(--border)"><div class="sim-k-sub" style="font-family:var(--font-body)">% adicional sobre a base (2,18× = 118%). Editáveis no grupo B; espelham o mesmo dado.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- modal de autorização (Simulador) -->
+    <div class="sim-overlay" id="sim-modal" onclick="if(event.target===this)simFecharModal()">
+      <div class="sim-modal">
+        <h3 id="sim-modal-titulo">Solicitar acesso</h3>
+        <div class="sim-m-sub" id="sim-modal-sub">O Master da loja precisa aprovar o acesso de simulação (somente leitura) — não é preciso senha nenhuma aqui: o pedido fica registrado e o Master aprova depois, remotamente, na própria sessão dele.</div>
+        <div class="sim-m-audit">⚖ Registro em <b>log de auditoria separado</b>: solicitante, beneficiário, escopo (simulação · somente leitura), data/hora e IP. Revogável a qualquer momento pelo Master.</div>
+        <div id="sim-modal-msg" style="font-size:12px;margin-top:8px"></div>
+        <div class="sim-m-actions">
+          <button class="sim-btn sim-sec" onclick="simFecharModal()">Cancelar</button>
+          <button class="sim-btn sim-pri" id="sim-modal-btn-pri" onclick="simEnviarAutorizacao()">Enviar pedido de acesso</button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- ===== Simulador de Modelo de Negócios (Sessão 185) — CSS namespaced (sim-*) copiado
+       literalmente do mockup aprovado (só os SELETORES levam prefixo, pra não colidir com
+       classes genéricas já usadas no resto do app — .badge/.btn/.modal/.tab/.group etc.;
+       valores/medidas/tokens são os mesmos do mockup, sem reinterpretação). ===== -->
+  <style>
+  .sim-tabs{display:flex;gap:22px}
+  .sim-tab{padding:0 2px 10px;font-size:13.5px;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent}
+  .sim-tab.ativo{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+
+  .sim-ctxbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0;
+    border-bottom:1px solid var(--border);margin-bottom:14px}
+  .sim-select,.sim-seg{height:var(--control-h-sm);border-radius:var(--radius-sm);font-size:12.5px}
+  .sim-select{border:1px solid var(--field-border);background:var(--surface);color:var(--text);
+    padding:0 10px;cursor:pointer;position:relative;display:flex;align-items:center;gap:8px}
+  .sim-select:hover{border-color:var(--field-border-hover)}
+  .sim-dropdown{position:absolute;top:34px;left:0;min-width:260px;max-height:320px;overflow:auto;
+    background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);
+    box-shadow:var(--shadow-md);z-index:40;padding:6px 0;display:none}
+  .sim-dropdown.open{display:block}
+  .sim-dd-item{padding:8px 14px;font-size:13px;display:flex;justify-content:space-between;gap:12px;cursor:pointer}
+  .sim-dd-item:hover{background:var(--surface-2)}
+  .sim-dd-item .lock{color:var(--text-3);font-size:11.5px}
+  .sim-seg{display:flex;border:1px solid var(--field-border);overflow:hidden}
+  .sim-seg button{border:0;background:transparent;color:var(--text-2);font-size:12.5px;padding:0 12px;cursor:pointer;height:100%}
+  .sim-seg button.on{background:var(--accent-soft);color:var(--accent-on-soft);font-weight:500}
+  .sim-ctx-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
+  .sim-spacer{flex:1}
+  .sim-lockrow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2)}
+  .sim-switch{width:34px;height:19px;border-radius:10px;background:var(--border-strong);position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+  .sim-switch::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--switch-thumb);transition:left .15s}
+  .sim-switch.on{background:var(--accent)}
+  .sim-switch.on::after{left:17px}
+  .sim-switch.sm{width:28px;height:16px}
+  .sim-switch.sm::after{width:12px;height:12px}
+  .sim-switch.sm.on::after{left:14px}
+
+  .sim-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+  .sim-groups{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;min-width:0}
+  .sim-toolrow{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-bottom:-4px}
+  .sim-span2{grid-column:1/-1}
+  .sim-mini-btn{height:26px;padding:0 10px;font-size:11.5px;border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2);cursor:pointer}
+  .sim-mini-btn:hover{color:var(--accent)}
+
+  .sim-group{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);min-width:0}
+  .sim-g-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none}
+  .sim-g-head .sim-chev{color:var(--text-3);font-size:11px;width:14px;transition:transform .15s}
+  .sim-group.open .sim-chev{transform:rotate(90deg)}
+  .sim-g-title{font-size:13.5px;font-weight:500}
+  .sim-g-tag{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em}
+  .sim-g-main{margin-left:auto;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  .sim-g-main .sim-lbl{font-size:11px;color:var(--text-3)}
+  .sim-g-main .sim-val{font-family:var(--font-mono);font-size:14.5px;font-weight:600}
+  .sim-g-main .sim-pct{font-family:var(--font-mono);font-size:12px;color:var(--text-2)}
+  .sim-g-body{display:none;border-top:1px solid var(--border);padding:2px 0 10px}
+  .sim-group.open .sim-g-body{display:block}
+
+  table.sim-t{width:100%;border-collapse:collapse}
+  .sim-t th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);
+    font-weight:500;text-align:left;padding:8px 16px 4px}
+  .sim-t td{padding:5px 16px;font-size:13px;border-top:1px solid var(--border)}
+  .sim-t tr:first-child td{border-top:0}
+  .sim-t .sim-num{font-family:var(--font-mono);text-align:right;white-space:nowrap}
+  .sim-t .sim-muted{color:var(--text-3)}
+  .sim-t tr.off td{opacity:.42;text-decoration:line-through}
+  .sim-t tr.off td:last-child{text-decoration:none}
+  .sim-t tr.hl td{background:var(--accent-soft)}
+  input.sim-ed{height:26px;border:1px solid var(--field-border);border-radius:var(--radius-sm);
+    background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12.5px;text-align:right;padding:0 6px}
+  input.sim-ed:hover{border-color:var(--field-border-hover)}
+  .sim-w-pct{width:62px}.sim-w-mult{width:70px}.sim-w-sal{width:88px}
+  .sim-t .sim-subhead td{font-size:11px !important;text-transform:uppercase;letter-spacing:.05em;color:var(--accent-on-soft) !important;
+    background:var(--surface-2);padding:5px 16px !important}
+  .sim-t tr.sim-totrow td{font-weight:600;background:var(--surface-2)}
+  .sim-note{font-size:11.5px;color:var(--text-3);padding:8px 16px 2px;line-height:1.5}
+  .sim-badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:500;
+    border-radius:10px;padding:2px 8px;background:var(--info-soft);color:var(--info);border:1px solid var(--info-line)}
+  .sim-badge.warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn-line)}
+  .sim-badge.acc{background:var(--accent-soft);color:var(--accent-on-soft);border-color:var(--accent-line)}
+
+  .sim-empgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:10px;padding:10px 16px 4px}
+  .sim-emp{border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:var(--surface)}
+  .sim-emp.off{opacity:.45}
+  .sim-emp-h{display:flex;align-items:center;gap:8px}
+  .sim-emp-h .sim-nm{font-size:13px;font-weight:600}
+  .sim-emp-h .sim-cg{font-size:11px;color:var(--text-3)}
+  .sim-emp-h .sim-sw{margin-left:auto}
+  .sim-comps{display:flex;gap:8px;margin-top:9px}
+  .sim-comp{flex:1;background:var(--surface-2);border-radius:var(--radius-sm);padding:6px 8px;min-width:0}
+  .sim-comp .sim-c-l{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3)}
+  .sim-comp .sim-c-v{font-family:var(--font-mono);font-size:12.5px;font-weight:600;margin-top:2px;white-space:nowrap}
+  .sim-comp .sim-c-s{font-size:10.5px;color:var(--text-3);margin-top:2px;line-height:1.35}
+  .sim-comp.none .sim-c-v{color:var(--text-3);font-weight:400;font-size:11.5px;white-space:normal}
+
+  .sim-snap{position:sticky;top:0;background:var(--surface);border:1px solid var(--accent-line);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden}
+  .sim-snap-h{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+  .sim-snap-h .sim-t1{font-size:13.5px;font-weight:600}
+  .sim-snap-h .sim-always{margin-left:auto;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em}
+  .sim-kpi{padding:11px 16px;border-bottom:1px solid var(--border)}
+  .sim-kpi:last-child{border-bottom:0}
+  .sim-kpi .sim-k-lbl{font-size:11.5px;color:var(--text-2)}
+  .sim-kpi .sim-k-val{font-family:var(--font-mono);font-size:20px;font-weight:600;margin-top:2px}
+  .sim-kpi .sim-k-sub{font-size:11px;color:var(--text-3);font-family:var(--font-mono)}
+  .sim-kpi.pos .sim-k-val{color:var(--ok)} .sim-kpi.neg .sim-k-val{color:var(--err)}
+  .sim-kpi.sim-half{display:inline-block;width:50%;vertical-align:top;border-bottom:1px solid var(--border)}
+  .sim-kpi.sim-half .sim-k-val{font-size:17px}
+
+  .sim-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center}
+  .sim-overlay.open{display:flex}
+  .sim-modal{width:420px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-md);padding:20px 22px}
+  .sim-modal h3{margin:0 0 4px;font-size:16px;font-weight:600;color:var(--text)}
+  .sim-modal .sim-m-sub{font-size:12.5px;color:var(--text-2);line-height:1.5;margin-bottom:14px}
+  .sim-modal label{display:block;font-size:11px;color:var(--text-3);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+  .sim-modal input{width:100%;height:var(--control-h);border:1px solid var(--field-border);border-radius:var(--radius-sm);
+    background:var(--surface);color:var(--text);padding:0 10px;font-size:13px;box-sizing:border-box}
+  .sim-m-audit{margin-top:12px;font-size:11.5px;color:var(--text-3);background:var(--surface-2);
+    border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.5}
+  .sim-m-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  .sim-btn{height:var(--control-h);padding:0 16px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer;border:none}
+  .sim-btn.sim-sec{background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+  .sim-btn.sim-pri{background:var(--btn-primary-bg);color:var(--btn-primary-text);border:1px solid var(--btn-primary-border);box-shadow:var(--btn-primary-shadow)}
+
+  /* responsivo: celular empilha tudo (formato aprovado no mockup) */
+  @media (max-width:1280px){.sim-groups{grid-template-columns:1fr}}
+  @media (max-width:980px){.sim-body{grid-template-columns:1fr}.sim-snap{position:static}.sim-comps{flex-direction:column}}
+  </style>
 
   <!-- ===== Orizon Chat — módulo de página cheia (mockup 2026-07-28) ===== -->
   <style>
@@ -3922,10 +4201,16 @@ async function cfgSalvarLimites(){
 
 // ── Config (Modulos_Orizon_v8): parâmetros de negócio — Provisões · Comissão · Documentos ────
 let _cfgTabAtual = 'provisoes';
-function cfgRender(){ _empSeletorPreencher('cfg-emp-seletor'); cfgTab(_cfgTabAtual || 'provisoes'); }
+function cfgRender(){
+  _empSeletorPreencher('cfg-emp-seletor');
+  // Privacidade (Simulador, Sessão 185): só o Master vê — é quem concede/revoga (RF-03).
+  const tabPriv = document.getElementById('cfg-tab-privacidade');
+  if(tabPriv) tabPriv.style.display = (_usuarioAtual && _usuarioAtual.nivel === 'master') ? '' : 'none';
+  cfgTab(_cfgTabAtual || 'provisoes');
+}
 function cfgTab(qual){
   _cfgTabAtual = qual;
-  ['provisoes','comissao','cronograma','agenda','funcoes','documentos'].forEach(q => {
+  ['provisoes','comissao','cronograma','agenda','funcoes','documentos','privacidade'].forEach(q => {
     const tab = document.getElementById('cfg-tab-'+q);
     const panel = document.getElementById('cfg-panel-'+q);
     if(tab) tab.classList.toggle('ativo', q===qual);
@@ -3937,6 +4222,64 @@ function cfgTab(qual){
   if(qual==='agenda')     cfgAgendaRender();
   if(qual==='funcoes')    cfgFuncoesRender();
   if(qual==='documentos') cfgDocumentosRender();
+  if(qual==='privacidade') cfgPrivacidadeRender();
+}
+// ── Config → Privacidade: autorização do Simulador de Modelo de Negócios (Sessão 185/187, RF-03).
+// Fluxo REMOTO: a assessoria SOLICITA (sem senha nenhuma); o Master vê o pedido aqui, na PRÓPRIA
+// sessão, e aprova reautenticando a PRÓPRIA senha — nunca a de terceiro, nunca precisa dos dois
+// juntos. ──────────────────────────────────────────────────────────────────────────────────────
+async function cfgPrivacidadeRender(){
+  const box = document.getElementById('cfg-panel-privacidade'); if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const r = await fetch('/api/simulador/autorizacao/status', {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({ok:false}));
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
+
+  const cabecalho = '<div style="font-weight:700;color:var(--text);font-size:13px;'
+    +'border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px">Simulador de Modelo de Negócios</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:12px">A assessoria Orizon (super_admin) usa este '
+    +'módulo pra simular o modelo econômico da loja — folha, margens, dívida (somente leitura).</div>';
+
+  let corpo;
+  if(d.status === 'pendente'){
+    corpo = '<div style="font-size:12px;color:var(--text);margin-bottom:10px">'
+      +'A assessoria Orizon <b>solicitou acesso</b>'
+      +(d.solicitado_por_nome ? ' ('+esc(d.solicitado_por_nome)+')' : '')
+      +(d.solicitado_em ? ' em '+esc(d.solicitado_em.slice(0,10).split('-').reverse().join('/')) : '')
+      +'. Aprovar exige confirmar sua PRÓPRIA senha — nada é enviado pra assessoria.</div>'
+      +'<label class="field-label">Sua senha</label>'
+      +'<input type="password" id="cfg-priv-senha" style="width:220px;margin-bottom:10px" placeholder="••••••••"><br>'
+      +'<button class="btn btn-primary btn-sm" onclick="cfgPrivacidadeAprovar()">Aprovar acesso</button> '
+      +'<button class="btn btn-ghost btn-sm" onclick="cfgPrivacidadeRevogar()">Recusar</button>';
+  } else if(d.status === 'ativa'){
+    corpo = '<div style="font-size:12px;color:var(--ok);margin-bottom:10px">✓ Acesso ativo'
+      +(d.concedido_em ? ' desde '+esc(d.concedido_em.slice(0,10).split('-').reverse().join('/')) : '')+'.</div>'
+      +'<button class="btn btn-ghost btn-sm" onclick="cfgPrivacidadeRevogar()">Revogar acesso da assessoria</button>';
+  } else {
+    corpo = '<div style="font-size:12px;color:var(--muted)">Nenhum pedido de acesso no momento.</div>';
+  }
+  box.innerHTML = '<div style="max-width:560px">' + cabecalho + corpo
+    + '<div id="cfg-priv-msg" style="font-size:12px;margin-top:10px"></div></div>';
+}
+async function cfgPrivacidadeAprovar(){
+  const senhaEl = document.getElementById('cfg-priv-senha');
+  const senha = senhaEl ? senhaEl.value : '';
+  const msg = document.getElementById('cfg-priv-msg');
+  const r = await fetch('/api/simulador/autorizacao/aprovar', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({senha})});
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok){ if(msg) msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro||'Não foi possível aprovar.')+'</span>'; return; }
+  if(msg) msg.innerHTML = '<span style="color:var(--ok)">✓ Acesso aprovado.</span>';
+  setTimeout(cfgPrivacidadeRender, 700);
+}
+async function cfgPrivacidadeRevogar(){
+  const msg = document.getElementById('cfg-priv-msg');
+  const r = await fetch('/api/simulador/autorizacao/revogar', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok){ if(msg) msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro || 'Não foi possível revogar.')+'</span>'; return; }
+  if(msg) msg.innerHTML = '<span style="color:var(--ok)">✓ Feito.</span>';
+  setTimeout(cfgPrivacidadeRender, 700);
 }
 // ── Config → Agenda e Capacidade (Agenda da Loja, Fatia 0 — spec 2026-08-03) ─────────────
 let _cfgAgFeriados = [];
@@ -12214,7 +12557,23 @@ function goPageEstrategico(){
   const sbParams = document.getElementById('sb-params'); if (sbParams) sbParams.style.display = 'none';
   _sbModuloAberto = null; _sbSecaoAtiva = null;
   if (typeof sbNavRender === 'function') sbNavRender();
-  estCarregar();
+  // Simulador de Modelo de Negócios (Sessão 185): aba exclusiva de acesso_simulador
+  // (super_admin/assessoria Orizon) — capability normal, nunca `if nivel==='super_admin'`.
+  const temSimulador = !!(_usuarioAtual && _usuarioAtual.pode_ver_simulador);
+  const tabSim = document.getElementById('est-tab-simulador');
+  if (tabSim) tabSim.style.display = temSimulador ? '' : 'none';
+  estTabMudar(temSimulador ? 'simulador' : 'indicadores');
+}
+
+function estTabMudar(qual){
+  ['indicadores','simulador'].forEach(q => {
+    const tab = document.getElementById('est-tab-'+q);
+    const painel = document.getElementById('est-painel-'+q);
+    if (tab) tab.classList.toggle('ativo', q===qual);
+    if (painel) painel.style.display = q===qual ? '' : 'none';
+  });
+  if (qual === 'indicadores') estCarregar();
+  if (qual === 'simulador' && !_simLojas.length) simInit();
 }
 
 function estPeriodoMudar(tipo){
@@ -12344,6 +12703,289 @@ async function estCarregar(){
   }
 
   corpo.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// Simulador de Modelo de Negócios (Sessão 185) — mockup como fonte literal:
+// docs/superpowers/specs/financeiro/mockups/2026-08-10-simulador-modelo-negocios-mockup.html
+// D1 (motor puro): NENHUMA fórmula financeira mora aqui — todo cálculo vem pronto de
+// /api/simulador/simular; este bloco só formata e liga o DOM aos ajustes do usuário.
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+let _simLojas = [];
+let _simLojaId = null, _simLojaNome = '';
+let _simModelo = null;
+let _simUltimoResultado = null;
+let _simCenario = 'atual', _simJanela = 'mes', _simTrava = false;
+let _simAjustes = { vendedores_ativos:{}, variaveis_pct:{}, markup_seco:null, markup_com_frete:null,
+                    folha_salarios:{}, folha_ativos:{} };
+let _simModalLojaId = null;
+const SIM_JANELAS = {
+  atual:     [['mes','Último mês fechado'], ['d30','Últimos 30 dias']],
+  historico: [['tri','Trimestral'], ['sem','Semestral'], ['ano','Anual']],
+  futuro:    [['mes','Atual'], ['tri','Trimestral'], ['sem','Semestral'], ['ano','Anual']],
+};
+
+function _simFmt(v){ return v == null ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR'); }
+function _simPctFr(v){ return v == null ? '—' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%'; }
+function _simPctNum(v){ return v == null ? '—' : v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}) + '%'; }
+
+async function simInit(){
+  const dd = document.getElementById('sim-dd-loja');
+  dd.innerHTML = '<div class="sim-dd-item"><em style="color:var(--text-3)">Carregando…</em></div>';
+  const r = await fetch('/api/simulador/lojas', {credentials:'same-origin'});
+  if (r.status === 403){ dd.innerHTML = '<div class="sim-dd-item"><em style="color:var(--text-3)">Sem acesso.</em></div>'; return; }
+  const d = await r.json().catch(()=>({ok:false, lojas:[]}));
+  _simLojas = d.lojas || [];
+  simRenderDropdown();
+}
+
+const SIM_LOCK_LABEL = { ativa: '✓ acesso', pendente: '⏳ aguardando aprovação', nenhuma: '🔒 solicitar acesso' };
+const SIM_LOCK_COLOR = { ativa: 'color:var(--ok)', pendente: 'color:var(--warn)', nenhuma: '' };
+
+function simRenderDropdown(){
+  const dd = document.getElementById('sim-dd-loja');
+  dd.innerHTML = _simLojas.map(l => `<div class="sim-dd-item" onclick="simSelecionarLoja(${l.loja_id},'${l.status}','${esc(l.nome).replace(/'/g,"&#39;")}')">
+      ${esc(l.nome)} <span class="lock" style="${SIM_LOCK_COLOR[l.status]||''}">${SIM_LOCK_LABEL[l.status]||'🔒 solicitar acesso'}</span>
+    </div>`).join('') || '<div class="sim-dd-item"><em style="color:var(--text-3)">Nenhuma loja</em></div>';
+}
+
+function simToggleDropdown(){ document.getElementById('sim-dd-loja').classList.toggle('open'); }
+
+function simSelecionarLoja(lojaId, status, nome){
+  document.getElementById('sim-dd-loja').classList.remove('open');
+  if (status === 'pendente'){ simAbrirModal(lojaId, nome, true); return; }
+  if (status !== 'ativa'){ simAbrirModal(lojaId, nome, false); return; }
+  _simLojaId = lojaId; _simLojaNome = nome;
+  document.getElementById('sim-loja-atual').textContent = nome;
+  _simAjustes = { vendedores_ativos:{}, variaveis_pct:{}, markup_seco:null, markup_com_frete:null,
+                  folha_salarios:{}, folha_ativos:{} };
+  _simCenario = 'atual'; _simJanela = 'mes'; _simTrava = false;
+  document.querySelectorAll('#sim-seg-cenario button').forEach((b,i)=>{ b.className = i===0 ? 'on' : ''; });
+  document.getElementById('sim-sw-trava').classList.remove('on');
+  simCarregarModelo();
+}
+
+async function simCarregarModelo(){
+  const vazio = document.getElementById('sim-vazio'), conteudo = document.getElementById('sim-conteudo');
+  vazio.style.display = ''; vazio.textContent = 'Carregando…'; conteudo.style.display = 'none';
+  const r = await fetch('/api/simulador/modelo?loja_id='+_simLojaId+'&cenario='+_simCenario+'&janela='+_simJanela,
+    {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({ok:false}));
+  if (!d.ok){
+    vazio.textContent = d.erro || 'Erro ao carregar a loja.';
+    return;
+  }
+  _simModelo = d.modelo;
+  vazio.style.display = 'none'; conteudo.style.display = '';
+  simRenderJanela();
+  simRecalcular();
+}
+
+function simRenderJanela(){
+  const seg = document.getElementById('sim-seg-janela'); seg.innerHTML = '';
+  SIM_JANELAS[_simCenario].forEach(([k,rot]) => {
+    const b = document.createElement('button');
+    b.textContent = rot; if (k===_simJanela) b.className = 'on';
+    b.onclick = () => { _simJanela = k; _simAjustes.markup_seco = null; _simAjustes.markup_com_frete = null;
+                        simRenderJanela(); simRecalcular(); };
+    seg.appendChild(b);
+  });
+  document.getElementById('sim-lbl-janela').textContent = _simCenario==='atual' ? 'Base' : 'Janela';
+}
+
+function simSetCenario(c, btn){
+  _simCenario = c; _simJanela = SIM_JANELAS[c][0][0];
+  _simAjustes.markup_seco = null; _simAjustes.markup_com_frete = null;
+  document.querySelectorAll('#sim-seg-cenario button').forEach(b=>b.className='');
+  btn.className = 'on';
+  simRenderJanela();
+  simRecalcular();
+}
+
+function simToggleTrava(){
+  _simTrava = !_simTrava;
+  document.getElementById('sim-sw-trava').classList.toggle('on', _simTrava);
+  simRecalcular();
+}
+
+async function simRecalcular(){
+  if (!_simModelo || !_simLojaId) return;
+  const ajustes = Object.assign({cenario:_simCenario, janela:_simJanela, trava:_simTrava}, _simAjustes);
+  const r = await fetch('/api/simulador/simular', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({loja_id:_simLojaId, modelo:_simModelo, ajustes})});
+  const d = await r.json().catch(()=>({ok:false}));
+  if (!d.ok){
+    // revogado no meio da sessão (efeito imediato, RF-03) — volta pro estado vazio com o motivo
+    document.getElementById('sim-conteudo').style.display = 'none';
+    const vazio = document.getElementById('sim-vazio');
+    vazio.style.display = ''; vazio.textContent = d.erro || 'Não foi possível simular.';
+    return;
+  }
+  _simUltimoResultado = d.resultado;
+  simRenderResultado(d.resultado);
+}
+
+function simToggleVend(i){
+  const atual = _simUltimoResultado.vendas.linhas[i].ativo;
+  _simAjustes.vendedores_ativos[String(i)] = !atual;
+  simRecalcular();
+}
+
+function simToggleEmp(i){
+  const item = _simModelo.folha[i];
+  if (item.comissionamento === 'faixa_vendedor' && item.vendedor_idx != null){
+    simToggleVend(item.vendedor_idx);   // RF-20: consultor liga/desliga junto com a venda
+    return;
+  }
+  const atual = _simUltimoResultado.folha.colaboradores[i].ativo;
+  _simAjustes.folha_ativos[String(i)] = !atual;
+  simRecalcular();
+}
+
+function simSetSal(i, v){ _simAjustes.folha_salarios[String(i)] = parseFloat(v) || 0; simRecalcular(); }
+function simSetProv(chave, v){ _simAjustes.variaveis_pct[chave] = Math.max(0, parseFloat(v) || 0); simRecalcular(); }
+function simSetMk(qual, v){
+  const x = parseFloat(v); if (!x) return;
+  if (qual === 'seco') _simAjustes.markup_seco = x; else _simAjustes.markup_com_frete = x;
+  simRecalcular();
+}
+
+function simToggleGroup(id){ const g = document.getElementById(id); if (g) g.classList.toggle('open'); }
+function simAllGroups(open){
+  ['sim-g-vendas','sim-g-var','sim-g-folha','sim-g-fixos','sim-g-jid'].forEach(id => {
+    const g = document.getElementById(id); if (g) g.classList.toggle('open', open);
+  });
+}
+
+function simAbrirModal(lojaId, nome, jaPendente){
+  _simModalLojaId = lojaId;
+  document.getElementById('sim-modal-titulo').textContent = 'Solicitar acesso — ' + nome;
+  document.getElementById('sim-modal-msg').textContent = '';
+  const btnPri = document.getElementById('sim-modal-btn-pri');
+  btnPri.style.display = jaPendente ? 'none' : '';
+  document.getElementById('sim-modal-sub').textContent = jaPendente
+    ? 'Já existe um pedido aguardando aprovação do Master desta loja — nada a fazer aqui, só esperar.'
+    : 'O pedido fica registrado e o Master da loja aprova depois, na PRÓPRIA sessão dele (Config › Privacidade) — não precisa estar junto agora nem trocar senha nenhuma aqui.';
+  document.getElementById('sim-modal').classList.add('open');
+}
+function simFecharModal(){ document.getElementById('sim-modal').classList.remove('open'); }
+
+async function simEnviarAutorizacao(){
+  const msg = document.getElementById('sim-modal-msg');
+  const r = await fetch('/api/simulador/autorizacao/solicitar', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({loja_id:_simModalLojaId})});
+  const d = await r.json().catch(()=>({}));
+  if (!r.ok){ msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro||'Erro ao solicitar.')+'</span>'; return; }
+  msg.innerHTML = '<span style="color:var(--ok)">✓ Pedido enviado — aguardando aprovação do Master.</span>';
+  setTimeout(()=>{ simFecharModal(); simInit(); }, 900);
+}
+
+function simRenderResultado(r){
+  // A. Vendas
+  const tv = document.getElementById('sim-tbl-vendas');
+  tv.querySelectorAll('tr:not(:first-child)').forEach(x=>x.remove());
+  r.vendas.linhas.forEach((v,i)=>{
+    const tr = document.createElement('tr');
+    if (!v.ativo) tr.className = 'off';
+    tr.innerHTML = `<td>${esc(v.nome||'')}${v.redistribuido?' <span class="sim-badge warn">+ redistribuído</span>':''}</td>
+      <td class="sim-num">${_simFmt(v.valor)}</td>
+      <td class="sim-num sim-muted">${_simPctFr(v.pct_do_total)}</td>
+      <td style="text-align:center"><div class="sim-switch sm ${v.ativo?'on':''}" onclick="simToggleVend(${i})"></div></td>`;
+    tv.appendChild(tr);
+  });
+  const trT = document.createElement('tr'); trT.className = 'sim-totrow';
+  trT.innerHTML = `<td>Faturamento (líquido — RN-01)</td><td class="sim-num">${_simFmt(r.vendas.faturamento)}</td><td class="sim-num">100%</td><td></td>`;
+  tv.appendChild(trT);
+  document.getElementById('sim-nota-vendas').textContent = r.cenario === 'atual'
+    ? ('Cenário Atual: valor real de cada consultor no período.' +
+       (r.janela === 'd30' ? ' "Últimos 30 dias" é uma ESTIMATIVA (mês fechado × 0,97), não uma consulta aos últimos 30 dias corridos.' : ''))
+    : 'Cenário ' + (r.cenario === 'historico' ? 'Histórico' : 'Futuro') + ': cada posto inicia igual, pela média histórica da janela — meses sem dados são descartados da média.';
+  document.getElementById('sim-m-fat').textContent = _simFmt(r.vendas.faturamento);
+
+  // B. Variáveis + markups (RN-02: % adicional, fora da cadeia — só edição direta)
+  const mkS = r.variaveis.markup_seco, mkF = r.variaveis.markup_com_frete;
+  let bodyVar = `<tr><th>Variável</th><th style="text-align:right">%</th><th style="text-align:right">Valor / multiplicador</th></tr>
+    <tr class="hl"><td><b>Markup seco</b> <span class="sim-badge">só muda por edição direta</span></td>
+      <td class="sim-num">${mkS.pct_adicional}%</td>
+      <td class="sim-num"><input class="sim-ed sim-w-mult" type="number" step="0.01" value="${mkS.multiplicador.toFixed(2)}" onchange="simSetMk('seco',this.value)"> ×</td></tr>
+    <tr class="hl"><td><b>Markup com frete</b> <span class="sim-muted" style="font-size:11px">inclui frete fábrica</span></td>
+      <td class="sim-num">${mkF.pct_adicional}%</td>
+      <td class="sim-num"><input class="sim-ed sim-w-mult" type="number" step="0.01" value="${mkF.multiplicador.toFixed(2)}" onchange="simSetMk('frete',this.value)"> ×</td></tr>`;
+  bodyVar += r.variaveis.linhas.map(x => `<tr><td class="${x.pct?'':'sim-muted'}">${esc(x.nome)}</td>
+      <td class="sim-num"><input class="sim-ed sim-w-pct" type="number" step="0.1" value="${x.pct.toFixed(1)}" onchange="simSetProv('${x.chave}',this.value)"> %</td>
+      <td class="sim-num ${x.pct?'':'sim-muted'}">${_simFmt(x.valor)}</td></tr>`).join('');
+  document.getElementById('sim-tbl-var').innerHTML = bodyVar;
+  document.getElementById('sim-m-var').textContent = _simPctNum(r.variaveis.total_pct);
+  document.getElementById('sim-m-var-v').textContent = _simFmt(r.variaveis.total_valor);
+
+  // C. Folha — cards lado a lado
+  const grid = document.getElementById('sim-empgrid'); grid.innerHTML = '';
+  r.folha.colaboradores.forEach((c,i)=>{
+    const on = c.ativo;
+    const card = document.createElement('div'); card.className = 'sim-emp' + (on?'':' off');
+    const comSub = c.comissao.sem_comissionamento ? '' : `<div class="sim-c-s">${esc(c.comissao.sub||'')}</div>`;
+    card.innerHTML = `
+      <div class="sim-emp-h"><div><div class="sim-nm">${esc(c.nome)}</div><div class="sim-cg">${esc(c.cargo||'')}</div></div>
+        <div class="sim-sw"><div class="sim-switch sm ${on?'on':''}" onclick="simToggleEmp(${i})"></div></div></div>
+      <div class="sim-comps">
+        <div class="sim-comp"><div class="sim-c-l">Fixo</div>
+          <div class="sim-c-v"><input class="sim-ed sim-w-sal" type="number" step="100" value="${c.salario_fixo}" onchange="simSetSal(${i},this.value)" ${on?'':'disabled'}></div>
+          <div class="sim-c-s">${c.pro_labore ? 'pró-labore' : (c.comissao_fixa ? '<span class="sim-badge acc">Existe comissionamento fixo</span> R$ '+c.comissao_fixa.toLocaleString('pt-BR')+' no fixo, sem encargos' : 'salário CLT')}</div></div>
+        <div class="sim-comp"><div class="sim-c-l">Encargos</div><div class="sim-c-v">${c.pro_labore?'—':_simFmt(c.encargos)}</div>
+          <div class="sim-c-s">${c.pro_labore?'não incidem':'35% s/ salário'}</div></div>
+        <div class="sim-comp ${c.comissao.sem_comissionamento?'none':''}"><div class="sim-c-l">Comissão</div>
+          <div class="sim-c-v">${c.comissao.sem_comissionamento ? (on?'sem comissionamento':'—') : _simFmt(c.comissao.valor)}</div>
+          ${comSub}</div>
+      </div>`;
+    grid.appendChild(card);
+  });
+  document.getElementById('sim-tbl-folha-tot').innerHTML =
+    `<tr class="sim-totrow"><td>Total — Fixo (salários + com. fixa + encargos)</td><td class="sim-num">${_simFmt(r.folha.fixo)}</td><td class="sim-num" style="width:90px">${_simPctFr(r.folha.pct_fixo)}</td></tr>
+     <tr class="sim-totrow"><td>Total — Variável (comissionamentos)</td><td class="sim-num">${_simFmt(r.folha.variavel)}</td><td class="sim-num">${_simPctFr(r.folha.pct_variavel)}</td></tr>
+     <tr class="sim-totrow"><td><b>Total da folha</b></td><td class="sim-num"><b>${_simFmt(r.folha.total)}</b></td><td class="sim-num"><b>${_simPctFr(r.folha.pct_total)}</b></td></tr>`;
+  document.getElementById('sim-m-folha-f').textContent = _simFmt(r.folha.fixo);
+  document.getElementById('sim-m-folha-v').textContent = _simFmt(r.folha.variavel);
+  document.getElementById('sim-m-folha').textContent = _simFmt(r.folha.total);
+  document.getElementById('sim-m-folha-p').textContent = _simPctFr(r.folha.pct_total);
+
+  // D. Custos fixos + amortizações
+  document.getElementById('sim-tbl-fixos').innerHTML =
+    `<tr><th>Despesa recorrente</th><th style="text-align:right">Valor mensal</th><th style="text-align:right">% fat.</th></tr>` +
+    r.custos_fixos.contas.map(c => `<tr><td class="${c.valor?'':'sim-muted'}">${esc(c.nome)}</td><td class="sim-num ${c.valor?'':'sim-muted'}">${_simFmt(c.valor)}</td><td class="sim-num sim-muted">${_simPctFr(c.pct)}</td></tr>`).join('') +
+    `<tr class="sim-totrow"><td>Subtotal recorrentes</td><td class="sim-num">${_simFmt(r.custos_fixos.subtotal)}</td><td class="sim-num">${_simPctFr(r.custos_fixos.subtotal_pct)}</td></tr>`;
+  document.getElementById('sim-tbl-amort').innerHTML =
+    `<tr class="sim-subhead"><td colspan="3">Amortizações</td></tr>
+     <tr><th>Item</th><th style="text-align:right">Valor</th><th style="text-align:right">Prazo</th></tr>` +
+    r.custos_fixos.amortizacoes.map(a => `<tr><td>${esc(a.nome)}</td><td class="sim-num">${_simFmt(a.valor)}</td><td class="sim-num">${a.prazo_meses} meses</td></tr>`).join('') +
+    `<tr class="sim-totrow"><td>Impacto médio mensal (ponderado pelos prazos)</td><td class="sim-num">${_simFmt(r.custos_fixos.impacto_mensal_total)}</td><td class="sim-num"></td></tr>`;
+  document.getElementById('sim-m-fixos').textContent = _simFmt(r.custos_fixos.total);
+  document.getElementById('sim-m-fixos-p').textContent = _simPctFr(r.custos_fixos.pct_total);
+
+  // E. Juros/Impostos/Dívida
+  const jid = r.juros_impostos_divida;
+  document.getElementById('sim-tbl-jid').innerHTML =
+    `<tr><th>Item</th><th style="text-align:right">Valor</th><th style="text-align:right">% fat.</th></tr>
+     <tr><td>Juros</td><td class="sim-num">${_simFmt(jid.juros)}</td><td class="sim-num sim-muted">${_simPctFr(jid.juros_pct)}</td></tr>
+     <tr><td>Impostos (parâmetros fiscais)</td><td class="sim-num">${_simFmt(jid.impostos)}</td><td class="sim-num sim-muted">${_simPctFr(jid.impostos_pct_fat)}</td></tr>
+     <tr><td>Dívida nominal <span class="sim-badge">saldo — não entra no mês</span></td><td class="sim-num">${_simFmt(jid.divida)}</td><td class="sim-num sim-muted">—</td></tr>`;
+  document.getElementById('sim-m-jid').textContent = _simFmt(jid.total_mensal);
+  document.getElementById('sim-m-jid-p').textContent = _simPctFr(jid.pct_total);
+
+  // F. Snapshot
+  const snap = r.snapshot;
+  document.getElementById('sim-s-fat').textContent = _simFmt(snap.faturamento);
+  document.getElementById('sim-s-fat-sub').textContent = r.trava ? 'travado — mudanças redistribuem' : 'livre — flutua com a simulação';
+  document.getElementById('sim-s-mc').textContent = _simPctFr(snap.margem_contribuicao.pct);
+  document.getElementById('sim-s-mc-sub').textContent = _simFmt(snap.margem_contribuicao.valor) + ' após variáveis + comissões';
+  document.getElementById('sim-s-ml').textContent = _simPctFr(snap.margem_lucro_liquido.pct);
+  document.getElementById('sim-s-ml-sub').textContent = _simFmt(snap.margem_lucro_liquido.valor) + ' de lucro líquido/mês';
+  document.getElementById('sim-s-mks').textContent = snap.markup_seco.pct_adicional + '%';
+  document.getElementById('sim-s-mks-sub').textContent = snap.markup_seco.multiplicador.toFixed(2) + '×';
+  document.getElementById('sim-s-mkf').textContent = snap.markup_com_frete.pct_adicional + '%';
+  document.getElementById('sim-s-mkf-sub').textContent = snap.markup_com_frete.multiplicador.toFixed(2) + '×';
+  document.getElementById('sim-k-mc').className = 'sim-kpi ' + (snap.margem_contribuicao.valor >= 0 ? 'pos' : 'neg');
+  document.getElementById('sim-k-ml').className = 'sim-kpi ' + (snap.margem_lucro_liquido.valor >= 0 ? 'pos' : 'neg');
 }
 
 async function orizonRedeNova(){

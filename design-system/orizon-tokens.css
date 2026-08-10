@@ -239,6 +239,11 @@
   --field-md:  240px;
   --field-lg:  360px;
 
+  /* Componente toggle/switch (Simulador, Sessão 185): o disco branco não muda por tema —
+     convenção universal de toggle físico (iOS/Android) —, mas mesmo assim vira TOKEN (não hex
+     literal no componente) pra respeitar a regra 1 acima. */
+  --switch-thumb: #FFFFFF;
+
   /* Foco (acessibilidade) */
   --focus-ring: 0 0 0 3px var(--accent-soft), 0 0 0 1.5px var(--accent);
 

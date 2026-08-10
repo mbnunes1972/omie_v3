@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Protótipo — Simulador de Modelo de Negócios (Painel Estratégico)</title>
+<style>
+/* ============ TOKENS (orizon-tokens.css v1.5+ — subset) ============ */
+:root, [data-theme="light"]{
+  --bg:#FAF8F6; --surface:#FFFFFF; --surface-2:#F5F1EC;
+  --border:#E5DFD8; --border-strong:#D3CAC0;
+  --field-border:#B8ADA0; --field-border-hover:#948A7F;
+  --text:#2B2621; --text-2:#6B6259; --text-3:#948A7F; --text-inverse:#FFFFFF;
+  --accent:#8C5230; --accent-hover:#6E3F22; --accent-soft:rgba(140,82,48,.12);
+  --accent-on-soft:#8C5230; --accent-vivid:#B8823D; --accent-line:#6E3F22;
+  --btn-primary-bg:#5C5650; --btn-primary-text:#FFF; --btn-primary-border:transparent;
+  --btn-primary-shadow:0 2px 8px rgba(0,0,0,.12); --btn-primary-bg-hover:#46413C;
+  --ok:#1E7F4F; --ok-soft:#E3F3EA; --ok-line:#9CC7AD;
+  --warn:#8F6E2A; --warn-soft:#F7EFDC; --warn-line:#D8C08B;
+  --err:#9C4147; --err-soft:#F7E9EA; --err-line:#D8A6A9;
+  --info:#21618F; --info-soft:#E4EFF7; --info-line:#A9C3D8;
+  --shadow:0 1px 3px rgba(0,0,0,.08); --shadow-md:0 4px 12px rgba(0,0,0,.10);
+  --sidebar-bg:#141312; --sidebar-text:#B5B2AD; --sidebar-text-active:#FFF;
+  --sidebar-item-active:rgba(165,107,69,.14); --sidebar-accent:#C9976D;
+  --sidebar-border:rgba(255,255,255,.07);
+}
+[data-theme="dark"]{
+  --bg:#121111; --surface:#1A1918; --surface-2:#211F1D;
+  --border:#2B2926; --border-strong:#3B3833;
+  --field-border:#4E4842; --field-border-hover:#635B52;
+  --text:#EAE8E5; --text-2:#A9A6A2; --text-3:#78746F; --text-inverse:#171514;
+  --accent:#A56B45; --accent-hover:#B87E55; --accent-soft:rgba(83,42,20,.22);
+  --accent-on-soft:#C9976D; --accent-vivid:#C9976D; --accent-line:#532A14;
+  --btn-primary-bg:#1C1613; --btn-primary-text:#E7DCD0; --btn-primary-border:#532A14;
+  --btn-primary-shadow:0 6px 16px rgba(0,0,0,.65); --btn-primary-bg-hover:#262019;
+  --ok:#86B394; --ok-soft:rgba(134,179,148,.12); --ok-line:#3E5C49;
+  --warn:#C2A264; --warn-soft:rgba(194,162,100,.12); --warn-line:#6B5528;
+  --err:#C08183; --err-soft:rgba(107,49,56,.20); --err-line:#6B3138;
+  --info:#8BA6BD; --info-soft:rgba(139,166,189,.12); --info-line:#3C5468;
+  --shadow:0 1px 3px rgba(0,0,0,.35); --shadow-md:0 6px 16px rgba(0,0,0,.45);
+  --sidebar-bg:#0D0C0B; --sidebar-text:#A5A29D; --sidebar-text-active:#FFF;
+  --sidebar-item-active:rgba(165,107,69,.14); --sidebar-accent:#C9976D;
+  --sidebar-border:rgba(255,255,255,.06);
+}
+:root{
+  --font-body:"Inter",-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,monospace;
+  --radius-sm:6px; --radius:10px; --radius-lg:14px;
+  --control-h-sm:30px; --control-h:38px;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--text);font-size:14px}
+
+.proto-banner{background:var(--warn-soft);border-bottom:1px solid var(--warn-line);color:var(--warn);
+  font-size:12.5px;padding:7px 16px;display:flex;justify-content:space-between;gap:14px;align-items:center}
+.proto-banner .tag{color:var(--text-3)}
+.theme-btn{height:26px;padding:0 12px;border-radius:13px;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--text-2);font-size:12px;cursor:pointer}
+
+.app{display:flex;height:calc(100vh - 34px)}
+.sidebar{width:200px;flex-shrink:0;background:var(--sidebar-bg);color:var(--sidebar-text);
+  padding:16px 0;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.sb-brand{padding:2px 20px 14px;color:#fff;font-weight:600;font-size:15px;letter-spacing:.02em}
+.sb-brand span{color:var(--sidebar-accent)}
+.sb-group{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:#6d6a65;padding:12px 20px 4px}
+.sb-item{padding:8px 20px;font-size:13px;cursor:pointer;border-left:2px solid transparent}
+.sb-item.active{color:var(--sidebar-text-active);background:var(--sidebar-item-active);
+  border-left-color:var(--sidebar-accent)}
+.page{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+
+.pagehead{padding:14px 22px 0;background:var(--surface);border-bottom:1px solid var(--border)}
+.pagehead h1{margin:0;font-size:20px;font-weight:500}
+.pagehead .sub{color:var(--text-3);font-size:12.5px;margin-top:2px}
+.tabs{display:flex;gap:22px;margin-top:12px}
+.tab{padding:0 2px 10px;font-size:13.5px;color:var(--text-2);cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+
+.ctxbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 22px;
+  background:var(--surface);border-bottom:1px solid var(--border)}
+.select,.seg{height:var(--control-h-sm);border-radius:var(--radius-sm);font-size:12.5px}
+.select{border:1px solid var(--field-border);background:var(--surface);color:var(--text);
+  padding:0 10px;cursor:pointer;position:relative;display:flex;align-items:center;gap:8px}
+.select:hover{border-color:var(--field-border-hover)}
+.dropdown{position:absolute;top:34px;left:0;min-width:240px;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:var(--radius);box-shadow:var(--shadow-md);
+  z-index:40;padding:6px 0;display:none}
+.dropdown.open{display:block}
+.dd-item{padding:8px 14px;font-size:13px;display:flex;justify-content:space-between;gap:12px;cursor:pointer}
+.dd-item:hover{background:var(--surface-2)}
+.dd-item .lock{color:var(--text-3);font-size:11.5px}
+.seg{display:flex;border:1px solid var(--field-border);overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--text-2);font-size:12.5px;padding:0 12px;cursor:pointer;height:100%}
+.seg button.on{background:var(--accent-soft);color:var(--accent-on-soft);font-weight:500}
+.ctx-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
+.spacer{flex:1}
+.lockrow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-2)}
+.switch{width:34px;height:19px;border-radius:10px;background:var(--border-strong);position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}
+.switch.on{background:var(--accent)}
+.switch.on::after{left:17px}
+.switch.sm{width:28px;height:16px}
+.switch.sm::after{width:12px;height:12px}
+.switch.sm.on::after{left:14px}
+
+/* ============ corpo: grade densa (desktop) + snapshot ============ */
+.body{flex:1;overflow:auto;padding:16px 22px;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+.groups{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start;min-width:0}
+.toolrow{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-bottom:-4px}
+.span2{grid-column:1/-1}
+.mini-btn{height:26px;padding:0 10px;font-size:11.5px;border-radius:var(--radius-sm);
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2);cursor:pointer}
+.mini-btn:hover{color:var(--accent)}
+
+.group{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);min-width:0}
+.g-head{display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;user-select:none}
+.g-head .chev{color:var(--text-3);font-size:11px;width:14px;transition:transform .15s}
+.group.open .chev{transform:rotate(90deg)}
+.g-title{font-size:13.5px;font-weight:500}
+.g-tag{font-size:10.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em}
+.g-main{margin-left:auto;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.g-main .lbl{font-size:11px;color:var(--text-3)}
+.g-main .val{font-family:var(--font-mono);font-size:14.5px;font-weight:600}
+.g-main .pct{font-family:var(--font-mono);font-size:12px;color:var(--text-2)}
+.g-body{display:none;border-top:1px solid var(--border);padding:2px 0 10px}
+.group.open .g-body{display:block}
+
+table.t{width:100%;border-collapse:collapse}
+.t th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);
+  font-weight:500;text-align:left;padding:8px 16px 4px}
+.t td{padding:5px 16px;font-size:13px;border-top:1px solid var(--border)}
+.t tr:first-child td{border-top:0}
+.t .num{font-family:var(--font-mono);text-align:right;white-space:nowrap}
+.t .muted{color:var(--text-3)}
+.t tr.off td{opacity:.42;text-decoration:line-through}
+.t tr.off td:last-child{text-decoration:none}
+.t tr.hl td{background:var(--accent-soft)}
+input.ed{height:26px;border:1px solid var(--field-border);border-radius:var(--radius-sm);
+  background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12.5px;text-align:right;padding:0 6px}
+input.ed:hover{border-color:var(--field-border-hover)}
+.w-pct{width:62px}.w-mult{width:70px}.w-sal{width:88px}
+.subhead td{font-size:11px !important;text-transform:uppercase;letter-spacing:.05em;color:var(--accent-on-soft) !important;
+  background:var(--surface-2);padding:5px 16px !important}
+.totrow td{font-weight:600;background:var(--surface-2)}
+.note{font-size:11.5px;color:var(--text-3);padding:8px 16px 2px;line-height:1.5}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:500;
+  border-radius:10px;padding:2px 8px;background:var(--info-soft);color:var(--info);border:1px solid var(--info-line)}
+.badge.warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn-line)}
+.badge.acc{background:var(--accent-soft);color:var(--accent-on-soft);border-color:var(--accent-line)}
+
+/* ---- folha: cards de funcionário lado a lado ---- */
+.empgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(285px,1fr));gap:10px;padding:10px 16px 4px}
+.emp{border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:var(--surface)}
+.emp.off{opacity:.45}
+.emp-h{display:flex;align-items:center;gap:8px}
+.emp-h .nm{font-size:13px;font-weight:600}
+.emp-h .cg{font-size:11px;color:var(--text-3)}
+.emp-h .sw{margin-left:auto}
+.comps{display:flex;gap:8px;margin-top:9px}
+.comp{flex:1;background:var(--surface-2);border-radius:var(--radius-sm);padding:6px 8px;min-width:0}
+.comp .c-l{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3)}
+.comp .c-v{font-family:var(--font-mono);font-size:12.5px;font-weight:600;margin-top:2px;white-space:nowrap}
+.comp .c-s{font-size:10.5px;color:var(--text-3);margin-top:2px;line-height:1.35}
+.comp.none .c-v{color:var(--text-3);font-weight:400;font-size:11.5px;white-space:normal}
+
+/* snapshot */
+.snap{position:sticky;top:0;background:var(--surface);border:1px solid var(--accent-line);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden}
+.snap-h{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.snap-h .t1{font-size:13.5px;font-weight:600}
+.snap-h .always{margin-left:auto;font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.05em}
+.kpi{padding:11px 16px;border-bottom:1px solid var(--border)}
+.kpi:last-child{border-bottom:0}
+.kpi .k-lbl{font-size:11.5px;color:var(--text-2)}
+.kpi .k-val{font-family:var(--font-mono);font-size:20px;font-weight:600;margin-top:2px}
+.kpi .k-sub{font-size:11px;color:var(--text-3);font-family:var(--font-mono)}
+.kpi.pos .k-val{color:var(--ok)} .kpi.neg .k-val{color:var(--err)}
+.kpi.half{display:inline-block;width:50%;vertical-align:top;border-bottom:1px solid var(--border)}
+.kpi.half .k-val{font-size:17px}
+
+/* modal */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{width:420px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-md);padding:20px 22px}
+.modal h3{margin:0 0 4px;font-size:16px;font-weight:600}
+.modal .m-sub{font-size:12.5px;color:var(--text-2);line-height:1.5;margin-bottom:14px}
+.modal label{display:block;font-size:11px;color:var(--text-3);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+.modal input{width:100%;height:var(--control-h);border:1px solid var(--field-border);border-radius:var(--radius-sm);
+  background:var(--surface);color:var(--text);padding:0 10px;font-size:13px}
+.m-audit{margin-top:12px;font-size:11.5px;color:var(--text-3);background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;line-height:1.5}
+.m-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.btn{height:var(--control-h);padding:0 16px;border-radius:var(--radius);font-size:13px;font-weight:500;cursor:pointer}
+.btn.sec{background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+.btn.pri{background:var(--btn-primary-bg);color:var(--btn-primary-text);border:1px solid var(--btn-primary-border);box-shadow:var(--btn-primary-shadow)}
+
+/* responsivo: celular empilha tudo (formato aprovado) */
+@media (max-width:1280px){.groups{grid-template-columns:1fr}}
+@media (max-width:980px){.body{grid-template-columns:1fr}.snap{position:static}.comps{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="proto-banner">
+  <div>PROTÓTIPO — Simulador de Modelo de Negócios · Painel Estratégico · exclusivo super_admin · dados fictícios · rev2</div>
+  <span class="tag">navegação e visual para aprovação</span>
+  <button class="theme-btn" onclick="toggleTheme()">☾ / ☀ tema</button>
+</div>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="sb-brand">◎ Orizon <span>One</span></div>
+    <div class="sb-group">Comercial</div>
+    <div class="sb-item">Projetos</div>
+    <div class="sb-item">Agenda</div>
+    <div class="sb-group">Gestão</div>
+    <div class="sb-item">Financeiro</div>
+    <div class="sb-item active">Painel Estratégico</div>
+    <div class="sb-item">Comunicação</div>
+    <div class="sb-group">Administração</div>
+    <div class="sb-item">Cadastro</div>
+    <div class="sb-item">Configurações</div>
+  </div>
+
+  <div class="page">
+    <div class="pagehead">
+      <h1>Painel Estratégico</h1>
+      <div class="sub">Visão consolidada do negócio · acesso Master</div>
+      <div class="tabs">
+        <div class="tab">Indicadores</div>
+        <div class="tab active">Simulador</div>
+      </div>
+    </div>
+
+    <div class="ctxbar">
+      <span class="ctx-label">Loja</span>
+      <div class="select" onclick="event.stopPropagation();document.getElementById('dd-loja').classList.toggle('open')">
+        <span id="loja-atual">Dalmóbile — Taubaté</span> <span style="color:var(--text-3)">▾</span>
+        <div class="dropdown" id="dd-loja">
+          <div class="dd-item" onclick="setLoja('Dalmóbile — Taubaté')">Dalmóbile — Taubaté <span class="lock" style="color:var(--ok)">✓ acesso</span></div>
+          <div class="dd-item" onclick="setLoja('Dalmóbile — Salinas')">Dalmóbile — Salinas <span class="lock" style="color:var(--ok)">✓ acesso</span></div>
+          <div class="dd-item" onclick="abrirModal()">Dalmóbile — Fortaleza <span class="lock">🔒 solicitar acesso</span></div>
+          <div class="dd-item" onclick="abrirModal()">Rede Inspirium — Matriz <span class="lock">🔒 solicitar acesso</span></div>
+        </div>
+      </div>
+
+      <span class="ctx-label" style="margin-left:8px">Cenário</span>
+      <div class="seg" id="seg-cenario">
+        <button class="on" onclick="setCenario('atual',this)">Atual</button>
+        <button onclick="setCenario('historico',this)">Histórico</button>
+        <button onclick="setCenario('futuro',this)">Futuro</button>
+      </div>
+
+      <span class="ctx-label" style="margin-left:8px" id="lbl-janela">Base</span>
+      <div class="seg" id="seg-janela"></div>
+
+      <div class="spacer"></div>
+      <div class="lockrow" title="Travado: mudanças redistribuem entre as variáveis mantendo o faturamento">
+        <div class="switch" id="sw-trava" onclick="toggleTrava()"></div>
+        <span>Travar faturamento</span>
+      </div>
+    </div>
+
+    <div class="body" onclick="document.getElementById('dd-loja').classList.remove('open')">
+      <div class="groups">
+        <div class="toolrow">
+          <button class="mini-btn" onclick="allGroups(true)">Expandir tudo</button>
+          <button class="mini-btn" onclick="allGroups(false)">Agrupar tudo</button>
+        </div>
+
+        <!-- A. VENDAS -->
+        <div class="group open" id="g-vendas">
+          <div class="g-head" onclick="toggleGroup('g-vendas')">
+            <span class="chev">▶</span>
+            <div><div class="g-title">Vendas</div><div class="g-tag">unidades de receita</div></div>
+            <div class="g-main"><span class="lbl">Faturamento</span><span class="val" id="m-fat">—</span></div>
+          </div>
+          <div class="g-body">
+            <table class="t" id="tbl-vendas">
+              <tr><th>Consultor</th><th style="text-align:right">Venda no período</th><th style="text-align:right">% do total</th><th style="width:60px;text-align:center">Ativo</th></tr>
+            </table>
+            <div class="note" id="nota-vendas"></div>
+          </div>
+        </div>
+
+        <!-- B. VARIÁVEIS DO MODELO -->
+        <div class="group open" id="g-var">
+          <div class="g-head" onclick="toggleGroup('g-var')">
+            <span class="chev">▶</span>
+            <div><div class="g-title">Variáveis do modelo</div><div class="g-tag">provisões sobre o faturamento</div></div>
+            <div class="g-main"><span class="lbl">Total</span><span class="val" id="m-var">—</span><span class="pct" id="m-var-v"></span></div>
+          </div>
+          <div class="g-body">
+            <table class="t" id="tbl-var"></table>
+            <div class="note">Todas as provisões do sistema, mesmo as zeradas — percentuais <b>editáveis</b>. Comissões de pessoal ficam na Folha. Markups iniciam pela média do período e <b>só mudam por edição direta</b>.</div>
+          </div>
+        </div>
+
+        <!-- C. FOLHA -->
+        <div class="group open span2" id="g-folha">
+          <div class="g-head" onclick="toggleGroup('g-folha')">
+            <span class="chev">▶</span>
+            <div><div class="g-title">Folha de pagamento</div><div class="g-tag">todos os colaboradores — fixo + variável</div></div>
+            <div class="g-main">
+              <span class="lbl">Fixo</span><span class="val" id="m-folha-f">—</span>
+              <span class="lbl">Variável</span><span class="val" id="m-folha-v">—</span>
+              <span class="lbl">Total</span><span class="val" id="m-folha">—</span><span class="pct" id="m-folha-p"></span>
+            </div>
+          </div>
+          <div class="g-body">
+            <div class="empgrid" id="empgrid"></div>
+            <table class="t" id="tbl-folha-tot"></table>
+            <div class="note">Salários <b>editáveis</b> (reestruturação). Comissão calculada pela <b>faixa de meta</b> e valor vendido, conforme configuração da loja. Comissão fixa (quando existir) compõe a parte fixa do salário — sem encargos. Desligar um consultor recalcula o faturamento; travado, redistribui proporcionalmente.</div>
+          </div>
+        </div>
+
+        <!-- D. CUSTOS FIXOS -->
+        <div class="group open" id="g-fixos">
+          <div class="g-head" onclick="toggleGroup('g-fixos')">
+            <span class="chev">▶</span>
+            <div><div class="g-title">Custos fixos</div><div class="g-tag">todas as contas configuradas</div></div>
+            <div class="g-main"><span class="lbl">Total</span><span class="val" id="m-fixos">—</span><span class="pct" id="m-fixos-p"></span></div>
+          </div>
+          <div class="g-body">
+            <table class="t" id="tbl-fixos"></table>
+            <table class="t" id="tbl-amort"></table>
+            <div class="note">Contempla todas as contas de despesa configuradas na loja, inclusive sem lançamento no período.</div>
+          </div>
+        </div>
+
+        <!-- E. JUROS / IMPOSTOS / DÍVIDA -->
+        <div class="group open" id="g-jid">
+          <div class="g-head" onclick="toggleGroup('g-jid')">
+            <span class="chev">▶</span>
+            <div><div class="g-title">Juros, Impostos e Dívida</div><div class="g-tag">encargos do contexto</div></div>
+            <div class="g-main"><span class="lbl">Total mensal</span><span class="val" id="m-jid">—</span><span class="pct" id="m-jid-p"></span></div>
+          </div>
+          <div class="g-body">
+            <table class="t" id="tbl-jid"></table>
+            <div class="note">Impostos calculados pelos parâmetros fiscais para o contexto de faturamento simulado. Dívida nominal é saldo — não entra no resultado mensal.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- F. SNAPSHOT -->
+      <div class="snap">
+        <div class="snap-h"><span style="color:var(--accent-vivid)">◈</span><span class="t1">Snapshot</span><span class="always">sempre completo</span></div>
+        <div class="kpi"><div class="k-lbl">Faturamento simulado (líquido)</div><div class="k-val" id="s-fat">—</div><div class="k-sub" id="s-fat-sub"></div></div>
+        <div class="kpi" id="k-mc"><div class="k-lbl">Margem de contribuição</div><div class="k-val" id="s-mc">—</div><div class="k-sub" id="s-mc-sub"></div></div>
+        <div class="kpi" id="k-ml"><div class="k-lbl">Margem de lucro líquido</div><div class="k-val" id="s-ml">—</div><div class="k-sub" id="s-ml-sub"></div></div>
+        <div style="font-size:0">
+          <div class="kpi half" style="border-right:1px solid var(--border)"><div class="k-lbl">Markup seco</div><div class="k-val" id="s-mks">—</div><div class="k-sub" id="s-mks-sub"></div></div><div class="kpi half"><div class="k-lbl">Markup c/ frete</div><div class="k-val" id="s-mkf">—</div><div class="k-sub" id="s-mkf-sub"></div></div>
+        </div>
+        <div class="kpi" style="border-top:1px solid var(--border)"><div class="k-sub" style="font-family:var(--font-body)">% adicional sobre a base (2,18× = 118%). Editáveis no grupo B; espelham o mesmo dado.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- modal de autorização -->
+<div class="overlay" id="modal" onclick="if(event.target===this)fecharModal()">
+  <div class="modal">
+    <h3>Solicitar acesso — Dalmóbile Fortaleza</h3>
+    <div class="m-sub">O Master da loja precisa autorizar seu acesso de simulação (somente leitura). A concessão exige autenticação segura e tem validade jurídica.</div>
+    <label>Usuário Master da loja</label><input placeholder="usuario@dalmobile.com.br">
+    <label>Senha / segundo fator</label><input type="password" placeholder="••••••••">
+    <div class="m-audit">⚖ Registro em <b>log de auditoria separado</b>: concedente, beneficiário, escopo (simulação · somente leitura), data/hora e IP. Revogável a qualquer momento.</div>
+    <div class="m-actions">
+      <button class="btn sec" onclick="fecharModal()">Cancelar</button>
+      <button class="btn pri" onclick="fecharModal()">Enviar pedido de autorização</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= DADOS FICTÍCIOS (parâmetros configurados na loja) ================= */
+const VEND = [
+  {nome:"Amanda Reis",   atual:118000, meta:110000, on:true},
+  {nome:"Bruno Costa",   atual: 96500, meta:110000, on:true},
+  {nome:"Carla Nogueira",atual:132400, meta:120000, on:true},
+  {nome:"Diego Farias",  atual:103100, meta:100000, on:true},
+];
+const MEDIA  = {mes:112500, d30:109300, tri:108000, sem:104500, ano:101200};
+const MKSECO = {mes:2.18, d30:2.16, tri:2.12, sem:2.08, ano:2.05};
+const MKFRETE= {mes:2.02, d30:2.00, tri:1.97, sem:1.94, ano:1.91};   // inclui frete fábrica na base
+let PROV = [
+  {n:"Custo de Fábrica",p:32.0},{n:"Montagem",p:4.0},{n:"Frete",p:2.5},{n:"Marketing",p:2.0},
+  {n:"Projeto Executivo",p:1.5},{n:"Assistência Técnica",p:1.0},{n:"Garantia",p:0.5},
+  {n:"Brinde / Viagem",p:0.0},{n:"Royalties",p:0.0},{n:"Fundo de Propaganda",p:0.0},
+];
+/* faixas de comissão (config da loja): atingimento da meta → % */
+const FX_CONS = [[0.8,0.025,"até 80% da meta"],[1.0,0.030,"80–100% da meta"],[1.2,0.035,"100–120% da meta"],[1e9,0.040,"acima de 120%"]];
+const FX_GER  = [[0.8,0.005,"até 80% da meta da loja"],[1.0,0.008,"80–100% da meta da loja"],[1e9,0.010,"acima de 100%"]];
+const EMP = [
+  {nome:"Rogério Dal Molin",cargo:"Diretor · sócio",fixo:15000,prolabore:true, com:"none", on:true},
+  {nome:"Patrícia Dal Molin",cargo:"Sócia",         fixo: 8000,prolabore:true, com:"none", on:true},
+  {nome:"Marina Souza",  cargo:"Gerente",           fixo: 9500, com:"faixa_loja", on:true},
+  {nome:"Amanda Reis",   cargo:"Consultora",        fixo: 2200, com:"faixa_vend", vend:0},
+  {nome:"Bruno Costa",   cargo:"Consultor",         fixo: 2200, comFixa:800, com:"faixa_vend", vend:1},
+  {nome:"Carla Nogueira",cargo:"Consultora",        fixo: 2200, com:"faixa_vend", vend:2},
+  {nome:"Diego Farias",  cargo:"Consultor",         fixo: 2200, com:"faixa_vend", vend:3},
+  {nome:"Felipe Ramos",  cargo:"Projetista",        fixo: 4800, com:"pct_fat", pct:0.01, on:true},
+  {nome:"Sandra Lima",   cargo:"Administrativo-financeiro", fixo:3600, com:"none", on:true},
+];
+const ENCARGOS = 0.35;
+const FIXOS = [["Aluguel + condomínio",18500],["Energia elétrica",3200],["Contabilidade",2200],
+  ["Limpeza e manutenção",1800],["Software / licenças",1450],["Internet / telefonia",900],
+  ["Segurança / monitoramento",750],["Água e esgoto",0],["Seguros patrimoniais",0],
+  ["Viagens e treinamentos",0],["Publicações e taxas",0]];
+const AMORT = [["Reforma do showroom",120000,24],["Mostruário novo",84000,12]];
+const JUROS = 3850, DIVIDA = 240000, CARGA_FISCAL = 0.085;
+
+/* ================= ESTADO ================= */
+let cenario="atual", janela="mes", trava=false;
+let mkSeco=MKSECO.mes, mkFrete=MKFRETE.mes, mkEditado=false;
+
+const JANELAS = {
+  atual:    [["mes","Último mês fechado"],["d30","Últimos 30 dias"]],
+  historico:[["tri","Trimestral"],["sem","Semestral"],["ano","Anual"]],
+  futuro:   [["mes","Atual"],["tri","Trimestral"],["sem","Semestral"],["ano","Anual"]],
+};
+const fmt = v => "R$ " + Math.round(v).toLocaleString("pt-BR");
+const pct = v => (v*100).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:1}) + "%";
+const mkPct = m => Math.round((m-1)*100) + "%";   /* RN-02: % ADICIONAL — 2,18× = 118% */
+const faixa = (fx,at) => fx.find(([lim])=>at<lim);
+
+function vendasBase(){
+  const ativos = VEND.filter(v=>v.on);
+  let mapa = new Map();
+  if(cenario==="atual"){
+    const f = janela==="d30" ? 0.97 : 1;
+    VEND.forEach(v=>mapa.set(v.nome, v.atual*f));
+  } else {
+    VEND.forEach(v=>mapa.set(v.nome, MEDIA[janela]));
+  }
+  const totalPleno = [...mapa.values()].reduce((a,b)=>a+b,0);
+  let linhas=[], fat=0;
+  if(trava && ativos.length){
+    const somaAtivos = ativos.reduce((a,v)=>a+mapa.get(v.nome),0);
+    VEND.forEach(v=>{
+      const val = v.on ? mapa.get(v.nome)*(totalPleno/somaAtivos) : 0;
+      linhas.push({...v, valor:val, redis: v.on && somaAtivos<totalPleno});
+      fat += val;
+    });
+  } else {
+    VEND.forEach(v=>{
+      const val = v.on ? mapa.get(v.nome) : 0;
+      linhas.push({...v, valor:val, redis:false});
+      fat += val;
+    });
+  }
+  return {linhas, fat};
+}
+
+function comissaoDe(e, linhas, fat){
+  if(e.com==="none")    return {val:0, sub:"sem comissionamento", none:true};
+  if(e.com==="pct_fat") return {val:fat*e.pct, sub:(e.pct*100).toLocaleString("pt-BR")+"% do faturamento"};
+  if(e.com==="faixa_loja"){
+    const metaLoja = VEND.reduce((a,v)=>a+v.meta,0);
+    const at = metaLoja? fat/metaLoja : 0;
+    const [,p,rot] = faixa(FX_GER,at);
+    return {val:fat*p, sub:(p*100).toLocaleString("pt-BR")+"% do fat. · "+rot+" ("+Math.round(at*100)+"%)"};
+  }
+  const v = linhas[e.vend];
+  if(!v.on) return {val:0, sub:"—", none:true};
+  const at = v.meta? v.valor/v.meta : 0;
+  const [,p,rot] = faixa(FX_CONS,at);
+  return {val:v.valor*p, sub:(p*100).toLocaleString("pt-BR",{maximumFractionDigits:1})+"% · "+rot+" ("+Math.round(at*100)+"% da meta)"};
+}
+const empAtivo = e => e.com==="faixa_vend" ? VEND[e.vend].on : e.on;
+
+function recalc(){
+  const {linhas, fat} = vendasBase();
+
+  /* A. Vendas */
+  const tv = document.getElementById("tbl-vendas");
+  tv.querySelectorAll("tr:not(:first-child)").forEach(r=>r.remove());
+  linhas.forEach((v,i)=>{
+    const tr=document.createElement("tr");
+    if(!v.on) tr.className="off";
+    tr.innerHTML = `<td>${v.nome}${v.redis?' <span class="badge warn">+ redistribuído</span>':''}</td>
+      <td class="num">${fmt(v.valor)}</td>
+      <td class="num muted">${fat? (v.valor/fat*100).toFixed(1):"0"}%</td>
+      <td style="text-align:center"><div class="switch sm ${v.on?'on':''}" onclick="toggleVend(${i})"></div></td>`;
+    tv.appendChild(tr);
+  });
+  const trT=document.createElement("tr"); trT.className="totrow";
+  trT.innerHTML = `<td>Faturamento (líquido — RN-01)</td><td class="num">${fmt(fat)}</td><td class="num">100%</td><td></td>`;
+  tv.appendChild(trT);
+  document.getElementById("nota-vendas").innerHTML = cenario==="atual"
+    ? "Cenário Atual: valor real de cada consultor no período."
+    : "Cenário " + (cenario==="historico"?"Histórico":"Futuro") + ": cada posto inicia igual, pela média histórica da janela — meses sem dados são descartados da média.";
+  document.getElementById("m-fat").textContent = fmt(fat);
+
+  /* B. Variáveis (percentuais editáveis + markups no topo) */
+  if(!mkEditado){ mkSeco = MKSECO[janela] ?? MKSECO.mes; mkFrete = MKFRETE[janela] ?? MKFRETE.mes; }
+  let provTot = PROV.reduce((a,x)=>a+x.p,0);
+  document.getElementById("tbl-var").innerHTML =
+    `<tr><th>Variável</th><th style="text-align:right">%</th><th style="text-align:right">Valor / multiplicador</th></tr>
+     <tr class="hl"><td><b>Markup seco</b> <span class="badge">só muda por edição direta</span></td>
+       <td class="num">${mkPct(mkSeco)}</td>
+       <td class="num"><input class="ed w-mult" type="number" step="0.01" value="${mkSeco.toFixed(2)}" onchange="setMk('seco',this.value)"> ×</td></tr>
+     <tr class="hl"><td><b>Markup com frete</b> <span class="muted" style="font-size:11px">inclui frete fábrica</span></td>
+       <td class="num">${mkPct(mkFrete)}</td>
+       <td class="num"><input class="ed w-mult" type="number" step="0.01" value="${mkFrete.toFixed(2)}" onchange="setMk('frete',this.value)"> ×</td></tr>` +
+    PROV.map((x,i)=>`<tr><td class="${x.p?'':'muted'}">${x.n}</td>
+       <td class="num"><input class="ed w-pct" type="number" step="0.1" value="${x.p.toFixed(1)}" onchange="setProv(${i},this.value)"> %</td>
+       <td class="num ${x.p?'':'muted'}">${fmt(fat*x.p/100)}</td></tr>`).join("");
+  document.getElementById("m-var").textContent = provTot.toFixed(1)+"%";
+  document.getElementById("m-var-v").textContent = fmt(fat*provTot/100);
+
+  /* C. Folha — cards lado a lado */
+  let salFixo=0, encTot=0, comTot=0;
+  const grid=document.getElementById("empgrid"); grid.innerHTML="";
+  EMP.forEach((e,i)=>{
+    const on = empAtivo(e);
+    const base = e.fixo, cf = e.comFixa||0;
+    const enc = (e.prolabore||!on) ? 0 : base*ENCARGOS;
+    const com = on ? comissaoDe(e, linhas, fat) : {val:0,sub:"—",none:true};
+    if(on){ salFixo += base+cf; encTot += enc; comTot += com.val; }
+    const card=document.createElement("div"); card.className="emp"+(on?"":" off");
+    card.innerHTML = `
+      <div class="emp-h"><div><div class="nm">${e.nome}</div><div class="cg">${e.cargo}</div></div>
+        <div class="sw"><div class="switch sm ${on?'on':''}" onclick="toggleEmp(${i})"></div></div></div>
+      <div class="comps">
+        <div class="comp"><div class="c-l">Fixo</div>
+          <div class="c-v"><input class="ed w-sal" type="number" step="100" value="${base}" onchange="setSal(${i},this.value)" ${on?'':'disabled'}></div>
+          <div class="c-s">${e.prolabore ? "pró-labore" : cf ? '<span class="badge acc">Existe comissionamento fixo</span> R$ '+cf.toLocaleString("pt-BR")+' no fixo, sem encargos' : "salário CLT"}</div></div>
+        <div class="comp"><div class="c-l">Encargos</div><div class="c-v">${e.prolabore?"—":fmt(enc)}</div>
+          <div class="c-s">${e.prolabore?"não incidem":"35% s/ salário"}</div></div>
+        <div class="comp ${com.none?'none':''}"><div class="c-l">Comissão</div>
+          <div class="c-v">${com.none? (on?"sem comissionamento":"—") : fmt(com.val)}</div>
+          ${com.none?"":`<div class="c-s">${com.sub}</div>`}</div>
+      </div>`;
+    grid.appendChild(card);
+  });
+  const folhaFixa = salFixo+encTot, folha = folhaFixa+comTot;
+  document.getElementById("tbl-folha-tot").innerHTML =
+    `<tr class="totrow"><td>Total — Fixo (salários + com. fixa + encargos)</td><td class="num">${fmt(folhaFixa)}</td><td class="num" style="width:90px">${pct(folhaFixa/fat||0)}</td></tr>
+     <tr class="totrow"><td>Total — Variável (comissionamentos)</td><td class="num">${fmt(comTot)}</td><td class="num">${pct(comTot/fat||0)}</td></tr>
+     <tr class="totrow"><td><b>Total da folha</b></td><td class="num"><b>${fmt(folha)}</b></td><td class="num"><b>${pct(folha/fat||0)}</b></td></tr>`;
+  document.getElementById("m-folha-f").textContent = fmt(folhaFixa);
+  document.getElementById("m-folha-v").textContent = fmt(comTot);
+  document.getElementById("m-folha").textContent = fmt(folha);
+  document.getElementById("m-folha-p").textContent = pct(folha/fat||0);
+
+  /* D. Custos fixos */
+  const fixosTot = FIXOS.reduce((a,[,v])=>a+v,0);
+  const amortMes = AMORT.reduce((a,[,v,p])=>a+v/p,0);
+  document.getElementById("tbl-fixos").innerHTML =
+    `<tr><th>Despesa recorrente</th><th style="text-align:right">Valor mensal</th><th style="text-align:right">% fat.</th></tr>` +
+    FIXOS.map(([n,v])=>`<tr><td class="${v?'':'muted'}">${n}</td><td class="num ${v?'':'muted'}">${fmt(v)}</td><td class="num muted">${pct(v/fat||0)}</td></tr>`).join("") +
+    `<tr class="totrow"><td>Subtotal recorrentes</td><td class="num">${fmt(fixosTot)}</td><td class="num">${pct(fixosTot/fat||0)}</td></tr>`;
+  document.getElementById("tbl-amort").innerHTML =
+    `<tr class="subhead"><td colspan="3">Amortizações</td></tr>
+     <tr><th>Item</th><th style="text-align:right">Valor</th><th style="text-align:right">Prazo</th></tr>` +
+    AMORT.map(([n,v,p])=>`<tr><td>${n}</td><td class="num">${fmt(v)}</td><td class="num">${p} meses</td></tr>`).join("") +
+    `<tr class="totrow"><td>Impacto médio mensal (ponderado pelos prazos)</td><td class="num">${fmt(amortMes)}</td><td class="num">${pct(amortMes/fat||0)}</td></tr>`;
+  const fixosGeral = fixosTot+amortMes;
+  document.getElementById("m-fixos").textContent = fmt(fixosGeral);
+  document.getElementById("m-fixos-p").textContent = pct(fixosGeral/fat||0);
+
+  /* E. Juros/Impostos/Dívida */
+  const impostos = fat*CARGA_FISCAL;
+  document.getElementById("tbl-jid").innerHTML =
+    `<tr><th>Item</th><th style="text-align:right">Valor</th><th style="text-align:right">% fat.</th></tr>
+     <tr><td>Juros</td><td class="num">${fmt(JUROS)}</td><td class="num muted">${pct(JUROS/fat||0)}</td></tr>
+     <tr><td>Impostos (carga fiscal 8,5% — parâmetros fiscais)</td><td class="num">${fmt(impostos)}</td><td class="num muted">${pct(impostos/fat||0)}</td></tr>
+     <tr><td>Dívida nominal <span class="badge">saldo — não entra no mês</span></td><td class="num">${fmt(DIVIDA)}</td><td class="num muted">—</td></tr>`;
+  document.getElementById("m-jid").textContent = fmt(JUROS+impostos);
+  document.getElementById("m-jid-p").textContent = pct((JUROS+impostos)/fat||0);
+
+  /* F. Snapshot */
+  const varTotal = fat*provTot/100;
+  const mc = fat - varTotal - comTot;
+  const lucro = mc - folhaFixa - fixosGeral - JUROS - impostos;
+  document.getElementById("s-fat").textContent = fmt(fat);
+  document.getElementById("s-fat-sub").textContent = trava ? "travado — mudanças redistribuem" : "livre — flutua com a simulação";
+  document.getElementById("s-mc").textContent = fat? pct(mc/fat) : "—";
+  document.getElementById("s-mc-sub").textContent = fmt(mc) + " após variáveis + comissões";
+  document.getElementById("s-ml").textContent = fat? pct(lucro/fat) : "—";
+  document.getElementById("s-ml-sub").textContent = fmt(lucro) + " de lucro líquido/mês";
+  document.getElementById("s-mks").textContent = mkPct(mkSeco);
+  document.getElementById("s-mks-sub").textContent = mkSeco.toFixed(2)+"×";
+  document.getElementById("s-mkf").textContent = mkPct(mkFrete);
+  document.getElementById("s-mkf-sub").textContent = mkFrete.toFixed(2)+"×";
+  document.getElementById("k-mc").className = "kpi " + (mc>=0?"pos":"neg");
+  document.getElementById("k-ml").className = "kpi " + (lucro>=0?"pos":"neg");
+}
+
+/* ================= INTERAÇÕES ================= */
+function renderJanela(){
+  const seg=document.getElementById("seg-janela"); seg.innerHTML="";
+  JANELAS[cenario].forEach(([k,rot])=>{
+    const b=document.createElement("button");
+    b.textContent=rot; if(k===janela) b.className="on";
+    b.onclick=()=>{janela=k; mkEditado=false; renderJanela(); recalc();};
+    seg.appendChild(b);
+  });
+  document.getElementById("lbl-janela").textContent = cenario==="atual" ? "Base" : "Janela";
+}
+function setCenario(c,btn){
+  cenario=c; janela = JANELAS[c][0][0]; mkEditado=false;
+  document.querySelectorAll("#seg-cenario button").forEach(b=>b.className="");
+  btn.className="on"; renderJanela(); recalc();
+}
+function toggleVend(i){ VEND[i].on=!VEND[i].on; recalc(); }
+function toggleEmp(i){
+  const e=EMP[i];
+  if(e.com==="faixa_vend"){ toggleVend(e.vend); return; }
+  e.on=!e.on; recalc();
+}
+function setSal(i,v){ EMP[i].fixo=parseFloat(v)||0; recalc(); }
+function setProv(i,v){ PROV[i].p=Math.max(0,parseFloat(v)||0); recalc(); }
+function setMk(qual,v){
+  const x=parseFloat(v); if(!x) return;
+  if(qual==="seco") mkSeco=x; else mkFrete=x;
+  mkEditado=true; recalc();
+}
+function toggleTrava(){ trava=!trava; document.getElementById("sw-trava").classList.toggle("on",trava); recalc(); }
+function toggleGroup(id){ document.getElementById(id).classList.toggle("open"); }
+function allGroups(open){ ["g-vendas","g-var","g-folha","g-fixos","g-jid"].forEach(id=>document.getElementById(id).classList.toggle("open",open)); }
+function toggleTheme(){ const h=document.documentElement; h.dataset.theme = h.dataset.theme==="light"?"dark":"light"; }
+function setLoja(n){ document.getElementById("loja-atual").textContent=n; }
+function abrirModal(){ document.getElementById("modal").classList.add("open"); }
+function fecharModal(){ document.getElementById("modal").classList.remove("open"); }
+
+renderJanela(); recalc();
+</script>
+</body>
+</html>

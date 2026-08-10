@@ -3277,6 +3277,47 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 185 — Simulador de Modelo de Negócios: requisitos + spec + mockup aprovado (frente nova, SÓ design — nenhum código de produção)
+
+Frente nova (2026-08-10, sessão Cowork) a partir do `Simulador.docx` do Marcelo. Ferramenta de
+**assessoria a lojas**: simula o funcionamento econômico da loja a partir das variáveis reais já
+configuradas (provisões da implantação, folha/comissionamentos, custos fixos históricos, parâmetros
+fiscais, médias do Painel Estratégico). Três cenários (Atual/Histórico/Futuro, janelas com descarte
+de meses zerados), grupos A–F com expandir/agrupar, trava de faturamento com redistribuição
+proporcional na demissão, Snapshot sempre completo (MC, margem líquida, markups).
+
+**Entregáveis (em `docs/superpowers/specs/financeiro/`):** `2026-08-10-simulador-modelo-negocios-`
+`requisitos.md` (RF-01..RF-25 + RN-01/02, rev2), `-design.md` (arquitetura e fases),
+`mockups/2026-08-10-simulador-modelo-negocios-mockup.html` (navegável, interativo, tokens v1.5,
+claro/escuro — 2 rodadas de revisão com o usuário) e `2026-08-10-ORIENTACAO-CODE-simulador-modelo-`
+`negocios.md` (handoff pro Code).
+
+**Decisões do usuário (vinculantes):**
+- **Acesso: módulo EXCLUSIVO do super_admin** (assessoria Orizon), embora apresentado como aba do
+  Painel Estratégico — capability nova `acesso_simulador` (não hardcodar nivel, lição da S181).
+  **Autorização por loja (LGPD/sigilo):** tabela própria + concessão por step-up do Master
+  (reaproveitar `POST /api/auth/step-up` da frente de Perfis) + trilha de auditoria separada +
+  revogação imediata. **Lojas atuais nascem autorizadas** (seed idempotente
+  `simulador_autorizacao_seed_v1`), mas o mecanismo nasce funcional.
+- **RN-01:** "Faturamento" no módulo = **Val_Liq**. **RN-02 (corrigida em rev2):** markup exibido
+  em **% adicional** (2,18× = 118%; 1,8× = 80%) — a rev1 tinha exibido o total (218%) e o usuário
+  corrigiu de volta. Dois markups: **seco** (base fábrica) e **com frete** (base fábrica + frete
+  fábrica); iniciam pela média da janela e SÓ mudam por edição direta.
+- **Folha completa** (todos os colaboradores, incluindo diretor/sócios em pró-labore), cards com
+  componentes lado a lado (mobile empilha), salários e provisões **editáveis**, comissão pela
+  **faixa de meta** da config da loja; mínimo garantido não aparece — vira indicador "Existe
+  comissionamento fixo" somado à componente fixa (sem encargos). Custos fixos sem toggle de plano
+  de contas: todas as contas sempre, zeradas atenuadas.
+- **Arquitetura de acoplamento:** motor **puro** no backend (`mod_simulador.py`, padrão
+  `mod_indicadores`) + contrato `ModeloLoja` (JSON) + adapter de levantamento
+  (`mod_simulador_dados.py`) — front só renderiza; outros sistemas/segmentos = outro adapter
+  (campo `rotulos` reservado, sem UI agora). Fases F1–F5 no design (TDD).
+
+**Fora da v1 (registrado):** fluxo "quais variáveis fixar" da trava (aplica só redistribuição
+padrão), persistência/comparação de cenários, UI multi-segmento, PDF, API externa.
+**Próximo passo:** implementação pelo Code seguindo a ORIENTACAO-CODE (F1 motor → F2 autorização →
+F3 levantamento → F4 UI fiel ao mockup → F5 Vera + fechamento).
+
 ## Sessão 184 — Lançamentos Contábeis "não aparecia": N+1 de margem escondido atrás de um filtro de projeto
 
 Achado do usuário (2026-08-09), testando ao vivo no VPS B (`homolog.orizonone.com.br`) depois da

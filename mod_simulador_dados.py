@@ -13,8 +13,8 @@ Decisões documentadas (v1, sem fonte real melhor disponível hoje):
 - "Amortizações" e "juros mensal" não têm registro histórico no sistema → vêm de config nova
   da loja (`config_financeira_json["amortizacoes"/"juros_mensal"]`, mod_provisoes), editável.
 - "Dívida nominal" (RF-24) vem do saldo REAL das contas de dívida (2.1.08/2.1.09/2.1.10 —
-  AcordoFabrica/AcordoMovimento) no razão do owner contábil da loja (pode ser a REDE, quando a
-  loja pertence a uma — mesma consolidação que o resto do Financeiro já usa).
+  AcordoFabrica/AcordoMovimento) no razão PRÓPRIO da loja (`mod_contabil.resolver_owner` — desde
+  o corte da Sessão 187, toda loja tem razão próprio, nunca mais o da rede consolidada).
 - Comissionamento de colaborador NÃO-consultor: `usa_comissao_vendas` → "faixa_vendedor" (real);
   `comissao_json.por_meta=True` → aproximado como "faixa_loja" (atingimento fat/meta da loja,
   mesmas faixas de comissao_vendas — não há faixas distintas de gerência no sistema hoje);
@@ -54,16 +54,6 @@ def _cfg_financeira(loja):
         except (ValueError, TypeError):
             pass
     return mod_provisoes.config_financeira_default()
-
-
-def _owner_da_loja(loja):
-    """(owner_tipo, owner_id) contábil da loja — REDE consolidada quando a loja pertence a uma
-    (mesma regra de mod_contabil.resolver_owner), loja avulsa/PDV usa o próprio id."""
-    if getattr(loja, "loja_mae_id", None):
-        return ("loja", loja.id)
-    if loja.rede_id:
-        return ("rede", loja.rede_id)
-    return ("loja", loja.id)
 
 
 def _mes_fechado(ref=None):
@@ -207,7 +197,7 @@ def montar_modelo(db, loja, cenario="atual", janela="mes"):
     """Monta o `ModeloLoja` (contrato de mod_simulador.simular) pra `loja` a partir das fontes
     reais. Somente leitura (RNF-01) — nenhuma query aqui grava nada."""
     cfg = _cfg_financeira(loja)
-    ot, oid = _owner_da_loja(loja)
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja.id, "rede_id": None})
     ref = datetime.utcnow()
     ini_fechado, fim_fechado = _mes_fechado(ref)
     competencia_fechada = _competencia(ini_fechado)

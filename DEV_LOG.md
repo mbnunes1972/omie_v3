@@ -3277,6 +3277,77 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 188 — CORTE: cada loja passa a ter razão contábil PRÓPRIO (fim do razão compartilhado de rede)
+
+Continuação direta da Sessão 187 (esclarecimento sobre custos fixos/dívida de loja de rede no
+Simulador). Reação do usuário ao entender a origem: **"cada loja tem vida própria... será
+necessário fazer essa revisão com urgência. As operações intercompany deverão ser tratadas
+conforme o padrão geral."** Decisão do usuário, sem investigação prévia minha: **corte daqui pra
+frente** (não reescrever histórico), autorizado a executar em TODAS as bases (local, VPS A —
+instâncias A e B —, produção) porque "não existe dado real... até o momento todos os servidores
+funcionaram com testes."
+
+**Auditoria ANTES do corte (só leitura, nas 4 bases — instrução explícita do usuário: "pode
+executar sem nenhuma preocupação"), confirmando a premissa antes de mexer:**
+- Local dev: 1 rede, 1 loja real + 1 PDV, 170 lançamentos (156 rastreáveis por `projeto_id`, 14
+  sem — despesas fixas tipo aluguel).
+- VPS A / Instância A (`orizon`): **0 redes** — nada a migrar.
+- VPS A / Instância B (`orizon_homolog`): 16 redes, a maioria fixture de UAT automatizado (0
+  lançamento); **2 com histórico real de rede compartilhada** ("Rede Horizonte Homolog" 3 lojas/
+  338 lanc., "Rede Andrômeda Homolog" 2 lojas/234 lanc.) — dado de teste/simulação da Vera, não
+  cliente real.
+- **Produção: 0 redes.** Nenhuma rede cadastrada ainda — corte ali é 100% sem efeito colateral.
+
+**A mudança (`mod_contabil.resolver_owner`):** removida a resolução `loja com rede_id → owner =
+("rede", loja.rede_id)` (decisão da Sessão 95 — pensada pra netar intercompany entre lojas-irmãs
+sem conta de compensação). Agora `loja_id` presente → **sempre** `("loja", lid)`, sem exceção (a
+função nem consulta mais `Loja` no banco — ficou pura). `rede_id` sozinho (sem `loja_id` — ex.:
+admin_rede sem unidade ativa) continua resolvendo pra `("rede", rid)`, um registro à parte —
+comportamento não tocado, e hoje praticamente inatingido na prática (`_contabil_ctx` sempre
+resolve uma unidade ativa antes de chegar aqui). HISTÓRICO já lançado sob `("rede", X)` antes do
+corte **não foi reescrito** — congelado, mesmo princípio de não retroagir cláusula já assinada em
+`mod_documentos`. Intercompany entre lojas-irmãs passa a seguir o MESMO tratamento que já existe
+pra loja×fábrica/empresa externa (`AcordoFabrica`/`ContraparteFinanceira`, conta corrente
+1.1.09×2.1.09) — não precisou de mecanismo novo, só deixou de existir o atalho do "mesmo dono".
+
+**Efeito colateral bom — corrige um bug latente:** o "Comparativo entre lojas" do Painel
+Estratégico (Sessão 181, `mod_estrategico.comparativo_lojas`) já fazia `dre("loja", lid)` por
+loja individualmente — mas pra loja de rede isso sempre batia num livro vazio (tudo ia pro razão
+compartilhado), retornando zero em silêncio. Passa a funcionar de verdade a partir de agora.
+
+**Bug real achado pela suíte ao aplicar o corte:** `mod_contabil.eliminacoes_intercompany` tinha
+um `if c is None: continue` que **nunca executava** — `_conta_por_codigo` sempre levanta
+`ValueError` em vez de devolver `None` (o guard era código morto). Antes do corte isso nunca doía
+porque todo owner passado pra função sempre tinha a conta 1.1.09 (efeito colateral do
+compartilhamento); com cada loja isolada, uma loja sem PDV/rateio genuinamente não tem essa conta,
+e a função quebrava com 500 em vez de simplesmente contar zero pra ela. Corrigido: checa
+`_conta_existe` antes de chamar `_conta_por_codigo` (`GET /api/financeiro/rateios` pra um Master
+sem PDV).
+
+**Testes ajustados (nenhum novo cenário de produto, só a expectativa do owner mudando de
+`("rede", X)` pra `("loja", lid)`):** `test_plano_contas.py`, `test_estrategico.py` (um teste
+inteiro precisou virar — "drill-down pra loja-irmã da mesma rede" deixou de existir: Master de
+uma loja não vê mais dado de outra só por serem da mesma rede, exatamente a intenção do corte),
+`test_pdv_visao_unificada.py`, `test_pdv_consolidacao.py` (4 dos 10 testes tocavam o owner da mãe
+diretamente). `mod_simulador_dados.py` simplificado (removida a duplicação local da regra antiga
+— `_owner_da_loja` virou uma chamada direta a `mod_contabil.resolver_owner`); resolve também a
+pendência #2 anotada no fechamento da Sessão 186 (custos fixos/dívida de loja de rede no
+Simulador) **automaticamente**, sem precisar do aviso na tela cogitado ali. Suíte **2015 passed**
+(mesma contagem da Sessão 187 — troca de comportamento, não de cobertura).
+
+**Deploy nas 3 máquinas** (autorizado explicitamente pelo usuário, auditoria prévia confirmando
+zero dado real em produção): merge `feat/painel-estrategico` → `main` → push → VPS A/Instância A
+(`git reset --hard origin/main`) → VPS A/Instância B (nova tag homolog) → produção (backup +
+nova tag `-prod` + restart do `orizon.service`). Detalhes de cada passo no commit de deploy /
+verificação pós-subida, se algo precisar de nota à parte.
+
+**[PENDENTE, registrado — não é regressão de nada hoje acessível]** Se `admin_rede` ganhar
+`acesso_estrategico`/visão consolidada própria no futuro (ainda não tem — "dashboard consolidado
+= frente futura", decisão antiga), o agregado da REDE como entidade não deve ler um owner
+`("rede", X)` esperando achar lançamento — ele nunca mais vai ter, por design. Precisa somar cada
+loja (mesmo padrão que `comparativo_lojas` e o `unidade=consolidado` do PDV já usam), não ler um
+pote compartilhado.
+
 ## Sessão 187 — Simulador: fluxo de autorização vira REMOTO (solicitar → aprovar) + esclarecimento sobre razão de rede
 
 Achado do usuário revisando o fechamento da Sessão 186: o fluxo de concessão (rev1, mockup

@@ -37,8 +37,10 @@ def test_resolver_owner_avulsa_e_rede_admin(app_db):
 
 def test_resolver_owner_loja_com_rede(seed, app_db):
     db = app_db.get_session()
-    # loja pertencente a uma rede -> owner é a REDE (contabilidade compartilhada)
-    assert mc.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None}) == ("rede", seed["rede_id"])
+    # Corte S187 (achado do usuário — "cada loja tem vida própria"): loja de rede tem razão
+    # PRÓPRIO, nunca mais compartilhado com as lojas-irmãs.
+    assert mc.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None}) == ("loja", seed["loja1_id"])
+    assert mc.resolver_owner(db, {"loja_id": seed["loja2_id"], "rede_id": None}) == ("loja", seed["loja2_id"])
     db.close()
 
 

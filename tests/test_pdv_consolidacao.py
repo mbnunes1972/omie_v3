@@ -53,7 +53,7 @@ def test_rateio_lanca_o_par_com_ref_espelhada(app_db, seed, pdv, rateio):
     assert rateio["ref"].startswith("rateio:")
     db = app_db.get_session()
     try:
-        mae = mod_contabil.lancamento_por_ref(db, "rede", seed["rede_id"], rateio["ref"])
+        mae = mod_contabil.lancamento_por_ref(db, "loja", seed["loja1_id"], rateio["ref"])
         leg = mod_contabil.lancamento_por_ref(db, "loja", pdv["id"], rateio["ref"])
         assert mae is not None and leg is not None
         assert mae["valor"] == leg["valor"] == 300.0
@@ -71,8 +71,8 @@ def test_rateio_vira_despesa_no_pdv_e_conta_corrente_na_mae(app_db, seed, pdv, r
         assert mod_contabil.saldo_conta(db, "loja", pdv["id"], c_desp.id) == 300.0
         assert mod_contabil.saldo_conta(db, "loja", pdv["id"], c_cc.id) == 300.0
         # mãe (razão da rede): 1.1.09 devedora com os 300 a receber
-        c_rec = mod_contabil._conta_por_codigo(db, "rede", seed["rede_id"], "1.1.09")
-        assert mod_contabil.saldo_conta(db, "rede", seed["rede_id"], c_rec.id) == 300.0
+        c_rec = mod_contabil._conta_por_codigo(db, "loja", seed["loja1_id"], "1.1.09")
+        assert mod_contabil.saldo_conta(db, "loja", seed["loja1_id"], c_rec.id) == 300.0
     finally:
         db.close()
 
@@ -145,7 +145,7 @@ def test_estorno_reverte_o_par_e_zera_a_pendencia(http_client_factory, app_db, s
     try:
         c_desp = mod_contabil._conta_por_codigo(db, "loja", pdv["id"], "5.4.01")
         assert mod_contabil.saldo_conta(db, "loja", pdv["id"], c_desp.id) == 0.0
-        owners = [("rede", seed["rede_id"]), ("loja", pdv["id"])]
+        owners = [("loja", seed["loja1_id"]), ("loja", pdv["id"])]
         assert mod_contabil.eliminacoes_intercompany(db, owners) == 0.0
     finally:
         db.close()
@@ -165,9 +165,11 @@ def test_lista_de_rateios_do_perimetro(http_client_factory, seed, pdv, rateio):
     assert st == 200 and out["ok"]
     item = next(r for r in out["rateios"] if r["ref"] == rateio["ref"])
     assert item["valor"] == 300.0 and item["unidade"] == "PDV Consolida"
-    # dir_l2 compartilha o razão da REDE com a mãe (mesmo ledger), então a perna da mãe
-    # é visível também para ela — consistente com o painel de lançamentos. O estorno,
-    # porém, exige TODAS as pernas no escopo (o PDV não é dela) — coberto abaixo.
+    # Corte S187: dir_l2 (Master só de loja2, sem PDV) tem razão PRÓPRIO — o rateio mãe→PDV
+    # de loja1 não é mais visível pra ela (antes do corte, era, por acidente do razão
+    # compartilhado da rede). Perímetro vazio, sem quebrar (achado: eliminacoes_intercompany
+    # lançava ValueError pra owner sem a conta 1.1.09 — corrigido junto).
     c2 = _login(http_client_factory, "dir_l2")
     st, out2 = c2.get("/api/financeiro/rateios")
     assert st == 200 and out2["ok"]
+    assert not any(r["ref"] == rateio["ref"] for r in out2["rateios"])

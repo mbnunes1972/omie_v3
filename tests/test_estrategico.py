@@ -12,8 +12,8 @@ def _login(f, who):
 
 
 def test_snapshot_estrutura_e_periodo(app_db, seed):
-    # loja AVULSA de propósito (sem rede_id) — as duas lojas do seed pertencem à mesma rede
-    # (resolver_owner consolidaria em "rede"); pra testar o owner "loja" preciso de uma sem rede.
+    # loja avulsa (sem rede) só pra exercitar o teste isolada das lojas do seed — desde o corte
+    # S187, toda loja (de rede ou não) já resolve pra owner ("loja", <id>) próprio.
     db = app_db.get_session()
     avulsa = app_db.Loja(nome="Loja Avulsa Teste", codigo="AVT")
     db.add(avulsa); db.flush()
@@ -129,18 +129,19 @@ def test_endpoint_periodo_trimestre_e_ano(http_client_factory, seed, app_db):
         assert st == 200 and body["indicadores"]["periodo"]["tipo"] == tipo
 
 
-def test_endpoint_loja_id_dentro_da_mesma_rede_funciona(http_client_factory, seed, app_db):
-    """loja1 e loja2 do seed pertencem à MESMA rede — drill-down de dir_l1 (master da rede
-    consolidada) pra loja2 é DENTRO do escopo."""
+def test_endpoint_loja_id_de_loja_irma_na_mesma_rede_e_barrado(http_client_factory, seed, app_db):
+    """Corte S187 (achado do usuário — "cada loja tem vida própria"): loja1 e loja2 do seed
+    pertencem à MESMA rede, mas cada uma tem razão PRÓPRIO agora — dir_l1 (Master só de loja1)
+    NÃO drilla mais pra loja2 só por serem da mesma rede (antes do corte, drillava: as duas
+    escreviam no mesmo razão compartilhado da rede)."""
     db = app_db.get_session()
     ot, oid = mc.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None})
-    assert ot == "rede"   # confirma a premissa do teste
+    assert ot == "loja" and oid == seed["loja1_id"]   # confirma a premissa do teste
     mc.seed_plano(db, ot, oid)
     db.commit(); db.close()
     c = _login(http_client_factory, "dir_l1")
     st, body = c.get(f"/api/estrategico/indicadores?loja_id={seed['loja2_id']}")
-    assert st == 200 and body["ok"], body
-    assert body["indicadores"]["loja_id"] == seed["loja2_id"]
+    assert st == 403, body
 
 
 def test_endpoint_loja_id_de_outra_rede_barrado(http_client_factory, seed, app_db):

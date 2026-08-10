@@ -1,6 +1,8 @@
-"""Autorização por loja (LGPD) do Simulador de Modelo de Negócios — Sessão 185 (RF-02..RF-04, D5).
-Capability acesso_simulador é exclusiva do super_admin; concessão reautentica a senha do Master
-da loja alvo; revogação é do Master, efeito imediato; trilha própria (fora do log operacional)."""
+"""Autorização por loja (LGPD) do Simulador de Modelo de Negócios — Sessão 185/187 (RF-02..RF-04,
+D5). Capability acesso_simulador é exclusiva do super_admin. Fluxo REMOTO (rev2): o super_admin
+SOLICITA sem senha nenhuma; o Master APROVA na própria sessão reautenticando a PRÓPRIA senha (nunca
+a de terceiro) — os dois lados podem agir em momentos/lugares diferentes. Revogação é do Master,
+efeito imediato. Trilha própria (fora do log operacional)."""
 import pytest
 
 import mod_simulador_autorizacao as msa
@@ -46,6 +48,7 @@ def test_super_admin_lista_lojas_com_status_de_autorizacao(http_client_factory, 
     por_id = {l["loja_id"]: l for l in body["lojas"]}
     assert seed["loja1_id"] in por_id
     # seed idempotente (Sessão 185): lojas existentes já nascem autorizadas
+    assert por_id[seed["loja1_id"]]["status"] == "ativa"
     assert por_id[seed["loja1_id"]]["autorizado"] is True
 
 
@@ -66,14 +69,13 @@ def test_seed_autoriza_lojas_existentes_sem_duplicar(app_db, seed):
         db.close()
 
 
-# ── Conceder (RF-03) ─────────────────────────────────────────────────────────────────────────
-def test_conceder_reautentica_senha_do_master_da_loja_alvo(http_client_factory, seed):
+# ── Solicitar (RF-03, fluxo remoto — sem senha) ─────────────────────────────────────────────
+def test_solicitar_cria_pedido_pendente_sem_senha_nenhuma(http_client_factory, seed):
     from database import get_session, SimuladorAutorizacao
     db = get_session()
     try:
-        # revoga o que o seed já deu, pra exercitar uma concessão de verdade
         ativa = db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"], status="ativa").first()
-        ativa.status = "revogada"
+        ativa.status = "revogada"   # revoga o que o seed deu, pra exercitar um pedido de verdade
         db.commit()
     finally:
         db.close()
@@ -81,43 +83,104 @@ def test_conceder_reautentica_senha_do_master_da_loja_alvo(http_client_factory, 
     c = _login(http_client_factory, "super")
     st, body = c.get("/api/simulador/lojas")
     por_id = {l["loja_id"]: l for l in body["lojas"]}
-    assert por_id[seed["loja2_id"]]["autorizado"] is False
+    assert por_id[seed["loja2_id"]]["status"] == "nenhuma"
 
-    st, body = c.post("/api/simulador/autorizacao", {
-        "loja_id": seed["loja2_id"], "login_autorizador": "dir_l2", "senha_autorizador": "senha123"})
-    assert st == 200 and body["ok"] and body["autorizado"] is True, body
+    st, body = c.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+    assert st == 200 and body["ok"] and body["status"] == "pendente", body
 
     st, body = c.get("/api/simulador/lojas")
     por_id = {l["loja_id"]: l for l in body["lojas"]}
-    assert por_id[seed["loja2_id"]]["autorizado"] is True
+    assert por_id[seed["loja2_id"]]["status"] == "pendente"
+    assert por_id[seed["loja2_id"]]["autorizado"] is False   # pendente ainda NÃO é autorizado
 
 
-def test_conceder_recusa_senha_errada(http_client_factory, seed):
+def test_solicitar_e_idempotente_nao_duplica_pedido(http_client_factory, seed):
+    from database import get_session, SimuladorAutorizacao
+    db = get_session()
+    try:
+        ativa = db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"], status="ativa").first()
+        if ativa:
+            ativa.status = "revogada"
+            db.commit()
+    finally:
+        db.close()
+
     c = _login(http_client_factory, "super")
-    st, body = c.post("/api/simulador/autorizacao", {
-        "loja_id": seed["loja1_id"], "login_autorizador": "dir_l1", "senha_autorizador": "errada"})
+    c.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+    c.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+    db = get_session()
+    try:
+        n = db.query(SimuladorAutorizacao).filter_by(
+            loja_id=seed["loja2_id"], status="pendente").count()
+        assert n == 1
+    finally:
+        db.close()
+
+
+def test_solicitante_sem_acesso_simulador_nao_pode_solicitar(http_client_factory, seed):
+    c = _login(http_client_factory, "dir_l1")   # master, não super_admin
+    st, body = c.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja1_id"]})
+    assert st == 403, body
+
+
+# ── Aprovar (RF-03, o Master reautentica a PRÓPRIA senha, na própria sessão) ────────────────
+def test_master_aprova_o_proprio_pedido_com_a_propria_senha(http_client_factory, seed):
+    from database import get_session, SimuladorAutorizacao
+    db = get_session()
+    try:
+        ativa = db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"], status="ativa").first()
+        if ativa:
+            ativa.status = "revogada"; db.commit()
+    finally:
+        db.close()
+
+    c_super = _login(http_client_factory, "super")
+    c_super.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+
+    c_master = _login(http_client_factory, "dir_l2")
+    st, body = c_master.post("/api/simulador/autorizacao/aprovar", {"senha": "senha123"})
+    assert st == 200 and body["ok"] and body["autorizado"] is True, body
+
+    st, body = c_super.get("/api/simulador/lojas")
+    por_id = {l["loja_id"]: l for l in body["lojas"]}
+    assert por_id[seed["loja2_id"]]["status"] == "ativa"
+
+
+def test_aprovar_recusa_senha_errada_do_proprio_master(http_client_factory, seed):
+    from database import get_session, SimuladorAutorizacao
+    db = get_session()
+    try:
+        ativa = db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"], status="ativa").first()
+        if ativa:
+            ativa.status = "revogada"; db.commit()
+    finally:
+        db.close()
+    c_super = _login(http_client_factory, "super")
+    c_super.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+
+    c_master = _login(http_client_factory, "dir_l2")
+    st, body = c_master.post("/api/simulador/autorizacao/aprovar", {"senha": "errada"})
     assert st == 401, body
 
 
-def test_conceder_recusa_autorizador_que_nao_e_master_da_loja():
+def test_aprovar_sem_pedido_pendente_da_erro():
     from database import get_session
     db = get_session()
     try:
-        # cons_l1 é operador (não master) da loja 1
-        ok, autorizacao, erro = msa.conceder(db, 999999, "cons_l1", "senha123", 1, "termo")
+        ok, autorizacao, erro = msa.aprovar(
+            db, {"id": 1, "nivel": "master", "loja_id": 999999}, "qualquer", "termo")
         assert ok is False and autorizacao is None and erro
     finally:
         db.close()
 
 
-def test_solicitante_sem_acesso_simulador_nao_pode_conceder(http_client_factory, seed):
-    c = _login(http_client_factory, "dir_l1")   # master, não super_admin
-    st, body = c.post("/api/simulador/autorizacao", {
-        "loja_id": seed["loja1_id"], "login_autorizador": "dir_l1", "senha_autorizador": "senha123"})
+def test_operador_nao_pode_aprovar_mesmo_com_senha_certa(http_client_factory, seed):
+    c = _login(http_client_factory, "cons_l1")
+    st, body = c.post("/api/simulador/autorizacao/aprovar", {"senha": "senha123"})
     assert st == 403, body
 
 
-# ── Revogar (RF-03, efeito imediato) ────────────────────────────────────────────────────────
+# ── Revogar (RF-03, efeito imediato — cobre 'ativa' E 'pendente') ───────────────────────────
 def test_master_revoga_e_efeito_e_imediato(http_client_factory, seed):
     c_super = _login(http_client_factory, "super")
     st, body = c_super.get("/api/simulador/lojas")
@@ -133,11 +196,35 @@ def test_master_revoga_e_efeito_e_imediato(http_client_factory, seed):
     assert por_id[seed["loja1_id"]]["autorizado"] is False
 
 
+def test_revogar_um_pedido_pendente_tambem_funciona(http_client_factory, seed):
+    from database import get_session, SimuladorAutorizacao
+    db = get_session()
+    try:
+        for a in db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"]).filter(
+                SimuladorAutorizacao.status.in_(("ativa", "pendente"))).all():
+            a.status = "revogada"
+        db.commit()
+    finally:
+        db.close()
+
+    c_super = _login(http_client_factory, "super")
+    c_super.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+
+    c_master = _login(http_client_factory, "dir_l2")
+    st, body = c_master.post("/api/simulador/autorizacao/revogar", {})
+    assert st == 200 and body["ok"], body
+
+    st, body = c_super.get("/api/simulador/lojas")
+    por_id = {l["loja_id"]: l for l in body["lojas"]}
+    assert por_id[seed["loja2_id"]]["status"] == "nenhuma"
+
+
 def test_revogar_sem_autorizacao_ativa_da_erro(http_client_factory, seed):
     from database import get_session, SimuladorAutorizacao
     db = get_session()
     try:
-        for a in db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja1_id"], status="ativa").all():
+        for a in db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja1_id"]).filter(
+                SimuladorAutorizacao.status.in_(("ativa", "pendente"))).all():
             a.status = "revogada"
         db.commit()
     finally:
@@ -153,16 +240,40 @@ def test_operador_nao_pode_revogar(http_client_factory, seed):
     assert st == 403, body
 
 
+# ── Status (Master vê o status da PRÓPRIA loja, mesmo sem acesso_simulador) ─────────────────
+def test_master_ve_status_da_propria_loja(http_client_factory, seed):
+    c = _login(http_client_factory, "dir_l1")
+    st, body = c.get("/api/simulador/autorizacao/status")
+    assert st == 200 and body["ok"] and body["status"] in ("ativa", "pendente", "nenhuma"), body
+
+
+def test_operador_nao_ve_status_de_autorizacao(http_client_factory, seed):
+    c = _login(http_client_factory, "cons_l1")
+    st, body = c.get("/api/simulador/autorizacao/status")
+    assert st == 403, body
+
+
 # ── Trilha própria (RF-04) ───────────────────────────────────────────────────────────────────
-def test_concessao_e_revogacao_gravam_trilha_separada(http_client_factory, seed):
-    from database import get_session, SimuladorLogAcesso
-    c = _login(http_client_factory, "super")
-    c.post("/api/simulador/autorizacao", {
-        "loja_id": seed["loja1_id"], "login_autorizador": "dir_l1", "senha_autorizador": "senha123"})
+def test_solicitacao_aprovacao_e_revogacao_gravam_trilha_separada(http_client_factory, seed):
+    from database import get_session, SimuladorAutorizacao, SimuladorLogAcesso
+    db = get_session()
+    try:
+        for a in db.query(SimuladorAutorizacao).filter_by(loja_id=seed["loja2_id"]).filter(
+                SimuladorAutorizacao.status.in_(("ativa", "pendente"))).all():
+            a.status = "revogada"
+        db.commit()
+    finally:
+        db.close()
+
+    c_super = _login(http_client_factory, "super")
+    c_super.post("/api/simulador/autorizacao/solicitar", {"loja_id": seed["loja2_id"]})
+    c_master = _login(http_client_factory, "dir_l2")
+    c_master.post("/api/simulador/autorizacao/aprovar", {"senha": "senha123"})
+
     db = get_session()
     try:
         eventos = {l.evento for l in db.query(SimuladorLogAcesso)
-                  .filter_by(loja_id=seed["loja1_id"]).all()}
-        assert "concessao" in eventos or "revogacao" in eventos   # ao menos um evento já registrado
+                  .filter_by(loja_id=seed["loja2_id"]).all()}
+        assert "solicitacao" in eventos and "concessao" in eventos
     finally:
         db.close()

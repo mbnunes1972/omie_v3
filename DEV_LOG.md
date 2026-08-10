@@ -3277,6 +3277,56 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 187 — Simulador: fluxo de autorização vira REMOTO (solicitar → aprovar) + esclarecimento sobre razão de rede
+
+Achado do usuário revisando o fechamento da Sessão 186: o fluxo de concessão (rev1, mockup
+aprovado) pedia a senha do Master **dentro da tela do super_admin** — só funcionava com os dois
+juntos (presencial ou numa chamada). Pedido do usuário: **"o fluxo de concessão deve envolver uma
+troca que possa ser feita de forma remota."**
+
+**Redesenho (`SimuladorAutorizacao` ganha `status='pendente'` + `solicitado_por_usuario_id`/
+`solicitado_em`):**
+1. `POST /api/simulador/autorizacao/solicitar` — o super_admin pede acesso. **Sem senha nenhuma**;
+   cria um pedido `pendente`. Idempotente (loja já `ativa`/`pendente` não duplica).
+2. `POST /api/simulador/autorizacao/aprovar` — o Master vê o pedido na **PRÓPRIA sessão** (aba
+   Config › Privacidade, `GET /api/simulador/autorizacao/status`, endpoint novo — não exige
+   `acesso_simulador`, é o outro lado do fluxo) e aprova reautenticando a **PRÓPRIA senha** (padrão
+   step-up de auto-confirmação, igual o resto do app já pede "confirme sua senha" pra ação
+   sensível) — nunca a de terceiro. Os dois lados só usam a própria conta, na própria sessão: dá
+   pra acontecer em qualquer lugar, em qualquer momento, sem coordenação síncrona.
+3. Revogar (`.../autorizacao/revogar`) passa a cobrir `ativa` OU `pendente` (serve também de
+   "recusar" um pedido) — efeito imediato, inalterado.
+Endpoint antigo `POST /api/simulador/autorizacao` (que recebia `login_autorizador`/
+`senha_autorizador` do solicitante) foi **removido**, não deprecado — era exatamente o padrão que
+motivou o pedido. `mod_simulador_autorizacao.conceder()` virou `solicitar()` + `aprovar()`.
+Frontend: modal "Solicitar acesso" não tem mais campos de senha (só confirma o pedido); dropdown de
+lojas ganha 3 estados (✓ acesso / ⏳ aguardando aprovação / 🔒 solicitar); aba Privacidade em Config
+mostra o pedido pendente com botão Aprovar (pede a própria senha) ou Recusar.
+`tests/test_simulador_autorizacao.py` reescrito (18 casos: solicitar sem senha, idempotência,
+aprovar com senha certa/errada do Master, revogar pendente, trilha separada com eventos
+`solicitacao`+`concessao`). Suíte **2015 passed**.
+
+**Esclarecimento pedido pelo usuário (achado 🟠5 da Vera na S186, "custos fixos/dívida vêm da
+REDE consolidada quando a loja pertence a uma cadeia") — não é regressão da arquitetura
+loja-primeiro:** o Orizon É de baixo pra cima em quase tudo (comercial/ciclo/folha/cadastro —
+loja é a unidade real, rede é filtro/agregação por consulta). A ÚNICA exceção é o razão contábil:
+decisão da **Sessão 95** — loja que pertence a uma rede não tem plano de contas/razão PRÓPRIO, ela
+escreve direto no razão **compartilhado da rede inteira** (`mod_contabil.resolver_owner`: loja com
+`rede_id` → owner vira `("rede", rede_id)`), pra transações intercompany entre lojas-irmãs se
+resolverem sozinhas (mesmo livro = sem conta de compensação). Confirmado ao vivo no banco de dev:
+INSPIRIUM (loja da rede 1) tem **zero** `Lancamento` com `owner_tipo='loja'` — os 170 lançamentos
+dela estão todos sob `owner_tipo='rede'`. O Simulador herda essa mesma limitação (não introduzida
+por ele) — e, de bônus, isso sugere que o "Comparativo entre lojas" do Painel Estratégico (S181,
+`mod_estrategico.comparativo_lojas`, que roda `dre("loja", lid)` por loja) provavelmente já bate
+num livro vazio pra qualquer loja de rede, retornando zero em silêncio. **Não investigado/corrigido
+agora** — registrado pra frente futura. Proposta ainda em aberto pro Simulador (aguardando decisão
+do usuário): aviso visível na tela quando a loja é de rede, sem tocar em `resolver_owner`.
+
+**Arquivos:** `database.py` (`SimuladorAutorizacao` ganha campos), `mod_simulador_autorizacao.py`
+(reescrito), `main.py` (3 endpoints novos, 1 removido), `static/index.html` (modal sem senha,
+dropdown 3 estados, aba Privacidade com aprovar/recusar), `tests/test_simulador_autorizacao.py`
+(reescrito).
+
 ## Sessão 186 — Simulador de Modelo de Negócios: implementação completa (F1–F5, motor + LGPD + adapter + UI)
 
 Branch `feat/painel-estrategico`. Implementação da frente desenhada na Sessão 185, seguindo

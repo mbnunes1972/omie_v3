@@ -1406,6 +1406,33 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/simulador/autorizacao/status":
+            # Status da PRÓPRIA loja pro Master (aba Privacidade/Config) — não exige
+            # acesso_simulador (o Master nunca tem essa capability; é o outro lado do fluxo).
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            if usuario.get("nivel") != "master" or not usuario.get("loja_id"):
+                self.send_json({"ok": False, "erro": "Só o Master vê o status desta loja."}, code=403); return
+            import mod_simulador_autorizacao as _msa
+            from database import SimuladorAutorizacao
+            db = get_session()
+            try:
+                loja_id = usuario["loja_id"]
+                atual = (db.query(SimuladorAutorizacao)
+                         .filter(SimuladorAutorizacao.loja_id == loja_id,
+                                 SimuladorAutorizacao.status.in_(("ativa", "pendente"))).first())
+                if atual is None:
+                    self.send_json({"ok": True, "status": "nenhuma"}); return
+                solicitante = db.get(Usuario, atual.solicitado_por_usuario_id) if atual.solicitado_por_usuario_id else None
+                self.send_json({"ok": True, "status": atual.status,
+                                "solicitado_em": atual.solicitado_em.isoformat() if atual.solicitado_em else None,
+                                "solicitado_por_nome": solicitante.nome if solicitante else None,
+                                "concedido_em": atual.concedido_em.isoformat() if atual.concedido_em else None})
+            finally:
+                db.close()
+            return
+
         if path == "/api/simulador/modelo":
             # Simulador (Sessão 185): monta e devolve o ModeloLoja da loja pedida — exige
             # acesso_simulador (super_admin) E autorização ATIVA da loja (RF-02/D5). Cada
@@ -4898,10 +4925,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if handle_auth_post(self, path, body): return
 
-        if path == "/api/simulador/autorizacao":
-            # Simulador (Sessão 185, RF-03): o Master da loja ALVO reautentica a senha e concede
-            # o acesso à assessoria Orizon. Quem SOLICITA precisa ter acesso_simulador (só
-            # super_admin) — é a tela dele que dispara o modal "solicitar acesso".
+        if path == "/api/simulador/autorizacao/solicitar":
+            # Simulador (Sessão 187, RF-03 — fluxo REMOTO): o super_admin (acesso_simulador) pede
+            # acesso a uma loja. SEM senha nenhuma aqui — cria um pedido `pendente` que o Master
+            # aprova depois, na PRÓPRIA sessão dele (POST .../aprovar). Substitui o fluxo antigo
+            # que pedia a senha do Master dentro da tela do solicitante (só funcionava presencial).
             usuario = get_usuario_sessao(self)
             if not usuario:
                 self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
@@ -4918,14 +4946,39 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "loja_id inválido."}, code=400); return
             db = get_session()
             try:
-                ok, autorizacao, erro = _msa.conceder(
-                    db, loja_id, req.get("login_autorizador"), req.get("senha_autorizador"),
-                    usuario["id"], req.get("base_legal") or "Termo padrão do Simulador — acesso "
-                    "de assessoria, escopo simulação/somente leitura.",
+                ok, autorizacao, erro = _msa.solicitar(
+                    db, loja_id, usuario["id"],
                     ip=self.client_address[0] if self.client_address else None)
                 if not ok:
                     db.rollback()
-                    code = 401 if "inválid" in (erro or "") else 403
+                    self.send_json({"ok": False, "erro": erro}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "status": autorizacao.status})
+            finally:
+                db.close()
+            return
+
+        if path == "/api/simulador/autorizacao/aprovar":
+            # O Master aprova o PRÓPRIO pedido pendente reautenticando a PRÓPRIA senha (não a de
+            # terceiro) — acessível mesmo sem acesso_simulador, igual à revogação (D5/§2).
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            import mod_simulador_autorizacao as _msa
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido."}, code=400); return
+            db = get_session()
+            try:
+                ok, autorizacao, erro = _msa.aprovar(
+                    db, usuario, req.get("senha"),
+                    req.get("base_legal") or "Termo padrão do Simulador — acesso de assessoria, "
+                    "escopo simulação/somente leitura.",
+                    ip=self.client_address[0] if self.client_address else None)
+                if not ok:
+                    db.rollback()
+                    code = 401 if "senha" in (erro or "").lower() else 403
                     self.send_json({"ok": False, "erro": erro}, code=code); return
                 db.commit()
                 self.send_json({"ok": True, "autorizado": True})

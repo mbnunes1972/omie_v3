@@ -155,16 +155,22 @@ class LogAcessoDelegado(Base):
 
 class SimuladorAutorizacao(Base):
     """Autorização por loja (LGPD) pro Simulador de Modelo de Negócios acessar dados sigilosos da
-    loja (folha, salários, margens, dívida) — Sessão 185. No máximo UMA linha `status='ativa'`
-    por loja (invariante de aplicação, checado em mod_simulador_autorizacao.conceder — reconceder
-    após revogação cria uma linha NOVA, preservando o histórico da revogada). Concedida pelo
-    Master da loja com reautenticação por senha (padrão step-up); revogável a qualquer momento,
-    efeito imediato."""
+    loja (folha, salários, margens, dívida) — Sessão 185/187. Fluxo REMOTO (rev2, achado do
+    usuário: a concessão original pedia a senha do Master DENTRO da tela do solicitante — só
+    funcionava com os dois juntos): o super_admin SOLICITA (`status='pendente'`, sem senha
+    nenhuma); o Master vê o pedido na PRÓPRIA sessão (aba Privacidade/Config) e aprova reautenticando
+    a PRÓPRIA senha (padrão step-up de auto-confirmação, não a de terceiro) — pode acontecer em
+    qualquer lugar, em qualquer momento, sem os dois precisarem estar juntos. No máximo UMA linha
+    `status IN ('pendente','ativa')` por loja (invariante de aplicação, checado em
+    mod_simulador_autorizacao — reconceder após revogação cria uma linha NOVA, preservando o
+    histórico da revogada). Revogável a qualquer momento pelo Master, efeito imediato."""
     __tablename__ = "simulador_autorizacoes"
 
     id                       = Column(Integer,  primary_key=True, autoincrement=True)
     loja_id                  = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
-    status                   = Column(String(10), nullable=False, default="ativa")   # ativa | revogada
+    status                   = Column(String(10), nullable=False, default="ativa")   # pendente | ativa | revogada
+    solicitado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # quem pediu (super_admin)
+    solicitado_em            = Column(DateTime, nullable=True)
     concedido_por_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)   # Master (NULL = seed)
     beneficiario             = Column(String(40), nullable=False, default="orizon_assessoria")
     escopo                   = Column(String(40), nullable=False, default="simulacao_leitura")

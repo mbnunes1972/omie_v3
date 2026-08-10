@@ -2170,14 +2170,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div class="sim-overlay" id="sim-modal" onclick="if(event.target===this)simFecharModal()">
       <div class="sim-modal">
         <h3 id="sim-modal-titulo">Solicitar acesso</h3>
-        <div class="sim-m-sub">O Master da loja precisa autorizar seu acesso de simulação (somente leitura). A concessão exige autenticação segura e tem validade jurídica.</div>
-        <label>Usuário Master da loja</label><input id="sim-modal-login" placeholder="usuario@dalmobile.com.br">
-        <label>Senha / segundo fator</label><input id="sim-modal-senha" type="password" placeholder="••••••••">
-        <div class="sim-m-audit">⚖ Registro em <b>log de auditoria separado</b>: concedente, beneficiário, escopo (simulação · somente leitura), data/hora e IP. Revogável a qualquer momento.</div>
+        <div class="sim-m-sub" id="sim-modal-sub">O Master da loja precisa aprovar o acesso de simulação (somente leitura) — não é preciso senha nenhuma aqui: o pedido fica registrado e o Master aprova depois, remotamente, na própria sessão dele.</div>
+        <div class="sim-m-audit">⚖ Registro em <b>log de auditoria separado</b>: solicitante, beneficiário, escopo (simulação · somente leitura), data/hora e IP. Revogável a qualquer momento pelo Master.</div>
         <div id="sim-modal-msg" style="font-size:12px;margin-top:8px"></div>
         <div class="sim-m-actions">
           <button class="sim-btn sim-sec" onclick="simFecharModal()">Cancelar</button>
-          <button class="sim-btn sim-pri" onclick="simEnviarAutorizacao()">Enviar pedido de autorização</button>
+          <button class="sim-btn sim-pri" id="sim-modal-btn-pri" onclick="simEnviarAutorizacao()">Enviar pedido de acesso</button>
         </div>
       </div>
     </div>
@@ -4226,34 +4224,62 @@ function cfgTab(qual){
   if(qual==='documentos') cfgDocumentosRender();
   if(qual==='privacidade') cfgPrivacidadeRender();
 }
-// ── Config → Privacidade: autorização do Simulador de Modelo de Negócios (Sessão 185, RF-03) ──
+// ── Config → Privacidade: autorização do Simulador de Modelo de Negócios (Sessão 185/187, RF-03).
+// Fluxo REMOTO: a assessoria SOLICITA (sem senha nenhuma); o Master vê o pedido aqui, na PRÓPRIA
+// sessão, e aprova reautenticando a PRÓPRIA senha — nunca a de terceiro, nunca precisa dos dois
+// juntos. ──────────────────────────────────────────────────────────────────────────────────────
 async function cfgPrivacidadeRender(){
   const box = document.getElementById('cfg-panel-privacidade'); if(!box) return;
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const r = await fetch('/api/simulador/lojas', {credentials:'same-origin'});
-  if(r.status === 403){
-    // Master não tem acesso_simulador (é exclusivo super_admin) — usa o status via /autorizacao/revogar
-    // como fonte: tenta revogar "a seco" seria destrutivo, então mostra o card sem status prévio.
-    box.innerHTML = '<div style="max-width:560px"><div style="font-weight:700;color:var(--text);font-size:13px;'
-      +'border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px">Simulador de Modelo de Negócios</div>'
-      +'<div style="font-size:12px;color:var(--muted);margin-bottom:12px">A assessoria Orizon (super_admin) usa este '
-      +'módulo para simular o modelo econômico da loja — folha, margens, dívida. É possível revogar o acesso a '
-      +'qualquer momento; a concessão exige a AUTENTICAÇÃO DO MASTER (sua senha) no momento em que a '
-      +'assessoria solicita o acesso (LGPD).</div>'
-      +'<button class="btn btn-ghost btn-sm" onclick="cfgPrivacidadeRevogar()">Revogar acesso da assessoria</button>'
-      +'<div id="cfg-priv-msg" style="font-size:12px;margin-top:8px"></div></div>';
-    return;
+  const r = await fetch('/api/simulador/autorizacao/status', {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({ok:false}));
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
+
+  const cabecalho = '<div style="font-weight:700;color:var(--text);font-size:13px;'
+    +'border-bottom:1px solid var(--border);padding-bottom:4px;margin-bottom:10px">Simulador de Modelo de Negócios</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:12px">A assessoria Orizon (super_admin) usa este '
+    +'módulo pra simular o modelo econômico da loja — folha, margens, dívida (somente leitura).</div>';
+
+  let corpo;
+  if(d.status === 'pendente'){
+    corpo = '<div style="font-size:12px;color:var(--text);margin-bottom:10px">'
+      +'A assessoria Orizon <b>solicitou acesso</b>'
+      +(d.solicitado_por_nome ? ' ('+esc(d.solicitado_por_nome)+')' : '')
+      +(d.solicitado_em ? ' em '+esc(d.solicitado_em.slice(0,10).split('-').reverse().join('/')) : '')
+      +'. Aprovar exige confirmar sua PRÓPRIA senha — nada é enviado pra assessoria.</div>'
+      +'<label class="field-label">Sua senha</label>'
+      +'<input type="password" id="cfg-priv-senha" style="width:220px;margin-bottom:10px" placeholder="••••••••"><br>'
+      +'<button class="btn btn-primary btn-sm" onclick="cfgPrivacidadeAprovar()">Aprovar acesso</button> '
+      +'<button class="btn btn-ghost btn-sm" onclick="cfgPrivacidadeRevogar()">Recusar</button>';
+  } else if(d.status === 'ativa'){
+    corpo = '<div style="font-size:12px;color:var(--ok);margin-bottom:10px">✓ Acesso ativo'
+      +(d.concedido_em ? ' desde '+esc(d.concedido_em.slice(0,10).split('-').reverse().join('/')) : '')+'.</div>'
+      +'<button class="btn btn-ghost btn-sm" onclick="cfgPrivacidadeRevogar()">Revogar acesso da assessoria</button>';
+  } else {
+    corpo = '<div style="font-size:12px;color:var(--muted)">Nenhum pedido de acesso no momento.</div>';
   }
-  box.innerHTML = '<em style="color:var(--muted)">Sem acesso.</em>';
+  box.innerHTML = '<div style="max-width:560px">' + cabecalho + corpo
+    + '<div id="cfg-priv-msg" style="font-size:12px;margin-top:10px"></div></div>';
+}
+async function cfgPrivacidadeAprovar(){
+  const senhaEl = document.getElementById('cfg-priv-senha');
+  const senha = senhaEl ? senhaEl.value : '';
+  const msg = document.getElementById('cfg-priv-msg');
+  const r = await fetch('/api/simulador/autorizacao/aprovar', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({senha})});
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok){ if(msg) msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro||'Não foi possível aprovar.')+'</span>'; return; }
+  if(msg) msg.innerHTML = '<span style="color:var(--ok)">✓ Acesso aprovado.</span>';
+  setTimeout(cfgPrivacidadeRender, 700);
 }
 async function cfgPrivacidadeRevogar(){
   const msg = document.getElementById('cfg-priv-msg');
   const r = await fetch('/api/simulador/autorizacao/revogar', {method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({})});
   const d = await r.json().catch(()=>({}));
-  if(msg) msg.innerHTML = r.ok
-    ? '<span style="color:var(--ok)">✓ Acesso revogado — efeito imediato.</span>'
-    : '<span style="color:var(--err)">'+esc(d.erro || 'Não foi possível revogar.')+'</span>';
+  if(!r.ok){ if(msg) msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro || 'Não foi possível revogar.')+'</span>'; return; }
+  if(msg) msg.innerHTML = '<span style="color:var(--ok)">✓ Feito.</span>';
+  setTimeout(cfgPrivacidadeRender, 700);
 }
 // ── Config → Agenda e Capacidade (Agenda da Loja, Fatia 0 — spec 2026-08-03) ─────────────
 let _cfgAgFeriados = [];
@@ -12713,18 +12739,22 @@ async function simInit(){
   simRenderDropdown();
 }
 
+const SIM_LOCK_LABEL = { ativa: '✓ acesso', pendente: '⏳ aguardando aprovação', nenhuma: '🔒 solicitar acesso' };
+const SIM_LOCK_COLOR = { ativa: 'color:var(--ok)', pendente: 'color:var(--warn)', nenhuma: '' };
+
 function simRenderDropdown(){
   const dd = document.getElementById('sim-dd-loja');
-  dd.innerHTML = _simLojas.map(l => `<div class="sim-dd-item" onclick="simSelecionarLoja(${l.loja_id},${l.autorizado},'${esc(l.nome).replace(/'/g,"&#39;")}')">
-      ${esc(l.nome)} <span class="lock" style="${l.autorizado?'color:var(--ok)':''}">${l.autorizado?'✓ acesso':'🔒 solicitar acesso'}</span>
+  dd.innerHTML = _simLojas.map(l => `<div class="sim-dd-item" onclick="simSelecionarLoja(${l.loja_id},'${l.status}','${esc(l.nome).replace(/'/g,"&#39;")}')">
+      ${esc(l.nome)} <span class="lock" style="${SIM_LOCK_COLOR[l.status]||''}">${SIM_LOCK_LABEL[l.status]||'🔒 solicitar acesso'}</span>
     </div>`).join('') || '<div class="sim-dd-item"><em style="color:var(--text-3)">Nenhuma loja</em></div>';
 }
 
 function simToggleDropdown(){ document.getElementById('sim-dd-loja').classList.toggle('open'); }
 
-function simSelecionarLoja(lojaId, autorizado, nome){
+function simSelecionarLoja(lojaId, status, nome){
   document.getElementById('sim-dd-loja').classList.remove('open');
-  if (!autorizado){ simAbrirModal(lojaId, nome); return; }
+  if (status === 'pendente'){ simAbrirModal(lojaId, nome, true); return; }
+  if (status !== 'ativa'){ simAbrirModal(lojaId, nome, false); return; }
   _simLojaId = lojaId; _simLojaNome = nome;
   document.getElementById('sim-loja-atual').textContent = nome;
   _simAjustes = { vendedores_ativos:{}, variaveis_pct:{}, markup_seco:null, markup_com_frete:null,
@@ -12828,28 +12858,27 @@ function simAllGroups(open){
   });
 }
 
-function simAbrirModal(lojaId, nome){
+function simAbrirModal(lojaId, nome, jaPendente){
   _simModalLojaId = lojaId;
   document.getElementById('sim-modal-titulo').textContent = 'Solicitar acesso — ' + nome;
-  document.getElementById('sim-modal-login').value = '';
-  document.getElementById('sim-modal-senha').value = '';
   document.getElementById('sim-modal-msg').textContent = '';
+  const btnPri = document.getElementById('sim-modal-btn-pri');
+  btnPri.style.display = jaPendente ? 'none' : '';
+  document.getElementById('sim-modal-sub').textContent = jaPendente
+    ? 'Já existe um pedido aguardando aprovação do Master desta loja — nada a fazer aqui, só esperar.'
+    : 'O pedido fica registrado e o Master da loja aprova depois, na PRÓPRIA sessão dele (Config › Privacidade) — não precisa estar junto agora nem trocar senha nenhuma aqui.';
   document.getElementById('sim-modal').classList.add('open');
 }
 function simFecharModal(){ document.getElementById('sim-modal').classList.remove('open'); }
 
 async function simEnviarAutorizacao(){
-  const login = document.getElementById('sim-modal-login').value.trim();
-  const senha = document.getElementById('sim-modal-senha').value;
   const msg = document.getElementById('sim-modal-msg');
-  if (!login || !senha){ msg.innerHTML = '<span style="color:var(--err)">Informe usuário e senha.</span>'; return; }
-  const r = await fetch('/api/simulador/autorizacao', {method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({loja_id:_simModalLojaId, login_autorizador:login, senha_autorizador:senha})});
+  const r = await fetch('/api/simulador/autorizacao/solicitar', {method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({loja_id:_simModalLojaId})});
   const d = await r.json().catch(()=>({}));
-  if (!r.ok){ msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro||'Erro ao autorizar.')+'</span>'; return; }
-  msg.innerHTML = '<span style="color:var(--ok)">✓ Acesso concedido.</span>';
-  setTimeout(()=>{ simFecharModal(); simInit(); }, 700);
+  if (!r.ok){ msg.innerHTML = '<span style="color:var(--err)">'+esc(d.erro||'Erro ao solicitar.')+'</span>'; return; }
+  msg.innerHTML = '<span style="color:var(--ok)">✓ Pedido enviado — aguardando aprovação do Master.</span>';
+  setTimeout(()=>{ simFecharModal(); simInit(); }, 900);
 }
 
 function simRenderResultado(r){

@@ -3277,6 +3277,38 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 192 — XML do Promob sem itens com preço visível não cria mais ambiente "fantasma" (PoolAmbiente nunca é deletado)
+
+Achado reportado pelo usuário: um "ambiente" criado no upload ficava vazio (R$ 0,00, sem itens) e
+não conseguia ser apagado. Investigação mostrou que **não é bug de deleção quebrada** — é
+proposital, `PoolAmbiente` tem a política documentada "registros nunca são deletados"
+(`database.py:627-629`), e o único endpoint de "remover" desvincula do orçamento
+(`OrcamentoAmbiente`), nunca apaga a linha do pool. O problema real é que o **XML entrava** mesmo
+sem ter nada de útil: `ler_xml_str` (`integracoes/promob_grupos.py`) filtra item por item
+(`SHOWPRICE != "Y"` ou `QUANTITY <= 0` → `continue`, linhas 173/181) e, se **nenhum** item passa,
+devolve `grupos: []`/`total: 0.0` **sem lançar exceção** — o parse "funciona", só que vazio. O
+endpoint `/projetos/<nome_safe>/pool` (`main.py`) só tratava exceção de parse (`"XML inválido:
+..."`), não esse caso; o `PoolAmbiente` vazio era gravado normal, ocupando o nome do arquivo pra
+sempre (reenviar corrigido com o mesmo nome cai no fluxo de sobrescrever/renomear, não em criar
+limpo).
+
+**Decisão do usuário:** só travar a entrada (não abrir uma via de deleção — mexeria na garantia de
+"nunca deletar", que existe porque um ambiente pode estar referenciado em mais de um orçamento).
+Ambientes já presos no banco: limpeza manual, fora do app.
+
+**Fix:** logo após o parse ter sucesso, `if not amb.get("grupos")` → recusa com erro amigável
+("Este XML não tem nenhum item com preço visível no Promob (SHOWPRICE) ou quantidade válida — nada
+para importar."), antes de qualquer `db.add`. **Testes:** `tests/test_pool_xml_vazio.py` (2 —
+sanidade do parser + E2E real via `/pool` provando que nada é criado). Suíte **2061 → 2063**.
+
+**Achados colaterais anotados, fora de escopo (não corrigidos):** (1) `storage_salvar_texto` roda
+**depois** do `db.commit()` no caminho de criação (`main.py`) — falha de disco não é revertida
+(commit já aconteceu), banco e arquivo dessincronizam; (2) o frontend (`uploadXmls`,
+`static/index.html`) não checa o retorno de `_poolVincular` no ramo `'criado'` — se o vínculo ao
+orçamento falhar, o `PoolAmbiente` fica órfão sem o usuário ser avisado.
+
+**Arquivos:** `main.py`, `tests/test_pool_xml_vazio.py` (novo).
+
 ## Sessão 191 — Regressão do `uploadFormData` (13 uploads voltaram a vazar "Failed to fetch") + `client_max_body_size` faltando no proxy real de homolog (Easypanel/Traefik, não nginx)
 
 Achado a partir de um print da Vera/usuário: modal "Adicionar Ambiente" (upload de XML do Promob)

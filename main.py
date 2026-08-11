@@ -9686,6 +9686,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": "XML inválido: %s" % e})
                     return
 
+                if not amb.get("grupos"):
+                    # XML estruturalmente válido mas sem nenhum item com preço visível
+                    # (SHOWPRICE="Y") e quantidade > 0 — não deixa criar ambiente vazio
+                    # que depois fica preso (PoolAmbiente nunca é deletado).
+                    self.send_json({
+                        "ok": False,
+                        "erro": "Este XML não tem nenhum item com preço visível no Promob "
+                                "(SHOWPRICE) ou quantidade válida — nada para importar.",
+                    })
+                    return
+
                 budget_total = amb.get("total", 0.0)
                 order_total  = sum(
                     item.get("order_total", 0.0)

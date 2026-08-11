@@ -3323,8 +3323,19 @@ tema claro/escuro batendo com o mockup, responsivo (700px: nav some, régua de 7
 cards empilham), login funcional nos dois casos (sucesso redireciona, senha errada mostra erro
 inline), zero erro de console, zero "Manager" residual no conteúdo visível/aria-labels.
 `REGRAS_MARCA.md` e `static/index.html` (painel autenticado) ficam de fora, como já registrado
-acima em "Fora de escopo". **Deploy:** a pedido do usuário, promovido na mesma rodada até
-produção — ver detalhes do runbook seguido logo abaixo do commit desta entrada.
+acima em "Fora de escopo".
+
+**Deploy — Localhost → VPS A/B → Produção, tudo na mesma rodada (a pedido explícito do usuário;
+Juliana não estava operando no momento, sem risco de conflito de branch):** commit `0d0524b`
+(só `static/login.html` + `DEV_LOG.md` + specs — a integração D4Sign em andamento na mesma
+sessão ficou de fora de propósito, comitada localmente à parte, sem subir a nenhum servidor).
+`git push origin main` → `scripts/deploy_ab.sh v2026.08.11-homolog` (A pelo `main`, B fixado na
+tag) → confirmado por HTTP direto que os dois já serviam o `<title>Orizon One...` novo. Produção:
+backup fresco (`bash /root/backup_orizon.sh`) → tag `v2026.08.11-prod` → `git reset --hard` +
+`systemctl restart orizon`. Verificado: `journalctl` com um único ciclo limpo de stop/start (sem
+o crash-loop histórico do incidente de 10/08, que ainda aparece no journal como log antigo —
+não confundir os dois ao debugar), `curl` local e via `https://www.orizonone.com.br/login`
+ambos 200 com o título novo, `git log -1` em produção = `0d0524b`.
 
 ## Sessão 189 — QA Vera (revalidação pós-188): migração esquecida do fluxo remoto + loja_id sem validar
 

@@ -3301,13 +3301,22 @@ Ambientes já presos no banco: limpeza manual, fora do app.
 para importar."), antes de qualquer `db.add`. **Testes:** `tests/test_pool_xml_vazio.py` (2 —
 sanidade do parser + E2E real via `/pool` provando que nada é criado). Suíte **2061 → 2063**.
 
-**Achados colaterais anotados, fora de escopo (não corrigidos):** (1) `storage_salvar_texto` roda
-**depois** do `db.commit()` no caminho de criação (`main.py`) — falha de disco não é revertida
-(commit já aconteceu), banco e arquivo dessincronizam; (2) o frontend (`uploadXmls`,
-`static/index.html`) não checa o retorno de `_poolVincular` no ramo `'criado'` — se o vínculo ao
-orçamento falhar, o `PoolAmbiente` fica órfão sem o usuário ser avisado.
+**Continuação no mesmo dia (usuário pediu pra seguir investigando) — os 2 achados colaterais
+também corrigidos**, mesma classe de bug (caminho que pode deixar um ambiente travado no nome):
+(1) `storage_salvar_texto` rodava **depois** do `db.commit()` no caminho de criação — falha de
+disco (cheio/permissão) não revertia o registro (commit já tinha acontecido), deixando banco e
+arquivo dessincronizados. Fix: a escrita em disco agora roda **antes** do `db.add`/`commit()` —
+se falhar, a exceção sobe pro `except` genérico sem nenhum `PoolAmbiente` criado (pior caso vira
+um arquivo órfão inofensivo em disco, nunca uma linha travando o nome no pool). (2) o frontend
+(`uploadXmls`, `static/index.html`) não checava o retorno de `_poolVincular` no ramo `'criado'` —
+se o vínculo ao orçamento falhasse, o `PoolAmbiente` ficava órfão (criado mas não linkado a
+nenhum orçamento) e a UI mesmo assim contava como sucesso (`adicionados++`). Fix: mesmo padrão já
+usado no ramo `'ja_existe'` — só conta como adicionado se `r1.ok`, senão mostra toast de erro com
+o nome do ambiente. **Teste novo:** `test_falha_ao_salvar_disco_nao_cria_ambiente_orfao`
+(monkeypatch em `storage_salvar_texto` simulando disco cheio, prova que nenhum `PoolAmbiente`
+fica gravado). `node --check` ok. Suíte **2063 → 2064**.
 
-**Arquivos:** `main.py`, `tests/test_pool_xml_vazio.py` (novo).
+**Arquivos:** `main.py`, `static/index.html`, `tests/test_pool_xml_vazio.py`.
 
 ## Sessão 191 — Regressão do `uploadFormData` (13 uploads voltaram a vazar "Failed to fetch") + `client_max_body_size` faltando no proxy real de homolog (Easypanel/Traefik, não nginx)
 

@@ -7652,8 +7652,12 @@ async function uploadXmls(fileList){
         if(!dPool.ok){ showToast('Erro no pool: '+(dPool.erro||''), true); continue; }
 
         if(dPool.acao === 'criado'){
-          await _poolVincular(dPool.ambiente.id);
-          adicionados++;
+          const r1 = await _poolVincular(dPool.ambiente.id);
+          if(r1 && r1.ok){
+            adicionados++;
+          } else {
+            showToast('"'+dPool.ambiente.nome_exibicao+'" foi criado mas não pôde ser adicionado ao orçamento: '+((r1&&r1.erro)||'erro desconhecido'), true);
+          }
 
         } else if(dPool.acao === 'ja_existe'){
           const r2 = await _poolVincular(dPool.ambiente_existente.id);

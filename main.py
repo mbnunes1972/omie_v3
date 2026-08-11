@@ -9796,9 +9796,13 @@ class Handler(BaseHTTPRequestHandler):
                         })
 
                     else:
-                        # Novo ambiente
+                        # Novo ambiente. Grava o arquivo em disco ANTES do commit no banco: se a
+                        # escrita falhar (disco cheio, permissão), a exceção é levantada sem
+                        # nenhum PoolAmbiente criado — o único ambiente "fantasma" possível vira
+                        # um arquivo órfão inofensivo, nunca uma linha travando o nome no pool.
                         pasta_xmls = os.path.join(_projeto_path(nome_safe), "xmls")
                         os.makedirs(pasta_xmls, exist_ok=True)
+                        storage_salvar_texto(os.path.join(pasta_xmls, arq_nome), arq_conteudo)
                         _usuario = get_usuario_sessao(self)
                         pa = PoolAmbiente(
                             projeto_id=    nome_safe,
@@ -9818,7 +9822,6 @@ class Handler(BaseHTTPRequestHandler):
                         db.add(pa)
                         db.commit()
                         db.refresh(pa)
-                        storage_salvar_texto(os.path.join(pasta_xmls, arq_nome), arq_conteudo)
                         print("[POOL] criado: id=%d nome_exibicao=%r projeto=%r budget=%.2f"
                               % (pa.id, pa.nome_exibicao, pa.projeto_id, pa.budget_total))
                         self.send_json({"ok": True, "acao": "criado",

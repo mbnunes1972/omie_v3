@@ -3277,6 +3277,69 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 191 — Regressão do `uploadFormData` (13 uploads voltaram a vazar "Failed to fetch") + `client_max_body_size` faltando no proxy real de homolog (Easypanel/Traefik, não nginx)
+
+Achado a partir de um print da Vera/usuário: modal "Adicionar Ambiente" (upload de XML do Promob)
+em `homolog.orizonone.com.br` mostrando **`Erro: TypeError: Failed to fetch`** cru. Dois bugs
+empilhados, o segundo só apareceu ao investigar o primeiro a fundo.
+
+**Bug 1 — regressão do helper único de upload (frontend):** a Sessão 104 (2026-07-21) tinha criado
+`uploadFormData(url, fd)` — ponto ÚNICO que traduz falha de rede/413 em mensagem amigável, nunca
+vaza `TypeError` cru — e adotado nos 13 uploads FormData do app. O commit `6c0c594`
+("fix ícones Quente/Frio/Fechado + reorganização de XMLs de teste", 2026-07-24) **reverteu essa
+função inteira sem intenção** — o diff mostra os 13 call-sites voltando a `fetch()` cru, e (achado
+colateral, não corrigido aqui) esse MESMO commit também apagou trechos de OUTRAS sessões alheias
+ao seu escopo (a função `adwPreview` do wizard de Termo Aditivo, o preview de "Ajustes
+Excepcionais" na Conferência/etapa 12, e um auto-foco de campo no CEP de instalação) — sinal de que
+foi commitado a partir de uma cópia desatualizada do `static/index.html`. **Fix aplicado:**
+`uploadFormData`/`MSG_UPLOAD_REDE` restaurados (antes de `_PROJ_STATUS_LABEL`) e os 13 call-sites
+(pool, ambientes/adicionar e /atualizar legados, importar modelo de documento, medição×3 —
+solicitação/parecer/decisão-reprovado —, PE upload×2 — complemento e PE completo —, ciclo
+documento, pedido-xml da etapa 12, NF-e fábrica da 15, revisão de PE) trocados de volta para
+`uploadFormData(...)`. As 3 outras perdas colaterais (`adwPreview`, preview de Ajustes
+Excepcionais, auto-foco do CEP) **ficaram fora do escopo** — não fazem parte do bug reportado;
+anotadas aqui para retomar se fizerem falta. `node --check` ok; suíte **2061 passed** (sem mudança
+de contagem — fix é puro frontend, sem teste JS).
+
+**Bug 2 — `client_max_body_size` no lugar errado (infra, achado só ao rastrear o proxy REAL):** o
+runbook (`DEV_RULES.md`) e o DEV_LOG (Sessão 104) assumiam nginx tradicional nas VPS — e a Sessão
+104 chegou a anotar "VPS A/B (167.88.33.121) NÃO tem nginx". Isso **mudou** sem registro: hoje essa
+VPS roda **Easypanel** (PaaS self-hosted, multi-tenant — divide a máquina com outro projeto do
+cliente, `archdecorpoints-dev`) com **Traefik** como ingress real (`docker service
+easypanel-traefik`, portas 80/443). O nginx tradicional do sistema (`systemctl nginx`) existe mas
+está **`failed`/inativo** desde 2026-07-30 — irrelevante, um resquício morto. O roteamento real de
+`homolog.orizonone.com.br`/`dev.orizonone.com.br` é: Traefik → container `nginx:alpine`
+(`orizon-proxy_whatsapp-proxy`, config em
+`/etc/easypanel/projects/orizon-proxy/whatsapp-proxy/files/0.txt`, bind-mount) → `:8765`/`:8766`
+no host (`orizon-a`/`orizon-b`, systemd). Esse nginx interno **não tinha `client_max_body_size`**
+(default 1 MB) → XML do Promob acima disso cortava a conexão a meio caminho → `TypeError: Failed
+to fetch` no browser, exatamente o sintoma da Sessão 104 original, só que num proxy que a Sessão
+104 não sabia que existia. **Produção (`www.orizonone.com.br`, 179.197.77.9) já estava correta**
+(nginx tradicional puro, `client_max_body_size 64M` no bloco 443 desde a Sessão 116/troca de
+domínio) — só a VPS de dev/homolog precisava do fix.
+
+**Fix aplicado + armadilha do bind-mount:** adicionado `client_max_body_size 64M;` nos dois blocos
+`server{}` do arquivo host (backup `0.txt.bak-<timestamp>` antes de editar). Um `nginx -s reload`
+dentro do container **não bastou** — bind-mount de ARQUIVO ÚNICO no Docker prende o container ao
+inode de quando ele subiu (31/07); edições no host depois disso (inclusive uma reconciliação
+própria do Easypanel, que trocou o IP do proxy_pass de `167.88.33.121` para o gateway
+`172.19.0.1` sem avisar) ficam invisíveis pro processo já rodando, `reload` incluso — confirmado
+comparando inode+`md5sum` do arquivo visto de dentro vs. de fora simultaneamente (`Links: 0` = fd
+pra inode já desvinculado). Fix real: `docker service update --force orizon-proxy_whatsapp-proxy`
+(recria o container, remonta o arquivo atual). Testado depois do force: `172.19.0.1` alcança
+`:8765`/`:8766` (confirmado antes do reload pra não derrubar o site), `GET /` em dev/homolog
+volta 302 normal, upload multipart de 2 MB pro `/pool` sem sessão devolve **401 limpo** (não mais
+reset de conexão) — prova de que o corpo passa inteiro pro app agora.
+
+**Pendência anotada (não bloqueante, fora de escopo):** o `proxy_pass` do container ficou
+definitivamente no `172.19.0.1` (gateway docker) — funciona hoje, mas se o Easypanel reconciliar de
+novo é bom já saber que esse é o valor "canônico" dele, não o IP público. Vale atualizar
+`DEV_RULES.md`/`CLAUDE.md` com a topologia real (Easypanel/Traefik, não nginx puro) da VPS de
+dev/homolog — hoje o runbook documentado não bate com o que está no ar.
+
+**Arquivos:** `static/index.html` (13 call-sites + helper restaurados); infra em
+`167.88.33.121:/etc/easypanel/projects/orizon-proxy/whatsapp-proxy/files/0.txt` (fora do git).
+
 ## Sessão 190 — Landing/Login: revisão da Juliana (v2) — intake + implementação + deploy completo
 
 Frente nova (2026-08-11, sessão Cowork). A Juliana revisou a página de entrada pública

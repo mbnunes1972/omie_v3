@@ -3318,6 +3318,14 @@ fica gravado). `node --check` ok. Suíte **2063 → 2064**.
 
 **Arquivos:** `main.py`, `static/index.html`, `tests/test_pool_xml_vazio.py`.
 
+**Promovido a produção no mesmo dia** (usuário pediu explicitamente, pulando a etapa "esperar OK"
+do pipeline padrão): as Sessões 191+192 (3 commits — `8569a09`/`2ac1fad`/`b22f37a`) foram
+promovidas de uma vez, produção estava parada 3 commits atrás (no redesign da landing, Sessão
+190). Runbook seguido: backup fresco (`backup_orizon.sh`) → tag `v2026.08.11a-prod` (commit
+`b22f37a`) → `git reset --hard` + `systemctl restart orizon`. Verificado: `journalctl` com ciclo
+único limpo de stop/start (sem erro), `NRestarts=0`, `GET /` local e via `https://www.orizonone.com.br`
+ambos 302.
+
 ## Sessão 191 — Regressão do `uploadFormData` (13 uploads voltaram a vazar "Failed to fetch") + `client_max_body_size` faltando no proxy real de homolog (Easypanel/Traefik, não nginx)
 
 Achado a partir de um print da Vera/usuário: modal "Adicionar Ambiente" (upload de XML do Promob)

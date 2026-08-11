@@ -3744,9 +3744,17 @@ async function _persistirDescontosOrc(){
   try{
     const r = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/descontos',{
       method:'PUT', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({descontos: lote}), keepalive: true,
+      body:JSON.stringify(Object.assign({descontos: lote}, _credAutorizacaoDesconto||{})), keepalive: true,
     });
-    aplicarBreakdownResposta(await r.json());   // exibe o breakdown do motor (fonte única)
+    const d = await r.json();
+    if(d.ok){ aplicarBreakdownResposta(d); }   // exibe o breakdown do motor (fonte única)
+    else{
+      // Trava real do servidor (achado UAT 2026-08-10) — desconto individual acima do
+      // limite do usuário nunca teve fluxo de autorização nesta tela; orienta a usar o
+      // desconto global (que já pede senha de gerente) em vez de falhar calado.
+      showToast((d.erro || 'Falha ao salvar desconto individual.') +
+                ' Use o desconto do orçamento (barra lateral) para pedir autorização.', true);
+    }
   }catch(e){ console.error('Falha ao persistir descontos do orcamento:', e); }
 }
 
@@ -3902,10 +3910,15 @@ async function carregarUsuarioAutenticado(){
     if (_navEstrategico) _navEstrategico.style.display = (_usuarioAtual && _usuarioAtual.pode_ver_estrategico) ? '' : 'none';
     _aplicarModulosNoMenu();
     sbNavRender();               // monta o acordeão dos módulos (usa _usuarioAtual.hub)
-    carregarConsultores();       // seletor de consultor (criação/edição); só gerente+ atribui
+    // Ordem importa (achado UAT 2026-08-11): _aterrissarPorPapel ESCONDE nav-central-com pra
+    // super_admin/admin_rede — precisa rodar ANTES de _atualizarUIUsuario/ocPollBadge, senão o
+    // guard de visibilidade do badge de chat ainda vê o nav visível e dispara /api/comunicacao/
+    // inbox (403 previsível, sem loja). Mesma razão pra não chamar carregarConsultores (sem
+    // loja, /api/projetos/consultores também 403) pra quem não opera loja nenhuma.
+    _aterrissarPorPapel();
+    if(!_ehSuper && !_ehGestorRede) carregarConsultores();   // seletor de consultor; só quem opera loja
     _atualizarUIUsuario();
     _carregarDadosExtrasUsuario();
-    _aterrissarPorPapel();
   } catch(e){ console.warn('[AUTH] Erro ao carregar usuário:', e); }
 }
 
@@ -4147,6 +4160,10 @@ function aplicarRestricoesPerfil(){
 }
 
 let _limiteAutorizado = null; // limite temporário após autorização delegada
+// Credenciais do autorizador (mesma validade/ciclo de vida de _limiteAutorizado) — precisam
+// acompanhar o desconto até o SAVE (/margens, /descontos), senão o servidor não tem como saber
+// que a autorização aconteceu (achado UAT 2026-08-10: servidor não validava nada sozinho).
+let _credAutorizacaoDesconto = null;
 
 function cfgGetDescontoMax(){
   if(_limiteAutorizado !== null) return _limiteAutorizado;
@@ -7660,10 +7677,16 @@ async function uploadXmls(fileList){
           return;
         }
       }
-      if(adicionados > 0) st.textContent = adicionados+' XML(s) adicionado(s)';
-      document.getElementById('xml-input-amb').value='';
-      fecharModalNovoAmbiente();
-      await ativarOrcamento(_orcamentoAtivoId);
+      if(adicionados > 0){
+        st.textContent = adicionados+' XML(s) adicionado(s)';
+        document.getElementById('xml-input-amb').value='';
+        fecharModalNovoAmbiente();
+        await ativarOrcamento(_orcamentoAtivoId);
+      } else if(files.length){
+        // nenhum arquivo entrou (ex.: briefing pendente) — mantém o modal aberto com o erro do
+        // toast visível em vez de fechar como se tivesse dado certo (BUG achado no UAT da Vera).
+        st.textContent = 'Nenhum XML foi adicionado — veja o erro acima.';
+      }
     }catch(e){ st.textContent='Erro: '+e; showToast('Erro: '+e, true); }
     return;
   }
@@ -9853,7 +9876,7 @@ function tfTaxaKeydown(e, el){
 async function salvarDescontoAutomatico(){
   if(!projetoAtivo || !_orcamentoAtivoId) return;
   const desconto = parseFloat(document.getElementById('neg-desconto').value)||0;
-  const mg = Object.assign({}, projetoAtivo.margens||{}, {desconto_pct: desconto});
+  const mg = Object.assign({}, projetoAtivo.margens||{}, {desconto_pct: desconto}, _credAutorizacaoDesconto||{});
   try{
     const r = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/margens',{
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mg),
@@ -9864,6 +9887,20 @@ async function salvarDescontoAutomatico(){
       const desc = (d.desconto_pct != null) ? d.desconto_pct : desconto;
       projetoAtivo.margens = Object.assign({}, projetoAtivo.margens || {}, {desconto_pct: desc});
       aplicarBreakdownResposta(d);   // exibe o breakdown do motor (fonte única)
+    } else {
+      // Servidor recusou (trava real — achado UAT 2026-08-10, antes o backend não validava
+      // nada). O front pode ter ficado dessincronizado (_limiteAutorizado stale); reabre a
+      // autorização em vez de fingir que salvou.
+      showToast(d.erro || 'Falha ao salvar desconto.', true);
+      if(d.requer_autorizacao){ _limiteAutorizado = null; _credAutorizacaoDesconto = null; }
+      // Acha 2026-08-11 (verificação ao vivo da Vera): o toast passa rápido e o campo ficava
+      // mostrando o valor REJEITADO enquanto o resumo acima (Valor à Vista etc.) já refletia o
+      // último valor de verdade salvo — reverte o campo pro valor persistido pra não ficar
+      // dessincronizado sem indicador visual persistente.
+      const descPersistido = parseFloat((projetoAtivo.margens||{}).desconto_pct) || 0;
+      const el = document.getElementById('neg-desconto');
+      if(el){ el.value = descPersistido; el._prev = descPersistido; negValidarLimiteDesconto(descPersistido); }
+      negAtualizarDescontoEfetivo();
     }
   }catch(e){}
 }
@@ -9894,6 +9931,7 @@ async function carregarMargensSalvas(){
   const descontoSalvo = parseFloat((projetoAtivo.margens||{}).desconto_pct) || 0;
   const limiteBase = (_usuarioAtual?.limite_desconto ?? 10);
   _limiteAutorizado = descontoSalvo > limiteBase ? descontoSalvo : null;
+  _credAutorizacaoDesconto = null;   // credencial não sobrevive à troca/recarga de orçamento
   _descAdicional  = {};
   _descIndividual = {};
   _negBaseValues  = [];
@@ -10130,6 +10168,7 @@ async function confirmarAutorizacao(){
       // Salva o desconto específico aprovado como novo limite (não o limite do perfil)
       const descontoAprovado = parseFloat(document.getElementById('mp-desconto').value) || 0;
       _limiteAutorizado = descontoAprovado;
+      _credAutorizacaoDesconto = { login_autorizador: login, senha_autorizador: senha };
       // Limpa hint e borda vermelha do campo
       const el = document.getElementById('mp-desconto');
       const hint = document.getElementById('mp-desc-hint');
@@ -11214,6 +11253,8 @@ async function parCarregar(){
   }
 }
 
+const _PAR_TIPO_ROTULO = {arquiteto:'Arquiteto', designer:'Designer de Interiores',
+  decorador:'Decorador', corretor:'Corretor', engenheiro:'Engenheiro', indicador:'Indicador'};
 function parRenderizar(lista){
   const tbody = document.getElementById('par-tbody');
   if(!lista.length){
@@ -11223,7 +11264,7 @@ function parRenderizar(lista){
   tbody.innerHTML = lista.map(p => `
     <tr class="proj-card-item" style="cursor:default">
       <td style="padding:10px 14px;font-weight:600">${esc(p.nome)}</td>
-      <td style="padding:10px 14px;font-size:12px;color:var(--muted)">${esc(p.tipo||'—')}</td>
+      <td style="padding:10px 14px;font-size:12px;color:var(--muted)">${esc(p.tipo ? (_PAR_TIPO_ROTULO[p.tipo]||p.tipo) : '—')}</td>
       <td style="padding:10px 14px;font-size:12px;color:var(--muted)">${esc(p.cpf_cnpj||'—')}</td>
       <td style="padding:10px 14px;font-size:12px;color:var(--ok)">${p.comissao_padrao_pct||0}%</td>
       <td style="padding:10px 14px;text-align:right">
@@ -11467,7 +11508,7 @@ function adminCarregarConsole(){
   // Admin é SEMPRE o painel plano de 4 abas, escopado pela empresa selecionada (seletor no topo).
   // O drill-down de plataforma/rede migrou para o Painel Orizon.
   _adminNav = { loja: null };
-  adminRender();
+  adminRenderLoja(document.getElementById('admin-console'));
 }
 
 // ── Seletor de empresa (topo de Admin e Config) — "terminal de acesso" à empresa/grupo ──
@@ -11538,7 +11579,7 @@ function empresaTrocar(id){
   _lojaAtiva = id ? parseInt(id,10) : null;
   if (_lojaAtiva) localStorage.setItem('loja_ativa', String(_lojaAtiva));
   const p7 = document.getElementById('page-07'), p9 = document.getElementById('page-09');
-  if (p7 && p7.classList.contains('active')) adminRender();
+  if (p7 && p7.classList.contains('active')) adminRenderLoja(document.getElementById('admin-console'));
   if (p9 && p9.classList.contains('active') && typeof cfgRender === 'function') cfgRender();
 }
 
@@ -15150,7 +15191,7 @@ async function adminModulosSalvar() {
       _adminNav.loja.modulos = Array.isArray(d.ativos) ? d.ativos : ativos;
     }
     if (String(lid) === String(_usuarioAtual && _usuarioAtual.loja_id)) { await carregarUsuarioAutenticado(); }
-    adminRender();          // reconstrói a barra de abas (some/aparece Fiscal/Financeiro)
+    adminRenderLoja(document.getElementById('admin-console'));  // reconstrói a barra de abas (some/aparece Fiscal/Financeiro)
     adminLojaTab('modulos'); // mantém o usuário na aba Módulos e recarrega o painel
   } catch(e) { await avisoPopup('Erro de rede: ' + esc(e.message), {titulo:'Módulos'}); }
 }
@@ -15694,10 +15735,10 @@ document.addEventListener('DOMContentLoaded', function(){
     dz2.addEventListener('dragleave', () => dz2.classList.remove('drag'));
     dz2.addEventListener('drop',      e => { e.preventDefault(); dz2.classList.remove('drag'); uploadXmls(e.dataTransfer.files); });
   }
-  // Carrega a lista de projetos automaticamente ao abrir a aplicação
-  if(document.getElementById('page-00')?.classList.contains('active')){
-    projCarregar();
-  }
+  // A lista de projetos carrega via goPage(0), chamado por _aterrissarPorPapel() depois que o
+  // papel do usuário é conhecido — checar page-00.active aqui direto é uma corrida: esse é o
+  // estado PADRÃO do HTML antes do JS decidir a aterrissagem real, então super_admin/admin_rede
+  // (sem loja) sempre batiam em /projetos e levavam 403 (achado UAT 2026-08-11).
 });
 
 // Abre o calendário nativo ao clicar em qualquer parte de um campo de data
@@ -19859,14 +19900,17 @@ async function peUpload(codigo, inputFile) {
   const f = inputFile.files[0];
   if (!f) { await avisoPopup('Selecione um arquivo.', {titulo:'PE — Upload'}); return false; }
   const cred = await pedirCredenciaisGerente({
+    capacidade: 'executar_pe',
     titulo: 'Carregar documento PE',
     mensagem: 'Login e senha de quem executa o PE (Projetista Executivo, Gerente, Diretor…).'
   });
   if (!cred) return false;
   const fd = new FormData();
   fd.append('arquivo', f);
-  fd.append('login', cred.login);
-  fd.append('senha', cred.senha);
+  if (!cred.auto) {
+    fd.append('login', cred.login);
+    fd.append('senha', cred.senha);
+  }
   try {
     const r = await fetch(
       `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${codigo}/documento`,
@@ -20232,14 +20276,17 @@ async function peRevisao(codigo, inputRelatorio) {
   if (!ok) return;
   const motivo = (prompt('Motivo da revisão (opcional):') || '').trim();
   const cred = await pedirCredenciaisGerente({
+    capacidade: 'revisar_pe',
     titulo: 'Revisão PE',
     mensagem: 'Login e senha de quem pode revisar o PE (Gerente de Vendas, Adm/Financeiro ou Diretor).'
   });
   if (!cred) return;
   const fd = new FormData();
   fd.append('arquivo', f);
-  fd.append('login', cred.login);
-  fd.append('senha', cred.senha);
+  if (!cred.auto) {
+    fd.append('login', cred.login);
+    fd.append('senha', cred.senha);
+  }
   if (motivo) fd.append('motivo', motivo);
   try {
     const r = await fetch(
@@ -21461,7 +21508,7 @@ async function confirmarAssinatura(parte) {
     });
     const d = await r.json();
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast(`&#x2713; Assinatura da ${parte} registrada.`, false);
+    showToast(`✓ Assinatura da ${parte} registrada.`, false);
     fecharModalAssinatura();
     carregarDadosContrato();
     carregarCiclo();

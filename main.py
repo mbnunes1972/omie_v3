@@ -24,7 +24,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
-                       ContraparteFinanceira, Recebivel, ProvisaoDataPrevista)
+                       ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -332,6 +332,25 @@ def _usuario_com_capacidade(db, login, senha, capacidade, sessao=None):
     if not u or not u.ativo or not u.check_senha(senha or ""):
         return None
     if not perfis.pode(u.nivel, capacidade):
+        return None
+    return u
+
+
+def _usuario_autoriza_desconto(db, login, senha, desconto_pct, sessao=None):
+    """Usuario ativo cujo limite_desconto cobre `desconto_pct`, ou None — mesmo padrão
+    sessão-primeiro de `_usuario_com_capacidade`, mas comparando o limite numérico do
+    perfil em vez de uma capacidade booleana (achado UAT 2026-08-10: `/margens` gravava
+    qualquer desconto_pct sem checar limite nenhum — a autorização gerencial da tela era
+    só decoração de UI, sem trava real no servidor)."""
+    if sessao is not None and not (login or "").strip() and not (senha or ""):
+        u = db.get(Usuario, sessao.get("id"))
+        if u and u.ativo and u.limite_desconto >= desconto_pct:
+            return u
+        return None
+    u = db.query(Usuario).filter_by(login=(login or "").strip()).first()
+    if not u or not u.ativo or not u.check_senha(senha or ""):
+        return None
+    if u.limite_desconto < desconto_pct:
         return None
     return u
 
@@ -8968,7 +8987,26 @@ class Handler(BaseHTTPRequestHandler):
                                        code=403)
                         return
                 if "desconto_pct" in req:
-                    orc.desconto_pct = float(req["desconto_pct"])
+                    novo_desconto = float(req["desconto_pct"])
+                    if novo_desconto > usuario["limite_desconto"]:
+                        autorizador = _usuario_autoriza_desconto(
+                            db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
+                            novo_desconto, sessao=usuario)
+                        db.add(LogAutorizacao(
+                            solicitante_id=usuario["id"],
+                            autorizador_id=(autorizador.id if autorizador else None),
+                            desconto_solicit=novo_desconto, desconto_limite=usuario["limite_desconto"],
+                            autorizado=1 if autorizador else 0,
+                            contexto=json.dumps({"origem": "margens", "orcamento_id": oid})))
+                        if not autorizador:
+                            db.commit()   # persiste o log da tentativa mesmo recusando o desconto
+                            self.send_json({"ok": False, "requer_autorizacao": True,
+                                            "limite": usuario["limite_desconto"],
+                                            "erro": f"Desconto de {novo_desconto:.1f}% excede seu limite "
+                                                    f"({usuario['limite_desconto']:.0f}%). Autorização "
+                                                    f"gerencial necessária."}, code=403)
+                            return
+                    orc.desconto_pct = novo_desconto
                 db.commit()
                 try:
                     _recalcular_orcamento(orc, db)
@@ -12660,6 +12698,25 @@ class Handler(BaseHTTPRequestHandler):
                 links = db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).all()
                 ids_validos = {lk.pool_ambiente_id for lk in links}
                 limpos = sanear_descontos(pares, ids_validos)
+                maior_pct = max(limpos.values(), default=0.0)
+                if maior_pct > usuario["limite_desconto"]:
+                    autorizador = _usuario_autoriza_desconto(
+                        db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
+                        maior_pct, sessao=usuario)
+                    db.add(LogAutorizacao(
+                        solicitante_id=usuario["id"],
+                        autorizador_id=(autorizador.id if autorizador else None),
+                        desconto_solicit=maior_pct, desconto_limite=usuario["limite_desconto"],
+                        autorizado=1 if autorizador else 0,
+                        contexto=json.dumps({"origem": "descontos_individuais", "orcamento_id": oid})))
+                    if not autorizador:
+                        db.commit()
+                        self.send_json({"ok": False, "requer_autorizacao": True,
+                                        "limite": usuario["limite_desconto"],
+                                        "erro": f"Desconto individual de {maior_pct:.1f}% excede seu "
+                                                f"limite ({usuario['limite_desconto']:.0f}%). Autorização "
+                                                f"gerencial necessária."}, code=403)
+                        return
                 by_id = {lk.pool_ambiente_id: lk for lk in links}
                 for pid, pct in limpos.items():
                     by_id[pid].desconto_individual_pct = pct

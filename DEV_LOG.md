@@ -3277,6 +3277,55 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 190 — Landing/Login: revisão da Juliana (v2) — intake + implementação + deploy completo
+
+Frente nova (2026-08-11, sessão Cowork). A Juliana revisou a página de entrada pública
+(`/login` = `static/login.html`) e trouxe feedback consolidado + mockup navegável com tudo
+aplicado (`landing-proposta-v2.html`). Intake: arquivar as duas referências no padrão do projeto
+e traduzir o diff completo (CSS + HTML) num checklist objetivo — depois aplicado por inteiro em
+`static/login.html` (14 itens do ORIENTACAO-CODE) na mesma rodada.
+
+**Entregáveis (em `docs/superpowers/specs/landing/`):**
+`2026-08-11-sugestoes-correcao-landing.md` (rationale da Juliana, seção a seção, com histórico
+de iterações datadas), `mockups/landing-proposta-v2.html` (mockup autocontido, tokens v1.7
+embutidos) e `2026-08-11-ORIENTACAO-CODE-landing-login.md` (handoff pro Code).
+
+**Diff principal (mockup vs. `static/login.html` no ar):** marca vira **Orizon One** (lockup de
+nav e login-card passam de empilhado "Orizon/Manager" pra uma linha só, "One" em cobre — a
+seção 5 original da spec da Juliana falava só "Orizon", mas uma atualização datada de
+27/07/2026 dentro do próprio documento corrigiu pra "Orizon One", usada como fonte da verdade);
+H1 do hero troca "balanço" por "resultado" (mantido em `#financeiro`, onde é o demonstrativo
+contábil de verdade); SVG do hero troca gráfico de balança/3 pontos por trilha serpentina de 7
+pontos numerados com indicador de margem; régua "Uma jornada" ganha a 7ª etapa (Resultado),
+passando de 6 para 7 colunas; CTAs e nota do hero são removidos (nav sticky já cobre); teaser de
+app ("Em breve, no seu bolso") sai inteiro; cards do `#financeiro` ganham layout ícone+título
+lado a lado e copy mais formal; seção de login perde a coluna de marketing à esquerda, vira só
+o card centralizado + nota curta sobre múltiplas lojas; espaçamento vertical geral reduzido
+(88px→64px) pra não quebrar seções na dobra; nav/footer trocam "Processo/Financeiro" por
+"Etapas/Gestão".
+
+**🟡 Achado durante o intake, sinalizado no ORIENTACAO-CODE, não corrigido nesta rodada:** o
+mockup é autocontido (embute o bloco inteiro de tokens v1.7 pra abrir isolado) — `static/login.
+html` usa o link externo pra `design-system/orizon-tokens.css` (já na v1.7, sem mismatch de
+versão) e **não deve** receber o bloco embutido nem a URL absoluta de favicon de teste do
+mockup. Comentário de cabeçalho do arquivo em produção ainda cita "Design system v1.4"
+(desatualizado — arquivo já é v1.7); marcado como correção cosmética pro Code fazer junto.
+
+**Fora de escopo, registrado no ORIENTACAO-CODE:** `design-system/marca/REGRAS_MARCA.md` ainda
+referencia o lockup antigo "glifo + wordmark Manager" nos comentários de `static/login.html` —
+precisa de revisão própria (perguntar ao Marcelo antes de editar), não entra neste checklist.
+
+**Implementação (mesma rodada):** os 14 itens aplicados em `static/login.html`, seguindo o
+mockup como fonte de verdade (as 3 exceções documentadas no ORIENTACAO-CODE foram respeitadas:
+tokens continuam via `<link>` externo pro `orizon-tokens.css`, não o bloco embutido do mockup;
+favicon continua relativo; `<script>` idêntico). Verificado ao vivo via Playwright, localhost:
+tema claro/escuro batendo com o mockup, responsivo (700px: nav some, régua de 7 colunas vira 2,
+cards empilham), login funcional nos dois casos (sucesso redireciona, senha errada mostra erro
+inline), zero erro de console, zero "Manager" residual no conteúdo visível/aria-labels.
+`REGRAS_MARCA.md` e `static/index.html` (painel autenticado) ficam de fora, como já registrado
+acima em "Fora de escopo". **Deploy:** a pedido do usuário, promovido na mesma rodada até
+produção — ver detalhes do runbook seguido logo abaixo do commit desta entrada.
+
 ## Sessão 189 — QA Vera (revalidação pós-188): migração esquecida do fluxo remoto + loja_id sem validar
 
 Vera chamada pra revalidar tudo de novo do zero (fluxo remoto de autorização + corte do razão)

@@ -9518,6 +9518,15 @@ class Handler(BaseHTTPRequestHandler):
                     # ficar editável; a assinatura parcial não fazia mais sentido de qualquer jeito).
                     db.query(ContratoAssinatura).filter_by(contrato_id=contrato_atual.id).delete()
                     contrato_atual.status = "para_assinatura"
+                    # Defensivo (2026-08-12): etapa 7 (Contrato) do ciclo não deveria estar
+                    # "concluido" aqui (só fecha com as 2 assinaturas, e viemos do ramo < 2) —
+                    # mas se algum caminho futuro deixar isso acontecer, reabre pra não deixar a
+                    # UI/AF1 acessível com um contrato na prática desfeito.
+                    etapa7_cancel = db.query(CicloEtapa).filter_by(
+                        projeto_nome=nome_safe, etapa_codigo="7").first()
+                    if etapa7_cancel is not None and etapa7_cancel.status == "concluido":
+                        etapa7_cancel.status = "em_andamento"
+                        etapa7_cancel.concluido_em = None
                     db.commit()
                 upsert_projeto_status(nome_safe, "cancelado")   # sessão própria (thread-safe), como no conciliar_final
                 if definitivo:
@@ -11503,7 +11512,13 @@ class Handler(BaseHTTPRequestHandler):
                     variaveis.update(_extras_marcadores_contrato(db, nome_safe, loja_id))
                     contrato = db.query(Contrato).filter_by(projeto_nome=nome_safe)\
                                  .order_by(Contrato.id.desc()).first()
-                    if not contrato:
+                    if not contrato or contrato.orcamento_id != orcamento_id:
+                        # Orçamento diferente do último contrato do projeto (achado crítico da
+                        # Vera, 2026-08-12: cancelamento leve + gerar contrato de novo com OUTRO
+                        # orçamento reaproveitava o Contrato antigo sem atualizar orcamento_id —
+                        # o contrato saía com os dados/ambientes do orçamento ERRADO). Um
+                        # orçamento diferente é um negócio diferente: nasce contrato novo, com
+                        # seu próprio número — nunca reaproveita linha de outro orçamento.
                         contrato = Contrato(projeto_nome=nome_safe, orcamento_id=orcamento_id)
                         db.add(contrato)
                         db.flush()

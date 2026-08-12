@@ -430,7 +430,7 @@ body{overflow:hidden}
 .modal-close:hover{color:var(--text)}
 @keyframes mIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 /* Banner de projeto bloqueado */
-.bloqueio-banner{display:none;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.bloqueio-banner{display:none;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;margin-bottom:14px;align-items:center;gap:10px}
 .bloqueio-banner.ativo{display:flex}
 .bloqueio-banner.cancelado{background:var(--err-soft);border-color:var(--err)}
 .bloqueio-icon{font-size:18px;flex-shrink:0}
@@ -17547,7 +17547,12 @@ async function _fetchCiclo() {
 
 function _renderBannerCancelado(){
   const banner = document.getElementById('neg-cancelado-banner');
-  if (banner) banner.classList.toggle('ativo', _projetoCanceladoDefinitivo);
+  if (!banner) return;
+  banner.classList.toggle('ativo', _projetoCanceladoDefinitivo);
+  // Reforço explícito (2026-08-12, achado da Vera): a classe .ativo já resolve via CSS, mas
+  // seta o inline direto também — mesmo padrão defensivo de atualizarUIBloqueio() pro banner
+  // irmão, resiliente a qualquer regra de display conflitante que apareça no futuro.
+  banner.style.display = _projetoCanceladoDefinitivo ? 'flex' : 'none';
 }
 
 async function carregarCiclo() {
@@ -21004,6 +21009,12 @@ function renderContratoUI(contrato) {
           Revisar
         </button>` : ''}
     </div>
+
+    ${!['assinado','vigente'].includes(status) ? `
+    <div style="border-top:1px dashed var(--border);padding-top:12px;margin-bottom:14px">
+      <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Cancelamento de contrato (2026-08-12): exige senha de Gerente ou superior. Sem provisão constituída ainda nesta fase — cancela livre, o orçamento continua editável (dá pra tentar de novo).</div>
+      <button class="btn-ciclo" onclick="cancelarContrato()" style="background:var(--cancel);color:var(--cancel-on);border-color:var(--cancel);font-weight:700;font-size:.82rem"><i class="ti ti-file-x"></i> Cancelar contrato</button>
+    </div>` : ''}
 
     ${temDocx && !temPdf ? `
       <div style="background:var(--warn-soft);border:1px solid var(--border2);border-radius:6px;padding:12px 14px;margin-bottom:14px">

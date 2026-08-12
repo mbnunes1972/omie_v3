@@ -2,7 +2,20 @@
 — Receita a Realizar + provisões×ativos diferidos (reusa devolver_venda f=1.0) + juros a apropriar do
 ramo loja (2.1.07 × 1.1.07). Origem/rótulo próprios no razão (distingue de devolução). O reembolso físico
 de valores já recebidos fica p/ a Tesouraria (módulo futuro)."""
+import os
+import pytest
 import mod_contabil as mc
+
+
+@pytest.fixture
+def contratos_dir(tmp_path):
+    """Redireciona CONTRATOS_DIR para um temp (hermético) — igual test_fluxo_completo_e2e.py."""
+    import mod_contrato
+    orig = mod_contrato.CONTRATOS_DIR
+    mod_contrato.CONTRATOS_DIR = str(tmp_path / "contratos")
+    os.makedirs(mod_contrato.CONTRATOS_DIR, exist_ok=True)
+    yield mod_contrato.CONTRATOS_DIR
+    mod_contrato.CONTRATOS_DIR = orig
 
 
 def _s(db, ot, oid, cod):
@@ -147,6 +160,78 @@ def test_gerente_pode_cancelar_contrato(app_db, seed, http_client_factory):
     st, d = c.post("/api/orcamentos/%d/cancelamento" % seed["orcamento_l1_id"],
                    {"login": "ger_l1", "senha": "senha123"})
     assert st == 200 and d.get("ok"), (st, d)
+
+
+def test_gerar_contrato_apos_cancelamento_leve_usa_orcamento_correto(
+        app_db, seed, projetos_dir, contratos_dir, http_client_factory):
+    """Achado crítico da Vera (2026-08-12): cancelar (leve) e gerar contrato de novo com um
+    orçamento DIFERENTE do mesmo projeto reaproveitava o Contrato anterior sem atualizar
+    orcamento_id — o contrato saía com os dados/ambientes do orçamento ERRADO (o cancelado).
+    Um orçamento diferente precisa nascer como um Contrato NOVO."""
+    from tests.test_fluxo_completo_e2e import _setup_cenario
+    from database import Contrato
+    import json as _json
+    _setup_cenario(app_db, seed)
+    nome = seed["projeto_l1"]
+    oid1 = seed["orcamento_l1_id"]
+
+    db = app_db.get_session()
+    # 2º orçamento do MESMO projeto, com seu próprio ambiente (nome diferente do 1º).
+    orc2 = app_db.Orcamento(projeto_id=nome, nome="Orçamento 2", ordem=2, loja_id=seed["loja1_id"])
+    db.add(orc2); db.flush()
+    pa2 = app_db.PoolAmbiente(projeto_id=nome, nome="Suite Master", versao=1,
+                              nome_exibicao="Suite Master", xml_path="", ambientes_json="[]",
+                              budget_total=50000.0, order_total=20000.0)
+    db.add(pa2); db.flush()
+    db.add(app_db.OrcamentoAmbiente(orcamento_id=orc2.id, pool_ambiente_id=pa2.id,
+                                    desconto_individual_pct=0.0))
+    orc2.desconto_pct = 0.0
+    orc2.forma_pagamento = _json.dumps({
+        "tipo": "avista", "nome_forma": "A Vista", "entrada_valor": 5000,
+        "entrada_data": "2026-08-01", "entrada_forma": "pix", "total_cliente": 50000.0,
+        "parcelas": [{"num": 1, "data": "2026-08-20", "valor": 45000.0, "forma": "pix"}]})
+    db.commit()
+    oid2 = orc2.id
+    db.close()
+
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    c.post("/api/projetos/%s/contatos-comunicacao/confirmar" % nome, {"modo": "sem_whatsapp"})
+
+    # 1) Gera contrato do orçamento 1
+    st, b = c.post("/api/projetos/%s/contrato" % nome, {
+        "orcamento_id": oid1,
+        "endereco_instalacao": "Av. Paulista, 1000 - São Paulo/SP",
+        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 90000.0, "parcelas": []}),
+        "confirmar_loja_incompleta": True,
+    })
+    assert st == 200 and b["ok"], b
+    contrato_id_1 = b["contrato_id"]
+
+    # 2) Cancela — 0 assinaturas → leve, projeto continua editável
+    st, d = c.post("/api/orcamentos/%d/cancelamento" % oid1, {"login": "dir_l1", "senha": "senha123"})
+    assert st == 200 and d.get("ok") and d.get("definitivo") is False, d
+
+    # 3) Gera contrato do orçamento 2 (DIFERENTE) no mesmo projeto
+    st, b2 = c.post("/api/projetos/%s/contrato" % nome, {
+        "orcamento_id": oid2,
+        "endereco_instalacao": "Av. Paulista, 1000 - São Paulo/SP",
+        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 50000.0, "parcelas": []}),
+        "confirmar_loja_incompleta": True,
+    })
+    assert st == 200 and b2["ok"], b2
+    contrato_id_2 = b2["contrato_id"]
+
+    # O contrato do orçamento 2 tem que ser um registro NOVO, apontando pro orçamento 2 — nunca
+    # reaproveitar o Contrato do orçamento 1 (cancelado) com o orcamento_id errado.
+    assert contrato_id_2 != contrato_id_1, "reaproveitou o Contrato antigo em vez de criar um novo"
+    db2 = app_db.get_session()
+    ct2 = db2.get(Contrato, contrato_id_2)
+    assert ct2.orcamento_id == oid2, "contrato do orçamento 2 ficou com orcamento_id errado"
+    db2.close()
+
+    # E o PDF/HTML gerado reflete o ambiente do orçamento 2 ("Suite Master"), não o do 1 ("Cozinha").
+    st, b3 = c.get("/api/projetos/%s/contrato" % nome)
+    assert st == 200 and b3["contrato"]["tem_pdf"] is True
 
 
 def test_cancelar_contrato_deixa_recebivel_a_devolver_se_houve_recebimento(app_db):

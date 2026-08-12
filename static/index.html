@@ -22082,7 +22082,12 @@ async function bfSalvar() {
       const eraProjeto = !!_bfProjetoNome;
       bfFechar();
       if (eraProjeto) {
-        if (typeof carregarCicloSilencioso === 'function') carregarCicloSilencioso();
+        // Achado da Vera (2026-08-12): carregarCicloSilencioso só atualiza _cicloData (pros
+        // botões) — o card da etapa 3 (fichário aberto) continuava mostrando "Briefing
+        // pendente" até navegar pra fora e voltar. Precisa do await (senão renderCiclo lê
+        // _cicloData velho) + o renderCiclo explícito pra repintar o card já aberto.
+        if (typeof carregarCicloSilencioso === 'function') await carregarCicloSilencioso();
+        if (typeof renderCiclo === 'function') renderCiclo();
         goPage(2);
       } else if (typeof cliHomeCarregar === 'function') {
         cliHomeCarregar();

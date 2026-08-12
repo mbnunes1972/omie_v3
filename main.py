@@ -1831,21 +1831,6 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
-        if path == "/api/financeiro/provisoes-venda":
-            ctx = _contabil_ctx(self, exige_edicao=False)
-            if ctx is None: return
-            import mod_contabil
-            from urllib.parse import parse_qs
-            usuario, db, ot, oid = ctx
-            proj = (parse_qs(urlparse(self.path).query).get("projeto") or [None])[0]
-            try:
-                if not proj:
-                    self.send_json({"ok": False, "erro": "informe ?projeto="}, code=400)
-                else:
-                    self.send_json({"ok": True, "provisoes_venda": mod_contabil.provisoes_da_venda(db, ot, oid, proj)})
-            finally:
-                db.close()
-            return
         if path == "/api/financeiro/dashboard":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return

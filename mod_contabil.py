@@ -2026,19 +2026,6 @@ def dashboard_financeiro(db, owner_tipo, owner_id, ini=None, fim=None):
     }
 
 
-def provisoes_da_venda(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
-    """Painel de Provisões da venda (v6 §6): as 3 provisões do projeto com o saldo EM ABERTO
-    (constituído − revertido) = saldo da conta de Provisão (credora) filtrado pelo projeto."""
-    linhas = []
-    for chave, (_ev, cod) in _PROV_VENDA.items():
-        c = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, codigo=cod).first()
-        saldo = 0.0
-        if c is not None:
-            saldo = _mov(db, owner_tipo, owner_id, cod, "credor", ini, fim, projeto_id=projeto_id)
-        linhas.append({"chave": chave, "codigo": cod, "nome": c.nome if c else chave,
-                       "saldo_em_aberto": saldo})
-    return {"projeto_id": projeto_id, "provisoes": linhas,
-            "total_em_aberto": round(sum(l["saldo_em_aberto"] for l in linhas), 2)}
 
 
 def _norm_tokens(s):

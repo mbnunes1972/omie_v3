@@ -14454,18 +14454,6 @@ async function reconFechar(){
   if(d.ok) showToast('Período fechado (snapshot registrado)'); else showToast((d&&d.erro)||'Falha', true);
 }
 
-async function provVendaVer(){
-  const proj = (document.getElementById('pv-proj').value||'').trim();
-  const out = document.getElementById('pv-out');
-  if(!proj){ out.innerHTML=''; return; }
-  const r = await fetch('/api/financeiro/provisoes-venda?projeto='+encodeURIComponent(proj), {credentials:'same-origin'});
-  const d = await r.json().catch(()=>({}));
-  if(!d.ok){ out.innerHTML='<em style="color:var(--muted);font-size:11px">'+esc((d&&d.erro)||'Falha')+'</em>'; return; }
-  const pv = d.provisoes_venda;
-  out.innerHTML = '<div style="max-width:420px;border:1px solid var(--border);border-radius:8px;padding:8px 10px">'
-    + pv.provisoes.map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0"><span>'+esc(l.nome)+'</span><span style="font-family:var(--font-mono)">'+_fBRL(l.saldo_em_aberto)+'</span></div>').join('')
-    + '<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;border-top:1px solid var(--border-strong);padding-top:4px;margin-top:4px"><span>Total em aberto</span><span style="font-family:var(--font-mono);color:var(--accent)">'+_fBRL(pv.total_em_aberto)+'</span></div></div>';
-}
 // Mesma visão de reconhecimento do DRE (2026-08-07) — 'real' mostra Saldo em Aberto/Margem
 // Projetada (achado do usuário: a margem "real" sozinha não refletia o estágio do projeto); as
 // duas simuladas reusam margem_projeto_simulada (leitura pura).
@@ -14500,11 +14488,6 @@ async function projDreCarregar(){
     +'</tr>'
     ).join('');
   box.innerHTML = seletor
-    +'<div style="display:flex;gap:8px;align-items:end;margin-bottom:12px">'
-    +'<div style="flex:1"><label class="field-label">Provisões em aberto de um projeto (Montagem/Assistência/Garantia)</label>'
-    +'<input id="pv-proj" type="text" placeholder="projeto (nome_safe)" style="'+_finInput+'"></div>'
-    +'<button class="btn btn-ghost btn-sm" onclick="provVendaVer()">Ver provisões</button></div>'
-    +'<div id="pv-out" style="margin-bottom:14px"></div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Margem de contribuição por projeto (não inclui rateio de custo especial — isso é a Auditoria).'
     +(real?' Margem = já efetivado; Margem Projetada = pior caso, assumindo que todo o Saldo em Aberto ainda vai ser gasto.':'')+'</div>'
     + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+head+linhas+'</table></div>';

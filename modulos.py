@@ -74,11 +74,13 @@ MODULOS = {
                                  # nome; seu código é dono aqui, pois Medição pertence ao ciclo comercial.
                                  "mod_medicao.py", "mod_qualidade_xml.py",
                                  "mod_comercial_dash.py",   # dashboard Comercial (view derivada)
-                                 "mod_equipe.py"],           # Equipe do Projeto (roster papel→responsável)
+                                 "mod_equipe.py",            # Equipe do Projeto (roster papel→responsável)
+                                 "mod_clicksign.py"],        # Assinatura eletrônica ClickSign (2026-08-11)
                     "tabelas": ["projetos_meta", "briefings", "pool_ambientes", "orcamentos",
                                 "orcamento_ambientes", "contratos", "contratos_assinaturas",
                                 "aditivos", "aditivos_assinaturas",   # Termo Aditivo (Fatia 3 PE)
                                 "aprovacoes_pe", "aprovacoes_pe_assinaturas",   # Aprovação do PE (Fatia 3)
+                                "integracoes_clicksign",   # credencial ClickSign por loja/rede (2026-08-11)
                                 "arquivo_pe", "parcela_projeto", "parcela_ambiente",
                                 "sinal_retido", "retencao_obra", "medicoes",
                                 "documento_modelos",

@@ -1160,6 +1160,14 @@ class Contrato(Base):
     # NULL = contrato legado -> cai no contrato_template/contrato.md global.
     # Preenchido = reproduz as cláusulas daquela versão, mesmo que a loja já
     # tenha trocado o modelo. Ver docs/superpowers/specs/2026-07-15-modelos-documentos-loja-design.md D6.
+    # Assinatura eletrônica ClickSign (2026-08-11): canal escolhido na tela de assinatura —
+    # NULL/'interno' é o mecanismo de sempre (loja+cliente clicam na tela); 'clicksign' empurra
+    # o PDF pra um envelope na ClickSign e a tela interna recusa assinar aquele documento (uma
+    # fonte de verdade só, ver _registrar_assinatura_contrato/_reconciliar_contrato_clicksign).
+    assinatura_canal              = Column(String(16), nullable=True)
+    clicksign_envelope_id         = Column(Text,     nullable=True)
+    clicksign_enviado_em          = Column(DateTime, nullable=True)
+    clicksign_signatarios_json    = Column(Text,     nullable=True)
 
     gerado_por   = relationship("Usuario",  foreign_keys=[gerado_por_id])
     orcamento    = relationship("Orcamento", foreign_keys=[orcamento_id])
@@ -1245,6 +1253,11 @@ class AprovacaoPE(Base):
     gerado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
     modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    # Assinatura eletrônica ClickSign (2026-08-11) — mesmo mecanismo do Contrato, ver lá.
+    assinatura_canal              = Column(String(16), nullable=True)
+    clicksign_envelope_id         = Column(Text,     nullable=True)
+    clicksign_enviado_em          = Column(DateTime, nullable=True)
+    clicksign_signatarios_json    = Column(Text,     nullable=True)
 
     assinaturas = relationship("AprovacaoPEAssinatura", back_populates="aprovacao",
                                cascade="all, delete-orphan")
@@ -1264,6 +1277,26 @@ class AprovacaoPEAssinatura(Base):
     hash_sha256  = Column(Text,     nullable=False)
 
     aprovacao = relationship("AprovacaoPE", back_populates="assinaturas")
+
+
+class IntegracaoClickSign(Base):
+    """Credencial ClickSign por loja OU por rede (2026-08-11) — espelha fiscal/mod_fiscal.py
+    (resolver_emitente/focus_client_para_emitente), mas mais simples: 1 linha por loja OU por
+    rede (sem tabela de override tipo PerfilEmissao), já que não existe "tipo de documento" pra
+    distinguir na credencial. Tokens gravados cifrados (integracoes.cripto_segredos); nunca em
+    texto puro no banco. Resolução (mod_clicksign.resolver_config): override da loja -> default
+    da rede -> None (nenhum configurado = dormente, fluxo interno de assinatura continua)."""
+    __tablename__ = "integracoes_clicksign"
+
+    id                  = Column(Integer,  primary_key=True, autoincrement=True)
+    loja_id             = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    rede_id             = Column(Integer,  ForeignKey("redes.id"), nullable=True)
+    token_sandbox_enc   = Column(Text,     nullable=True)
+    token_producao_enc  = Column(Text,     nullable=True)
+    webhook_secret_enc  = Column(Text,     nullable=True)
+    ambiente_ativo      = Column(Text,     nullable=False, default="sandbox")   # sandbox | producao
+    criado_em           = Column(DateTime, nullable=True, default=datetime.utcnow)
+    atualizado_em       = Column(DateTime, nullable=True, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Conversa(Base):
@@ -2205,6 +2238,16 @@ def _migrar_colunas_pg():
         # guarda um retrato imutável da negociação (snapshot_negociacao_json).
         "ALTER TABLE projetos_meta ADD COLUMN IF NOT EXISTS cancelado_definitivo INTEGER DEFAULT 0",
         "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS snapshot_negociacao_json TEXT",
+        # Assinatura eletrônica ClickSign (2026-08-11): canal escolhido na tela de assinatura do
+        # Contrato/Aprovação do PE — tabela integracoes_clicksign nasce via create_all (marcador).
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS assinatura_canal VARCHAR(16)",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS clicksign_envelope_id TEXT",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS clicksign_enviado_em TIMESTAMP",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS clicksign_signatarios_json TEXT",
+        "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS assinatura_canal VARCHAR(16)",
+        "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_envelope_id TEXT",
+        "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_enviado_em TIMESTAMP",
+        "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_signatarios_json TEXT",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

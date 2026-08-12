@@ -15616,7 +15616,9 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-pct-merc','% Mercadoria (NF-e produto)',loja.pct_mercadoria!=null?loja.pct_mercadoria:65)}
       ${f('loja-pct-serv','% Serviço (NFS-e)',loja.pct_servico!=null?loja.pct_servico:35)}
     </div>
-    <button class="btn btn-primary btn-sm" onclick="adminLojaSalvar(${lid})">Salvar dados da loja</button>`;
+    <button class="btn btn-primary btn-sm" onclick="adminLojaSalvar(${lid})">Salvar dados da loja</button>
+    <div id="clicksign-card-loja" style="margin-top:18px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>`;
+  adminClickSignCarregar('loja', lid);
 }
 
 async function adminLojaSalvar(lid){
@@ -15638,6 +15640,70 @@ async function adminLojaSalvar(lid){
   const d = await r.json();
   if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Dados da loja'}); return; }
   showToast('Dados da loja salvos.', false);
+}
+
+// Assinatura Eletrônica (ClickSign) — card em Admin → Dados da empresa (2026-08-11; movido de
+// dentro do módulo Fiscal a pedido do usuário: não é config fiscal, é config de assinatura).
+let _cfgClickSign = { kind: 'loja', id: null };   // dono do card ClickSign atualmente carregado
+function _csBase(kind, id){ return '/api/admin/'+(kind==='rede'?'redes':'lojas')+'/'+id+'/integracao-clicksign'; }
+
+async function adminClickSignCarregar(kind, lid){
+  const box = document.getElementById('clicksign-card-'+kind);
+  if (!box) return;
+  const r = await fetch(_csBase(kind, lid), {credentials:'same-origin'});
+  if (r.status === 403){ box.innerHTML = ''; return; }
+  const d = await r.json().catch(()=>({}));
+  if (!d.ok){ box.innerHTML = '<em style="color:var(--muted)">'+esc(d.erro||'Erro ao carregar ClickSign.')+'</em>'; return; }
+  _cfgClickSign = { kind, id: lid };
+  const amb = d.ambiente_ativo || 'sandbox';
+  const ambBadge = amb === 'producao'
+    ? '<span style="background:var(--err-soft);color:var(--err);padding:2px 10px;border-radius:6px;font-weight:700;font-size:12px">PRODUÇÃO</span>'
+    : '<span style="background:var(--warn-soft);color:var(--warn);padding:2px 10px;border-radius:6px;font-weight:700;font-size:12px">SANDBOX</span>';
+  const btnAmb = amb === 'producao'
+    ? `<button class="btn btn-ghost btn-sm" onclick="adminClickSignAtivarAmbiente('sandbox')">Voltar para Sandbox</button>`
+    : `<button class="btn btn-primary btn-sm" onclick="adminClickSignAtivarAmbiente('producao')">Ativar Produção</button>`;
+  const tokS = d.token_sandbox_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
+  const tokP = d.token_producao_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
+  const whs  = d.webhook_secret_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
+  const sec = t => `<div style="font-weight:600;color:var(--accent);font-size:12px;margin:16px 0 8px">${t}</div>`;
+  box.innerHTML =
+    sec('Assinatura Eletrônica (ClickSign)') +
+    `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Contrato e Aprovação do Projeto Executivo desta loja passam a ser assinados pela ClickSign quando o access_token estiver definido. Sem token, o fluxo interno continua como está.</div>
+     <div class="grid2" style="gap:14px">
+       <div><label class="field-label">Access token (sandbox)</label><input id="cs-token-sandbox" type="password" placeholder="${tokS}" style="${_FISC_INP}"></div>
+       <div><label class="field-label">Access token (produção)</label><input id="cs-token-producao" type="password" placeholder="${tokP}" style="${_FISC_INP}"></div>
+       <div><label class="field-label">Webhook secret</label><input id="cs-webhook-secret" type="password" placeholder="${whs}" style="${_FISC_INP}"></div>
+     </div>
+     <div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="adminClickSignSalvarSegredos()">Salvar credenciais ClickSign</button></div>` +
+    sec('Ambiente ClickSign') +
+    `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+       <span style="font-size:12px;color:var(--muted)">Ambiente ativo:</span> ${ambBadge} ${btnAmb}
+     </div>`;
+}
+
+async function adminClickSignSalvarSegredos(){
+  const { kind, id: lid } = _cfgClickSign;
+  const v = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const payload = {};
+  const ts = v('cs-token-sandbox'); if (ts) payload.token_sandbox = ts;
+  const tp = v('cs-token-producao'); if (tp) payload.token_producao = tp;
+  const ws = v('cs-webhook-secret'); if (ws) payload.webhook_secret = ws;
+  const r = await fetch(_csBase(kind, lid) + '/segredos', {method:'PUT', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const d = await r.json();
+  if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Credenciais ClickSign'}); return; }
+  showToast('Credenciais ClickSign salvas.', false);
+  adminClickSignCarregar(kind, lid);
+}
+
+async function adminClickSignAtivarAmbiente(ambiente){
+  const { kind, id: lid } = _cfgClickSign;
+  const r = await fetch(_csBase(kind, lid) + '/ambiente', {method:'PUT', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify({ambiente})});
+  const d = await r.json();
+  if(!d.ok){ await avisoPopup(d.erro||'Erro', {titulo:'Ambiente ClickSign'}); return; }
+  showToast('Ambiente ClickSign: ' + ambiente, false);
+  adminClickSignCarregar(kind, lid);
 }
 
 async function adminUsuariosCarregar() {
@@ -21036,20 +21102,91 @@ function renderContratoUI(contrato) {
       ? `<div>
           <p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>
         </div>`
-      : temArquivo ? `
-        <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
-          <label style="display:flex;gap:10px;align-items:center;cursor:pointer;margin-bottom:14px">
-            <input type="checkbox" id="chk-leu-contrato" onchange="toggleAssinaturas()"
-              ${jaAssinou ? 'checked disabled' : ''}>
-            <span style="font-size:.9rem">Li o contrato e estou de acordo com os termos</span>
-          </label>
-          <div id="secao-assinaturas" style="display:${jaAssinou ? 'block' : 'none'}">
-            <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
-            <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
-          </div>
-        </div>` : ''
+      : temArquivo ? _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) : ''
     }
   `;
+}
+
+// Assinatura Digital (2026-08-12): escolha explícita entre o fluxo interno (Imprimir + assinar
+// na tela) e a assinatura eletrônica via ClickSign — substitui o antigo auto-envio silencioso.
+// Uma vez que qualquer assinatura interna começou OU o contrato já foi enviado ao ClickSign, a
+// escolha trava (o backend também recusa trocar de canal a essa altura).
+function _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) {
+  if (contrato.assinatura_canal === 'clicksign') {
+    return `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
+        <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
+        <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">
+          &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(contrato.clicksign_enviado_em)}.
+        </p>
+        <button onclick="verificarClickSignContratoAgora()" class="btn-ciclo" style="font-size:.82rem">
+          <i class="ti ti-refresh"></i> Verificar agora
+        </button>
+        <div style="margin-top:12px">
+          <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
+          <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
+        </div>
+      </div>`;
+  }
+  const escolha = !jaAssinou ? `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;margin-bottom:14px">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">Escolha como este contrato será assinado.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a href="${pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem">
+          <i class="ti ti-printer"></i> Imprimir
+        </a>
+        <button onclick="enviarContratoParaClickSign()" class="btn-ciclo btn-primary" style="font-size:.82rem">
+          <i class="ti ti-signature"></i> Assinatura ClickSign
+        </button>
+      </div>
+    </div>` : '';
+  return escolha + `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
+      <label style="display:flex;gap:10px;align-items:center;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="chk-leu-contrato" onchange="toggleAssinaturas()"
+          ${jaAssinou ? 'checked disabled' : ''}>
+        <span style="font-size:.9rem">Li o contrato e estou de acordo com os termos</span>
+      </label>
+      <div id="secao-assinaturas" style="display:${jaAssinou ? 'block' : 'none'}">
+        <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
+        <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
+      </div>
+    </div>`;
+}
+
+function _tempoDecorrido(iso) {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return 'agora';
+  if (min < 60) return min + ' min';
+  const h = Math.floor(min / 60);
+  if (h < 24) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+
+async function enviarContratoParaClickSign() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/enviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Contrato enviado para assinatura eletrônica (ClickSign).', false);
+    carregarDadosContrato();
+  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+}
+
+async function verificarClickSignContratoAgora() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/verificar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Status verificado: ' + d.status, false);
+    carregarDadosContrato();
+    carregarCiclo();
+  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
 }
 
 function mascaraMoedaInput(el) {

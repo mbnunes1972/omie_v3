@@ -3277,6 +3277,74 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 194 — Assinatura eletrônica ClickSign (Contrato + Aprovação do PE) + incidente de colisão entre duas sessões do Claude Code no mesmo diretório
+
+**Frente:** integração com a **ClickSign** (API v3, JSON:API) como canal alternativo de
+assinatura do Contrato e da Aprovação do PE. `integracoes/clicksign_client.py` (transporte puro,
+retry/backoff em 429/5xx, mesmo molde do `focus_client.py`) + `integracoes/clicksign_config.py`
+(base URL sandbox/produção) + `mod_clicksign.py` (wiring: resolve credencial por loja→rede,
+monta o cliente) + `IntegracaoClickSign` (`database.py`, 1 linha por loja OU rede, tokens
+cifrados via `integracoes/cripto_segredos.py` — **generalização** do antigo
+`fiscal/fiscal_cripto.py`, que virou shim de compatibilidade reexportando 1:1). Canal por
+documento: `Contrato.assinatura_canal`/`AprovacaoPE.assinatura_canal` (`NULL`/`'interno'` = fluxo
+de sempre; `'clicksign'` = a tela interna recusa assinar, uma fonte de verdade só).
+`_registrar_assinatura_contrato`/`_registrar_assinatura_aprovacao_pe` viraram helpers
+COMPARTILHADOS entre o endpoint síncrono (assinatura interna) e o gatilho ClickSign
+(webhook + job de polling) — o cascade de fechamento do contrato (etapa 7, cronograma,
+segmentação, equipe, chat, **provisões**) roda igual pelos dois caminhos.
+
+**Webhook `/webhooks/clicksign`** (não autenticado — a ClickSign chama; HMAC no corpo bruto via
+`Content-Hmac`, agnóstico ao nome do evento — sempre reconsulta `consultar_envelope` antes de
+confiar em qualquer coisa do payload) + **job de reconciliação** `/internal/clicksign/reconciliar`
+(POST autenticado por `X-Internal-Job-Token`/env `ORIZON_INTERNAL_JOB_TOKEN`, pra cron/
+systemd-timer externo — 503 se o token não estiver configurado no ambiente; cobre contratos
+carência >10min sem resposta do webhook) + endpoint `.../clicksign/verificar` (botão manual).
+
+**UX da assinatura do contrato (pedido do usuário):** o antigo desenho auto-enviava pro ClickSign
+silenciosamente na geração do PDF sempre que a loja tinha credencial — trocado por escolha
+EXPLÍCITA na tela de assinatura: seção **"Assinatura Digital"** com botão **Imprimir** (o PDF de
+sempre) e botão **Assinatura ClickSign** (`POST .../contrato/clicksign/enviar`, novo). Uma vez
+que qualquer assinatura interna começou OU o contrato foi pro ClickSign, a escolha trava (backend
+recusa trocar de canal). Aprovação do PE manteve o auto-envio (não pedido pelo usuário, escopo
+contido). Card de credenciais (**Access token sandbox/produção + webhook secret + ambiente**)
+mora em **Admin → Dados da empresa** (não em Fiscal — não é config fiscal, decisão do usuário
+depois de eu ter posto lá por engano). Validado de ponta a ponta contra o sandbox real da
+ClickSign: envelope criado (`status: "running"`), 2 signatários, documento anexado.
+
+**Achado estranho (estimava reportar) — colisão entre duas sessões do Claude Code no mesmo
+diretório:** o usuário tinha uma SEGUNDA sessão aberta neste mesmo `orizon-manager` (não um
+worktree separado — o `orizon-manager-loadtest` é outro diretório, irrelevante aqui). Em algum
+momento essa outra sessão rodou um `git reset` (visível no reflog) + apagou os arquivos novos e
+não commitados desta frente (`mod_clicksign.py`, os 3 módulos em `integracoes/`, os 5 arquivos de
+teste, as edições em `main.py`/`database.py`/`modulos.py`/`static/index.html`) — ~900 linhas de
+trabalho, incluindo um teste real já validado contra o sandbox da ClickSign. **Recuperado sem
+perda relevante:** o `.pyc` de cada arquivo apagado sobreviveu em `__pycache__/` (a outra sessão
+não tocou nisso) — dei `marshal.load` neles pra extrair docstrings/constantes/nomes exatos e
+reconstruí o código fielmente a partir disso + do que eu já tinha lido/colado nesta própria
+conversa + introspecção do schema real no Postgres (as colunas/tabela já estavam migradas, só o
+`database.py` que tinha voltado). Confirmado: os 36 testes reconstruídos batem o número exato de
+antes do incidente, e o teste manual contra o sandbox real da ClickSign funcionou de primeira.
+**Achado colateral do merge:** a MESMA janela de tempo, a outra sessão mudou o timing de
+constituição das provisões contábeis (Sessão 193, acima) — `_registrar_assinatura_contrato`
+teve que ser reconciliado à mão pra carregar essa lógica nova (provisão só na 2ª assinatura +
+`snapshot_negociacao_json`), senão uma assinatura via ClickSign pularia a provisão inteira.
+**Lição:** duas sessões do Claude Code no mesmo diretório de trabalho (sem isolamento de
+worktree) competem pelo mesmo working tree — um `git reset`/limpeza em uma pode apagar trabalho
+não commitado da outra. Recomendação: usar `git worktree` (como o `orizon-manager-loadtest` já
+faz) sempre que for rodar duas sessões em paralelo no mesmo repo.
+
+**Suíte:** 2073 passed (suíte completa, incluindo os 36 testes ClickSign). **Arquivos:**
+`database.py`, `main.py`, `modulos.py`, `static/index.html`, `fiscal/fiscal_cripto.py` (virou
+shim), `mod_clicksign.py` (novo), `integracoes/clicksign_client.py` (novo),
+`integracoes/clicksign_config.py` (novo), `integracoes/cripto_segredos.py` (novo),
+`tests/test_clicksign_client.py`, `tests/test_integracao_clicksign_config_e2e.py`,
+`tests/test_clicksign_reconciliacao.py`, `tests/test_contrato_assinatura_clicksign_e2e.py`,
+`tests/test_aprovacao_pe_clicksign_e2e.py` (todos novos). **Pendências:** UI de "Verificar
+agora"/badge do ClickSign na Aprovação do PE (backend pronto, sem botão ainda — fora do pedido
+desta rodada); D4Sign é schema morto pré-existente (`Contrato.d4sign_uuid` etc., achado durante
+a reconstrução, não relacionado a esta frente — feature nunca chegou a ter código, só migração
+de coluna de sessões bem antigas).
+
 ## Sessão 193 — Timing correto de provisões (2ª assinatura, não geração do contrato) + cancelamento em dois desfechos + snapshot imutável da negociação + salvar explícito
 
 A Vera (QA) achou dois problemas no cancelamento de contrato: o texto do modal promete "senha de

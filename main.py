@@ -24,7 +24,8 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
-                       ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao)
+                       ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao,
+                       IntegracaoClickSign)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -714,6 +715,268 @@ def _ramo_financeiro_efetivo(orc):
 def _cust_fin_orc(orc):
     """Custo financeiro do orçamento = valor_total (Val_Cont) − VAVO."""
     return round(float(getattr(orc, "valor_total", 0) or 0) - float(getattr(orc, "vavo", 0) or 0), 2)
+
+
+def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, loja_id, usuario_id=None):
+    """Aplica a assinatura de `parte` no `contrato`: grava ContratoAssinatura, atualiza status, e —
+    se ambas as partes já assinaram — dispara o cascade de fechamento (etapa 7, cronograma,
+    segmentação, equipe, chat, e-mail), tudo fail-soft. COMPARTILHADA entre dois gatilhos (achado
+    do desenho ClickSign, 2026-08-11): o endpoint síncrono de assinatura interna (`usuario_id` da
+    sessão, `ip_origem` do request) e o webhook/reconciliação ClickSign (`usuario_id=None` — não há
+    sessão de usuário; `ip_origem` vem do próprio signatário via API da ClickSign se disponível,
+    `loja_id` vem de `contrato.loja_id` em vez do escopo de tenancy — ali não é gate de acesso,
+    é processar um fato sobre um documento que já pertence a uma loja conhecida).
+    Idempotente: `parte` já assinada é no-op (cobre reentrega de webhook de graça).
+    Retorna o status final do contrato (não commita a query de leitura, só os writes)."""
+    if any(a.parte == parte for a in contrato.assinaturas):
+        return contrato.status
+    timestamp = datetime.utcnow().isoformat()
+    hash_sig  = calcular_hash_assinatura(nome, cpf, contrato.id, timestamp)
+    db.add(ContratoAssinatura(contrato_id=contrato.id, parte=parte, nome=nome, cpf=cpf,
+                              assinado_em=datetime.utcnow(), ip_origem=ip_origem,
+                              hash_sha256=hash_sig))
+    partes_assinadas = {a.parte for a in contrato.assinaturas} | {parte}
+    contrato.status = "assinado_loja" if "loja" in partes_assinadas else "assinado_cliente"
+    db.commit()
+    # Verificar se ambas as partes assinaram → fechar etapa 7
+    assinaturas = db.query(ContratoAssinatura).filter_by(contrato_id=contrato.id).all()
+    partes_assinadas = {a.parte for a in assinaturas}
+    if {"loja", "cliente"}.issubset(partes_assinadas):
+        nome_safe = contrato.projeto_nome
+        contrato.status = "assinado"
+        etapa7 = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo="7").first()
+        if not etapa7:
+            etapa7 = CicloEtapa(projeto_nome=nome_safe, etapa_codigo="7")
+            db.add(etapa7)
+        etapa7.status         = "concluido"
+        etapa7.concluido_em   = datetime.utcnow()
+        etapa7.responsavel_id = usuario_id   # None no gatilho ClickSign — coluna já é nullable
+        db.commit()
+        # Cronograma do Ciclo (Modulos_Orizon_v11): D0 = assinatura total do contrato
+        # (mesmo gatilho das Provisões). Constitui data_prevista_conclusao por etapa a
+        # partir do Cronograma de Projeto Padrão (Config). Fail-soft: não bloqueia a
+        # assinatura se algo falhar.
+        try:
+            import mod_cronograma
+            _cfg_crono = _cfg_financeira_loja(db, loja_id)
+            _d0 = datetime.utcnow()
+            mod_cronograma.gerar_cronograma_projeto(db, nome_safe, _cfg_crono, _d0)
+            # Data-limite do Contrato (Fatia 3): D0 + prazo contratual em DIAS ÚTEIS. Só existe
+            # após a assinatura (na geração do contrato ainda não há D0) — registrada aqui para
+            # a Agenda monitorar o esgotamento do prazo conforme as etapas avançam/atrasam.
+            _prazo_du = int(_cfg_crono.get("prazo_contratual_dias_uteis") or 50)
+            _pm_lim = db.get(Projeto, nome_safe)
+            if _pm_lim is not None:
+                _pm_lim.data_limite_contratual = mod_cronograma.somar_dias_uteis(_d0, _prazo_du)
+            db.commit()
+        except Exception as _ec:
+            db.rollback()
+            print("[CRONOGRAMA] gerar_cronograma_projeto falhou:", _ec)
+        # FASE B2 (A6): congela a segmentação Mercadoria × Serviço efetiva no projeto.
+        # A partir da assinatura, NF-e e NFS-e leem os MESMOS percentuais (imune a mudança
+        # do default da loja entre os dois documentos). Sem migração; grava no JSON existente.
+        try:
+            if _congelar_segmentacao_no_projeto(db, loja_id, nome_safe) is not None:
+                db.commit()
+        except Exception as _eseg:
+            db.rollback()
+            print("[SEGMENTACAO] congelar na assinatura falhou:", _eseg)
+        try:
+            upsert_projeto_status(nome_safe, "fechado")
+        except Exception as _e:
+            print("[FECHADO] upsert_projeto_status falhou:", _e)
+        # Provisões contábeis (v6 §6.4 + FASE D2) — timing correto (2026-08-12): só aqui, na 2ª
+        # assinatura completa, NUNCA na geração do contrato (antes nasciam com 0 assinaturas —
+        # bug de negócio: um contrato cancelado antes de fechar já tinha provisão pra estornar).
+        # Grava junto o retrato IMUTÁVEL da negociação (desconto, custos adicionais, forma de
+        # pagamento, parcelas/entrada/juros) — snapshot_negociacao_json, nunca mais reescrito.
+        try:
+            _orc_prov = db.get(Orcamento, contrato.orcamento_id)
+            if _orc_prov is not None:
+                _registrar_provisao_venda(db, _orc_prov, por_id=usuario_id)
+                db.commit()
+                _fin_provisoes_venda_seguro(_orc_prov, nome_safe, "prov:" + str(contrato.id))
+                _pm_snap = db.get(Projeto, nome_safe)
+                contrato.snapshot_negociacao_json = json.dumps({
+                    "desconto_pct":     _orc_prov.desconto_pct,
+                    "forma_pagamento":  _orc_prov.forma_pagamento,
+                    "negociacao_json":  _orc_prov.negociacao_json,
+                    "valor_total":      _orc_prov.valor_total,
+                    "valor_liquido":    _orc_prov.valor_liquido,
+                    "parametros_json":  _pm_snap.parametros_json if _pm_snap else None,
+                }, ensure_ascii=False)
+                db.commit()
+        except Exception as _eprov:
+            db.rollback()
+            print("[PROVISOES] constituição na 2ª assinatura falhou:", _eprov)
+        # Montagem da equipe no fechamento (decisão 2026-07-27): persiste os
+        # responsáveis automáticos, apura as lacunas e posta o resumo na conversa
+        # do projeto (gerência vê por oversight). Best-effort — nunca quebra a assinatura.
+        try:
+            import mod_equipe as _meq, mod_chat as _mchat_f
+            _res = _meq.montar_equipe_no_fechamento(db, nome_safe, loja_id)
+            _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+            _conv = _mchat_f.get_or_create_conversa_projeto(
+                db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
+            # membership: sincroniza os participantes com a equipe derivada (os
+            # auto-designados passam a ver a conversa/o resumo na inbox).
+            _eq = _meq.equipe_do_projeto(db, nome_safe, loja_id)
+            _mchat_f.sincronizar_participantes_projeto(db, _conv, _eq["membros_usuarios"])
+            _falta = ", ".join(l["funcao_nome"] or "?" for l in _res["lacunas"]) or "nenhuma"
+            _summary = _mchat_f.enviar_mensagem(
+                db, _conv, None,
+                "📋 Contrato fechado — equipe montada. Responsáveis automáticos "
+                "definidos: %d. Funções a definir (ação gerencial): %s."
+                % (len(_res["definidos"]), _falta), permitir_vazio=True)
+            # E-mail aos gerentes/diretores QUANDO há lacunas (config-gated: sem SMTP
+            # nasce 'pendente_config', nada é enviado). Os auto-designados já veem o
+            # resumo na inbox (são membros da conversa do projeto).
+            if _res["lacunas"]:
+                try:
+                    import mod_chat_externo as _mce_f
+                    _gers = [{"id": u.id, "email": u.email} for u in db.query(Usuario)
+                             .filter(Usuario.loja_id == loja_id, Usuario.ativo == 1).all()
+                             if (u.email or "").strip()
+                             and perfis.pode(u.nivel, "ver_todas_conversas")]
+                    _corpo_mail = ("Novo projeto contratado: %s.\nFunções a definir "
+                                   "(mais de um candidato): %s.\nAbra o Orizon Chat "
+                                   "para indicar os responsáveis." % (nome_safe, _falta))
+                    _mce_f.notificar_gerentes_email(db, _summary, _gers, _corpo_mail)
+                except Exception as _email:
+                    print("[EQUIPE] e-mail de lacunas falhou:", _email)
+            db.commit()
+        except Exception as _eq:
+            db.rollback(); print("[EQUIPE] montar_equipe_no_fechamento falhou:", _eq)
+    return contrato.status
+
+
+def _enviar_contrato_para_clicksign(db, contrato, cfg, email_loja, nome_loja, email_cliente,
+                                    nome_cliente, cpf_cliente):
+    """Envia o PDF já gerado do `contrato` pra ClickSign: cria envelope -> sobe o documento ->
+    cadastra os 2 signatários (loja/cliente) -> liga cada um ao documento (requisito de
+    assinatura + de autenticação) -> ativa o envelope (dispara os convites por e-mail). Grava
+    clicksign_envelope_id/assinatura_canal/clicksign_enviado_em/clicksign_signatarios_json no
+    `contrato` (NÃO commita — o chamador decide). ValueError com mensagem clara se faltar
+    e-mail/PDF."""
+    if not email_loja or not email_cliente:
+        raise ValueError("E-mail da loja e do cliente são obrigatórios para assinatura eletrônica (ClickSign).")
+    if not contrato.pdf_path or not os.path.exists(contrato.pdf_path):
+        raise ValueError("PDF do contrato não encontrado — gere o contrato antes de enviar ao ClickSign.")
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    with open(contrato.pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+    nome_arquivo = "contrato_%s.pdf" % (contrato.num_contrato or contrato.id)
+    envelope_id = cli.criar_envelope("Contrato %s" % (contrato.num_contrato or contrato.id))
+    doc_id = cli.adicionar_documento(envelope_id, pdf_bytes, nome_arquivo)
+    sig_loja_id    = cli.adicionar_signatario(envelope_id, email_loja, nome_loja)
+    sig_cliente_id = cli.adicionar_signatario(envelope_id, email_cliente, nome_cliente, cpf=cpf_cliente)
+    for signer_id in (sig_loja_id, sig_cliente_id):
+        cli.adicionar_requisito_assinatura(envelope_id, doc_id, signer_id)
+        cli.adicionar_requisito_autenticacao(envelope_id, doc_id, signer_id)
+    cli.ativar_envelope(envelope_id)
+    contrato.clicksign_envelope_id = envelope_id
+    contrato.clicksign_signatarios_json = json.dumps({
+        "loja":    {"signer_id": sig_loja_id,    "email": email_loja,    "nome": nome_loja},
+        "cliente": {"signer_id": sig_cliente_id, "email": email_cliente, "nome": nome_cliente,
+                    "cpf": cpf_cliente},
+    }, ensure_ascii=False)
+    contrato.assinatura_canal     = "clicksign"
+    contrato.clicksign_enviado_em = datetime.utcnow()
+
+
+def _reconciliar_contrato_clicksign(db, contrato, cfg):
+    """Reconsulta a ClickSign com credenciais PRÓPRIAS (nunca confia no payload do webhook — o
+    evento só avisa QUE algo mudou; o que mudou vem sempre de uma consulta fresca a
+    `consultar_envelope`). Casa os signatários pelo `signer_id` gravado em
+    clicksign_signatarios_json e registra, via _registrar_assinatura_contrato (idempotente), a
+    assinatura de quem já assinou (`signed_at` preenchido) e ainda não está registrada localmente.
+    Chamada pelo webhook E pelo job de polling. Retorna o status final do contrato."""
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    dados = cli.consultar_envelope(contrato.clicksign_envelope_id)
+    incluidos = dados.get("included") or []
+    signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
+    signatarios = json.loads(contrato.clicksign_signatarios_json or "{}")
+    for parte, info in signatarios.items():
+        attrs = signers.get(info.get("signer_id"))
+        if not attrs or not attrs.get("signed_at"):
+            continue
+        _registrar_assinatura_contrato(
+            db, contrato, parte, info.get("nome") or "", info.get("cpf") or "",
+            attrs.get("last_seen_ip") or "", contrato.loja_id, usuario_id=None)
+    return contrato.status
+
+
+def _registrar_assinatura_aprovacao_pe(db, aprov, parte, nome, cpf, ip_origem, usuario_id=None):
+    """Aplica a assinatura de `parte` na Aprovação do PE: grava AprovacaoPEAssinatura, atualiza
+    status. Mesmo padrão de _registrar_assinatura_contrato (compartilhada entre o endpoint síncrono
+    de assinatura interna e o webhook/reconciliação ClickSign) — aqui não há cascade: fechar a
+    subfase 11e continua sendo ação manual/gerencial, não algo disparado por esta função.
+    Idempotente: `parte` já assinada é no-op. Retorna o status final da aprovação."""
+    if any(a.parte == parte for a in aprov.assinaturas):
+        return aprov.status
+    from mod_contrato import calcular_hash_assinatura as _cha2
+    ts = datetime.utcnow().isoformat()
+    aprov.assinaturas.append(AprovacaoPEAssinatura(
+        parte=parte, nome=nome, cpf=cpf, ip_origem=ip_origem,
+        hash_sha256=_cha2(nome, cpf, aprov.id, ts)))
+    db.flush()
+    partes = {a.parte for a in aprov.assinaturas}
+    aprov.status = "assinado" if {"loja", "cliente"}.issubset(partes) else "assinado_" + parte
+    db.commit()
+    return aprov.status
+
+
+def _enviar_aprovacao_pe_para_clicksign(db, aprov, cfg, email_loja, nome_loja, email_cliente,
+                                        nome_cliente, cpf_cliente):
+    """Envia o PDF da Aprovação do PE pra ClickSign — mesmo fluxo de
+    _enviar_contrato_para_clicksign (envelope -> documento -> 2 signatários -> requisitos ->
+    ativação). NÃO commita — o chamador decide."""
+    if not email_loja or not email_cliente:
+        raise ValueError("E-mail da loja e do cliente são obrigatórios para assinatura eletrônica (ClickSign).")
+    if not aprov.pdf_path or not os.path.exists(aprov.pdf_path):
+        raise ValueError("PDF da aprovação não encontrado — gere a aprovação antes de enviar ao ClickSign.")
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    with open(aprov.pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+    nome_arquivo = "aprovacao_pe_%s.pdf" % (aprov.num_aprovacao or aprov.id)
+    envelope_id = cli.criar_envelope("Aprovação do PE %s" % (aprov.num_aprovacao or aprov.id))
+    doc_id = cli.adicionar_documento(envelope_id, pdf_bytes, nome_arquivo)
+    sig_loja_id    = cli.adicionar_signatario(envelope_id, email_loja, nome_loja)
+    sig_cliente_id = cli.adicionar_signatario(envelope_id, email_cliente, nome_cliente, cpf=cpf_cliente)
+    for signer_id in (sig_loja_id, sig_cliente_id):
+        cli.adicionar_requisito_assinatura(envelope_id, doc_id, signer_id)
+        cli.adicionar_requisito_autenticacao(envelope_id, doc_id, signer_id)
+    cli.ativar_envelope(envelope_id)
+    aprov.clicksign_envelope_id = envelope_id
+    aprov.clicksign_signatarios_json = json.dumps({
+        "loja":    {"signer_id": sig_loja_id,    "email": email_loja,    "nome": nome_loja},
+        "cliente": {"signer_id": sig_cliente_id, "email": email_cliente, "nome": nome_cliente,
+                    "cpf": cpf_cliente},
+    }, ensure_ascii=False)
+    aprov.assinatura_canal     = "clicksign"
+    aprov.clicksign_enviado_em = datetime.utcnow()
+
+
+def _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg):
+    """Espelho de _reconciliar_contrato_clicksign, pra Aprovação do PE. Chamada pelo webhook E
+    pelo job de polling. Retorna o status final."""
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    dados = cli.consultar_envelope(aprov.clicksign_envelope_id)
+    incluidos = dados.get("included") or []
+    signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
+    signatarios = json.loads(aprov.clicksign_signatarios_json or "{}")
+    for parte, info in signatarios.items():
+        attrs = signers.get(info.get("signer_id"))
+        if not attrs or not attrs.get("signed_at"):
+            continue
+        _registrar_assinatura_aprovacao_pe(
+            db, aprov, parte, info.get("nome") or "", info.get("cpf") or "",
+            attrs.get("last_seen_ip") or "", usuario_id=None)
+    return aprov.status
 
 
 def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
@@ -4581,6 +4844,8 @@ class Handler(BaseHTTPRequestHandler):
                         "previsao_medicao":     _meta.previsao_medicao.isoformat() if (_meta and _meta.previsao_medicao) else None,
                         "venda_programada":     bool(_meta.venda_programada) if _meta else False,
                         "data_limite_contratual": _meta.data_limite_contratual.isoformat() if (_meta and _meta.data_limite_contratual) else None,
+                        "assinatura_canal":     contrato.assinatura_canal or "interno",
+                        "clicksign_enviado_em": contrato.clicksign_enviado_em.isoformat() if contrato.clicksign_enviado_em else None,
                     }})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -4862,6 +5127,47 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/admin/lojas/<id>/integracao-clicksign — credencial de assinatura eletrônica
+            m = _re.match(r'^/api/admin/lojas/(\d+)/integracao-clicksign$', path)
+            if m:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja = db.get(Loja, int(m.group(1)))
+                    if not loja:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    cfg = _clicksign_do_dono(db, "loja", loja.id)
+                    self.send_json(_clicksign_get(cfg))
+                finally:
+                    db.close()
+                return
+
+            # GET /api/admin/redes/<id>/integracao-clicksign — default da rede
+            m = _re.match(r'^/api/admin/redes/(\d+)/integracao-clicksign$', path)
+            if m:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    rid = int(m.group(1))
+                    rede = db.get(Rede, rid)
+                    if not rede:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    if not mod_tenancy.pode_ver_rede(ator, rid):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    cfg = _clicksign_do_dono(db, "rede", rid)
+                    self.send_json(_clicksign_get(cfg))
+                finally:
+                    db.close()
+                return
+
             # ── Modelos de documento por loja (Task 8) ──────────────────────────
             # GET /api/documentos/marcadores — catálogo do que existe, p/ a tela do wizard
             if path == "/api/documentos/marcadores":
@@ -4970,6 +5276,130 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             self.send_json({"ok": True}, code=200); return
+
+        # Webhook ClickSign de ENTRADA (assinatura eletrônica) — NÃO autenticado (a ClickSign
+        # chama). DORMENTE por padrão (registro é por CONTA, não por documento — o guard real é
+        # "existe um Contrato/AprovacaoPE com esse clicksign_envelope_id?"). Sempre responde 200
+        # (mesmo em erro) pra não entrar em loop de reentrega do lado da ClickSign por bug nosso.
+        if path == "/webhooks/clicksign":
+            db = get_session()
+            try:
+                try:
+                    payload = json.loads(body or b'{}')
+                except Exception:
+                    payload = {}
+                # Formato exato do payload (onde vem o id do envelope) não confirmado contra
+                # sandbox real — tenta os caminhos mais prováveis (achado do desenho, 2026-08-11).
+                envelope_id = (payload.get("data", {}).get("attributes", {}).get("envelope_id")
+                              or payload.get("envelope_id") or payload.get("id") or "").strip()
+                if not envelope_id:
+                    self.send_json({"ok": True}, code=200); return
+                # Documento pode ser um Contrato OU uma AprovacaoPE (mesmo webhook de conta cobre
+                # os dois tipos) — identifica por qual tabela tem esse envelope_id.
+                doc = db.query(Contrato).filter_by(clicksign_envelope_id=envelope_id).first()
+                reconciliar = _reconciliar_contrato_clicksign
+                if doc is None:
+                    doc = db.query(AprovacaoPE).filter_by(clicksign_envelope_id=envelope_id).first()
+                    reconciliar = _reconciliar_aprovacao_pe_clicksign
+                if doc is None:
+                    # Documento de outro sistema apontando pra essa URL por engano — ack sem processar.
+                    self.send_json({"ok": True}, code=200); return
+                loja_obj = db.get(Loja, doc.loja_id) if doc.loja_id else None
+                import mod_clicksign
+                cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                if cfg is None or not cfg.webhook_secret_enc:
+                    self.send_json({"ok": True}, code=200); return
+                import hmac as _hmac, hashlib as _hashlib
+                from integracoes import cripto_segredos as _cripto_cs
+                secret = _cripto_cs.decrypt(cfg.webhook_secret_enc)
+                recebido = self.headers.get("Content-Hmac", "")
+                # HMAC sobre o CORPO BRUTO (diferente da D4Sign, que era sha256(uuid+secret)) —
+                # usa os bytes crus de `body`, não um JSON re-serializado.
+                calc = "sha256=" + _hmac.new(secret.encode(), body or b"", _hashlib.sha256).hexdigest()
+                if not _hmac.compare_digest(recebido, calc):
+                    self.send_json({"ok": False}, code=403); return
+                # Agnóstico ao nome exato do evento (achado do desenho): sempre reconsulta a API
+                # antes de confiar em qualquer coisa do payload — idempotente, então qualquer
+                # webhook válido pra um envelope conhecido pode disparar a reconciliação.
+                reconciliar(db, doc, cfg)
+                db.commit()
+                self.send_json({"ok": True}, code=200)
+            except Exception as _ewh:
+                db.rollback()
+                print("[CLICKSIGN] webhook falhou:", _ewh)
+                self.send_json({"ok": True}, code=200)
+            finally:
+                db.close()
+            return
+
+        # Job de reconciliação ClickSign (2026-08-11) — fallback pro caso raro do webhook nunca
+        # chegar (rede/infra). Chamado por cron/systemd-timer EXTERNO (não pelo app), autenticado
+        # por token compartilhado (não é sessão de usuário — é máquina-a-máquina). Sem o token
+        # configurado no ambiente, o job fica DESLIGADO (503) — não é erro, é "não habilitado
+        # aqui" (dev local sem cron, por exemplo).
+        if path == "/internal/clicksign/reconciliar":
+            job_token = (os.environ.get("ORIZON_INTERNAL_JOB_TOKEN") or "").strip()
+            if not job_token:
+                self.send_json({"ok": False, "erro": "Job de reconciliação não habilitado."}, code=503); return
+            recebido = self.headers.get("X-Internal-Job-Token", "")
+            if recebido != job_token:
+                self.send_json({"ok": False, "erro": "Token inválido"}, code=403); return
+            import mod_clicksign
+            carencia_min = 10
+            limite = datetime.utcnow() - timedelta(minutes=carencia_min)
+            contratos_verificados = 0
+            contratos_atualizados = 0
+            db = get_session()
+            try:
+                pendentes = (db.query(Contrato)
+                             .filter(Contrato.assinatura_canal == "clicksign",
+                                     Contrato.status.in_(("para_assinatura", "assinado_loja", "assinado_cliente")),
+                                     Contrato.clicksign_enviado_em.isnot(None),
+                                     Contrato.clicksign_enviado_em <= limite)
+                             .all())
+                for contrato in pendentes:
+                    contratos_verificados += 1
+                    loja_obj = db.get(Loja, contrato.loja_id) if contrato.loja_id else None
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        continue
+                    status_antes = contrato.status
+                    try:
+                        _reconciliar_contrato_clicksign(db, contrato, cfg)
+                        db.commit()
+                    except Exception as _erc:
+                        db.rollback()
+                        print("[CLICKSIGN] job: reconciliar contrato %s falhou: %s" % (contrato.id, _erc))
+                        continue
+                    if contrato.status != status_antes:
+                        contratos_atualizados += 1
+                pendentes_pe = (db.query(AprovacaoPE)
+                                 .filter(AprovacaoPE.assinatura_canal == "clicksign",
+                                         AprovacaoPE.status.in_(("para_assinatura", "assinado_loja", "assinado_cliente")),
+                                         AprovacaoPE.clicksign_enviado_em.isnot(None),
+                                         AprovacaoPE.clicksign_enviado_em <= limite)
+                                 .all())
+                for aprov in pendentes_pe:
+                    contratos_verificados += 1
+                    loja_obj = db.get(Loja, aprov.loja_id) if aprov.loja_id else None
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        continue
+                    status_antes = aprov.status
+                    try:
+                        _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg)
+                        db.commit()
+                    except Exception as _erp:
+                        db.rollback()
+                        print("[CLICKSIGN] job: reconciliar aprovação PE %s falhou: %s" % (aprov.id, _erp))
+                        continue
+                    if aprov.status != status_antes:
+                        contratos_atualizados += 1
+                self.send_json({"ok": True, "contratos_verificados": contratos_verificados,
+                                "contratos_atualizados": contratos_atualizados})
+            finally:
+                db.close()
+            return
 
         if handle_auth_post(self, path, body): return
 
@@ -7516,7 +7946,30 @@ class Handler(BaseHTTPRequestHandler):
                 aprov.gerado_por_id = usuario.get("id")
                 aprov.status = "para_assinatura"
                 db.commit()
-                self.send_json({"ok": True, "aprovacao": _aprovacao_pe_dict(aprov)})
+                # ClickSign (2026-08-11): mesmo padrão do contrato — passo independente e
+                # fail-soft, só dispara se a loja tem credencial configurada.
+                clicksign_erro = None
+                try:
+                    import mod_clicksign
+                    _loja_cs = db.get(Loja, loja_id)
+                    _cfg_cs = mod_clicksign.resolver_config(db, _loja_cs) if _loja_cs else None
+                    if _cfg_cs is not None:
+                        _email_loja = db.get(Usuario, usuario["id"]).email or ""
+                        _enviar_aprovacao_pe_para_clicksign(
+                            db, aprov, _cfg_cs,
+                            email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
+                            email_cliente=cliente_dict.get("email") or "",
+                            nome_cliente=cliente_dict.get("nome") or "",
+                            cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
+                        db.commit()
+                except Exception as _ecs:
+                    db.rollback()
+                    clicksign_erro = str(_ecs)
+                    print("[CLICKSIGN] envio da aprovação do PE falhou:", _ecs)
+                resp_ap = {"ok": True, "aprovacao": _aprovacao_pe_dict(aprov)}
+                if clicksign_erro:
+                    resp_ap["clicksign_erro"] = clicksign_erro
+                self.send_json(resp_ap)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -7555,19 +8008,56 @@ class Handler(BaseHTTPRequestHandler):
                                    code=400); return
                 if aprov.status == "assinado":
                     self.send_json({"ok": False, "erro": "Aprovação já assinada."}, code=400); return
+                if (aprov.assinatura_canal or "interno") == "clicksign":
+                    self.send_json({"ok": False,
+                        "erro": "Esta Aprovação do PE foi enviada para assinatura eletrônica "
+                                "(ClickSign) — assine por lá, não pela tela interna."}, code=400); return
                 if any(a.parte == parte for a in aprov.assinaturas):
                     self.send_json({"ok": False, "erro": "Esta parte já assinou."}, code=400); return
-                from mod_contrato import calcular_hash_assinatura as _cha2
-                ts = datetime.utcnow().isoformat()
-                aprov.assinaturas.append(AprovacaoPEAssinatura(
-                    parte=parte, nome=nome_ass, cpf=cpf, ip_origem=self.client_address[0],
-                    hash_sha256=_cha2(nome_ass, cpf, aprov.id, ts)))
-                db.flush()
-                partes = {a.parte for a in aprov.assinaturas}
-                aprov.status = ("assinado" if {"loja", "cliente"}.issubset(partes)
-                                else "assinado_" + parte)
+                ip = self.client_address[0] if self.client_address else ""
+                status_final = _registrar_assinatura_aprovacao_pe(
+                    db, aprov, parte, nome_ass, cpf, ip, usuario_id=usuario["id"])
+                self.send_json({"ok": True, "status": status_final})
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
+        # POST /api/projetos/<nome>/aprovacao-pe/clicksign/verificar — reconsulta sob demanda,
+        # espelho de .../contrato/clicksign/verificar.
+        m_apver = re.match(r'^/api/projetos/([^/]+)/aprovacao-pe/clicksign/verificar$', path)
+        if m_apver:
+            nome = unquote(m_apver.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                aprov = (db.query(AprovacaoPE).filter_by(projeto_nome=nome)
+                           .order_by(AprovacaoPE.id.desc()).first())
+                if not aprov or (aprov.assinatura_canal or "interno") != "clicksign":
+                    self.send_json({"ok": False,
+                        "erro": "Esta Aprovação do PE não está no canal ClickSign."}, code=400); return
+                import mod_clicksign
+                loja_obj = db.get(Loja, loja_id)
+                cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                if cfg is None:
+                    self.send_json({"ok": False,
+                        "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg)
                 db.commit()
                 self.send_json({"ok": True, "status": aprov.status})
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
             finally:
                 db.close()
             return
@@ -11232,6 +11722,11 @@ class Handler(BaseHTTPRequestHandler):
                     if contrato.status in ("vigente", "assinado"):
                         self.send_json({"ok": False, "erro": "Contrato já está vigente"}, code=400)
                         return
+                    if (contrato.assinatura_canal or "interno") == "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Este contrato foi enviado para assinatura eletrônica (ClickSign) — "
+                                    "assine por lá, não pela tela interna."}, code=400)
+                        return
                     ja_assinou = any(a.parte == parte for a in contrato.assinaturas)
                     if ja_assinou:
                         self.send_json({"ok": False, "erro": f"Parte '{parte}' já assinou"}, code=400)
@@ -11252,140 +11747,103 @@ class Handler(BaseHTTPRequestHandler):
                             "erro": "A data de entrega não cabe no cronograma (folga negativa) e não foi autorizada. "
                                     "Ajuste a data ou registre com autorização gerencial antes de assinar."}, code=400)
                         return
-                    timestamp = datetime.utcnow().isoformat()
-                    ip        = self.client_address[0] if self.client_address else ""
-                    hash_sig  = calcular_hash_assinatura(nome, cpf, contrato.id, timestamp)
-                    assinatura = ContratoAssinatura(
-                        contrato_id=contrato.id,
-                        parte=parte,
-                        nome=nome,
-                        cpf=cpf,
-                        assinado_em=datetime.utcnow(),
-                        ip_origem=ip,
-                        hash_sha256=hash_sig,
-                    )
-                    db.add(assinatura)
-                    partes_assinadas = {a.parte for a in contrato.assinaturas} | {parte}
-                    if "loja" in partes_assinadas and "cliente" in partes_assinadas:
-                        contrato.status = "assinado_loja"
-                    elif parte == "loja":
-                        contrato.status = "assinado_loja"
-                    else:
-                        contrato.status = "assinado_cliente"
+                    ip = self.client_address[0] if self.client_address else ""
+                    status_final = _registrar_assinatura_contrato(
+                        db, contrato, parte, nome, cpf, ip, loja_id, usuario_id=usuario["id"])
+                    self.send_json({"ok": True, "status": status_final, "parte": parte})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/contrato/clicksign/enviar — botão "Assinatura Digital"
+            # (2026-08-12): escolha explícita do usuário na tela de assinatura (Imprimir ×
+            # Assinatura ClickSign), substitui o antigo auto-envio silencioso na geração — só
+            # dispara se a loja tem credencial configurada; contrato já em outro canal recusa.
+            m = _re.match(r'^/api/projetos/([^/]+)/contrato/clicksign/enviar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    contrato = db.query(Contrato).filter_by(projeto_nome=nome_safe)\
+                                 .order_by(Contrato.id.desc()).first()
+                    if not contrato:
+                        self.send_json({"ok": False, "erro": "Contrato não encontrado"}, code=404); return
+                    if contrato.status in ("vigente", "assinado"):
+                        self.send_json({"ok": False, "erro": "Contrato já está vigente"}, code=400); return
+                    if (contrato.assinatura_canal or "interno") == "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Este contrato já foi enviado para assinatura eletrônica."}, code=400); return
+                    if any(a.parte for a in contrato.assinaturas):
+                        self.send_json({"ok": False,
+                            "erro": "Este contrato já tem assinatura interna registrada — não é "
+                                    "possível mudar de canal."}, code=400); return
+                    import mod_clicksign
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja. Configure "
+                                    "em Admin → Dados da empresa."}, code=400); return
+                    _proj, cliente_dict, _od = _montar_dados_projeto_para_contrato(
+                        nome_safe, contrato.orcamento_id, db)
+                    _email_loja = db.get(Usuario, usuario["id"]).email or ""
+                    _enviar_contrato_para_clicksign(
+                        db, contrato, cfg,
+                        email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
+                        email_cliente=cliente_dict.get("email") or "",
+                        nome_cliente=cliente_dict.get("nome") or "",
+                        cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
                     db.commit()
-                    # Verificar se ambas as partes assinaram → fechar etapa 7
-                    assinaturas = db.query(ContratoAssinatura)\
-                                    .filter_by(contrato_id=contrato.id).all()
-                    partes_assinadas = {a.parte for a in assinaturas}
-                    if {"loja", "cliente"}.issubset(partes_assinadas):
-                        contrato.status = "assinado"
-                        etapa7 = db.query(CicloEtapa).filter_by(
-                            projeto_nome=nome_safe, etapa_codigo="7"
-                        ).first()
-                        if not etapa7:
-                            etapa7 = CicloEtapa(projeto_nome=nome_safe, etapa_codigo="7")
-                            db.add(etapa7)
-                        etapa7.status        = "concluido"
-                        etapa7.concluido_em  = datetime.utcnow()
-                        etapa7.responsavel_id = usuario["id"]
-                        db.commit()
-                        # Cronograma do Ciclo (Modulos_Orizon_v11): D0 = assinatura total do contrato
-                        # (mesmo gatilho das Provisões). Constitui data_prevista_conclusao por etapa a
-                        # partir do Cronograma de Projeto Padrão (Config). Fail-soft: não bloqueia a
-                        # assinatura se algo falhar.
-                        try:
-                            import mod_cronograma
-                            _cfg_crono = _cfg_financeira_loja(db, loja_id)
-                            _d0 = datetime.utcnow()
-                            mod_cronograma.gerar_cronograma_projeto(db, nome_safe, _cfg_crono, _d0)
-                            # Data-limite do Contrato (Fatia 3): D0 + prazo contratual em DIAS ÚTEIS. Só existe
-                            # após a assinatura (na geração do contrato ainda não há D0) — registrada aqui para
-                            # a Agenda monitorar o esgotamento do prazo conforme as etapas avançam/atrasam.
-                            _prazo_du = int(_cfg_crono.get("prazo_contratual_dias_uteis") or 50)
-                            _pm_lim = db.get(Projeto, nome_safe)
-                            if _pm_lim is not None:
-                                _pm_lim.data_limite_contratual = mod_cronograma.somar_dias_uteis(_d0, _prazo_du)
-                            db.commit()
-                        except Exception as _ec:
-                            db.rollback()
-                            print("[CRONOGRAMA] gerar_cronograma_projeto falhou:", _ec)
-                        # FASE B2 (A6): congela a segmentação Mercadoria × Serviço efetiva no projeto.
-                        # A partir da assinatura, NF-e e NFS-e leem os MESMOS percentuais (imune a mudança
-                        # do default da loja entre os dois documentos). Sem migração; grava no JSON existente.
-                        try:
-                            if _congelar_segmentacao_no_projeto(db, loja_id, nome_safe) is not None:
-                                db.commit()
-                        except Exception as _eseg:
-                            db.rollback()
-                            print("[SEGMENTACAO] congelar na assinatura falhou:", _eseg)
-                        try:
-                            upsert_projeto_status(nome_safe, "fechado")
-                        except Exception as _e:
-                            print("[FECHADO] upsert_projeto_status falhou:", _e)
-                        # Provisões contábeis (v6 §6.4 + FASE D2) — timing correto (2026-08-12): só
-                        # aqui, na 2ª assinatura completa, NUNCA na geração do contrato (antes
-                        # nasciam com 0 assinaturas — bug de negócio: um contrato cancelado antes de
-                        # fechar já tinha provisão pra estornar). Grava junto o retrato IMUTÁVEL da
-                        # negociação (desconto, custos adicionais, forma de pagamento, parcelas/
-                        # entrada/juros) — snapshot_negociacao_json, nunca mais reescrito.
-                        try:
-                            _orc_prov = db.get(Orcamento, contrato.orcamento_id)
-                            if _orc_prov is not None:
-                                _registrar_provisao_venda(db, _orc_prov, por_id=usuario["id"])
-                                db.commit()
-                                _fin_provisoes_venda_seguro(_orc_prov, nome_safe, "prov:" + str(contrato.id))
-                                _pm_snap = db.get(Projeto, nome_safe)
-                                contrato.snapshot_negociacao_json = json.dumps({
-                                    "desconto_pct":     _orc_prov.desconto_pct,
-                                    "forma_pagamento":  _orc_prov.forma_pagamento,
-                                    "negociacao_json":  _orc_prov.negociacao_json,
-                                    "valor_total":      _orc_prov.valor_total,
-                                    "valor_liquido":    _orc_prov.valor_liquido,
-                                    "parametros_json":  _pm_snap.parametros_json if _pm_snap else None,
-                                }, ensure_ascii=False)
-                                db.commit()
-                        except Exception as _eprov:
-                            db.rollback()
-                            print("[PROVISOES] constituição na 2ª assinatura falhou:", _eprov)
-                        # Montagem da equipe no fechamento (decisão 2026-07-27): persiste os
-                        # responsáveis automáticos, apura as lacunas e posta o resumo na conversa
-                        # do projeto (gerência vê por oversight). Best-effort — nunca quebra a assinatura.
-                        try:
-                            import mod_equipe as _meq, mod_chat as _mchat_f
-                            _res = _meq.montar_equipe_no_fechamento(db, nome_safe, loja_id)
-                            _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
-                            _conv = _mchat_f.get_or_create_conversa_projeto(
-                                db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
-                            # membership: sincroniza os participantes com a equipe derivada (os
-                            # auto-designados passam a ver a conversa/o resumo na inbox).
-                            _eq = _meq.equipe_do_projeto(db, nome_safe, loja_id)
-                            _mchat_f.sincronizar_participantes_projeto(db, _conv, _eq["membros_usuarios"])
-                            _falta = ", ".join(l["funcao_nome"] or "?" for l in _res["lacunas"]) or "nenhuma"
-                            _summary = _mchat_f.enviar_mensagem(
-                                db, _conv, None,
-                                "📋 Contrato fechado — equipe montada. Responsáveis automáticos "
-                                "definidos: %d. Funções a definir (ação gerencial): %s."
-                                % (len(_res["definidos"]), _falta), permitir_vazio=True)
-                            # E-mail aos gerentes/diretores QUANDO há lacunas (config-gated: sem SMTP
-                            # nasce 'pendente_config', nada é enviado). Os auto-designados já veem o
-                            # resumo na inbox (são membros da conversa do projeto).
-                            if _res["lacunas"]:
-                                try:
-                                    import mod_chat_externo as _mce_f
-                                    _gers = [{"id": u.id, "email": u.email} for u in db.query(Usuario)
-                                             .filter(Usuario.loja_id == loja_id, Usuario.ativo == 1).all()
-                                             if (u.email or "").strip()
-                                             and perfis.pode(u.nivel, "ver_todas_conversas")]
-                                    _corpo_mail = ("Novo projeto contratado: %s.\nFunções a definir "
-                                                   "(mais de um candidato): %s.\nAbra o Orizon Chat "
-                                                   "para indicar os responsáveis." % (nome_safe, _falta))
-                                    _mce_f.notificar_gerentes_email(db, _summary, _gers, _corpo_mail)
-                                except Exception as _email:
-                                    print("[EQUIPE] e-mail de lacunas falhou:", _email)
-                            db.commit()
-                        except Exception as _eq:
-                            db.rollback(); print("[EQUIPE] montar_equipe_no_fechamento falhou:", _eq)
-                    self.send_json({"ok": True, "status": contrato.status, "parte": parte})
+                    self.send_json({"ok": True, "assinatura_canal": contrato.assinatura_canal})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/contrato/clicksign/verificar — reconsulta sob demanda
+            # (botão "Verificar agora" na UI, complementa o job de reconciliação automático).
+            m = _re.match(r'^/api/projetos/([^/]+)/contrato/clicksign/verificar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    contrato = db.query(Contrato).filter_by(projeto_nome=nome_safe)\
+                                 .order_by(Contrato.id.desc()).first()
+                    if not contrato or (contrato.assinatura_canal or "interno") != "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Este contrato não está no canal ClickSign."}, code=400); return
+                    import mod_clicksign
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                    _reconciliar_contrato_clicksign(db, contrato, cfg)
+                    db.commit()
+                    self.send_json({"ok": True, "status": contrato.status})
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -12674,6 +13132,126 @@ class Handler(BaseHTTPRequestHandler):
                 ok, erro = _fiscal_put_ambiente(em, amb)
                 if not ok:
                     self.send_json({"ok": False, "erro": erro}, code=400); return
+                db.commit()
+                self.send_json({"ok": True, "ambiente_ativo": amb})
+            finally:
+                db.close()
+            return
+
+        # ── PUT /api/admin/lojas/<id>/integracao-clicksign/segredos — write-only, cifrado ──
+        m_csseg = re.match(r"^/api/admin/lojas/(\d+)/integracao-clicksign/segredos$", path)
+        if m_csseg:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido"}, code=400); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja = db.get(Loja, int(m_csseg.group(1)))
+                if not loja:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                cfg = _clicksign_do_dono(db, "loja", loja.id) or _clicksign_criar(db, "loja", loja.id)
+                _clicksign_put_segredos(cfg, req)
+                db.commit()
+                self.send_json({"ok": True})
+            except Exception:
+                db.rollback()
+                self.send_json({"ok": False, "erro": "Falha ao salvar segredos"}, code=500)
+            finally:
+                db.close()
+            return
+
+        # ── PUT /api/admin/redes/<id>/integracao-clicksign/segredos — default da rede ──
+        m_csrseg = re.match(r"^/api/admin/redes/(\d+)/integracao-clicksign/segredos$", path)
+        if m_csrseg:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido"}, code=400); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                rid = int(m_csrseg.group(1))
+                rede = db.get(Rede, rid)
+                if not rede:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_tenancy.pode_editar_dados_rede(ator, rid):
+                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                cfg = _clicksign_do_dono(db, "rede", rid) or _clicksign_criar(db, "rede", rid)
+                _clicksign_put_segredos(cfg, req)
+                db.commit()
+                self.send_json({"ok": True})
+            except Exception:
+                db.rollback()
+                self.send_json({"ok": False, "erro": "Falha ao salvar segredos"}, code=500)
+            finally:
+                db.close()
+            return
+
+        # ── PUT /api/admin/lojas/<id>/integracao-clicksign/ambiente — troca explícita ──
+        m_csamb = re.match(r"^/api/admin/lojas/(\d+)/integracao-clicksign/ambiente$", path)
+        if m_csamb:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido"}, code=400); return
+            import mod_clicksign
+            amb = req.get("ambiente")
+            if amb not in mod_clicksign.AMBIENTES:
+                self.send_json({"ok": False, "erro": "ambiente inválido"}, code=400); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja = db.get(Loja, int(m_csamb.group(1)))
+                if not loja:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                cfg = _clicksign_do_dono(db, "loja", loja.id) or _clicksign_criar(db, "loja", loja.id)
+                _clicksign_put_ambiente(cfg, amb)
+                db.commit()
+                self.send_json({"ok": True, "ambiente_ativo": amb})
+            finally:
+                db.close()
+            return
+
+        # ── PUT /api/admin/redes/<id>/integracao-clicksign/ambiente — default da rede ──
+        m_csramb = re.match(r"^/api/admin/redes/(\d+)/integracao-clicksign/ambiente$", path)
+        if m_csramb:
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            try:
+                req = json.loads(body) if body else {}
+            except Exception:
+                self.send_json({"ok": False, "erro": "JSON inválido"}, code=400); return
+            import mod_clicksign
+            amb = req.get("ambiente")
+            if amb not in mod_clicksign.AMBIENTES:
+                self.send_json({"ok": False, "erro": "ambiente inválido"}, code=400); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                rid = int(m_csramb.group(1))
+                rede = db.get(Rede, rid)
+                if not rede:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if not mod_tenancy.pode_editar_dados_rede(ator, rid):
+                    self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                cfg = _clicksign_do_dono(db, "rede", rid) or _clicksign_criar(db, "rede", rid)
+                _clicksign_put_ambiente(cfg, amb)
                 db.commit()
                 self.send_json({"ok": True, "ambiente_ativo": amb})
             finally:
@@ -15265,6 +15843,55 @@ def _fiscal_put_ambiente(em, amb):
                            + ", ".join(placeholders))
     em.ambiente_ativo = amb
     return True, None
+
+
+def _clicksign_do_dono(db, kind, owner_id):
+    """Busca a IntegracaoClickSign existente do dono (loja ou rede). None se não existir —
+    diferente de mod_clicksign.resolver_config (runtime), aqui NÃO cai pro default da rede."""
+    if kind == "rede":
+        return db.query(IntegracaoClickSign).filter_by(rede_id=owner_id, loja_id=None).first()
+    return db.query(IntegracaoClickSign).filter_by(loja_id=owner_id).first()
+
+
+def _clicksign_criar(db, kind, owner_id):
+    """Cria uma IntegracaoClickSign nova (sandbox) pro dono. Retorna a linha."""
+    cfg = IntegracaoClickSign(ambiente_ativo="sandbox",
+                              loja_id=(owner_id if kind == "loja" else None),
+                              rede_id=(owner_id if kind == "rede" else None))
+    db.add(cfg); db.flush()
+    return cfg
+
+
+def _clicksign_get(cfg):
+    """Payload do GET da integração ClickSign. NUNCA vaza token (só *_definido)."""
+    from integracoes import cripto_segredos
+    if not cfg:
+        return {"ok": True, "existe": False, "ambiente_ativo": "sandbox",
+                "token_sandbox_definido": False, "token_producao_definido": False,
+                "webhook_secret_definido": False}
+    return {"ok": True, "existe": True, "ambiente_ativo": cfg.ambiente_ativo,
+            "token_sandbox_definido": cripto_segredos.token_definido(cfg.token_sandbox_enc),
+            "token_producao_definido": cripto_segredos.token_definido(cfg.token_producao_enc),
+            "webhook_secret_definido": cripto_segredos.token_definido(cfg.webhook_secret_enc)}
+
+
+def _clicksign_put_segredos(cfg, req):
+    """Grava token/secret cifrados (write-only). None limpa; "" mantém."""
+    from integracoes import cripto_segredos
+    for campo, col in (("token_sandbox", "token_sandbox_enc"),
+                       ("token_producao", "token_producao_enc"),
+                       ("webhook_secret", "webhook_secret_enc")):
+        if campo in req:
+            v = req[campo]
+            if v is None:
+                setattr(cfg, col, None)
+            elif v != "":
+                setattr(cfg, col, cripto_segredos.encrypt(v))
+
+
+def _clicksign_put_ambiente(cfg, amb):
+    """Troca o ambiente ativo (sandbox/produção)."""
+    cfg.ambiente_ativo = amb
 
 
 def _enriquecer_cliente_do_projeto(proj, db):

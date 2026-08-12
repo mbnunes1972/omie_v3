@@ -198,7 +198,9 @@ def test_gerar_folha_soma_itens_de_comissao(seed, app_db):
 
 
 def test_gerar_folha_consultor_vira_item_venda(seed, app_db):
-    import mod_folha, mod_provisoes
+    """2026-08-12 (fonte única): o item de venda não recalcula % — busca o saldo da Provisão de
+    Comissão de Vendas (2.1.04.12) JÁ constituída no contrato daquele projeto especificamente."""
+    import mod_folha, mod_provisoes, mod_contabil
     from datetime import datetime
     db = app_db.get_session()
     u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
@@ -210,15 +212,57 @@ def test_gerar_folha_consultor_vira_item_venda(seed, app_db):
     db.add(f); db.flush()
     db.add(app_db.Projeto(nome_safe="PV", loja_id=loja, criado_por_id=u.id,
                           status="fechado", status_at=datetime(2026, 7, 10)))
-    db.add(app_db.Orcamento(projeto_id="PV", nome="O", ordem=1, loja_id=loja, valor_liquido=10000.0))
+    db.commit()
+    # Provisão constituída "no contrato" — 300, redutor de desconto já embutido nesse valor.
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mod_contabil.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 300.0,
+                                  projeto_id="PV", ref="contrato:PV:com_venda")
     db.commit()
     cfg = mod_provisoes.config_financeira_default()
-    cfg["comissao_vendas"]["faixas_comissao"] = [{"venda_ate": None, "pct": 3.0}]
     mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
-    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:2026-07" % f.id).first()
-    assert item is not None and item.origem == "venda" and item.valor == 300.0
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PV" % f.id).first()
+    assert item is not None and item.origem == "venda" and item.projeto_nome == "PV" and item.valor == 300.0
     reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
     assert reg.parte_variavel == 300.0 and reg.total == 2300.0    # fixa 2000 + comissão 300
+    db.close()
+
+
+def test_pagar_folha_efetiva_provisao_de_venda_sem_duplicar(seed, app_db):
+    """2026-08-12 (achado do usuário): pagar a folha não posta mais um lançamento próprio pra
+    comissão de venda — EFETIVA a provisão do contrato (fecha o saldo em aberto, único lançamento)."""
+    import mod_folha, mod_provisoes, mod_contabil
+    from datetime import datetime
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome="Consultor de Vendas", salario_fixo=2000.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="Vend", funcao_id=fn.id, usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    db.add(app_db.Projeto(nome_safe="PV2", loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    db.commit()
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mod_contabil.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 300.0,
+                                  projeto_id="PV2", ref="contrato:PV2:com_venda")
+    db.commit()
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    mod_folha.aprovar(db, reg); db.commit()
+    ok, err = mod_folha.pagar(db, ot, oid, reg)
+    assert ok, err
+    db.commit()
+    # a provisão fechou (saldo_aberto = 0), não sobrou aberta pra sempre
+    saldo = mod_folha.saldo_provisao_venda(db, ot, oid, "PV2")
+    assert saldo == 0.0
+    # nenhum lançamento "folha_variavel" foi postado pra essa parte — só a efetivação da provisão
+    lans_var = (db.query(app_db.Lancamento)
+                .filter_by(owner_tipo=ot, owner_id=oid, origem="folha_variavel").all())
+    assert len(lans_var) == 0
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PV2" % f.id).first()
+    assert item.status == "confirmado"
     db.close()
 
 
@@ -298,22 +342,18 @@ def test_base_detalhe_lista_ambientes(seed, app_db):
     db.close()
 
 
-def test_base_detalhe_venda_por_projeto(seed, app_db):
+def test_base_detalhe_venda_sem_sub_discriminacao(seed, app_db):
+    """2026-08-12 (fonte única): o item de venda já É um projeto só (um item por venda fechada) —
+    não há mais o que discriminar dentro dele, diferente de antes (item agregava o mês inteiro)."""
     db = app_db.get_session()
     u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
     loja = u.loja_id
     f = app_db.Funcionario(loja_id=loja, nome="Vend", usuario_id=u.id, status="ativo"); db.add(f); db.flush()
-    db.add(app_db.Projeto(nome_safe="V1", loja_id=loja, criado_por_id=u.id, status="fechado",
-                          status_at=datetime(2026, 7, 5)))
-    db.add(app_db.Orcamento(projeto_id="V1", nome="O", ordem=1, loja_id=loja, valor_liquido=100000.0))
-    db.add(app_db.Projeto(nome_safe="V2", loja_id=loja, criado_por_id=u.id, status="fechado",
-                          status_at=datetime(2026, 7, 20)))
-    db.add(app_db.Orcamento(projeto_id="V2", nome="O", ordem=1, loja_id=loja, valor_liquido=50000.0))
     it = app_db.ComissaoFolha(loja_id=loja, funcionario_id=f.id, competencia="2026-07", origem="venda",
-         papel="venda", base=150000.0, pct=3.0, valor=4500.0, status="previsto", ref_etapa="venda:%d:2026-07" % f.id)
+         papel="venda", projeto_nome="V1", base=100000.0, valor=3000.0, status="previsto",
+         ref_etapa="venda:%d:V1" % f.id)
     db.add(it); db.commit()
-    det = {x["nome"]: x["valor"] for x in mod_comissao.base_detalhe(db, it)}
-    assert det.get("V1") == 100000.0 and det.get("V2") == 50000.0     # discriminado por contrato
+    assert mod_comissao.base_detalhe(db, it) == []
     db.close()
 
 

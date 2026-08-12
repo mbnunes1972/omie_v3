@@ -1,9 +1,16 @@
 """mod_folha.py — Folha de Pagamento (Modulos_Orizon_v10, §2.1). MOTOR de cálculo, não digitação.
 
-Parte fixa: da remuneração do cadastro do Funcionário. Parte variável: soma das vendas fechadas do
-consultor no período (Comercial, valor líquido) × % da faixa de meta atingida (Config → Comissão de
-Vendas). Despesa lançada nas contas 5.3 já existentes (Comissão de Vendedor / Salários de Vendas).
-Mesma lógica de auto-constituição já usada em Provisões.
+Parte fixa: da remuneração do cadastro do Funcionário. Parte variável (não-venda): comissão por
+PAPEL (mod_comissao) somada aos itens de comissao_folha, lançada em 5.3.0X no pagamento.
+
+Comissão de VENDA (Consultor) — fonte única (2026-08-12, achado do usuário): a comissão de cada
+venda JÁ é a Provisão de Retenção de Comissão de Vendas (2.1.04.12), constituída na 2ª assinatura
+do contrato com o redutor de desconto certo (mod_provisoes.resolver_comissao_venda, base + desconto
+DAQUELE orçamento). A Folha NÃO recalcula — busca cada venda (projeto) fechada no mês do consultor e
+EFETIVA o saldo em aberto dessa provisão específica, um item por projeto. Antes a Folha rodava um
+cálculo próprio (agregado do mês, ignorando o redutor) e postava um lançamento independente
+(`folha_variavel`) que nunca fechava a provisão do contrato — duas fontes divergentes pro mesmo
+dinheiro. Agora só uma: a provisão nasce na assinatura, e a Folha a resolve.
 """
 import json
 from datetime import datetime
@@ -140,25 +147,50 @@ def _total_itens_comissao(db, loja_id, funcionario_id, competencia):
     return round(sum(float(i.valor or 0.0) for i in itens), 2)
 
 
-def _upsert_item_venda(db, loja_id, f, competencia, cfg):
-    """Consultor: garante um item origem='venda' com a comissão de vendas do mês (idempotente por ref)."""
+_PROV_COMISSAO_VENDA = "2.1.04.12"   # Provisão de Retenção de Comissão de Vendas
+
+
+def saldo_provisao_venda(db, owner_tipo, owner_id, projeto_nome):
+    """Saldo em aberto (provisionado − efetivado, líquido de resolução) da Provisão de Comissão de
+    Vendas de UM projeto — mesma fonte do painel de Reconciliação (mod_contabil.reconciliacao),
+    pra nunca divergir do que a tela mostra."""
+    rec = mod_contabil.reconciliacao(db, owner_tipo, owner_id, projeto_id=projeto_nome)
+    for p in rec["provisoes"]:
+        if p["codigo"] == _PROV_COMISSAO_VENDA:
+            return round(float(p["saldo_aberto"] or 0.0), 2)
+    return 0.0
+
+
+def _upsert_itens_venda(db, loja_id, f, competencia, cfg):
+    """Consultor: um item origem='venda' POR PROJETO fechado no mês, valendo o saldo em aberto da
+    Provisão de Comissão de Vendas daquele projeto (constituída na assinatura, com o redutor de
+    desconto já aplicado) — a Folha não recalcula nada, só busca. Idempotente por ref."""
     funcao = db.get(Funcao, f.funcao_id) if f.funcao_id else None
-    if not (funcao and funcao.usa_comissao_vendas):
+    if not (funcao and funcao.usa_comissao_vendas) or not f.usuario_id:
         return
-    base = vendas_liquido_consultor(db, loja_id, f.usuario_id, competencia)
-    pct = mod_provisoes.resolver_comissao_venda(cfg, base, 0.0)
-    ref = "venda:%d:%s" % (f.id, competencia)
-    item = db.query(ComissaoFolha).filter_by(ref_etapa=ref).first()
-    if item is None:
-        item = ComissaoFolha(loja_id=loja_id, funcionario_id=f.id, competencia=competencia,
-                             origem="venda", papel="venda", ref_etapa=ref)
-        db.add(item)
-    if item.status == "confirmado":
-        return
-    base_ef = item.base_ajustada if item.base_ajustada is not None else base
-    item.competencia = competencia; item.base = base; item.pct = pct
-    item.valor = round(base_ef * pct / 100.0, 2); item.status = "previsto"
-    db.flush()
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+    projs = (db.query(Projeto)
+             .filter(Projeto.loja_id == loja_id, Projeto.criado_por_id == f.usuario_id,
+                     Projeto.status.in_(_STATUS_VENDA)).all())
+    for p in projs:
+        sa = p.status_at
+        if sa is None or sa.strftime("%Y-%m") != competencia:
+            continue
+        ref = "venda:%d:%s" % (f.id, p.nome_safe)
+        item = db.query(ComissaoFolha).filter_by(ref_etapa=ref).first()
+        if item is not None and item.status == "confirmado":
+            continue
+        saldo = saldo_provisao_venda(db, ot, oid, p.nome_safe)
+        if item is None:
+            if saldo <= 0:
+                continue
+            item = ComissaoFolha(loja_id=loja_id, funcionario_id=f.id, competencia=competencia,
+                                 origem="venda", papel="venda", projeto_nome=p.nome_safe, ref_etapa=ref)
+            db.add(item)
+        base_ef = item.base_ajustada if item.base_ajustada is not None else saldo
+        item.competencia = competencia; item.base = saldo; item.pct = None
+        item.valor = round(base_ef, 2); item.status = "previsto"
+        db.flush()
 
 
 def gerar_folha(db, loja_id, competencia, cfg):
@@ -173,7 +205,7 @@ def gerar_folha(db, loja_id, competencia, cfg):
             db.add(reg)
         if reg.status in ("paga", "aprovada"):   # não sobrescreve folha aprovada/paga (preserva ajustes)
             out.append(reg); continue
-        _upsert_item_venda(db, loja_id, f, competencia, cfg)
+        _upsert_itens_venda(db, loja_id, f, competencia, cfg)
         folha_cfg = (cfg or {}).get("folha", {}) or {}
         if folha_cfg.get("adiantamento_oficial_ativo"):   # oficial: 40% do fixo (carteira), auto
             mod_adiantamento.upsert_oficial(db, loja_id, f, competencia,
@@ -208,8 +240,14 @@ def reabrir(db, reg):
 
 
 def pagar(db, owner_tipo, owner_id, reg):
-    """Paga a folha APROVADA: posta a despesa (fixa→5.3.06, variável→5.3.01) e marca 'paga'. Idempotente
-    por ref. Usa os Dados Bancários/PIX já cadastrados (nada redigitado). Retorna (ok, erro)."""
+    """Paga a folha APROVADA: posta a despesa (fixa→5.3.06, variável não-venda→5.3.01) e marca
+    'paga'. Idempotente por ref. Usa os Dados Bancários/PIX já cadastrados (nada redigitado).
+
+    Comissão de VENDA (2026-08-12, fonte única): não posta lançamento próprio — EFETIVA, projeto a
+    projeto, a Provisão de Comissão de Vendas já constituída no contrato daquele projeto
+    (mod_contabil.efetivar_provisao, mesmo mecanismo da Reconciliação). Isso fecha a provisão (que
+    antes ficava aberta pra sempre — a Folha pagava por fora, num lançamento duplicado e
+    desconectado) e lança a despesa formal (5.3.01) na hora do pagamento real. Retorna (ok, erro)."""
     if reg.status == "paga":
         return True, None
     if reg.status != "aprovada":
@@ -217,8 +255,19 @@ def pagar(db, owner_tipo, owner_id, reg):
     ref = "folha:%d" % reg.id
     if (reg.parte_fixa or 0) > 0:
         mod_contabil.registrar_evento(db, owner_tipo, owner_id, "folha_fixa", reg.parte_fixa, ref=ref + ":fixa")
-    if (reg.parte_variavel or 0) > 0:
-        mod_contabil.registrar_evento(db, owner_tipo, owner_id, "folha_variavel", reg.parte_variavel, ref=ref + ":var")
+    itens_venda = (db.query(ComissaoFolha)
+                   .filter_by(funcionario_id=reg.funcionario_id, competencia=reg.competencia, origem="venda")
+                   .filter(ComissaoFolha.status != "cancelado").all())
+    for it in itens_venda:
+        v = round(float(it.valor or 0), 2)
+        if v > 0 and it.projeto_nome:
+            mod_contabil.efetivar_provisao(db, owner_tipo, owner_id, it.projeto_nome,
+                                           _PROV_COMISSAO_VENDA, v,
+                                           ref=ref + ":venda:" + it.projeto_nome, forma_pagamento="direto")
+        it.status = "confirmado"
+    variavel_nao_venda = round((reg.parte_variavel or 0) - sum(float(i.valor or 0) for i in itens_venda), 2)
+    if variavel_nao_venda > 0:
+        mod_contabil.registrar_evento(db, owner_tipo, owner_id, "folha_variavel", variavel_nao_venda, ref=ref + ":var")
     if (reg.beneficios or 0) > 0:
         mod_contabil.registrar_evento(db, owner_tipo, owner_id, "folha_beneficios", reg.beneficios, ref=ref + ":ben")
     mod_adiantamento.quitar_da_competencia(db, reg.funcionario_id, reg.competencia)   # baixa os adiantamentos abatidos

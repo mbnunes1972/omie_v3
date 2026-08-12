@@ -15187,9 +15187,8 @@ async function adminFinanceiroCarregar(){
     <div class="grid2" style="gap:14px;margin-bottom:14px">
       ${campo('fin-prov-mont','% Provisão de Montagem',(_cfgFin.provisoes_contabeis||{}).montagem_pct)}
       ${campo('fin-prov-gar','% Provisão de Garantia',(_cfgFin.provisoes_contabeis||{}).garantia_pct)}
-      ${campo('fin-prov-com','% Provisão de Comissão de Vendas',(_cfgFin.provisoes_contabeis||{}).comissao_pct)}
     </div>
-    <div style="font-size:10px;color:var(--muted);margin:-8px 0 12px">A provisão de Assistência usa o "% Assistências" acima (herança automática).</div>
+    <div style="font-size:10px;color:var(--muted);margin:-8px 0 12px">A provisão de Assistência usa o "% Assistências" acima (herança automática). A provisão de Comissão de Vendas não é um % fixo — vem do motor de comissão por metas (Remunerações → Consultor de Vendas).</div>
     <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:14px 0 4px">Prazo de antecipação (Recebimento de Venda — dias até a operadora antecipar a loja)</div>
     <div class="grid2" style="gap:14px;margin-bottom:14px">
       ${campo('fin-prazo-cartao','Cartão (dias)',(_cfgFin.prazo_antecipacao||{}).cartao ?? 1)}
@@ -15204,7 +15203,7 @@ async function adminFinanceiroSalvar(lid){
   _cfgFin.defaults_negociacao = {comissao_arq_pct:n('fin-com-arq'), fidelidade_pct:n('fin-fid'), carga_trib_pct:n('fin-trib')};
   _cfgFin.provisoes = {frete_fab_pct:n('fin-frete-fab'), com_adm_pct:n('fin-com-adm'), com_med_pct:n('fin-com-med'),
     com_proj_exec_pct:n('fin-com-pe'), frete_loc_pct:n('fin-frete-loc'), assist_pct:n('fin-assist'), ins_loc_pct:n('fin-ins')};
-  _cfgFin.provisoes_contabeis = {montagem_pct:n('fin-prov-mont'), garantia_pct:n('fin-prov-gar'), comissao_pct:n('fin-prov-com')};
+  _cfgFin.provisoes_contabeis = {montagem_pct:n('fin-prov-mont'), garantia_pct:n('fin-prov-gar')};
   _cfgFin.prazo_antecipacao = {cartao:n('fin-prazo-cartao'), aymore:n('fin-prazo-aymore')};
   const r = await fetch('/api/admin/lojas/'+lid+'/config-financeira', {method:'PUT', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify(_cfgFin)});

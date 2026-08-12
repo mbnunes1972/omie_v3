@@ -26,6 +26,7 @@ PLANO_PADRAO = [
     ("1.1.06.17", "Custo de Viagem a Apropriar"), ("1.1.06.18", "Brinde a Apropriar"),
     ("1.1.06.19", "Custo Financeiro a Apropriar"),   # FASE B: ramo FINANCEIRA (Aymoré/Cartão) — despesa financeira diferida
     ("1.1.06.20", "Custo Especial a Apropriar"),   # Custo Especial (5º custo adicional — não rateado nos ambientes)
+    ("1.1.06.21", "Comissão Administrativa a Apropriar"),   # 2026-08-12: com_adm passa a ser provisionada (era só visão)
     ("1.1.07", "Recebíveis de Parcelamentos"),   # FASE B: ramo LOJA (financiamento direto) — carrega SÓ os juros (VAVO fica no 1.1.02)
     # Ajustes Excepcionais de Fábrica (spec 2026-07-21): saldos de acordos no razão
     ("1.1.08", "Créditos com a Fábrica"),
@@ -63,6 +64,10 @@ PLANO_PADRAO = [
     ("2.1.04.17", "Provisão de Custo de Viagem"), ("2.1.04.18", "Provisão de Brinde"),
     ("2.1.04.19", "Provisão de Custo Financeiro"),   # FASE B: ramo FINANCEIRA — provisão da despesa financeira
     ("2.1.04.20", "Provisão de Custo Especial"),   # Custo Especial (5º custo adicional — não rateado nos ambientes)
+    ("2.1.04.21", "Provisão de Comissão Administrativa"),   # 2026-08-12: previsão de comissionamento do staff
+                                                            # da loja (diretores/gerentes) — mesmo mecanismo das
+                                                            # demais (constituída no contrato, efetivada/resolvida
+                                                            # via Reconciliação, despesa formal em 5.3.03).
     ("2.1.05", "Financiamento Total Flex a Pagar"),
     ("2.1.06", "Receita a Realizar"),   # FASE D2: recebe o Val_Cont cheio no contrato (era "Adiantamento de Clientes")
     ("2.1.07", "Receita Financeira a Apropriar"),   # FASE B: ramo LOJA — juros diferidos, realizados por parcela
@@ -995,6 +1000,11 @@ EVENTOS = {
     "fechamento_venda_cust_via": ("1.1.06.17", "2.1.04.17", "Constituição — Provisão de Custo de Viagem (ativo diferido)"),
     "fechamento_venda_brinde":   ("1.1.06.18", "2.1.04.18", "Constituição — Provisão de Brinde (ativo diferido)"),
     "fechamento_venda_cust_esp": ("1.1.06.20", "2.1.04.20", "Constituição — Provisão de Custo Especial (ativo diferido)"),
+    # 2026-08-12: Comissão Administrativa (previsão de comissionamento do staff da loja — diretores/
+    # gerentes) passa a ser provisionada como as demais, em vez de ficar só na visão gerencial da
+    # negociação. Efetivada/resolvida pelo MESMO mecanismo genérico das outras (efetivar_provisao/
+    # resolver_saldo_provisao na Reconciliação) — despesa formal em 5.3.03 (já existia no plano).
+    "fechamento_venda_com_adm":  ("1.1.06.21", "2.1.04.21", "Constituição — Provisão de Comissão Administrativa (ativo diferido)"),
     # FASE B (resultado financeiro) — ramo FINANCEIRA: despesa financeira diferida (constituída no contrato)
     "fechamento_venda_custo_financeiro":     ("1.1.06.19", "2.1.04.19", "Constituição — Provisão de Custo Financeiro (ativo diferido)"),
     "reconhecimento_despesa_custo_financeiro": ("5.5.04", "1.1.06.19", "Reconhecimento da despesa financeira (baixa do ativo diferido)"),
@@ -1028,6 +1038,7 @@ EVENTOS = {
     "reconhecimento_despesa_cust_via": ("5.3.14", "1.1.06.17", "Reconhecimento de despesa na NF-e — Custo de Viagem"),
     "reconhecimento_despesa_brinde":   ("5.3.12", "1.1.06.18", "Reconhecimento de despesa na NF-e — Brinde"),
     "reconhecimento_despesa_cust_esp": ("5.3.17", "1.1.06.20", "Reconhecimento de despesa na NF-e — Custo Especial"),
+    "reconhecimento_despesa_com_adm":  ("5.3.03", "1.1.06.21", "Reconhecimento de despesa — Comissão Administrativa (efetivação)"),
     # Impostos = PROVISÃO (Tipo D). CONTRATO: passivo nasce SEM tocar a DRE — ativo diferido (1.1.05) ×
     # Provisão de Impostos (2.1.04.13). EMISSÃO (proporcional Merc/Serv): a dedução entra na DRE
     # (4.3.01 × baixa do ativo 1.1.05) e a obrigação fiscal real crystalliza (2.1.04.13 × 2.1.03).
@@ -1211,6 +1222,8 @@ _PROV_FECHAMENTO = {
     # FASE B — ramo FINANCEIRA (custo financeiro é rubrica provisionada; NÃO entra no matching
     # operacional da NF-e — tem reconhecimento próprio, como impostos)
     "custo_financeiro":    "fechamento_venda_custo_financeiro",
+    # 2026-08-12: Comissão Administrativa (achado do usuário — antes só visão gerencial, sem lançamento)
+    "com_adm":             "fechamento_venda_com_adm",
 }
 
 
@@ -1284,7 +1297,7 @@ def ajustar_provisao_delta(db, owner_tipo, owner_id, projeto_id, rubrica, valor_
 
 # Fatia B (resultado financeiro) — ramo do custo financeiro → evento de constituição no contrato.
 # #10/#11 (Fatia C) — mapa das chaves do painel de provisões (mod_provisoes._RUBRICAS) → rubrica contábil
-# (_PROV_FECHAMENTO). com_adm não tem provisão constituída no contrato (sem ativo diferido) → sem delta.
+# (_PROV_FECHAMENTO).
 _AF_ITEM_RUBRICA = {
     "prov_mont": "montagem", "prov_gar": "garantia", "assist": "assistencia",
     "frete_fab": "frete_fabrica", "frete_loc": "frete_local", "ins_loc": "insumos",
@@ -1292,7 +1305,10 @@ _AF_ITEM_RUBRICA = {
     "com_venda": "retencao_com_vendas", "prov_imp": "impostos",
     # F0 (bug ①): custos adicionais — ajustáveis na AF (mesma chave em _PROV_FECHAMENTO).
     "com_arq": "com_arq", "pro_fid": "pro_fid", "cust_via": "cust_via", "brinde": "brinde",
-    # out_forn (Outros Fornecedores) NÃO entra: só nasce por reclassificação, sem evento de fechamento.
+    # com_adm (2026-08-12): mesma família dos custos adicionais — ajustável na AF.
+    "com_adm": "com_adm",
+    # out_forn (Outros Fornecedores) NÃO entra: só nasce por reclassificação (conferencia_pedido,
+    # etapa 12), sem evento de fechamento próprio.
     # custo_financeiro NÃO entra: é LEITURA no painel (ajuste pelo box do ramo, rota própria).
 }
 
@@ -1932,7 +1948,7 @@ _PROV_PAINEL_SUB = {
 # FASE C: TIPO A/B/C/D de cada provisão (painel agrupado). Data-driven: conta nova no grupo sem tipo
 # mapeado cai em "O" (Outros), aparecendo mesmo assim — sem tocar no painel.
 _PROV_PAINEL_TIPO = {
-    "2.1.04.10": "A", "2.1.04.11": "A", "2.1.04.12": "A",             # Comissões / Pessoas
+    "2.1.04.10": "A", "2.1.04.11": "A", "2.1.04.12": "A", "2.1.04.21": "A",   # Comissões / Pessoas
     "2.1.04.02": "B", "2.1.04.03": "B", "2.1.04.05": "B",             # Custos futuros (serviços da venda)
     "2.1.04.06": "C", "2.1.04.07": "C", "2.1.04.08": "C", "2.1.04.09": "C", "2.1.04.14": "C",   # Aquisição / Fábrica
     "2.1.04.13": "D",                                                 # Fiscal

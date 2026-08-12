@@ -592,6 +592,9 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
                 "cust_via":            d.get("Cust_Via"),
                 "brinde":              d.get("Bri"),
                 "cust_esp":           d.get("Cust_Esp"),
+                # 2026-08-12 (achado do usuário): Comissão Administrativa — previsão de comissionamento
+                # do staff da loja (diretores/gerentes) — passa a ser provisionada como as demais.
+                "com_adm":             d.get("Com_Adm_Orc"),
             }
             ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
             # FASE D2: registra a venda CHEIA (Val_Cont) em Receita a Realizar (1.1.02 × 2.1.06) — não toca a DRE
@@ -10935,6 +10938,12 @@ class Handler(BaseHTTPRequestHandler):
                                     email=dir_login, nivel="master", loja_id=l.id, ativo=1, senha_provisoria=1)
                         u.set_senha(senha_ini); db.add(u); db.flush()
                         db.add(UsuarioLoja(usuario_id=u.id, loja_id=l.id))
+                    # Perfis padrão (master/gerencial/operador) — mesmo achado do PDV (linha
+                    # abaixo): sem isto a loja nasce sem NENHUM perfil de acesso configurável, e o
+                    # cadastro de usuários cai no fallback hardcoded (2026-08-12, achado do usuário
+                    # — só as Funções vinham, os Perfis não).
+                    from auth import perfil_store
+                    perfil_store.seed_perfis_loja(db, l.id)
                     # Tabela de Funções (2026-08-08, achado da Vera): sem isto, loja nascida
                     # depois do boot do servidor fica sem cargo nenhum — os 13 padrão só nasciam
                     # no seed inicial do banco ou no backfill de start, nunca na criação em
@@ -10943,6 +10952,7 @@ class Handler(BaseHTTPRequestHandler):
                     import seed as _seed
                     _seed.criar_funcoes_seed(db, l.id)
                     db.commit()
+                    perfis.recarregar()
                     self.send_json({"ok": True, "loja": _loja_dict(l)})
                 finally:
                     db.close()

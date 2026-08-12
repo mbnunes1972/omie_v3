@@ -40,6 +40,23 @@ def test_loja_nova_ganha_tabela_de_funcoes(http_client_factory, seed, app_db):
     assert "Consultor de Vendas" in nomes
 
 
+def test_loja_nova_ganha_perfis_padrao(http_client_factory, seed, app_db):
+    """2026-08-12 (achado do usuário): o endpoint semeava as Funções mas não os Perfis (Master/
+    Gerente/Operador) — loja criada em runtime ficava sem perfil de acesso nenhum até o próximo
+    boot do servidor (backfill_perfis_todas_lojas)."""
+    c = http_client_factory(); c.login("super", "senha123")
+    st, out = c.post("/api/admin/lojas", {
+        "nome": "Loja Sem Perfil Antes", "codigo": "LSP",
+        "diretor": {"nome": "Diretor LSP", "login": "dir@lsp.com"},
+    })
+    assert st in (200, 201) and out["ok"], out
+    lid = out["loja"]["id"]
+    db = app_db.get_session()
+    slugs = {p.slug for p in db.query(app_db.PerfilAcesso).filter_by(loja_id=lid).all()}
+    db.close()
+    assert slugs == {"master", "gerencial", "operador"}
+
+
 def test_pdv_novo_ganha_tabela_de_funcoes(http_client_factory, seed, app_db):
     db = app_db.get_session()
     mae_id = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id

@@ -41,6 +41,7 @@
   /* status de negócio → semânticas v1.4 (correção de significado aprovada) */
   --st-quente:var(--err); --st-morno:var(--warn); --st-frio:var(--info);
   --st-convertido:var(--ok); --st-fechado:var(--info); --st-perdido:var(--text-3);
+  --st-cancelado:var(--err);
   /* cartões teal/amber/coral → famílias semânticas v1.4 (frentes futuras) */
   --teal-bg:var(--accent-soft); --teal-brd:var(--accent-line); --teal-text:var(--accent-on-soft); --teal-lbl:var(--accent-vivid);
   --amber-bg:var(--warn-soft);  --amber-brd:var(--warn-line);  --amber-text:var(--warn);          --amber-lbl:var(--warn);
@@ -236,6 +237,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .proj-status-badge.fechado{background:var(--info-soft);color:var(--st-fechado)}
 .proj-status-badge.concluido{background:var(--accent-tint);color:var(--accent)}
 .proj-status-badge.perdido{background:var(--surface-2);color:var(--st-perdido)}
+.proj-status-badge.cancelado{background:var(--err-soft);color:var(--st-cancelado)}
 .proj-status-badge.sem{background:transparent;color:var(--muted)}
 /* Selo de atraso GERAL (Fatia 4 §6): qualquer etapa aberta vencida ilumina o projeto na lista */
 .proj-atraso-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--err-soft);color:var(--err)}
@@ -430,6 +432,7 @@ body{overflow:hidden}
 /* Banner de projeto bloqueado */
 .bloqueio-banner{display:none;background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
 .bloqueio-banner.ativo{display:flex}
+.bloqueio-banner.cancelado{background:var(--err-soft);border-color:var(--err)}
 .bloqueio-icon{font-size:18px;flex-shrink:0}
 .bloqueio-txt{font-size:11px;color:var(--ok);line-height:1.5}
 .bloqueio-txt strong{font-family:var(--font-sans);font-weight:700;display:block;margin-bottom:2px}
@@ -887,6 +890,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" value="convertido" checked onchange="projAplicarFiltros()"> ✓ Convertido</label>
           <label class="proj-status-filter-item"><input type="checkbox" value="fechado" checked onchange="projAplicarFiltros()"> <i class="ti ti-lock"></i> Fechado</label>
           <label class="proj-status-filter-item"><input type="checkbox" value="perdido"    checked onchange="projAplicarFiltros()"> ✗ Perdido</label>
+          <label class="proj-status-filter-item"><input type="checkbox" value="cancelado"  checked onchange="projAplicarFiltros()"> <i class="ti ti-x"></i> Cancelado</label>
           <label class="proj-status-filter-item"><input type="checkbox" value="sem"        checked onchange="projAplicarFiltros()"> — Sem status</label>
         </div>
       </div>
@@ -929,6 +933,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="bloqueio-txt">
         <strong>Projeto aprovado e bloqueado</strong>
         <span id="neg-bloqueio-data"></span> — XMLs travados com hash SHA-256. Nenhuma alteracao permitida.
+      </div>
+    </div>
+    <!-- Banner: cancelamento DEFINITIVO (pós-2ª-assinatura) — 2026-08-12 -->
+    <div class="bloqueio-banner cancelado" id="neg-cancelado-banner">
+      <div class="bloqueio-icon"><i class="ti ti-x"></i></div>
+      <div class="bloqueio-txt">
+        <strong>Projeto cancelado definitivamente</strong>
+        As provisões foram estornadas. Este projeto ficou travado para sempre — não é possível editar a negociação nem gerar um novo contrato.
       </div>
     </div>
 
@@ -6611,6 +6623,7 @@ const _PROJ_STATUS_LABEL = {
   perdido:    { label: '✗ Perdido',    cls: 'perdido'    },
   fechado:    { label: '<i class="ti ti-lock"></i> Fechado',  cls: 'fechado'    },
   concluido:  { label: '✓ Concluído', cls: 'concluido'  },   // FASE D2: ciclo executado e conciliado
+  cancelado:  { label: '<i class="ti ti-x"></i> Cancelado', cls: 'cancelado'  },   // 2026-08-12: cancelamento leve OU definitivo (ver banner do Ciclo pra distinguir)
 };
 
 function _projStatusBadge(p){
@@ -6618,6 +6631,7 @@ function _projStatusBadge(p){
   const ns = esc(p.nome_safe||'');
   if(s === 'convertido') return `<span class="proj-status-badge convertido">✓ Convertido</span>`;
   if(s === 'fechado') return `<span class="proj-status-badge fechado"><i class="ti ti-lock"></i> Fechado</span>`;
+  if(s === 'cancelado') return `<span class="proj-status-badge cancelado"><i class="ti ti-x"></i> Cancelado</span>`;
   if(!s){
     return `<span class="proj-status-badge sem" style="cursor:pointer"
                  onclick="projStatusClick(event,'${ns}')">— Definir</span>`;
@@ -7124,13 +7138,22 @@ async function _aplicarFiltroOrcamento(id){
 
 // Change 5: remove agendarCalculo() — renderTabelaNeg já é chamado por _aplicarFiltroOrcamento
 async function ativarOrcamento(id){
-  // auto-save incremental: "trava" o orçamento atual antes de trocar (evento de saída in-app).
-  // Salva DESCONTOS por ambiente (await — antes era só no blur, fire-and-forget, e corria com a
-  // troca: o _orcamentoAtivoId mudava antes do save commitar → desconto não ficava guardado) E o
-  // pagamento. Ambos do orçamento ATUAL, antes de trocar o _orcamentoAtivoId.
+  // Descontos por ambiente continuam com auto-save de verdade (ligados ao preview ao vivo do
+  // motor — não dá pra "descartar" sem reintroduzir um endpoint de preview com valores em
+  // rascunho, fora de escopo aqui). A NEGOCIAÇÃO (forma de pagamento/parcelas/entrada/juros)
+  // só é persistida por ação explícita (2026-08-12) — ao trocar de orçamento com alteração
+  // pendente, pergunta em vez de sobrescrever em silêncio.
   if (_orcamentoAtivoId && _orcamentoAtivoId !== id) {
+    if (_negTemAlteracaoPendente()) {
+      const resp = await confirmarSalvarPopup(
+        'Você tem alterações não salvas na negociação deste orçamento. Deseja salvar antes de trocar?');
+      if (resp === 'cancelar') return false;
+      if (resp === 'salvar') {
+        try { await salvarValorNegociado(); } catch (e) { console.warn('salvar antes de trocar:', e); }
+      }
+      // 'descartar' → segue a troca sem persistir; a edição em memória é perdida de propósito.
+    }
     try { await _persistirDescontosOrc(); } catch (e) { console.warn('auto-save descontos ao trocar:', e); }
-    try { await salvarValorNegociado(); } catch (e) { console.warn('auto-save ao trocar de orçamento:', e); }
   }
   _orcamentoAtivoId = id;
   if(projetoAtivo) localStorage.setItem('lastOrc_'+projetoAtivo.nome_safe, id);
@@ -7146,6 +7169,7 @@ async function ativarOrcamento(id){
       && typeof aplicarBloqueioNegociacao === 'function') {
     _aplicarLockNegociacaoPosAssinatura();
   }
+  return true;
 }
 
 function abrirModalNovoOrc(){
@@ -9943,6 +9967,57 @@ async function _resetPagamentoPadrao(){
   if (typeof onPagamentoChange === 'function') await onPagamentoChange();
 }
 
+// ── Salvar explícito da negociação (2026-08-12) ───────────────────────────────
+// A "negociação" (forma de pagamento, parcelas, entrada, juros de retenção) já era só
+// salva via clique explícito em "💾 Salvar" (salvarValorNegociado) — o único ponto que
+// violava isso era o auto-save SILENCIOSO ao trocar de orçamento/fechar a aba. Em vez de
+// instrumentar every input (a UI tem dezenas, por modalidade), comparamos um SNAPSHOT do
+// que _capturarNegociacao()/_capturarPagamento() devolveriam AGORA contra o snapshot do
+// último carregamento/salvamento — snapshot-diff é robusto a qualquer campo novo.
+let _negSnapshotSalvo = null;
+
+function _negSnapshotAtual(){
+  try {
+    const pag = (typeof _capturarPagamento === 'function' && window._planoPagamento)
+      ? _capturarPagamento(_formaEntrada, _formaParcela) : null;
+    return JSON.stringify({ pag, neg: _capturarNegociacao() });
+  } catch(e) { return null; }
+}
+
+function _negMarcarComoSalvo(){ _negSnapshotSalvo = _negSnapshotAtual(); }
+
+function _negTemAlteracaoPendente(){
+  if (!_orcamentoAtivoId || _negSnapshotSalvo == null || _negSaveTravado()) return false;
+  const atual = _negSnapshotAtual();
+  return atual != null && atual !== _negSnapshotSalvo;
+}
+
+// Popup de 3 vias (Salvar / Não salvar / Cancelar) — base em _popupOverlay, mesmo padrão
+// visual de confirmarPopup. Retorna Promise<'salvar'|'descartar'|'cancelar'>.
+function confirmarSalvarPopup(mensagem){
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--warn);font-size:1rem">Alterações não salvas</h4>' +
+      '<p style="margin:0 0 16px;color:var(--fg);font-size:.9rem;white-space:pre-line">' + esc(mensagem) + '</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+      '<button data-act="cancelar" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Cancelar</button>' +
+      '<button data-act="descartar" style="background:none;border:1px solid var(--err);color:var(--err);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Não salvar</button>' +
+      '<button data-act="salvar" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);' +
+      'border:var(--btn-primary-border);border-radius:5px;padding:7px 16px;font-size:.88rem;font-weight:700;cursor:pointer">Salvar</button>' +
+      '</div>');
+    const fin = (v) => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') fin('cancelar'); };
+    ov.querySelector('[data-act="salvar"]').onclick = () => fin('salvar');
+    ov.querySelector('[data-act="descartar"]').onclick = () => fin('descartar');
+    ov.querySelector('[data-act="cancelar"]').onclick = () => fin('cancelar');
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin('cancelar'); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => ov.querySelector('[data-act="salvar"]').focus(), 60);
+  });
+}
+
 async function carregarMargensSalvas(){
   if(!projetoAtivo) return;
   // Ao carregar projeto, o desconto salvo passa a ser o limite autorizado
@@ -9978,6 +10053,11 @@ async function carregarMargensSalvas(){
   await carregarPerfil();
   // EP-07: _orcAmbientesAtivos já foi setado por ativarOrcamento (em carregarOrcamentos)
   // executarCalculo usará _orcAmbientesAtivos automaticamente — sem hook necessário aqui
+  // Baseline do "salvo explícito" (2026-08-12): só quando é carga de VERDADE de outro
+  // orçamento (dado do servidor) — no re-trigger do MESMO orçamento (_mesmoOrc), o que foi
+  // restaurado acima é o estado EM MEMÓRIA (possivelmente ainda não salvo), não pode virar
+  // baseline ou o prompt de "alterações não salvas" nunca dispararia pra essa edição.
+  if (!_mesmoOrc) _negMarcarComoSalvo();
 }
 
 // ---- Modal de Parametros da Negociacao ---------------------------------------
@@ -15741,10 +15821,22 @@ async function salvarOrcamento(){
 }
 
 // Event listeners drag-drop para o modal de novo ambiente
-// auto-save incremental: "trava" a negociação ao fechar a aba / encerrar a reunião.
-// keepalive (no fetch de salvarValorNegociado) faz a request sobreviver ao unload.
-window.addEventListener('beforeunload', function(){
-  try { if (_orcamentoAtivoId) { _persistirDescontosOrc(); salvarValorNegociado(); } } catch (e) {}
+// beforeunload (2026-08-12): descontos por ambiente continuam auto-salvando (preview ao
+// vivo). A NEGOCIAÇÃO só é "só salva por ação explícita" — o browser não permite popup
+// customizado aqui (só o dialog nativo de 2 vias, texto genérico), então: se houver
+// alteração pendente, preventDefault() dispara esse dialog nativo ("sair/ficar"); e, best-
+// effort, ainda tenta o save via keepalive caso o usuário saia mesmo assim (perder o dado
+// de vez é pior que um auto-save de última hora ao fechar a aba de propósito).
+window.addEventListener('beforeunload', function(ev){
+  try {
+    if (_orcamentoAtivoId) {
+      _persistirDescontosOrc();
+      if (typeof _negTemAlteracaoPendente === 'function' && _negTemAlteracaoPendente()) {
+        ev.preventDefault(); ev.returnValue = '';
+        salvarValorNegociado();
+      }
+    }
+  } catch (err) {}
 });
 
 document.addEventListener('DOMContentLoaded', function(){
@@ -15999,6 +16091,7 @@ let _cicloData   = {};
 let _cicloCriadoPorNome = '';   // nome do criador do projeto p/ a tag "com a bola" (revisão 2026-07-25)
 let _contratoAssinado = false;
 let _contratoTotalmenteAssinado = false;
+let _projetoCanceladoDefinitivo = false;   // 2026-08-12: trava permanente pós-2ª-assinatura
 
 // ── Projeto Executivo (PE) — estado e helpers ──────────────────────────────
 let _pePayload = { subfases: {}, documentos: [], revisoes: [] };
@@ -17445,9 +17538,16 @@ async function _fetchCiclo() {
   if (!d.ok) return;
   _contratoAssinado = !!d.contrato_assinado;
   _contratoTotalmenteAssinado = !!d.contrato_totalmente_assinado;
+  _projetoCanceladoDefinitivo = !!d.projeto_cancelado_definitivo;
   _cicloCriadoPorNome = d.criado_por_nome || '';   // fallback da tag "com a bola" (revisão 2026-07-25)
   _cicloData = {};
   for (const e of (d.ciclo || [])) _cicloData[e.etapa_codigo] = e;
+  _renderBannerCancelado();
+}
+
+function _renderBannerCancelado(){
+  const banner = document.getElementById('neg-cancelado-banner');
+  if (banner) banner.classList.toggle('ativo', _projetoCanceladoDefinitivo);
 }
 
 async function carregarCiclo() {
@@ -18547,7 +18647,7 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
   // Cancelamento de contrato, e só na AF1 (etapa 8) — depois da AF1, cancelamento também é fora do ciclo.
   const devBox = (codigo === '8') ? `
     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-      <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:4px">Cancelamento de contrato: estorna TODOS os lançamentos e trava o projeto como "cancelado" (revender = novo projeto). Exige senha de Diretor. Só na AF1 — depois, cancelamento e devolução são fora do ciclo.</div>
+      <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:4px">Cancelamento de contrato: exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre (projeto continua editável). Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE (revender = novo projeto). Só na AF1 — depois, cancelamento e devolução são fora do ciclo.</div>
       <button class="btn-ciclo" onclick="cancelarContrato()" style="background:var(--cancel);color:var(--cancel-on);border-color:var(--cancel);font-weight:700"><i class="ti ti-file-x"></i> Cancelar contrato</button>
     </div>` : '';
   // Fichário fase 2 (2026-08-02): o painel de Provisões renderiza DIRETO na tela da etapa
@@ -19145,7 +19245,8 @@ async function enviarDecisaoReprovado() {
   const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_medicao_reprovada', titulo:'Decisão Comercial', mensagem:'Login e senha de Gerente de Vendas, Adm/Financeiro ou Diretor.'});
   if (!cred) return;
   const fd = new FormData();
-  fd.append('doc_cliente', f); fd.append('login', cred.login); fd.append('senha', cred.senha);
+  fd.append('doc_cliente', f);
+  if (cred.login) { fd.append('login', cred.login); fd.append('senha', cred.senha); }
   const d = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/decisao-reprovado`, fd);
   if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
   showToast('Medição liberada (decisão comercial registrada).', false);
@@ -19861,15 +19962,20 @@ async function devolucaoRegistrar(){
 
 async function cancelarContrato(){
   if(!_orcamentoAtivoId) return;
-  const cred = await pedirCredenciaisGerente({capacidade: null, 
+  const cred = await pedirCredenciaisGerente({capacidade: null,
     titulo: 'Cancelar contrato',
-    mensagem: 'Exige senha de DIRETOR. Estorna TODOS os lançamentos do contrato e trava o projeto como "cancelado" (revender = novo projeto). Indisponível após a NF-e.' });
+    mensagem: 'Exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre (projeto continua editável). Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE. Indisponível após a NF-e.' });
   if(!cred) return;
   try {
     const j = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/cancelamento',
       { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ login: cred.login, senha: cred.senha }) }).then(r=>r.json());
-    if(j.ok){ showToast('Contrato cancelado — lançamentos estornados.'); await carregarCiclo(); }
+    if(j.ok){
+      showToast(j.definitivo
+        ? 'Contrato cancelado — lançamentos estornados. Projeto travado permanentemente.'
+        : 'Contrato cancelado. Projeto continua acessível e editável.');
+      await carregarCiclo();
+    }
     else { await avisoPopup(j.erro||'Erro', {titulo:'Cancelar contrato'}); }
   } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Cancelar contrato'}); }
 }
@@ -21091,6 +21197,7 @@ async function salvarValorNegociado() {
       }),
     });
     const d = await r.json();
+    if (d && d.ok && typeof _negMarcarComoSalvo === 'function') _negMarcarComoSalvo();
     return d && d.ok ? { ok: true } : { ok: false, erro: (d && d.erro) || 'Falha ao salvar' };
   } catch(e) {
     console.warn('salvarValorNegociado:', e);

@@ -560,9 +560,14 @@ class Projeto(Base):
 
     nome_safe  = Column(String,   primary_key=True)
     cliente_id = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
-    status     = Column(String(20), nullable=True)   # quente | morno | frio | convertido | perdido
+    status     = Column(String(20), nullable=True)   # quente | morno | frio | convertido | perdido | cancelado
     status_at  = Column(DateTime,   nullable=True)
     perdido_em     = Column(DateTime,   nullable=True)
+    # Trava PERMANENTE: só é setada quando o contrato já tinha as 2 assinaturas (provisões já
+    # constituídas) e foi cancelado depois disso. Diferente de status="cancelado" sozinho (que
+    # também cobre o cancelamento leve, pré-2ª-assinatura, e não trava nada). Uma vez 1, nunca
+    # volta a 0 — nem um novo contrato no mesmo projeto reabre a edição (ver _contrato_assinado).
+    cancelado_definitivo = Column(Integer, default=0)
     parametros_json = Column(Text, nullable=True)   # parâmetros estruturais da negociação (JSON, projeto-wide)
     loja_id        = Column(Integer,    ForeignKey("lojas.id"), nullable=True)
     criado_por_id  = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)   # usuário que criou o projeto (escopo por projetista)
@@ -1138,6 +1143,11 @@ class Contrato(Base):
     pdf_path             = Column(Text,     nullable=True)
     endereco_instalacao  = Column(Text,     nullable=True)
     pagamento_json       = Column(Text,     nullable=True)   # JSON com cronograma de parcelas
+    # Retrato IMUTÁVEL da negociação, gravado só na 2ª assinatura (junto da constituição das
+    # provisões): desconto_pct, forma_pagamento, negociacao_json (parcelas/entrada/juros de
+    # retenção) do Orçamento + parametros_json (custos adicionais) do Projeto — tudo num dict só.
+    # Diferente de pagamento_json (que é só texto pra detectar obsolescência, não trava nada).
+    snapshot_negociacao_json = Column(Text, nullable=True)
     status               = Column(Text,     nullable=False, default="rascunho")
     # status: rascunho | gerado | assinado_loja | assinado_cliente | vigente
     adendo               = Column(Text,     nullable=True)
@@ -2189,6 +2199,12 @@ def _migrar_colunas_pg():
         # altera tabela existente, só cria as que faltam).
         "ALTER TABLE simulador_autorizacoes ADD COLUMN IF NOT EXISTS solicitado_por_usuario_id INTEGER",
         "ALTER TABLE simulador_autorizacoes ADD COLUMN IF NOT EXISTS solicitado_em TIMESTAMP",
+        # Cancelamento de contrato — timing correto de provisão + trava definitiva (2026-08-12):
+        # provisões passam a nascer só na 2ª assinatura (não mais na geração do PDF); cancelar
+        # depois disso trava o PROJETO pra sempre (cancelado_definitivo), e o contrato fechado
+        # guarda um retrato imutável da negociação (snapshot_negociacao_json).
+        "ALTER TABLE projetos_meta ADD COLUMN IF NOT EXISTS cancelado_definitivo INTEGER DEFAULT 0",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS snapshot_negociacao_json TEXT",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

@@ -620,6 +620,32 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
         logging.getLogger(__name__).warning("wiring fechamento (provisões+custo fin, ref=%s) falhou: %s", ref_base, e)
 
 
+def _notificar_masters_cancelamento(nome_safe, loja_id):
+    """E-mail (fail-soft, sessão própria) para todo usuário Master ativo da loja quando um
+    contrato é cancelado DEPOIS da 2ª assinatura (provisões já existiam e foram estornadas).
+    NÃO é chamado no cancelamento leve (pré-2ª-assinatura, sem provisão pra estornar)."""
+    import mod_chat_externo as _mce
+    db = get_session()
+    try:
+        masters = [u for u in db.query(Usuario)
+                     .filter(Usuario.loja_id == loja_id, Usuario.ativo == 1).all()
+                   if perfis.base(u.nivel) == "master" and (u.email or "").strip()]
+        loja = db.get(Loja, loja_id)
+        assunto = "[Orizon] Contrato cancelado — %s" % nome_safe
+        corpo = ("O contrato do projeto '%s' (loja %s) foi cancelado após a assinatura completa. "
+                 "As provisões constituídas foram estornadas e o projeto ficou travado "
+                 "permanentemente — não é mais possível editar a negociação nem gerar um novo "
+                 "contrato para este projeto." % (nome_safe, loja.nome if loja else str(loja_id)))
+        for m in masters:
+            try:
+                _mce.enviar_email_simples(m.email, assunto, corpo)
+            except Exception as _e:
+                logging.getLogger(__name__).warning(
+                    "e-mail de cancelamento p/ %s (proj=%s) falhou: %s", m.email, nome_safe, _e)
+    finally:
+        db.close()
+
+
 def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrato, ref_base,
                                           pagamento_json_str=None):
     """Materializa os recebíveis PREVISTOS do orçamento assinado (2026-08-07, achado da Vera — ver
@@ -4135,6 +4161,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": True, "ciclo": resultado,
                                     "contrato_assinado": assinado,
                                     "contrato_totalmente_assinado": total_assinado,
+                                    # Cancelamento definitivo (2026-08-12): projeto travado pra
+                                    # sempre — o frontend mostra banner e trava a negociação.
+                                    "projeto_cancelado_definitivo": bool(_proj_meta and _proj_meta.cancelado_definitivo),
                                     # Revisão 2026-07-25: nome do criador p/ a tag "com a bola"
                                     # quando nenhum Funcionário responsável resolve (fallback visual).
                                     "criado_por_id": (_proj_meta.criado_por_id if _proj_meta else None),
@@ -9438,9 +9467,15 @@ class Handler(BaseHTTPRequestHandler):
 
         elif re.match(r"^/api/orcamentos/(\d+)/cancelamento$", path):
             # ── POST /api/orcamentos/<id>/cancelamento — cancelamento de contrato (estorno TOTAL). ──
-            # Gate DIRETOR (autorizar). Bloqueado após a NF-e (etapa 15). Reverte TODA a constituição do
-            # contrato (cancelar_contrato) e trava o projeto como "cancelado" (opção B — revender = novo
-            # projeto). Reembolso físico de valores recebidos → Tesouraria (módulo futuro).
+            # Gate: aprovador financeiro com capacidade "autorizar" (Gerente ou superior — não é
+            # exclusivo de Diretor, é intencional). Bloqueado após a NF-e (etapa 15). Reverte TODA a
+            # constituição do contrato (cancelar_contrato, idempotente — no-op se não houver o que
+            # estornar). Dois desfechos, conforme o estágio da assinatura (2026-08-12):
+            #  - < 2 assinaturas: ainda não havia provisão constituída (nasce só na 2ª assinatura)
+            #    → cancelamento "leve": invalida a assinatura parcial (se houver) e o projeto
+            #    continua acessível/editável — pode tentar de novo, inclusive com outro orçamento.
+            #  - 2 assinaturas: provisão já existia → estorna de fato e trava o projeto PRA SEMPRE
+            #    (cancelado_definitivo) — revender = novo projeto, esta negociação morreu.
             import mod_contabil as _mc
             import mod_ciclo as _mcic
             m_cc = re.match(r"^/api/orcamentos/(\d+)/cancelamento$", path)
@@ -9453,7 +9488,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
                 if not aprovador or not perfis.pode(aprovador.nivel, "autorizar"):
-                    self.send_json({"ok": False, "erro": "Cancelamento de contrato exige senha de Diretor"}, code=403); return
+                    self.send_json({"ok": False, "erro": "Cancelamento de contrato exige senha de Gerente ou superior"}, code=403); return
                 ator = _ator_dict(db, usuario)
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
@@ -9466,11 +9501,33 @@ class Handler(BaseHTTPRequestHandler):
                 if et15 and et15.status in _mcic.STATUS_CONCLUSIVOS:
                     self.send_json({"ok": False,
                         "erro": "NF-e já emitida — cancelamento de contrato indisponível (exige cancelamento fiscal)"}, code=409); return
+                contrato_atual = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                                    .order_by(Contrato.id.desc()).first())
+                partes_assinadas = {a.parte for a in contrato_atual.assinaturas} if contrato_atual else set()
+                definitivo = len(partes_assinadas) >= 2
                 ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 out = _mc.cancelar_contrato(db, ot, own_id, nome_safe, ref_base="cancel:%s" % nome_safe)
                 db.commit()                                     # commit os estornos ANTES (libera o lock do SQLite)
+                if definitivo:
+                    pm = db.get(Projeto, nome_safe)
+                    if pm is not None:
+                        pm.cancelado_definitivo = 1
+                        db.commit()
+                elif contrato_atual is not None and partes_assinadas:
+                    # 1 assinatura — invalida pra reabrir _contrato_assinado (o projeto volta a
+                    # ficar editável; a assinatura parcial não fazia mais sentido de qualquer jeito).
+                    db.query(ContratoAssinatura).filter_by(contrato_id=contrato_atual.id).delete()
+                    contrato_atual.status = "para_assinatura"
+                    db.commit()
                 upsert_projeto_status(nome_safe, "cancelado")   # sessão própria (thread-safe), como no conciliar_final
-                self.send_json({"ok": True, "revertido": out, "status": "cancelado"})
+                if definitivo:
+                    try:
+                        _notificar_masters_cancelamento(nome_safe, loja_id)
+                    except Exception as _email_err:
+                        logging.getLogger(__name__).warning(
+                            "e-mail de cancelamento (proj=%s) falhou: %s", nome_safe, _email_err)
+                self.send_json({"ok": True, "revertido": out, "status": "cancelado",
+                               "definitivo": definitivo})
             finally:
                 db.close()
             return
@@ -11256,6 +11313,31 @@ class Handler(BaseHTTPRequestHandler):
                             upsert_projeto_status(nome_safe, "fechado")
                         except Exception as _e:
                             print("[FECHADO] upsert_projeto_status falhou:", _e)
+                        # Provisões contábeis (v6 §6.4 + FASE D2) — timing correto (2026-08-12): só
+                        # aqui, na 2ª assinatura completa, NUNCA na geração do contrato (antes
+                        # nasciam com 0 assinaturas — bug de negócio: um contrato cancelado antes de
+                        # fechar já tinha provisão pra estornar). Grava junto o retrato IMUTÁVEL da
+                        # negociação (desconto, custos adicionais, forma de pagamento, parcelas/
+                        # entrada/juros) — snapshot_negociacao_json, nunca mais reescrito.
+                        try:
+                            _orc_prov = db.get(Orcamento, contrato.orcamento_id)
+                            if _orc_prov is not None:
+                                _registrar_provisao_venda(db, _orc_prov, por_id=usuario["id"])
+                                db.commit()
+                                _fin_provisoes_venda_seguro(_orc_prov, nome_safe, "prov:" + str(contrato.id))
+                                _pm_snap = db.get(Projeto, nome_safe)
+                                contrato.snapshot_negociacao_json = json.dumps({
+                                    "desconto_pct":     _orc_prov.desconto_pct,
+                                    "forma_pagamento":  _orc_prov.forma_pagamento,
+                                    "negociacao_json":  _orc_prov.negociacao_json,
+                                    "valor_total":      _orc_prov.valor_total,
+                                    "valor_liquido":    _orc_prov.valor_liquido,
+                                    "parametros_json":  _pm_snap.parametros_json if _pm_snap else None,
+                                }, ensure_ascii=False)
+                                db.commit()
+                        except Exception as _eprov:
+                            db.rollback()
+                            print("[PROVISOES] constituição na 2ª assinatura falhou:", _eprov)
                         # Montagem da equipe no fechamento (decisão 2026-07-27): persiste os
                         # responsáveis automáticos, apura as lacunas e posta o resumo na conversa
                         # do projeto (gerência vê por oversight). Best-effort — nunca quebra a assinatura.
@@ -11334,6 +11416,11 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
+                        return
+                    if _projeto_cancelado_definitivo(nome_safe, db):
+                        self.send_json({"ok": False,
+                                        "erro": "Projeto cancelado definitivamente — não é possível "
+                                                "gerar novo contrato."}, code=403)
                         return
                     # Gate BLOQUEANTE-SUAVE (decisão 13 da spec de chat, mini-frente
                     # 2026-07-25): o ato do contrato exige que o operador tenha VISTO os
@@ -11467,11 +11554,10 @@ class Handler(BaseHTTPRequestHandler):
                     etapa7.status = "em_andamento"
                     db.commit()
                     _orc_venda = db.get(Orcamento, contrato.orcamento_id)
-                    _registrar_provisao_venda(db, _orc_venda,
-                                              por_id=(usuario.get("id") if usuario else None))
-                    db.commit()
-                    # v6 §6.4: auto-constitui as 3 provisões contábeis (% × valor da venda), fail-soft
-                    _fin_provisoes_venda_seguro(_orc_venda, nome_safe, "prov:" + str(contrato.id))
+                    # Provisões contábeis NÃO nascem mais aqui (geração do PDF, 0 assinaturas) —
+                    # movidas pra dentro do fechamento da 2ª assinatura, mais abaixo neste mesmo
+                    # arquivo (2026-08-12, achado: nasciam cedo demais). Recebíveis previstos
+                    # continuam sendo materializados na geração — fora da regra de provisão.
                     # 2026-08-07: materializa os recebíveis previstos (achado da Vera), fail-soft
                     _materializar_recebiveis_venda_seguro(_orc_venda, nome_safe, loja_id,
                                                           contrato.gerado_em, "receb:" + str(contrato.id),
@@ -13670,9 +13756,20 @@ def _projeto_esta_bloqueado(nome_safe) -> bool:
     return bool(proj and proj.get("bloqueado"))
 
 
+def _projeto_cancelado_definitivo(nome_safe, db) -> bool:
+    """True quando o projeto foi cancelado depois da 2ª assinatura completa (provisões já
+    constituídas) — trava PERMANENTE, nunca reaberta por um contrato/assinatura novo."""
+    pm = db.get(Projeto, nome_safe)
+    return bool(pm and pm.cancelado_definitivo)
+
+
 def _contrato_assinado(nome_safe, db) -> bool:
     """True se o último contrato do projeto tem qualquer assinatura (1ª assinatura)
-    ou status já assinado. Fonte única da trava total pós-assinatura."""
+    ou status já assinado, OU se o projeto foi cancelado definitivamente (trava
+    permanente pós-2ª-assinatura — um contrato novo não reabre a edição).
+    Fonte única da trava total pós-assinatura."""
+    if _projeto_cancelado_definitivo(nome_safe, db):
+        return True
     c = (db.query(Contrato)
            .filter_by(projeto_nome=nome_safe)
            .order_by(Contrato.id.desc())
@@ -13687,7 +13784,10 @@ def _contrato_assinado(nome_safe, db) -> bool:
 def _contrato_totalmente_assinado(nome_safe, db) -> bool:
     """True somente quando AMBAS as partes assinaram (loja + cliente) — contrato
     totalmente assinado. Usado para esconder o botão 'Assinar Contrato' (nada mais
-    a assinar). Difere de _contrato_assinado (que é True já na 1ª assinatura)."""
+    a assinar). Difere de _contrato_assinado (que é True já na 1ª assinatura).
+    Também True se cancelado definitivamente (mesma trava permanente)."""
+    if _projeto_cancelado_definitivo(nome_safe, db):
+        return True
     c = (db.query(Contrato)
            .filter_by(projeto_nome=nome_safe)
            .order_by(Contrato.id.desc())

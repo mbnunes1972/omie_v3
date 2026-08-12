@@ -3277,6 +3277,81 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 193 — Timing correto de provisões (2ª assinatura, não geração do contrato) + cancelamento em dois desfechos + snapshot imutável da negociação + salvar explícito
+
+A Vera (QA) achou dois problemas no cancelamento de contrato: o texto do modal promete "senha de
+DIRETOR" mas um Gerente consegue cancelar (gate real é `perfis.pode(nivel,"autorizar")`, que
+inclui Gerente — intencional, só o texto mentia); e depois de cancelado o projeto segue 100%
+editável e sem nenhum aviso visual. Investigar revelou um problema mais profundo: as 10 rubricas
+de provisão contábil nasciam na **geração do PDF do contrato** (0 assinaturas!), não na assinatura
+— nada a ver com a intenção de negócio. Usuário definiu a regra correta e pediu a implementação
+completa + testes reais via Playwright (frente grande, várias decisões — plano formal aprovado
+antes de codar).
+
+**Regra de negócio (decidida com o usuário):**
+- **0 ou 1 assinatura:** sem provisão constituída ainda → cancelável livre (inclusive por
+  Gerente). Depois de cancelar, o projeto **continua acessível e editável** (pode tentar de novo,
+  inclusive com outro orçamento do mesmo projeto).
+- **2 assinaturas (completa):** é o momento em que as provisões passam a ser constituídas — a
+  trava de edição pós-1ª-assinatura **já existia e continua igual** (não mexida). Cancelar depois
+  disso estorna as provisões e trava o projeto **PARA SEMPRE**.
+- Status "cancelado" some certo (badge/filtro) na lista de Projetos nos dois casos; e-mail
+  automático a todo Master da loja só no cancelamento definitivo.
+
+**Backend:** `Projeto.cancelado_definitivo` (coluna nova, trava permanente — não reaproveitou
+`bloquear_projeto()`/`_projeto_esta_bloqueado`, código morto ligado a outra coisa) +
+`Contrato.snapshot_negociacao_json` (retrato imutável: desconto, custos adicionais, forma de
+pagamento, parcelas/entrada/juros — gravado só na 2ª assinatura, nunca reescrito). Provisões
+(`_registrar_provisao_venda` + `_fin_provisoes_venda_seguro`) **removidas** do endpoint de geração
+do contrato e **movidas** pro fechamento da 2ª assinatura completa. `_contrato_assinado`/
+`_contrato_totalmente_assinado` passam a considerar `cancelado_definitivo` — propaga a trava pros
+~15 gates existentes de graça, sem tocar em cada um; só faltava 1 checagem nova (bloquear GERAR
+contrato novo quando já cancelado definitivo). `POST /api/orcamentos/<id>/cancelamento` ganhou os
+dois ramos: <2 assinaturas invalida a assinatura parcial (deleta `ContratoAssinatura`, reseta
+`Contrato.status`) e mantém `status="cancelado"` como rótulo histórico (não bloqueia nada); 2
+assinaturas seta `cancelado_definitivo=1` + dispara e-mail. `enviar_email_simples` novo em
+`chat/externo.py` (reusa as envs `ORIZON_SMTP_*` já reais, sem o acoplamento de `_enviar_email` a
+um `EnvioExterno`/canal do Orizon Chat).
+
+**Frontend:** `_PROJ_STATUS_LABEL`/badge/filtro pro status "cancelado"; banner vermelho fixo
+(`neg-cancelado-banner`) quando `projeto_cancelado_definitivo` vem `true` do `/ciclo`. **Salvar
+explícito com prompt:** a "negociação" (forma de pagamento/parcelas/entrada/juros — já era só
+salva via clique explícito, `salvarValorNegociado`) tinha um vazamento: `beforeunload`/troca de
+orçamento auto-salvavam em silêncio. Mecanismo novo por **snapshot-diff** (compara
+`_capturarNegociacao()`/`_capturarPagamento()` AGORA contra o último carregamento/salvamento —
+robusto a campo novo, sem instrumentar every input) + popup de 3 vias (`confirmarSalvarPopup`,
+base em `_popupOverlay`) — Salvar/Não salvar/Cancelar ao trocar de orçamento com alteração
+pendente; `beforeunload` usa o dialog nativo do browser (só 2 vias possíveis aí) + mantém o
+auto-save `keepalive` como fallback só se o usuário realmente sair. **Decisão de escopo (não
+pedida explicitamente, avaliada como a mais segura):** desconto/custos adicionais/descontos por
+ambiente **continuam** com auto-save de verdade — são o motor de cálculo AO VIVO
+(`/negociacao-preview` só recalcula do que já está persistido no banco, não aceita valores de
+rascunho no request) — trocar esse mecanismo also exigiria estender o endpoint de preview pra
+aceitar overrides, fora do escopo desta frente.
+
+**Achado ao planejar (achado da Vera, corrigido de brinde):** `enviarDecisaoReprovado`
+(medição/decisão comercial) mandava `login`/`senha` `undefined` quando `pedirCredenciaisGerente()`
+resolve `{auto:true}` — 403 sempre pra quem tem a permissão. 1 linha, mesmo padrão da função irmã.
+
+**Entrelaçamento com o ClickSign (não commitado, WIP de outra frente):** `_registrar_assinatura_contrato`
+(função que o ClickSign extraiu do endpoint `/contrato/assinar` pra compartilhar com o webhook) não
+existe em HEAD — pré-ClickSign essa lógica é INLINE no handler. Pra manter o commit desta sessão
+autocontido (sem depender do WIP do ClickSign), a mudança de timing de provisão foi aplicada
+DIRETO no código inline de HEAD (não na função extraída do working tree) — validado rodando a
+suíte inteira com o ClickSign temporariamente stasheado (**2036 passed**, zero dependência).
+
+**Testes:** `tests/test_cancelamento.py` +3 (ramo leve reabre negociação; ramo definitivo trava +
+bloqueia contrato novo; Gerente consegue cancelar); `tests/test_provisoes_2a_assinatura.py` (novo,
+5 testes — via o endpoint real `/contrato/assinar`, não a função interna: continua válido
+independente de refatoração futura do endpoint — provisão só após 2ª assinatura, reentrega não
+duplica, snapshot gravado e completo, `enviar_email_simples` com mock de SMTP). Suíte **2064 →
+2072**. Próximo passo: deploy em VPS B + bateria de testes Playwright pedida pelo usuário (até 5
+orçamentos por projeto, cancelamento nos dois estágios, troca de orçamento sem salvar, snapshot
+imutável) — registrado à parte quando concluído.
+
+**Arquivos:** `database.py`, `main.py`, `chat/externo.py`, `static/index.html`,
+`tests/test_cancelamento.py`, `tests/test_provisoes_2a_assinatura.py` (novo).
+
 ## Sessão 192 — XML do Promob sem itens com preço visível não cria mais ambiente "fantasma" (PoolAmbiente nunca é deletado)
 
 Achado reportado pelo usuário: um "ambiente" criado no upload ficava vazio (R$ 0,00, sem itens) e

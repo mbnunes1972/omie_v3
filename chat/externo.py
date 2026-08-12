@@ -137,6 +137,36 @@ def _enviar_email(env, corpo):
     return True, msgid, None
 
 
+def enviar_email_simples(destinatario, assunto, corpo):
+    """E-mail avulso (alerta operacional, não é conversa/documento) — reusa só a config SMTP
+    (mesmas envs ORIZON_SMTP_*), sem o acoplamento de `_enviar_email` a um `EnvioExterno`/canal.
+    Levanta a exceção pro chamador decidir (config-gated: se ORIZON_SMTP_HOST não está setado,
+    levanta RuntimeError — o chamador deve capturar e tratar como fail-soft, nunca travar o
+    fluxo principal por causa de e-mail)."""
+    import smtplib
+    from email.message import EmailMessage
+    from email.utils import make_msgid
+    host = (os.environ.get("ORIZON_SMTP_HOST") or "").strip()
+    if not host:
+        raise RuntimeError("SMTP não configurado (ORIZON_SMTP_HOST ausente)")
+    port = int((os.environ.get("ORIZON_SMTP_PORT") or "587").strip())
+    user = (os.environ.get("ORIZON_SMTP_USER") or "").strip()
+    pw   = (os.environ.get("ORIZON_SMTP_PASS") or "").strip()
+    frm  = (os.environ.get("ORIZON_SMTP_FROM") or "").strip()
+    _dom = frm.split("@")[-1].strip() if "@" in (frm or "") else None
+    msg = EmailMessage()
+    msg["From"] = frm
+    msg["To"] = destinatario
+    msg["Subject"] = assunto
+    msg["Message-ID"] = make_msgid(domain=_dom) if _dom else make_msgid()
+    msg.set_content(corpo or "")
+    with smtplib.SMTP(host, port, timeout=15) as s:
+        s.starttls()
+        if user:
+            s.login(user, pw)
+        s.send_message(msg)
+
+
 def _erro_meta(he):
     """Extrai a mensagem REAL da Meta de um HTTPError (`error.message`/`error.code`) em vez do genérico
     'HTTP Error 400' — ex.: código 131047 = janela de 24h fechada, exige template (G5/RF-06)."""

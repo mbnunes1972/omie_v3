@@ -1153,7 +1153,6 @@ class Contrato(Base):
     adendo               = Column(Text,     nullable=True)
     gerado_em            = Column(DateTime, nullable=True)
     gerado_por_id        = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    d4sign_uuid          = Column(Text,     nullable=True)   # fase futura D4Sign
     loja_id              = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
     loja_snapshot_json   = Column(Text,     nullable=True)   # snapshot dos dados da loja (F3)
     modelo_versao_id     = Column(Integer, ForeignKey("documento_modelos.id"), nullable=True)
@@ -1176,7 +1175,8 @@ class Contrato(Base):
 
 
 class ContratoAssinatura(Base):
-    """Registro de assinatura interna (MVP) ou confirmação D4Sign (futuro)."""
+    """Registro de assinatura — interna (loja/cliente clicam na tela) ou confirmação vinda da
+    ClickSign (reconciliação/webhook), ver Contrato.assinatura_canal."""
     __tablename__ = "contratos_assinaturas"
 
     id           = Column(Integer,  primary_key=True, autoincrement=True)
@@ -2248,6 +2248,14 @@ def _migrar_colunas_pg():
         "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_envelope_id TEXT",
         "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_enviado_em TIMESTAMP",
         "ALTER TABLE aprovacoes_pe ADD COLUMN IF NOT EXISTS clicksign_signatarios_json TEXT",
+        # Faxina D4Sign (2026-08-12): integração nunca chegou a ter código — só colunas de uma
+        # migração antiga (commit c0f256f). Substituída pela ClickSign; dropa o schema morto.
+        "ALTER TABLE contratos DROP COLUMN IF EXISTS d4sign_uuid",
+        "ALTER TABLE contratos DROP COLUMN IF EXISTS d4sign_enviado_em",
+        "ALTER TABLE contratos DROP COLUMN IF EXISTS d4sign_signatarios_json",
+        "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_uuid",
+        "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_enviado_em",
+        "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_signatarios_json",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

@@ -3341,9 +3341,40 @@ shim), `mod_clicksign.py` (novo), `integracoes/clicksign_client.py` (novo),
 `tests/test_clicksign_reconciliacao.py`, `tests/test_contrato_assinatura_clicksign_e2e.py`,
 `tests/test_aprovacao_pe_clicksign_e2e.py` (todos novos). **Pendências:** UI de "Verificar
 agora"/badge do ClickSign na Aprovação do PE (backend pronto, sem botão ainda — fora do pedido
-desta rodada); D4Sign é schema morto pré-existente (`Contrato.d4sign_uuid` etc., achado durante
-a reconstrução, não relacionado a esta frente — feature nunca chegou a ter código, só migração
-de coluna de sessões bem antigas).
+desta rodada); D4Sign era schema morto pré-existente — **removido nesta mesma rodada** (ver
+Sessão 195 abaixo).
+
+## Sessão 195 — Vera valida o timing de provisões (2ª assinatura) pela tela, do zero + faxina do schema morto D4Sign
+
+**Verificação pedida pelo usuário, após a Sessão 194:** confirmar por um contrato real, criado
+pela TELA (não script sintético), que a mudança de timing das provisões da Sessão 193 (10
+rubricas só nascem na 2ª assinatura, não na geração do PDF) segue correta depois do merge com o
+código do ClickSign — e conferir partidas dobradas. **Vera** rodou o fluxo completo no navegador
+(`localhost:8765`): cliente novo, projeto novo (`Vera_QA_Provisoes_2aAssinatura`), ambiente real
+(XML do Promob, Val_Cont R$ 20.517,32), negociação, aprovação, geração e assinatura das duas
+partes (canal interno — o ClickSign real já tinha sido validado à parte contra o sandbox).
+**Resultado: sem achados bloqueantes.** Painel de Provisões **zerado** antes da 2ª assinatura
+(inclusive logo após a 1ª); as 10+1 rubricas aparecem **imediatamente** depois — cruzado com
+`lancamento` no Postgres, os 12 lançamentos nascem só DEPOIS do timestamp da assinatura do
+cliente, nenhum antes. **Partidas dobradas** batem o spec (`1.1.02→2.1.06` a venda cheia; 9
+rubricas + Custo de Fábrica como ativo diferido `1.1.06.0X→2.1.04.0X`; impostos `1.1.05→
+2.1.04.13`); zero eventos duplicados (`GROUP BY origem HAVING COUNT(*)>1` vazio); soma das
+provisões bate centavo a centavo com o "Saldo a reconciliar" do painel; Balanço da loja fecha
+("Ativo = Passivo + PL"). `snapshot_negociacao_json` confirmado gravado na 2ª assinatura. Dois
+achados 🟡 não-bloqueantes, anotados só por registro: painel "Etapas do Projeto" não re-renderiza
+sozinho depois de salvar o Briefing (dado salva certo, só o texto do card fica desatualizado até
+navegar pra fora e voltar); upload de XML via `<input type=file>` não disparou o `onchange`
+automaticamente no Playwright/CDP nas 2 primeiras tentativas (chamar a função manualmente
+funcionou de primeira com o mesmo arquivo — cheiro de peculiaridade do headless, não bug de
+usuário real).
+
+**Faxina D4Sign (pedido do usuário, "pode apagar a integração D4Sign"):** a integração nunca
+chegou a ter código — só colunas de uma migração bem antiga (commit `c0f256f`), achadas durante a
+reconstrução da Sessão 194. Removido `Contrato.d4sign_uuid` do model; `DROP COLUMN IF EXISTS` pra
+`contratos.d4sign_uuid/d4sign_enviado_em/d4sign_signatarios_json` e
+`aprovacoes_pe.d4sign_uuid/d4sign_enviado_em/d4sign_signatarios_json` (as 3 últimas nem chegaram a
+ter `Column` no model — só existiam fisicamente no Postgres). Docstring de `ContratoAssinatura`
+atualizada (não cita mais "D4Sign (futuro)" — o futuro chegou, e é a ClickSign).
 
 ## Sessão 193 — Timing correto de provisões (2ª assinatura, não geração do contrato) + cancelamento em dois desfechos + snapshot imutável da negociação + salvar explícito
 

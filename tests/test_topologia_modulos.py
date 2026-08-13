@@ -56,6 +56,25 @@ def test_guard_bloqueia_modulo_desligado(http_client_factory, seed, app_db):
     assert st2 in (200, 404)
 
 
+def test_guard_bloqueia_modulo_desligado_nos_posts_de_emissao(http_client_factory, seed, app_db):
+    """Achado de auditoria 2026-08-13: só o GET /ciclo/15/nfe checava o módulo 'fiscal'
+    desligado — os POSTs que de fato emitem/consultam/cancelam nunca checavam, então desligar o
+    módulo escondia a tela mas não impedia emissão real via POST direto."""
+    c = http_client_factory(); c.login("super", "senha123")
+    lid = seed["loja1_id"]
+    stp, dp = c.post(f"/api/admin/lojas/{lid}/modulos", {"ativos": ["cadastro", "comercial", "financeiro"]})
+    assert stp == 200 and dp["ok"], dp
+    dc = http_client_factory(); dc.login("dir_l1", "senha123")
+    proj = seed["projeto_l1"]
+    for path in (f"/api/projetos/{proj}/ciclo/15/emitir-nfe",
+                 f"/api/projetos/{proj}/ciclo/15/emitir-nfse",
+                 f"/api/projetos/{proj}/ciclo/15/nfe/consultar",
+                 f"/api/projetos/{proj}/ciclo/15/nfe/cancelar"):
+        st, d = dc.post(path, {})
+        assert st == 403 and "módulo" in (d.get("erro", "")).lower(), (path, d)
+    c.post(f"/api/admin/lojas/{lid}/modulos", {"ativos": None})   # restaura pra não vazar pros próximos testes
+
+
 def test_get_modulos_lista_dominios_com_rotulo(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("super", "senha123")
     lid = seed["loja1_id"]

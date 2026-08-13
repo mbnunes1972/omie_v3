@@ -8675,7 +8675,12 @@ class Handler(BaseHTTPRequestHandler):
             import mod_contabil
             usuario, db, ot, oid = ctx
             try:
-                if _projeto_da_loja(db, nome_safe, usuario.get("loja_id")) is None:
+                # achado de auditoria 2026-08-13: usava usuario.get("loja_id") cru — sempre None
+                # pra admin_rede/super_admin (que não têm loja_id PRÓPRIO, só a loja ATIVA via
+                # X-Loja-Ativa, já corretamente resolvida em `oid` por _contabil_ctx) — 404
+                # indevido pra quem "entrou" numa loja pelo seletor, mesmo com ot/oid certos.
+                _loja_id_proj = oid if ot == "loja" else usuario.get("loja_id")
+                if _projeto_da_loja(db, nome_safe, _loja_id_proj) is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 # Desmembramento operacional (Fatia 4): a Conciliação Final "resolve à força" TODO saldo
                 # das provisões — incluindo o de ambientes RETIDOS pela obra, cujo custo ainda não foi
@@ -12618,6 +12623,9 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
                         self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    _bloq, _msg = _bloqueio_modulo(path, loja)
+                    if _bloq:
+                        self.send_json({"ok": False, "erro": _msg}, code=403); return
                     try:
                         emitente = mod_fiscal.resolver_emitente(db, loja, "produto")
                     except ValueError as e:
@@ -12725,10 +12733,13 @@ class Handler(BaseHTTPRequestHandler):
                     loja_id, _err = mod_tenancy.escopo_operacional(ator)
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
+                    loja = db.get(Loja, loja_id)
+                    _bloq, _msg = _bloqueio_modulo(path, loja)
+                    if _bloq:
+                        self.send_json({"ok": False, "erro": _msg}, code=403); return
                     projeto = _projeto_da_loja(db, nome_safe, loja_id)
                     if projeto is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    loja = db.get(Loja, loja_id)
                     try:
                         emitente = mod_fiscal.resolver_emitente(db, loja, "produto")
                     except ValueError as e:
@@ -12814,10 +12825,13 @@ class Handler(BaseHTTPRequestHandler):
                     loja_id, _err = mod_tenancy.escopo_operacional(ator)
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
+                    loja = db.get(Loja, loja_id)
+                    _bloq, _msg = _bloqueio_modulo(path, loja)
+                    if _bloq:
+                        self.send_json({"ok": False, "erro": _msg}, code=403); return
                     projeto = _projeto_da_loja(db, nome_safe, loja_id)
                     if projeto is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    loja = db.get(Loja, loja_id)
                     try:
                         emitente = mod_fiscal.resolver_emitente(db, loja, "servico")
                     except ValueError as e:
@@ -12916,6 +12930,9 @@ class Handler(BaseHTTPRequestHandler):
                     loja_id, _err = mod_tenancy.escopo_operacional(ator)
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
+                    _bloq, _msg = _bloqueio_modulo(path, db.get(Loja, loja_id) if loja_id else None)
+                    if _bloq:
+                        self.send_json({"ok": False, "erro": _msg}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     ref = req.get("ref")
@@ -12955,6 +12972,9 @@ class Handler(BaseHTTPRequestHandler):
                     loja_id, _err = mod_tenancy.escopo_operacional(ator)
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
+                    _bloq, _msg = _bloqueio_modulo(path, db.get(Loja, loja_id) if loja_id else None)
+                    if _bloq:
+                        self.send_json({"ok": False, "erro": _msg}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     ref = req.get("ref")

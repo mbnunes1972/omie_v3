@@ -244,6 +244,25 @@ def test_endpoint_conciliar_barrado_por_etapas_pendentes(http_client_factory, ap
     assert "aprovação final" in (b.get("erro") or "").lower()   # nome da Etapa 20
 
 
+def test_endpoint_conciliar_super_admin_com_loja_ativa_nao_da_404(http_client_factory, app_db, seed):
+    """Achado de auditoria 2026-08-13: usava usuario.get("loja_id") cru pra achar o projeto —
+    sempre None pra super_admin/admin_rede (que não têm loja_id PRÓPRIO, só a loja ATIVA via
+    X-Loja-Ativa) — 404 "Não encontrado" indevido mesmo com uma loja corretamente selecionada.
+    Com o fix, super_admin com loja ativa=loja1 chega ao MESMO gate que o usuário da própria loja
+    chegaria (409 de etapa pendente) — prova que o projeto foi achado, não bloqueado por engano."""
+    _proj_amb(app_db, seed, "RET_super", 1)
+    db = app_db.get_session()
+    for cod in ("1", "2", "3", "4", "7", "8", "9", "10", "11", "12", "13", "14"):
+        db.add(app_db.CicloEtapa(projeto_nome="RET_super", etapa_codigo=cod, status="concluido"))
+    db.commit(); db.close()
+
+    sup = _login(http_client_factory, "super")
+    sup.loja_ativa = seed["loja1_id"]
+    st, b = sup.post("/api/projetos/RET_super/ciclo/21/conciliar", {})
+    assert st == 409, b   # antes do fix: 404 "Não encontrado"
+    assert "anterior" in (b.get("erro") or "").lower()
+
+
 def test_endpoint_sinalizar_e_permissao(http_client_factory, app_db, seed):
     ids = _proj_amb(app_db, seed, "RET_ep", 2)
     op = _login(http_client_factory, "cons_l1")                            # operador tem registrar_medicao

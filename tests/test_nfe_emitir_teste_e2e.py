@@ -113,3 +113,20 @@ def test_emitir_teste_projeto_de_outra_loja_400(http_client_factory, seed, app_d
     st, b = _post_multipart(c.base, c.cookie, f"/api/admin/lojas/{seed['loja2_id']}/nfe/emitir-teste",
                             {"projeto_nome": seed["projeto_l1"], "markup_pct": "30"}, "f.xml", _fixture_xml())
     assert st == 400 and "não pertence" in b.get("erro", "").lower()
+
+
+def test_emitir_teste_bloqueado_com_modulo_fiscal_desligado(http_client_factory, seed, app_db, projetos_dir, monkeypatch):
+    """Achado de auditoria 2026-08-13: emitir-teste é chamável por qualquer Diretor com acesso
+    admin de loja, sem checar se o domínio 'fiscal' está desligado na topologia — diferente do
+    painel de configuração fiscal, que já checa. Uniformizado."""
+    monkeypatch.setattr(nfe_emissao, "_emissor_para", lambda db, lid: FakeEmissor())
+    _perfil(app_db, seed["loja1_id"])
+    c = _login(http_client_factory, "super")
+    stp, dp = c.post(f"/api/admin/lojas/{seed['loja1_id']}/modulos",
+                     {"ativos": ["cadastro", "comercial", "financeiro"]})
+    assert stp == 200 and dp["ok"], dp
+    dc = _login(http_client_factory, "dir_l1")
+    st, b = _post_multipart(dc.base, dc.cookie, f"/api/admin/lojas/{seed['loja1_id']}/nfe/emitir-teste",
+                            {"projeto_nome": seed["projeto_l1"], "markup_pct": "30"}, "f.xml", _fixture_xml())
+    assert st == 403 and "módulo" in b.get("erro", "").lower(), b
+    c.post(f"/api/admin/lojas/{seed['loja1_id']}/modulos", {"ativos": None})   # restaura

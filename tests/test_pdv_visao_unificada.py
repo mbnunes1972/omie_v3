@@ -156,3 +156,36 @@ def test_wiring_de_eventos_do_pdv_continua(app_db, pdv):
         assert len(lans) == 1 and lans[0]["ref"] == "pdvwire:1"
     finally:
         db.close()
+
+
+# ── Auditoria Contábil do projeto: tenant pelo OWNER resolvido, não por loja_id cru ──────────
+
+@pytest.fixture(scope="module")
+def projeto_pdv(app_db, pdv):
+    db = app_db.get_session()
+    try:
+        db.add(app_db.Projeto(nome_safe="Proj_PDV_Auditoria", status="quente", loja_id=pdv["id"]))
+        db.commit()
+    finally:
+        db.close()
+    return "Proj_PDV_Auditoria"
+
+
+def test_auditoria_contabil_do_projeto_do_pdv_pela_mae(http_client_factory, pdv, projeto_pdv):
+    """Achado do usuário (2026-08-13): o endpoint checava usuario.get('loja_id') cru em vez do
+    owner (ot, oid) que _contabil_ctx já resolve — pra mãe vendo um projeto do PDV via
+    ?unidade=, isso sempre dava 404 mesmo com acesso legítimo (mesma classe de bug da Sessão 196
+    de tenant scope, mas fail-closed — bloqueia quem tem acesso, em vez de vazar pra quem não tem;
+    por isso não apareceu naquela auditoria, focada em bypass)."""
+    c = _login(http_client_factory, "dir_l1")
+    st, out = c.get("/api/projetos/%s/auditoria-contabil?unidade=%d" % (projeto_pdv, pdv["id"]))
+    assert st == 200 and out["ok"], (st, out)
+    assert out["lancamentos"] == []
+
+
+def test_auditoria_contabil_nega_projeto_de_outra_unidade(http_client_factory, projeto_pdv):
+    """Sem ?unidade=, o razão da mãe é o dela própria — projeto do PDV não aparece (404), não
+    vaza. Defende contra o fix acima virar bypass."""
+    c = _login(http_client_factory, "dir_l1")
+    st, out = c.get("/api/projetos/%s/auditoria-contabil" % projeto_pdv)
+    assert st == 404

@@ -28,6 +28,15 @@ import json
 
 _RAMO = {"avista": "avista", "vp": "loja", "tf": "loja", "aymore": "financeira", "cartao": "financeira"}
 
+
+def ramo_por_tipo(tipo):
+    """Ramo de financiamento (avista|loja|financeira) a partir do `tipo` do frontend — mesma
+    tabela `_RAMO` usada em `materializar`. Fonte única: `main._ramo_financeiro_efetivo` usava
+    `mod_fin.ramo_financiamento` lendo uma chave `"codigo"` que o frontend nunca manda (só
+    `"tipo"`, com estes valores abreviados) — achado do usuário 2026-08-13, toda venda
+    Aymoré/Cartão caía no default `"loja"` e nunca reconhecia a despesa financeira real."""
+    return _RAMO.get((tipo or "avista").strip().lower(), "avista")
+
 # Espelha o default de mod_provisoes.config_financeira_default()["prazo_antecipacao"] — usado só se o
 # chamador não passar a config da loja (defensivo; o caminho real sempre passa).
 _PRAZO_ANTECIPACAO_FALLBACK = {"cartao": 1, "aymore": 2}

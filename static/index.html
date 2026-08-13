@@ -241,6 +241,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .proj-status-badge.sem{background:transparent;color:var(--muted)}
 /* Selo de atraso GERAL (Fatia 4 §6): qualquer etapa aberta vencida ilumina o projeto na lista */
 .proj-atraso-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--err-soft);color:var(--err)}
+.proj-fase-exec-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--warn-soft);color:var(--warn)}
 .proj-status-dd{position:absolute;top:100%;left:0;z-index:300;background:var(--card);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.4);min-width:140px;overflow:hidden;display:none}
 .proj-status-dd.open{display:block}
 .proj-status-dd-item{padding:8px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px}
@@ -892,6 +893,45 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" value="perdido"    checked onchange="projAplicarFiltros()"> ✗ Perdido</label>
           <label class="proj-status-filter-item"><input type="checkbox" value="cancelado"  checked onchange="projAplicarFiltros()"> <i class="ti ti-x"></i> Cancelado</label>
           <label class="proj-status-filter-item"><input type="checkbox" value="sem"        checked onchange="projAplicarFiltros()"> — Sem status</label>
+        </div>
+      </div>
+      <div class="proj-status-filter-wrap">
+        <button class="btn btn-ghost btn-sm" id="proj-fase-filter-btn"
+                onclick="projToggleFaseFilter(event)" style="font-size:11px;white-space:nowrap">
+          <i class="ti ti-tools"></i> Fase &#9660;
+        </button>
+        <!-- onclick=stopPropagation: clique em qualquer item AQUI DENTRO não deve fechar o
+             seletor (achado do usuário — cada box marcado fechava o dropdown). Fecha só pelo
+             botão Confirmar ou clicando fora. -->
+        <div class="proj-status-filter-dd" id="proj-fase-filter-dd"
+             onclick="event.stopPropagation()" style="max-height:360px;overflow-y:auto">
+          <label class="proj-status-filter-item" style="font-weight:700">
+            <input type="checkbox" id="proj-fase-todos" onchange="projFaseTodosToggle(this)"> Todos</label>
+          <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="1" checked onchange="projFaseItemToggle()"> Cadastro do Cliente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="2" checked onchange="projFaseItemToggle()"> Criação do projeto</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="3" checked onchange="projFaseItemToggle()"> Briefing</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="4" checked onchange="projFaseItemToggle()"> Orçamento</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="7" checked onchange="projFaseItemToggle()"> Contrato</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="8"  onchange="projFaseItemToggle()"> Aprovação financeira I</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="9"  onchange="projFaseItemToggle()"> Solicitação de medição</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="10" onchange="projFaseItemToggle()"> Medição</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="11" onchange="projFaseItemToggle()"> Projeto executivo</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="12" onchange="projFaseItemToggle()"> Conferência e Implantação do Pedido</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="13" onchange="projFaseItemToggle()"> Produção</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="14" onchange="projFaseItemToggle()"> Entrega no depósito</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="15" onchange="projFaseItemToggle()"> Emissão da NFe do cliente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="16" onchange="projFaseItemToggle()"> Entrega no cliente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="17" onchange="projFaseItemToggle()"> Montagem</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="18" onchange="projFaseItemToggle()"> Assistência pós Montagem</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="19" onchange="projFaseItemToggle()"> Vistoria final</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="20" onchange="projFaseItemToggle()"> Aprovação final</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="21" onchange="projFaseItemToggle()"> Conciliação Final</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="concluido" onchange="projFaseItemToggle()"> Concluído</label>
+          <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+          <div style="padding:4px 14px 2px">
+            <button class="btn btn-primary btn-sm" style="width:100%;font-size:11px" onclick="projFaseConfirmar()">Confirmar</button>
+          </div>
         </div>
       </div>
       <!-- Filtros: Faixa de valor · Data (Diagramacao_v6). Largura compacta por tipo (Padrao_Design_v8 §4):
@@ -3249,7 +3289,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <span class="modal-close" onclick="fecharModalNovoAmbiente()">&#x2715;</span>
     </div>
     <div class="drop-zone" id="drop-zone-amb">
-      <input type="file" id="xml-input-amb" multiple accept=".xml" onchange="uploadXmls(this.files)">
+      <input type="file" id="xml-input-amb" multiple accept=".xml" onchange="uploadXmls(this.files); this.value='';">
       <div class="drop-icon">&#x1F4C2;</div>
       <div class="drop-text">Arraste XMLs do Promob aqui</div>
       <div class="drop-sub">ou clique para selecionar — cada XML = um ambiente</div>
@@ -6664,6 +6704,7 @@ function renderProjResultados(lista){
     <table class="proj-table">
       <thead><tr>
         <th style="width:130px">Status</th>
+        <th style="width:150px">Fase do Ciclo</th>
         <th style="width:100px">Data</th>
         <th>Projeto</th>
         <th>Cliente</th>
@@ -6685,6 +6726,9 @@ function renderProjResultados(lista){
                 </div>`).join('')}
             </div>
           </td>
+          <td>${p.fase_ciclo === 'execucao_projeto'
+              ? `<span class="proj-fase-exec-badge" title="Fase crítica — Medição/Projeto Executivo">${esc(p.etapa_atual_nome||'Execução')}</span>`
+              : `<span style="color:var(--muted);font-size:12px">${esc(p.etapa_atual_nome || (p.fase_ciclo==='concluido' ? 'Concluído' : '—'))}</span>`}</td>
           <td>${fmtData(p.atualizado_em||p.criado_em||'')}</td>
           <td style="font-weight:600">${esc(p.nome_projeto||'—')}</td>
           <td style="color:var(--muted)">${esc(p.cliente_nome||'—')}</td>
@@ -6795,6 +6839,29 @@ document.addEventListener('click', ()=>{
   document.getElementById('neg-status-dd')?.classList.remove('open');
 });
 
+function projToggleFaseFilter(e){
+  e.stopPropagation();
+  document.getElementById('proj-fase-filter-dd')?.classList.toggle('open');
+}
+
+// Todos ligado => ignora os itens individuais (mostra qualquer fase); marcar um item específico
+// implica "não é mais Todos" (desliga o Todos). Desligar o Todos sem nenhum item marcado é um
+// estado válido: filtro ativo que não bate com nada, tela fica vazia até o usuário marcar algo.
+function projFaseTodosToggle(cb){
+  if(cb.checked) document.querySelectorAll('.proj-fase-item').forEach(c=>{ c.checked = false; });
+}
+function projFaseItemToggle(){
+  const algumMarcado = [...document.querySelectorAll('.proj-fase-item')].some(c=>c.checked);
+  if(algumMarcado){
+    const todos = document.getElementById('proj-fase-todos');
+    if(todos) todos.checked = false;
+  }
+}
+function projFaseConfirmar(){
+  document.getElementById('proj-fase-filter-dd')?.classList.remove('open');
+  projAplicarFiltros();
+}
+
 function projAplicarFiltros(){
   const txt = (document.getElementById('proj-search')?.value || '').trim().toLowerCase();
   const checks = [...(document.querySelectorAll('#proj-status-filter-dd input[type=checkbox]') || [])];
@@ -6802,6 +6869,16 @@ function projAplicarFiltros(){
   const todosAtivos = checks.length === 0 || checks.every(c=>c.checked) || checks.every(c=>!c.checked);
 
   let lista = [..._projListaBase];
+
+  // Filtro de Fase do Ciclo — cobre TODAS as fases (1-21 + Concluído). "Todos" ligado = filtro
+  // inativo (qualquer fase passa); desligado = só os itens marcados (nenhum marcado = tela vazia,
+  // sinaliza que falta escolher algo em vez de mostrar tudo por engano).
+  const todosFase = !!document.getElementById('proj-fase-todos')?.checked;
+  const faseChecks = [...(document.querySelectorAll('.proj-fase-item') || [])];
+  const faseAtivas = new Set(faseChecks.filter(c=>c.checked).map(c=>c.value));
+  if(!todosFase){
+    lista = lista.filter(p => faseAtivas.has(p.fase_ciclo === 'concluido' ? 'concluido' : p.etapa_atual_codigo));
+  }
 
   if(txt.length >= 2){
     const txtDig = txt.replace(/\D/g,'');
@@ -6843,6 +6920,12 @@ function projAplicarFiltros(){
   if(btn){
     const n = checks.filter(c=>c.checked).length;
     btn.textContent = todosAtivos ? 'Status ▾' : `Status (${n}) ▾`;
+  }
+  const btnFase = document.getElementById('proj-fase-filter-btn');
+  if(btnFase){
+    btnFase.innerHTML = todosFase
+      ? `<i class="ti ti-tools"></i> Fase &#9660;`
+      : `<i class="ti ti-tools"></i> Fase (${faseAtivas.size}) &#9660;`;
   }
 
   if(_projView === 'funil') renderProjKanban(lista);
@@ -16084,6 +16167,7 @@ document.addEventListener('keydown', function(e){
     ['modal-comissao',         fecharModalComissao],
     ['modal-doc-modelo',       fecharModalDocModelo],
     ['modal-params',           () => fecharModalParams(false)],
+    ['modal-recon-proj',       () => { document.getElementById('modal-recon-proj').style.display = 'none'; }],
   ];
   for(const [id, fn] of ESC_MAP){
     const el = document.getElementById(id);

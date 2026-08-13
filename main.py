@@ -109,6 +109,39 @@ def _enriquecer_projetos_com_status(projetos):
     finally:
         db.close()
 
+def _enriquecer_projetos_com_fase_ciclo(projetos):
+    """Adiciona a etapa atual do Ciclo (a primeira etapa PRINCIPAL — mod_ciclo.ETAPAS_PRINCIPAIS —
+    ainda não concluída) e sua faixa de titularidade (mod_ciclo.faixa_da_etapa) a cada projeto.
+    `fase_ciclo` alimenta o filtro "Fase de Execução" (Medição+PE, faixa 'execucao_projeto') da
+    lista de projetos — fase crítica pedida pelo usuário pra revisão dedicada."""
+    if not projetos:
+        return
+    import mod_ciclo
+    nomes = [p['nome_safe'] for p in projetos if p.get('nome_safe')]
+    if not nomes:
+        return
+    db = get_session()
+    try:
+        rows = (db.query(CicloEtapa)
+                  .filter(CicloEtapa.projeto_nome.in_(nomes),
+                          CicloEtapa.etapa_codigo.in_(mod_ciclo.ETAPAS_PRINCIPAIS))
+                  .all())
+        status_map = {}
+        for r in rows:
+            status_map.setdefault(r.projeto_nome, {})[r.etapa_codigo] = r.status
+        for p in projetos:
+            ns = p.get('nome_safe')
+            if not ns:
+                continue
+            st = status_map.get(ns, {})
+            atual = next((cod for cod in mod_ciclo.ETAPAS_PRINCIPAIS
+                          if st.get(cod, "pendente") not in mod_ciclo.STATUS_CONCLUSIVOS), None)
+            p['etapa_atual_codigo'] = atual
+            p['etapa_atual_nome']   = mod_ciclo.ETAPA_NOME.get(atual) if atual else None
+            p['fase_ciclo']         = mod_ciclo.faixa_da_etapa(atual) if atual else "concluido"
+    finally:
+        db.close()
+
 def _enriquecer_projetos_com_parceiro(projetos):
     """Resolve o nome do parceiro (arquiteto) de cada projeto a partir do parceiro_id já presente no item."""
     if not projetos:
@@ -638,12 +671,7 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
             # (O box de override loja×financeira na AF1 entra na etapa B.2.)
             cust_fin = round(float(getattr(orc2, "valor_total", 0) or 0) - float(d.get("VAVO") or 0), 2)
             if cust_fin > 0:
-                import mod_fin as _mfin
-                try:
-                    _fp = json.loads(orc2.forma_pagamento) if orc2.forma_pagamento else {}
-                except Exception:
-                    _fp = {}
-                _ramo = _mfin.ramo_financiamento((_fp or {}).get("codigo") or "")
+                _ramo = _ramo_financeiro_efetivo(orc2)
                 _ev = "fechamento_venda_custo_financeiro" if _ramo == "financeira" else "constituir_juros_direto"
                 mod_contabil.registrar_evento(db, ot, oid, _ev, cust_fin,
                                               projeto_id=projeto_id, ref=ref_base + ":cfin")
@@ -733,15 +761,19 @@ def _materializar_recebiveis_venda_seguro(orc, projeto_id, loja_id, data_contrat
 
 def _ramo_financeiro_efetivo(orc):
     """Ramo do custo financeiro (Fatia B): override confirmado na AF (orc.ramo_financeiro) ou o default
-    automático pela forma de pagamento (loja|financeira|avista)."""
+    automático pela forma de pagamento (loja|financeira|avista). O default lê o campo `tipo` do JSON
+    do frontend (`'avista'|'vp'|'tf'|'aymore'|'cartao'`, ver mod_recebiveis) — NÃO o vocabulário de
+    `mod_fin.ramo_financiamento` (códigos completos tipo `'cartao_credito'`), que o frontend nunca
+    preenche (achado do usuário 2026-08-13: essa mistura de vocabulários fazia todo financiamento
+    Aymoré/Cartão cair no default `'loja'`, sem nunca reconhecer a despesa financeira real)."""
     if getattr(orc, "ramo_financeiro", None):
         return orc.ramo_financeiro
-    import mod_fin as _mfin
+    import mod_recebiveis as _mrec
     try:
         _fp = json.loads(orc.forma_pagamento) if orc.forma_pagamento else {}
     except Exception:
         _fp = {}
-    return _mfin.ramo_financiamento((_fp or {}).get("codigo") or "")
+    return _mrec.ramo_por_tipo((_fp or {}).get("tipo"))
 
 
 def _cust_fin_orc(orc):
@@ -1393,7 +1425,18 @@ class Handler(BaseHTTPRequestHandler):
             import mod_contabil
             usuario, db, ot, oid = ctx
             try:
-                if _projeto_da_loja(db, nome_safe, usuario.get("loja_id")) is None:
+                # Checa tenant pelo OWNER resolvido (ot, oid) — não por usuario.get("loja_id") puro,
+                # que é sempre None pra super_admin/admin_rede e diverge da loja efetivamente ativa
+                # na visão unificada de PDV (achado do usuário, painel retornava sempre "Não
+                # encontrado" nesses casos, mesmo com acesso legítimo — mesma classe de bug da
+                # Sessão 196, mas fail-closed em vez de bypass, por isso não apareceu na auditoria
+                # de segurança). `_contabil_ctx` já fez essa resolução pra (ot, oid); comparamos o
+                # owner do PRÓPRIO projeto contra ela em vez de reproduzir a lógica de novo.
+                proj_meta = db.get(Projeto, nome_safe)
+                if proj_meta is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                proj_ot, proj_oid = mod_contabil.resolver_owner(db, {"loja_id": proj_meta.loja_id, "rede_id": None})
+                if (proj_ot, proj_oid) != (ot, oid):
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 self.send_json({"ok": True, "lancamentos": mod_contabil.auditoria_contabil(db, ot, oid, nome_safe)})
             finally:
@@ -2753,6 +2796,7 @@ class Handler(BaseHTTPRequestHandler):
                 _enriquecer_projetos_com_status(projetos)
                 _enriquecer_projetos_com_parceiro(projetos)
                 _enriquecer_projetos_com_atraso(projetos)
+                _enriquecer_projetos_com_fase_ciclo(projetos)
                 self.send_json({"ok": True, "projetos": projetos})
             except Exception as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=500)

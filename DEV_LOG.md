@@ -3277,6 +3277,128 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 196 — Madrugada autônoma (`/loop`): 3 bugs financeiros críticos + auditoria de segurança completa (2 rodadas) + usabilidade, tudo validado pela tela
+
+**Mandato do usuário** (autorizando trabalho autônomo durante a noite, sem supervisão): "use o
+playwright para testar massivamente, procure levantar melhorias, até de organização do código,
+das pastas, blindagem entre os módulos, mecanismos de segurança, verificação dos cadastros...
+Verifique também a usabilidade — item que cuidamos pouco". Rodou em modo `/loop` dinâmico,
+alternando ciclos de teste pela tela (Vera, sequencial, nunca em paralelo) com auditoria estática
+de código (paralela, sem conflito). Resumo completo e reorganizado (formato limpo, não
+cronológico) em `docs/superpowers/specs/_geral/` — na verdade ficou só no scratchpad da sessão;
+ver texto abaixo para o essencial, e o histórico de commits pra detalhe línea a linha.
+
+**Gatilho imediato: 3 bugs financeiros críticos achados pela Vera num teste E2E ampliado na VPS B**
+(desconto composto + folha, sequência ao trabalho da Sessão 193-195):
+1. **Desconto global × individual por ambiente compunham sem trava real** — os dois campos eram
+   checados isoladamente contra `limite_desconto`; um Diretor (50%) combinando 45% global + 45%
+   individual furava pra 69,75% efetivo, sem autorização, sem log. Novo
+   `_maior_desconto_efetivo_pct` (`main.py`) checa o composto `1-(1-d_orc)*(1-d_amb)` nos dois
+   endpoints (`/margens`, `/descontos`), com neutralização correta pra orçamento de complemento
+   (Fatia 3 PE) e arredondamento (achado num teste seguinte: duas composições matematicamente
+   iguais a X% caíam de lados opostos da trava por erro de ponto flutuante puro).
+2. **Termo Aditivo assinado por ambas as partes não gerava NENHUM lançamento contábil** — decisão
+   antiga (Sessão 91/92) era "efeito gerencial, acerto na liquidação" mas o "acerto" nunca foi
+   implementado em lugar nenhum. Assinatura completa agora chama `_fin_provisoes_venda_seguro`
+   sobre o orçamento de complemento, mesma mecânica/contas do fechamento da venda original, sem
+   gate de Aprovação Financeira própria (decisão do usuário — AF1/AF2 já rodaram antes da 11e).
+   Confirmado que aparece automaticamente na Conciliação Final (mesma reconciliação por
+   conta×projeto) e zera quando resolvido.
+3. **Cancelar NF-e apagava `chave_nfe`/`numero`/`serie`** (a resposta de cancelamento da Focus não
+   os carrega — `_aplicar_resultado` sobrescrevia incondicionalmente) **e não revertia os
+   lançamentos de faturamento** — receita ficava contabilizada pra uma nota juridicamente
+   inexistente. `_aplicar_resultado` preserva os campos quando ausentes; novo
+   `mod_contabil.estornar_faturamento_nfe` reverte receita+impostos no cancelamento (lançamento
+   invertido, ref `:estorno`, idempotente, mesmo padrão de `estornar_rateio`).
+
+**Auditoria de segurança estática, 2 rodadas (geral + fiscal/ciclo), todos os itens mecânicos
+corrigidos:**
+- **Bypass de tenant REAL para `admin_rede`/`super_admin` em 9 endpoints** (Expedição,
+  Assistências, Folha) — `lid = usuario.get("loja_id")` seguido de `if x is None or (lid and
+  x.loja_id != lid)` curto-circuitava quando `lid` é `None` (o caso NORMAL desses 2 perfis, que só
+  têm `rede_id`/loja ATIVA via `X-Loja-Ativa`, nunca `loja_id` próprio) — a checagem de tenant
+  nunca rodava, incluindo leitura de anexo (download de arquivo) e 2 pontos que lançariam contábil
+  na rede do ATACANTE em vez da rede dona do registro. Trocado por
+  `mod_tenancy.escopo_operacional` (padrão já usado no resto do arquivo) nos 9 + mais 2 achados
+  depois numa auditoria fiscal dedicada (`/ciclo/21/conciliar` tinha o mesmo bug, fails-closed mas
+  quebrava a Conciliação Final pra esses 2 perfis mesmo com loja corretamente selecionada).
+- **Senha hardcoded `"orizon123"`** como fallback quando CPF/CNPJ ausente (Funcionário com acesso
+  E Diretor MASTER de loja nova) — trocado por `secrets.token_urlsafe(16)`
+  (`senha_provisoria=1` já força troca no 1º acesso).
+- **XSS armazenado** em observações genéricas de etapa do ciclo (`_renderCardGenerico` injetava
+  sem `esc()`, inconsistente com as outras 2 ocorrências do mesmo campo no arquivo).
+- **Zero rate limiting no login** — lockout em memória (5 tentativas/5min, thread-safe) em
+  `auth/auth.py`, chaveado pelo ID do usuário RESOLVIDO (login e e-mail da mesma conta caem no
+  mesmo balde). Precisou de fixture `autouse` nova em `tests/conftest.py` pra não poluir a suíte
+  inteira (contas do seed reusadas em milhares de testes cross-arquivo).
+- **Funcionário/Fornecedor/Terceiro nunca validavam dígito verificador de CPF/CNPJ** nem checavam
+  duplicidade (Cliente/Usuario já validam) — `validacao_doc.erro_doc` plugado no dispatch genérico
+  de cadastro; duplicidade checada na CRIAÇÃO, escopada à própria loja (mesmo padrão do Cliente).
+  Achado colateral: a ordem original (criar+add objeto ANTES de checar duplicidade) disparava
+  autoflush prematuro do SQLAlchemy (linha em branco sem campos obrigatórios) — reordenado.
+- **Exceções não tratadas viravam 500 cru** — `POST /api/admin/usuarios` só tinha `try/finally`
+  sem `except` (corrida de 2 requests com mesmo login = `IntegrityError` crua); mesmo ajuste na
+  criação de Cliente (tinha pré-check, faltava rede de segurança pra corrida real); erro de
+  validação/erro remoto da própria ClickSign no envio do contrato também virava 500 — 400 com
+  mensagem limpa (`ClickSignError` já extrai `detail`/`title` do JSON:API).
+- **Módulo "fiscal" desligado na topologia só bloqueava a TELA** (GET), não os 5 POSTs que de fato
+  emitem/consultam/cancelam NF-e/NFS-e/emissão-de-teste — mesma checagem `_bloqueio_modulo`
+  adicionada nos 5.
+- Itens baixos: `hmac.compare_digest` em vez de `==` no `check_senha` (defesa em profundidade);
+  falha de `chmod` da chave de segredos vai pro log em vez de silenciar.
+- **Deferido pra decisão do usuário** (não mecânico ou risco de regressão sem dado completo): hash
+  de senha SHA-256 sem salt (migração afeta todo usuário existente); CSRF + cookie sem
+  `Secure`/`SameSite`; `ContraparteFinanceira` editável entre lojas; exigir e-mail/telefone em
+  Funcionário/Fornecedor/Terceiro; validação de IE (não existe validador universal, varia por
+  UF); allowlist de status do `PATCH /ciclo/<código>` (falta levantamento completo do vocabulário
+  usado pelo frontend); autorizador de Aprovação Financeira sem checar loja/rede do projeto
+  (padrão usado em vários endpoints, mudança maior); emissão fiscal sem contrato aceita valor
+  livre do request sem piso/teto; `permitir_producao=True` nunca é passado por nenhum call-site
+  (hoje NINGUÉM emite nota real em produção pela API — trava deliberada ou esquecimento, a
+  confirmar); empacotamento do domínio `comercial/` (plano completo desenhado, zero execução).
+
+**Achado crítico NOVO, não corrigido (aguardando decisão do usuário) — aditivo com diferença
+NEGATIVA + financiamento inverte o sinal:** um Termo Aditivo de REDUÇÃO de valor (PE ficou mais
+barato, ex. -R$68.639,22) com modalidade financiada herdada da tela (Aymoré/Total Flex/cartão) faz
+o motor de financiamento calcular `orc2.valor_total` **positivo** — `_fin_provisoes_venda_seguro`
+posta isso como Receita a Realizar NOVA, ~R$72 mil de venda fictícia em vez de reduzir o contrato.
+Dois caminhos possíveis (bloquear financiamento em complemento negativo, OU usar a `diferenca` já
+assinada em vez de recalcular `valor_total` do zero) — nenhum implementado, área sensível demais
+pra decidir sem o usuário. Achados adjacentes, também deferidos: o redutor de comissão por
+desconto (`resolver_comissao_venda`) só olha o desconto GLOBAL, nunca o composto por ambiente — a
+comissão paga não sofre redução se o vendedor concentrar desconto nos campos por ambiente; custos
+adicionais (arquiteto/fidelidade/viagem/brinde/especial) vazam entre orçamentos do MESMO projeto
+(persistem em `projetos_meta`, não por `Orcamento` — pode ser intencional).
+
+**Usabilidade** (revisão dedicada, pedido explícito do usuário — "cuidamos pouco"): 11
+`confirm()`/`prompt()` nativos do navegador trocados pelos popups temáticos já existentes no app
+(`confirmarPopup`/`promptPopup`); 35 pontos de `catch(e)` que vazavam mensagem técnica crua
+(`TypeError`/`SyntaxError`) — novo helper `_detalheErroRede` traduz pra PT-BR; 3 ações destrutivas
+sem NENHUMA confirmação (`adiantamentoRemover`, remover membro/contato externo de conversa)
+ganharam `confirmarPopup`; 1 botão ícone-only sem `title`/`aria-label` corrigido. Achados
+adiados (risco de regressão sem teste visual, ou decisão de produto): Escape não fecha ~16
+modais (inconsistente com o `ESC_MAP` central que cobre outros 24); estados de carregamento
+ausentes em emitir/cancelar NF-e (investigação própria confirmou que NÃO é risco real de emissão
+duplicada — `DocumentoFiscal.ref` já tem `unique=True` + tratamento idempotente de corrida
+pré-existente, "auditoria A13" — é só polimento de UX); autosave silencioso em 2 pontos.
+
+**Validação pela tela (Vera, 3 rodadas na VPS B, Playwright real, nunca 2 sessões em
+paralelo):** rodada 1 achou os 3 bugs financeiros acima; rodada 2 (estresse de negociação/folha —
+todas as formas de pagamento, Total Flex exótico, persistência 3x, multi-orçamento, matemática de
+comissão por meta) achou o bug do aditivo negativo + os 2 achados adjacentes de comissão/custos
+adicionais; rodada 3 confirmou pela tela TODOS os fixes de segurança/usabilidade desta sessão
+(bypass de tenant, validação+duplicidade de CPF, rate limit, popups novos, confirmações novas,
+desconto composto arredondado — testado com dados REAIS, 48,99%+1,98%=50,00% aceito exato no
+limite do Master, 49,5%+1,98%=50,5% corretamente rejeitado) — **tudo limpo, nenhum bug novo**.
+
+**Suíte:** 2113 passed ao final (verde antes de cada um dos 8 commits). **Commits (ordem):**
+`93f5b8d` (3 bugs financeiros) → `4b2d851` (tenant bypass + senha hardcoded + XSS) → `2c3aa85`
+(rate limit + validação CPF/CNPJ) → `7e4c3eb` (duplicidade + exceções + hmac) → `756fe54`
+(usabilidade) → `0e1cfa8` (arredondamento + ClickSign 400) → `5352083` (módulo fiscal + conciliar
+final). **Deploy:** VPS A e B sincronizadas em `5352083` (tag `v2026.08.13a-homolog`), ambos
+serviços saudáveis. **Produção NÃO foi tocada** — fica pra decisão do usuário, junto com a lista
+de itens deferidos acima (o do aditivo negativo é o mais urgente).
+
 ## Sessão 194 — Assinatura eletrônica ClickSign (Contrato + Aprovação do PE) + incidente de colisão entre duas sessões do Claude Code no mesmo diretório
 
 **Frente:** integração com a **ClickSign** (API v3, JSON:API) como canal alternativo de

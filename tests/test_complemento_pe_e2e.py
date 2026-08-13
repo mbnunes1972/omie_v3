@@ -168,6 +168,91 @@ def test_complemento_por_diferenca_ponta_a_ponta(http_client_factory, seed, app_
     assert st == 200 and body["ok"], body
 
 
+def test_aditivo_assinado_constitui_provisao_contabil(http_client_factory, seed, app_db):
+    """Achado Vera 2026-08-12: assinatura completa (loja+cliente) do Termo Aditivo não gerava
+    nenhum lançamento — a diferença negociada ficava órfã. A assinatura completa agora constitui
+    as provisões do complemento, mesmo mecanismo/contas do fechamento da venda original, sem gate
+    de Aprovação Financeira própria (decisão do usuário — AF1/AF2 já ocorreram antes da 11e)."""
+    nome, pid, oid = _setup(app_db, seed)
+    c = _login(http_client_factory, "dir_l1")
+
+    _upsert_compl(app_db, nome, pid, venda=84000.0, cfo=32000.0)
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
+    assert st == 200 and body["ok"], body
+    aj_id = body["orcamento"]["id"]
+    assert body["orcamento"]["valor_total"] > 0
+
+    import mod_documentos
+    db = app_db.get_session()
+    mv = mod_documentos.criar_versao(db, seed["loja1_id"], "termo_aditivo",
+                                     "# TERMO ADITIVO [NUM_ADITIVO]\n1. [AMBIENTES_COMPLEMENTO]\n"
+                                     "2. Complemento: [VALOR_COMPLEMENTO].\n", "t.md", None)
+    mod_documentos.ativar(db, mv.id)
+    db.close()
+    st, body = c.post(f"/api/projetos/{nome}/aditivo", {})
+    assert st == 200 and body["ok"], body
+    aditivo_id = body["aditivo"]["id"]
+
+    # 1ª assinatura (loja): ainda sem as 2 partes → nenhum lançamento novo
+    db = app_db.get_session()
+    import mod_contabil
+    ator = {"loja_id": seed["loja1_id"], "rede_id": None}
+    ot, owner_id = mod_contabil.resolver_owner(db, ator)
+    antes = db.query(app_db.Lancamento).filter_by(
+        owner_tipo=ot, owner_id=owner_id, projeto_id=nome).count()
+    db.close()
+
+    st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
+                      {"parte": "loja", "nome": "Rep Loja", "cpf": "111.444.777-35"})
+    assert st == 200 and body["status"] == "assinado_loja", body
+
+    db = app_db.get_session()
+    meio = db.query(app_db.Lancamento).filter_by(
+        owner_tipo=ot, owner_id=owner_id, projeto_id=nome).count()
+    db.close()
+    assert meio == antes   # só 1 parte assinou — sem lançamento ainda
+
+    st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
+                      {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05"})
+    assert st == 200 and body["status"] == "assinado", body
+
+    db = app_db.get_session()
+    novos = (db.query(app_db.Lancamento)
+               .filter_by(owner_tipo=ot, owner_id=owner_id, projeto_id=nome)
+               .filter(app_db.Lancamento.ref.like("prov:aditivo:%d:%%" % aditivo_id)).all())
+    db.close()
+    assert len(novos) > 0, "assinatura completa do aditivo deveria constituir provisão(ões)"
+
+    # idempotência: reassinar não é permitido pelo endpoint (já assinado), então re-chamar o
+    # helper de wiring diretamente confirma que não duplica por ref
+    db = app_db.get_session()
+    orc_aj = db.get(app_db.Orcamento, aj_id)
+    import main as _main
+    _main._fin_provisoes_venda_seguro(orc_aj, nome, "prov:aditivo:" + str(aditivo_id))
+    depois = (db.query(app_db.Lancamento)
+                .filter_by(owner_tipo=ot, owner_id=owner_id, projeto_id=nome)
+                .filter(app_db.Lancamento.ref.like("prov:aditivo:%d:%%" % aditivo_id)).count())
+    db.close()
+    assert depois == len(novos)   # idempotente por ref
+
+    # A Conciliação Final (etapa 21) reusa a MESMA reconciliação (por conta × projeto, não por
+    # origem/ref) — o acréscimo do aditivo precisa aparecer nela automaticamente, e some do saldo
+    # em aberto assim que cada rubrica é efetivada/resolvida (pedido do usuário: o saldo final,
+    # depois de tudo resolvido, tem que fechar em ZERO).
+    db = app_db.get_session()
+    rec_antes = mod_contabil.reconciliacao(db, ot, owner_id, projeto_id=nome)
+    provs_com_saldo = [p for p in rec_antes["provisoes"] if abs(p["saldo_aberto"]) > 0.005]
+    assert provs_com_saldo, "a provisão do aditivo deveria aparecer com saldo em aberto na reconciliação"
+    for p in provs_com_saldo:
+        mod_contabil.resolver_saldo_provisao(db, ot, owner_id, nome, p["codigo"],
+                                             ref="resolve:aditivo-teste:" + p["codigo"])
+    db.commit()
+    rec_depois = mod_contabil.reconciliacao(db, ot, owner_id, projeto_id=nome)
+    for p in rec_depois["provisoes"]:
+        assert abs(p["saldo_aberto"]) < 0.01, p   # tudo resolvido → saldo zero
+    db.close()
+
+
 def test_complemento_sem_marcados_e_escopo(http_client_factory, seed, app_db):
     db = app_db.get_session()
     orc = db.get(app_db.Orcamento, seed["orcamento_l1_id"])

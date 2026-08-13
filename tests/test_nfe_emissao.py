@@ -188,6 +188,24 @@ def test_cancelar_atualiza_registro(app_db, seed, projetos_dir):
     db.close()
 
 
+def test_cancelar_preserva_chave_numero_serie(app_db, seed, projetos_dir):
+    """Achado Vera 2026-08-12: a resposta de CANCELAMENTO da Focus não devolve chave/numero/serie
+    (só status+mensagem) — `_aplicar_resultado` sobrescrevia incondicionalmente com None, apagando
+    a rastreabilidade de qual NF-e foi cancelada."""
+    proj = seed["projeto_l2"]; lid = seed["loja2_id"]
+    _reset(app_db, "R-6b", proj); eid = _perfil(app_db, lid, "homologacao")
+    db = app_db.get_session()
+    db.add(app_db.DocumentoFiscal(ref="R-6b", projeto_nome=proj, loja_id=lid, emitente_id=eid,
+                                  status="autorizado", chave_nfe="CH123", numero="10", serie="1"))
+    db.commit()
+    res = nfe_emissao.cancelar(db, "R-6b", "cancelamento por erro de digitacao", emissor=FakeEmissor())
+    assert res.status == StatusNota.CANCELADO
+    reg = db.query(app_db.DocumentoFiscal).filter_by(ref="R-6b").first()
+    assert reg.status == "cancelado"
+    assert reg.chave_nfe == "CH123" and reg.numero == "10" and reg.serie == "1"
+    db.close()
+
+
 def test_consultar_resolve_emissor_pelo_emitente_id(app_db, seed, projetos_dir, monkeypatch):
     # o switch reg.loja_id -> reg.emitente_id: consultar SEM emissor injetado resolve pelo emitente do documento
     # emitente_id é FK real (emitente.id) — usa o emitente da OUTRA loja (seed) em vez de um literal

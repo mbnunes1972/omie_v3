@@ -356,6 +356,31 @@ def _usuario_autoriza_desconto(db, login, senha, desconto_pct, sessao=None):
     return u
 
 
+def _maior_desconto_efetivo_pct(db, orc, novo_desconto_pct=None, overrides_individuais=None):
+    """Maior desconto EFETIVO (composto: global × individual por ambiente, mesma fórmula de
+    mod_negociacao.calcular_orcamento — fator_desc = (1-d_orc)*(1-d_amb)) entre os ambientes do
+    orçamento, considerando um valor proposto (não persistido) no lugar do atual. Achado da Vera
+    (2026-08-12): os dois campos eram checados isoladamente contra limite_desconto — um Diretor com
+    limite 50% conseguia 45% global + 45% individual = 69,75% efetivo, sem autorização.
+    Orçamento de COMPLEMENTO (Fatia 3 PE): o desconto GLOBAL é neutralizado pelo próprio motor
+    (`_negociacao_breakdown`/`mod_negociacao.calcular_orcamento` força d_orc=0 — a diferença já
+    carrega o fator do contratado; só o desconto por ambiente tem efeito real) — reproduz a mesma
+    neutralização aqui, senão um `desconto_pct` gravado antes (sem efeito algum na prática) inflaria
+    o composto e bloquearia descontos individuais legítimos."""
+    if getattr(orc, "complemento_pe", 0):
+        d_orc = 0.0
+    else:
+        d_orc = (novo_desconto_pct if novo_desconto_pct is not None else (orc.desconto_pct or 0.0)) / 100.0
+    overrides_individuais = overrides_individuais or {}
+    maior = 0.0
+    for lk in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc.id).all():
+        d_amb_pct = overrides_individuais.get(lk.pool_ambiente_id, lk.desconto_individual_pct or 0.0)
+        efetivo = (1 - (1 - d_orc) * (1 - d_amb_pct / 100.0)) * 100.0
+        if efetivo > maior:
+            maior = efetivo
+    return maior
+
+
 def _set_etapa_status(db, nome_safe, codigo, status, responsavel_id):
     etapa = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
     if not etapa:
@@ -1071,6 +1096,29 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
     except Exception as e:
         logging.getLogger(__name__).warning(
             "wiring faturamento segmentado (%s, %s, ref=%s) falhou: %s", segmento, projeto_nome, ref_doc, e)
+
+
+def _fin_estorno_faturamento_nfe_seguro(loja_id, ref_doc):
+    """Wiring do estorno de faturamento no cancelamento de NF-e (achado Vera 2026-08-12: cancelar
+    não desfazia nada no razão — a receita ficava contabilizada para uma nota juridicamente
+    inexistente). Fail-soft/isolado/idempotente, como os demais wirings financeiros."""
+    try:
+        if not loja_id:
+            return
+        import mod_contabil, mod_tenancy
+        db = get_session()
+        try:
+            loja = db.get(Loja, loja_id)
+            if loja is None or not mod_tenancy.modulo_ativo(loja, "financeiro"):
+                return
+            ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+            mod_contabil.estornar_faturamento_nfe(db, ot, oid, ref_doc)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logging.getLogger(__name__).warning(
+            "wiring estorno faturamento NF-e (ref=%s) falhou: %s", ref_doc, e)
 
 
 # Estado por-requisição (header X-Loja-Ativa). Era um global simples (`_REQ_LOJA_ATIVA = None`)
@@ -7856,6 +7904,15 @@ class Handler(BaseHTTPRequestHandler):
                 aditivo.status = ("assinado" if {"loja", "cliente"}.issubset(partes)
                                   else "assinado_" + parte)
                 db.commit()
+                # Provisões contábeis do ADITIVO (achado Vera 2026-08-12: assinatura completa não
+                # gerava nenhum lançamento — a diferença de valor negociada ficava sem rastro no
+                # razão). Mesmo mecanismo/contas do fechamento da venda original (2026-08-12), na
+                # 2ª assinatura completa: sem gate de Aprovação Financeira própria (AF1/AF2 já
+                # correram antes da 11e) — decisão do usuário, mesmo padrão do contrato principal.
+                if aditivo.status == "assinado":
+                    orc_aj = db.get(Orcamento, aditivo.orcamento_complemento_id)
+                    if orc_aj is not None:
+                        _fin_provisoes_venda_seguro(orc_aj, nome, "prov:aditivo:" + str(aditivo.id))
                 self.send_json({"ok": True, "status": aditivo.status})
             finally:
                 db.close()
@@ -9495,21 +9552,24 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 if "desconto_pct" in req:
                     novo_desconto = float(req["desconto_pct"])
-                    if novo_desconto > usuario["limite_desconto"]:
+                    maior_efetivo = _maior_desconto_efetivo_pct(db, orc, novo_desconto_pct=novo_desconto)
+                    checagem_pct = max(novo_desconto, maior_efetivo)
+                    if checagem_pct > usuario["limite_desconto"]:
                         autorizador = _usuario_autoriza_desconto(
                             db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
-                            novo_desconto, sessao=usuario)
+                            checagem_pct, sessao=usuario)
                         db.add(LogAutorizacao(
                             solicitante_id=usuario["id"],
                             autorizador_id=(autorizador.id if autorizador else None),
-                            desconto_solicit=novo_desconto, desconto_limite=usuario["limite_desconto"],
+                            desconto_solicit=checagem_pct, desconto_limite=usuario["limite_desconto"],
                             autorizado=1 if autorizador else 0,
                             contexto=json.dumps({"origem": "margens", "orcamento_id": oid})))
                         if not autorizador:
                             db.commit()   # persiste o log da tentativa mesmo recusando o desconto
                             self.send_json({"ok": False, "requer_autorizacao": True,
                                             "limite": usuario["limite_desconto"],
-                                            "erro": f"Desconto de {novo_desconto:.1f}% excede seu limite "
+                                            "erro": f"Desconto efetivo de {checagem_pct:.1f}% (global × "
+                                                    f"individual por ambiente) excede seu limite "
                                                     f"({usuario['limite_desconto']:.0f}%). Autorização "
                                                     f"gerencial necessária."}, code=403)
                             return
@@ -12812,6 +12872,7 @@ class Handler(BaseHTTPRequestHandler):
                     if res.status.value == "cancelado":
                         # nota cancelada → etapa 15 volta a não-conclusiva (não deixar "emitida" com NF-e cancelada)
                         _set_etapa_status(db, nome_safe, "15", "em_andamento", usuario["id"]); db.commit()
+                        _fin_estorno_faturamento_nfe_seguro(loja_id, ref)
                     self.send_json({"ok": True, "status": res.status.value, "mensagem_sefaz": res.mensagem_sefaz})
                 except ValueError as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
@@ -13386,7 +13447,9 @@ class Handler(BaseHTTPRequestHandler):
                 links = db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).all()
                 ids_validos = {lk.pool_ambiente_id for lk in links}
                 limpos = sanear_descontos(pares, ids_validos)
-                maior_pct = max(limpos.values(), default=0.0)
+                maior_individual = max(limpos.values(), default=0.0)
+                maior_efetivo = _maior_desconto_efetivo_pct(db, orc, overrides_individuais=limpos)
+                maior_pct = max(maior_individual, maior_efetivo)
                 if maior_pct > usuario["limite_desconto"]:
                     autorizador = _usuario_autoriza_desconto(
                         db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
@@ -13401,8 +13464,9 @@ class Handler(BaseHTTPRequestHandler):
                         db.commit()
                         self.send_json({"ok": False, "requer_autorizacao": True,
                                         "limite": usuario["limite_desconto"],
-                                        "erro": f"Desconto individual de {maior_pct:.1f}% excede seu "
-                                                f"limite ({usuario['limite_desconto']:.0f}%). Autorização "
+                                        "erro": f"Desconto efetivo de {maior_pct:.1f}% (individual × "
+                                                f"global) excede seu limite "
+                                                f"({usuario['limite_desconto']:.0f}%). Autorização "
                                                 f"gerencial necessária."}, code=403)
                         return
                 by_id = {lk.pool_ambiente_id: lk for lk in links}

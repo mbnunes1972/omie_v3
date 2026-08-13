@@ -1196,7 +1196,10 @@ class Aditivo(Base):
     ambientes renegociados (orçamento de ajuste × contrato original), com modelo versionado por loja
     (documento_modelos tipo 'termo_aditivo') e assinatura loja+cliente. TABELA PRÓPRIA de propósito:
     uma linha em `contratos` viraria "o último contrato" e quebraria a trava `_contrato_assinado`.
-    Sem efeito contábil (decisão do usuário: gerencial; acerto na liquidação/NF-e)."""
+    A assinatura completa (loja+cliente) constitui as provisões contábeis da diferença negociada
+    (mesmo mecanismo do fechamento da venda original, achado Vera 2026-08-12 — a decisão anterior
+    de "sem efeito contábil, acerto na liquidação" nunca teve o "acerto" implementado em lugar
+    nenhum, e o valor assinado ficava sem rastro no razão)."""
     __tablename__ = "aditivos"
 
     id                 = Column(Integer,  primary_key=True, autoincrement=True)

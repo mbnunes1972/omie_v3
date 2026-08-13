@@ -1494,6 +1494,35 @@ def efetivar_impostos_segmento(db, owner_tipo, owner_id, projeto_id, valor, ref_
     return v
 
 
+_ORIGEM_ESTORNO_NFE_CANCELADA = "estorno_cancelamento_nfe"
+
+
+def estornar_faturamento_nfe(db, owner_tipo, owner_id, ref_doc):
+    """Reverte o faturamento (receita + impostos) de uma NF-e CANCELADA (achado Vera 2026-08-12:
+    cancelar a NF-e não desfazia nada no razão — a receita ficava contabilizada para uma nota
+    juridicamente inexistente). Mesmo padrão de `estornar_rateio`: lançamento invertido com ref
+    '<original>:estorno', idempotente. Cobre os dois wirings automáticos disparados na emissão —
+    `faturar_segmento` (refs 'fat:<ref_doc>:*') e `efetivar_impostos_segmento`
+    (refs 'imp:<ref_doc>:*'). Retorna os estornos criados (lista, vazia se não havia nada a reverter
+    ou já estava tudo estornado)."""
+    from sqlalchemy import or_
+    prefixos = ("fat:" + ref_doc + ":", "imp:" + ref_doc + ":")
+    legs = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
+              .filter(or_(*[Lancamento.ref.like(p + "%") for p in prefixos]))
+              .order_by(Lancamento.id.asc()).all())
+    out = []
+    for l in legs:
+        if (l.ref or "").endswith(":estorno"):
+            continue
+        ref_estorno = l.ref + ":estorno"
+        if lancamento_por_ref(db, owner_tipo, owner_id, ref_estorno) is not None:
+            continue
+        out.append(lancar(db, owner_tipo, owner_id, l.conta_credito_id, l.conta_debito_id, l.valor,
+                          projeto_id=l.projeto_id, origem=_ORIGEM_ESTORNO_NFE_CANCELADA,
+                          historico="Estorno (NF-e cancelada) — " + (l.historico or ""), ref=ref_estorno))
+    return out
+
+
 # ── FASE D: reconciliação (Provisionado × Efetivado × Saldo × Destino) + Contas a Pagar ───────
 _ORIGEM_RESOL_SOBRA = "resolucao_provisao_sobra"
 _ORIGEM_RESOL_FALTA = "resolucao_provisao_falta"

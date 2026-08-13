@@ -43,9 +43,12 @@ def _guardar_doc(db, projeto_nome, tipo, caminho_focus, client):
 
 def _aplicar_resultado(reg, res):
     reg.status = res.status.value if hasattr(res.status, "value") else res.status
-    reg.chave_nfe = res.chave
-    reg.numero = res.numero
-    reg.serie = res.serie
+    # chave/numero/serie NUNCA são zerados por um resultado que não os carrega (achado Vera
+    # 2026-08-12): a resposta de CANCELAMENTO da Focus não devolve esses campos — sobrescrever
+    # incondicionalmente apagava a rastreabilidade de qual NF-e foi cancelada.
+    reg.chave_nfe = res.chave or reg.chave_nfe
+    reg.numero = res.numero or reg.numero
+    reg.serie = res.serie or reg.serie
     reg.mensagem_sefaz = res.mensagem_sefaz
     reg.erros_json = json.dumps(res.erros, ensure_ascii=False) if res.erros else None
 

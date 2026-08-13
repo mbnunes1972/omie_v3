@@ -650,6 +650,66 @@ def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, 
     assert not [l for l in lans if l["ref"] == f"fat:NFE-{proj}-{up['documento_id']}"]
 
 
+def test_cancelar_nfe_estorna_faturamento(http_client_factory, seed, app_db, projetos_dir, monkeypatch):
+    """Achado Vera 2026-08-12: cancelar a NF-e não revertia a receita (4.1.01) lançada na emissão —
+    a nota juridicamente inexistente continuava contabilizada. Cancelamento agora estorna as pernas
+    de faturamento (mesmo padrão de estornar_rateio: lançamento invertido, ref '<original>:estorno',
+    idempotente)."""
+    monkeypatch.setattr(nfe_emissao, "_emissor_para", lambda db, eid: FakeEmissor())
+    proj = seed["projeto_l2"]
+    _reset15(app_db, proj); _perfil(app_db, seed["loja2_id"])
+    dbx = app_db.get_session()
+    orc = dbx.get(app_db.Orcamento, seed["orcamento_l2_id"])
+    orc.valor_total = 100000.0; orc.cfo = 40000.0
+    dbx.commit(); dbx.close()
+    import mod_contabil as _mc
+    ddb = app_db.get_session()
+    _ot, _oid = _mc.resolver_owner(ddb, {"loja_id": seed["loja2_id"], "rede_id": None})
+    _mc.registrar_evento(ddb, _ot, _oid, "registro_venda_contrato", 100000.0, projeto_id=proj, ref="venda:" + proj)
+    _mc.constituir_provisoes_fechamento(ddb, _ot, _oid, proj, {"custo_fabrica": 40000.0}, ref_base="pf:" + proj)
+    def _saldo_4101():
+        dbc = app_db.get_session()
+        ot2, oid2 = _mc.resolver_owner(dbc, {"loja_id": seed["loja2_id"], "rede_id": None})
+        conta = dbc.query(_mc.Conta).filter_by(owner_tipo=ot2, owner_id=oid2, codigo="4.1.01").first()
+        s = _mc.saldo_conta(dbc, ot2, oid2, conta.id) if conta else 0.0
+        dbc.close()
+        return s
+
+    # Snapshots RELATIVOS (não absolutos): `seed` é module-scoped e outros testes deste arquivo já
+    # emitem NF-e no mesmo projeto/conta — a conta 4.1.01 pode chegar com saldo pré-existente.
+    saldo_pre_emissao = _saldo_4101()
+    c = _login(http_client_factory, "dir_l2")
+    _, up = _upload_xml(c, proj, _fixture_xml())
+    st, b = _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe",
+                  {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
+    assert st == 200 and b["status"] == "autorizado", b
+    ref = f"NFE-{proj}-{up['documento_id']}"
+
+    saldo_antes = _saldo_4101()
+    assert saldo_antes - saldo_pre_emissao == 65000.0   # receita (crédito) da parcela Mercadoria
+
+    st3, b3 = _post(c, f"/api/projetos/{proj}/ciclo/15/nfe/cancelar",
+                    {"ref": ref, "justificativa": "cancelamento teste homologacao"})
+    assert st3 == 200 and b3["status"] == "cancelado", b3
+
+    st4, d4 = c.get(f"/api/financeiro/lancamentos?projeto={proj}")
+    lans = d4["lancamentos"]
+    estornos = [l for l in lans if (l["ref"] or "").endswith(":estorno")]
+    assert estornos, "cancelamento deveria ter gerado lançamento(s) de estorno"
+    assert all(l["origem"] == "estorno_cancelamento_nfe" for l in estornos)
+
+    saldo_depois = _saldo_4101()
+    assert saldo_depois == saldo_pre_emissao   # receita revertida — nota cancelada não fica contabilizada
+
+    # idempotente: cancelar de novo (FakeEmissor sempre devolve "cancelado") não duplica os estornos
+    st5, b5 = _post(c, f"/api/projetos/{proj}/ciclo/15/nfe/cancelar",
+                    {"ref": ref, "justificativa": "segunda tentativa"})
+    assert st5 == 200 and b5["status"] == "cancelado", b5
+    st6, d6 = c.get(f"/api/financeiro/lancamentos?projeto={proj}")
+    estornos2 = [l for l in d6["lancamentos"] if (l["ref"] or "").endswith(":estorno")]
+    assert len(estornos2) == len(estornos)
+
+
 def test_face_fiscal_alinhada_a_segmentacao(http_client_factory, seed, app_db, projetos_dir, monkeypatch):
     """FASE B2.3: a NF-e de produto sai com Σ itens = parcela Mercadoria (pct_merc × Val_Cont) e a
     NFS-e com valor = parcela Serviço — juntas fecham o Val_Cont, sem duplicar. O markup deixa de

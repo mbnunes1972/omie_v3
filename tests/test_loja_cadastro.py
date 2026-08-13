@@ -23,6 +23,21 @@ def test_super_admin_cadastra_loja_completa(http_client_factory, seed, app_db):
     assert diru is not None and dn == ("master", lid, 1)
 
 
+def test_loja_sem_cnpj_diretor_nao_ganha_senha_previsivel(http_client_factory, seed, app_db):
+    """Achado de auditoria 2026-08-13: loja criada sem CNPJ ainda (fluxo comum, "preencho
+    depois") dava ao diretor a senha hardcoded "orizon123" — conta MASTER sequestrável por quem
+    soubesse o e-mail antes do 1º login."""
+    c = http_client_factory(); c.login("super", "senha123")
+    st, out = c.post("/api/admin/lojas", {
+        "nome": "Loja Sem CNPJ", "codigo": "LSC",
+        "diretor": {"nome": "Diretor Sem CNPJ", "login": "dir@semcnpj.com"},
+    })
+    assert st in (200, 201) and out["ok"], out
+    c2 = http_client_factory()
+    st2, d2 = c2.post("/api/auth/login", {"login": "dir@semcnpj.com", "senha": "orizon123"})
+    assert st2 == 401 and d2.get("ok") is False, d2
+
+
 def test_loja_nova_ganha_tabela_de_funcoes(http_client_factory, seed, app_db):
     """2026-08-08 (achado da Vera): antes os 13 FUNCOES_PADRAO só nasciam no seed inicial do
     banco ou no backfill de boot — loja criada em runtime ficava sem cargo nenhum."""

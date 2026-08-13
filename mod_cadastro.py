@@ -4,6 +4,7 @@ Fronteira obrigatória: Funcionário (RH) ≠ Usuário (conta de login, Admin/N�
 referência (Usuario.funcionario_id / Funcionario.usuario_id), NUNCA duplicando dado pessoal.
 """
 import re
+import secrets
 import json as _json
 from auth import perfis
 from database import Funcionario, Fornecedor, Terceiro, Usuario, Funcao
@@ -130,7 +131,10 @@ def func_sync_acesso(db, f, req):
     # cria conta nova ligada — login = e-mail, senha provisória = dígitos do CPF (troca no 1º acesso)
     u = Usuario(nome=f.nome, login=email, email=email, cpf=f.cpf, nivel=perfil,
                 loja_id=f.loja_id, ativo=1, funcionario_id=f.id, funcao_id=f.funcao_id)
-    u.set_senha(_digitos(f.cpf) or "orizon123")
+    # senha provisória previsível (achado de auditoria 2026-08-13): "orizon123" hardcoded era
+    # sequestrável por qualquer um que soubesse o e-mail de login. CPF ausente → token aleatório
+    # (senha_provisoria=1 já força a troca no 1º acesso — o valor exato nunca precisa ser lido).
+    u.set_senha(_digitos(f.cpf) or secrets.token_urlsafe(16))
     u.senha_provisoria = 1
     db.add(u); db.flush()
     f.usuario_id = u.id

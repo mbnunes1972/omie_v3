@@ -46,6 +46,25 @@ def test_funcionario_acesso_cria_usuario_vinculado_sem_duplicar(http_client_fact
         db.close()
 
 
+def test_funcionario_sem_cpf_ganha_senha_aleatoria_nao_previsivel(http_client_factory, seed, app_db):
+    """Achado de auditoria 2026-08-13: sem CPF, a senha inicial caía num fallback hardcoded
+    ("orizon123") — qualquer um sabendo o e-mail de login sequestrava a conta antes do 1º acesso.
+    Agora é um token aleatório (senha_provisoria=1 já força a troca no 1º login)."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/funcionarios", {"nome": "Sem CPF",
+        "acesso": {"tem_acesso": True, "email": "semcpf@loja.com", "perfil": "operador"}})
+    assert st == 201, d
+    c2 = http_client_factory()
+    st2, d2 = c2.post("/api/auth/login", {"login": "semcpf@loja.com", "senha": "orizon123"})
+    assert st2 == 401 and d2.get("ok") is False, d2   # senha hardcoded antiga NÃO funciona mais
+    db = app_db.get_session()
+    try:
+        u = db.query(app_db.Usuario).filter_by(login="semcpf@loja.com").first()
+        assert u is not None and u.senha_provisoria == 1
+    finally:
+        db.close()
+
+
 def test_acesso_email_duplicado_barrado(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     c.post("/api/funcionarios", {"nome": "A", "cpf": "111.444.777-35",

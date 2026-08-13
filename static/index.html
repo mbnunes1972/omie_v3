@@ -18675,7 +18675,7 @@ function _renderCardGenerico(etapa, dados, bloqueada) {
       style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--border);
         border-radius:4px;background:var(--surface);color:var(--text);font-size:.82rem;
         resize:vertical;min-height:60px"
-    >${dados.observacoes || ''}</textarea>
+    >${esc(dados.observacoes || '')}</textarea>
     ${btnToggle}${btnReabrir}`;
 }
 

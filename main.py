@@ -2,7 +2,7 @@
 main.py — Servidor HTTP, rotas e inicialização.
 Ponto de entrada da aplicação: python main.py
 """
-import os, io, json, time, re, threading, webbrowser, hashlib, uuid
+import os, io, json, time, re, threading, webbrowser, hashlib, uuid, secrets
 import sys
 import logging
 import email
@@ -2484,9 +2484,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
-                loja = db.get(Loja, lid) if lid else None
-                if loja is not None and not mod_tenancy.modulo_ativo(loja, "expedicao"):
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                loja = db.get(Loja, lid)
+                if not mod_tenancy.modulo_ativo(loja, "expedicao"):
                     self.send_json({"ok": False, "erro": "Módulo Expedição inativo."}, code=403); return
                 proj_cli = {p.nome_safe: p.cliente_id for p in db.query(Projeto).filter_by(loja_id=lid).all()}
                 cli_nome = {c.id: c.nome for c in db.query(Cliente).filter_by(loja_id=lid).all()}
@@ -2513,9 +2516,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 card = db.get(CicloLogistico, int(m.group(1)))
-                if card is None or (lid and card.loja_id != lid):
+                if card is None or card.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
                 p = db.query(Projeto).filter_by(nome_safe=card.projeto_nome).first()
                 cli = db.get(Cliente, p.cliente_id) if p and p.cliente_id else None
@@ -2530,9 +2536,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
-                loja = db.get(Loja, lid) if lid else None
-                if loja is not None and not mod_tenancy.modulo_ativo(loja, "assistencias"):
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                loja = db.get(Loja, lid)
+                if not mod_tenancy.modulo_ativo(loja, "assistencias"):
                     self.send_json({"ok": False, "erro": "Módulo Assistências inativo."}, code=403); return
                 from urllib.parse import parse_qs
                 tipo = (parse_qs(urlparse(self.path).query).get("tipo") or [""])[0].strip()
@@ -2551,9 +2560,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 caso = db.get(AssistenciaCaso, int(m.group(1)))
-                if caso is None or (lid and caso.loja_id != lid):
+                if caso is None or caso.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 anexo = db.query(AssistenciaAnexo).filter_by(id=int(m.group(2)), caso_id=caso.id).first()
                 if not anexo:
@@ -8114,9 +8126,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
-                loja = db.get(Loja, lid) if lid else None
-                if loja is not None and not mod_tenancy.modulo_ativo(loja, "expedicao"):
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                loja = db.get(Loja, lid)
+                if not mod_tenancy.modulo_ativo(loja, "expedicao"):
                     self.send_json({"ok": False, "erro": "Módulo Expedição inativo."}, code=403); return
                 req = json.loads(body or b'{}')
                 projeto = (req.get("projeto_nome") or "").strip()
@@ -8141,9 +8156,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 card = db.get(CicloLogistico, int(m.group(1)))
-                if card is None or (lid and card.loja_id != lid):
+                if card is None or card.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
                 req = json.loads(body or b'{}')
                 ok, err = mod_expedicao.mover(db, card, req.get("novo_status"),
@@ -8165,9 +8183,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 card = db.get(CicloLogistico, int(m.group(1)))
-                if card is None or (lid and card.loja_id != lid):
+                if card is None or card.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
                 mod_expedicao.atualizar_detalhe(db, card, json.loads(body or b'{}'))
                 db.commit()
@@ -8185,9 +8206,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "erro": "Não autenticado."}, code=401); return
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
-                loja = db.get(Loja, lid) if lid else None
-                if loja is not None and not mod_tenancy.modulo_ativo(loja, "assistencias"):
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                loja = db.get(Loja, lid)
+                if not mod_tenancy.modulo_ativo(loja, "assistencias"):
                     self.send_json({"ok": False, "erro": "Módulo Assistências inativo."}, code=403); return
                 req = json.loads(body or b'{}')
                 projeto = (req.get("projeto_nome") or "").strip() or None
@@ -8266,9 +8290,12 @@ class Handler(BaseHTTPRequestHandler):
             arquivos, _campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 caso = db.get(AssistenciaCaso, int(m.group(1)))
-                if caso is None or (lid and caso.loja_id != lid):
+                if caso is None or caso.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
                 if "arquivo" not in arquivos:
                     self.send_json({"ok": False, "erro": "Anexe o arquivo."}, code=400); return
@@ -8301,11 +8328,17 @@ class Handler(BaseHTTPRequestHandler):
             import mod_contabil
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 caso = db.get(AssistenciaCaso, int(m.group(1)))
-                if caso is None or (lid and caso.loja_id != lid):
+                if caso is None or caso.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado."}, code=404); return
-                ot, oid = mod_contabil.resolver_owner(db, usuario)
+                # resolve pelo `lid` já escopado (a loja DONA do caso), não pelo `usuario` cru —
+                # achado de auditoria 2026-08-13: um admin_rede lançaria o custo nos livros da
+                # PRÓPRIA rede em vez da rede dona do caso, se o bypass acima não fosse fechado.
+                ot, oid = mod_contabil.resolver_owner(db, {"loja_id": lid, "rede_id": None})
                 ok, err = mod_assistencias.realizar_caso(db, ot, oid, caso, (json.loads(body or b'{}')).get("valor"))
                 if not ok:
                     self.send_json({"ok": False, "erro": err}, code=400); return
@@ -8406,11 +8439,16 @@ class Handler(BaseHTTPRequestHandler):
             import mod_contabil
             db = get_session()
             try:
-                lid = usuario.get("loja_id")
+                ator = _ator_dict(db, usuario)
+                lid, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
                 reg = db.get(FolhaPagamento, int(m.group(1)))
-                if reg is None or (lid and reg.loja_id != lid):
+                if reg is None or reg.loja_id != lid:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                ot, oid = mod_contabil.resolver_owner(db, usuario)
+                # resolve pelo `lid` já escopado (a loja DONA da folha), não pelo `usuario` cru —
+                # mesmo achado de auditoria do endpoint de assistências acima.
+                ot, oid = mod_contabil.resolver_owner(db, {"loja_id": lid, "rede_id": None})
                 ok, err = mod_folha.pagar(db, ot, oid, reg)
                 if not ok:
                     self.send_json({"ok": False, "erro": err}, code=400); return
@@ -10993,7 +11031,10 @@ class Handler(BaseHTTPRequestHandler):
                     if dir_login:
                         if db.query(Usuario).filter(Usuario.login == dir_login).first() is not None:
                             self.send_json({"ok": False, "erro": "Já existe uma conta com este e-mail (diretor)."}); return
-                        senha_ini = validacao_doc._digitos(l.cnpj or "") or "orizon123"
+                        # achado de auditoria 2026-08-13: fallback "orizon123" hardcoded numa
+                        # conta MASTER era sequestrável por quem soubesse o e-mail do diretor
+                        # antes do 1º login (senha_provisoria=1 já força a troca).
+                        senha_ini = validacao_doc._digitos(l.cnpj or "") or secrets.token_urlsafe(16)
                         u = Usuario(nome=(dir_req.get("nome") or dir_login).strip(), login=dir_login,
                                     email=dir_login, nivel="master", loja_id=l.id, ativo=1, senha_provisoria=1)
                         u.set_senha(senha_ini); db.add(u); db.flush()

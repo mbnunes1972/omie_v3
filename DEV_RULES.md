@@ -66,11 +66,22 @@ O Claude Code lê os arquivos diretamente — não precisa colar o conteúdo.
 
 ## REGRAS GERAIS
 
-### Git
-- Fazer commit ao final de cada sessão, **sempre**
+### Git — fluxo branch + PR (ATIVO desde 2026-08-13, Sessão 197)
+Com Juliana desenvolvendo junto (além de Marcelo), commit direto na `main` foi substituído por
+branch + Pull Request — ver detalhe completo em `docs/transicao/02-processo-branch-pr.md`
+(deixa de ser "plano futuro da Fase 3" e passa a ser o processo corrente).
+- **Branch de feature a partir da `main` atualizada** (`feat/<assunto>`, `fix/<assunto>`), nunca
+  commit direto na `main`.
+- Antes de abrir o PR: suíte (`python3 -m pytest -q`) verde; `node --check` limpo se mexeu em
+  `static/index.html`.
+- Abrir PR no GitHub (`mbnunes1972/orizon-manager`) contra a `main`. Descrição mínima: o quê,
+  por quê, como foi testado; linkar spec em `docs/superpowers/specs/` se houver.
+- Revisão (Juliana, quando disponível — Marcelo revisa se for o único ativo no momento) antes do
+  merge.
+- Merge na `main` = vira a ponta da Instância A (VPS A) no próximo deploy.
 - Mensagens de commit em português, descritivas: `"feat: modal de autorização delegada"`, `"fix: limite de desconto no modal de parâmetros"`
 - Nunca editar arquivos diretamente no servidor — sempre via git pull
-- Branch padrão: `main`
+- Branch padrão (destino do merge): `main`
 
 ### Servidor de DEV
 - IP: `167.88.33.121` | Portas: `8765` (Instância A) / `8766` (Instância B)

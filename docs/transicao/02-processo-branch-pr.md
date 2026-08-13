@@ -1,10 +1,11 @@
 # Processo de Branch / Pull Request
 
-> Fase 3, item 5 do Plano de Transição: "Fluxo de branches/PR (sem etapa de ambiente local
-> compartilhado): cada dev trabalha isolado na própria máquina, abre PR, Juliana revisa e
-> aprova o merge direto em Instância A/Integração." Este documento detalha esse fluxo pra virar
-> hábito no onboarding técnico (Fase 2, item 4). Rascunho — Juliana ajusta o que achar
-> necessário antes de repassar pro Wesley.
+> **ATIVO desde 2026-08-13 (Sessão 197)** — deixou de ser plano da Fase 3 e passou a ser o
+> processo corrente: já com Marcelo + Juliana desenvolvendo, todo código novo entra por branch +
+> PR, sem esperar o Wesley entrar. Fase 3, item 5 do Plano de Transição: "Fluxo de branches/PR
+> (sem etapa de ambiente local compartilhado): cada dev trabalha isolado na própria máquina, abre
+> PR, Juliana revisa e aprova o merge direto em Instância A/Integração." Juliana segue livre pra
+> ajustar o que achar necessário antes de repassar pro Wesley no onboarding técnico dele.
 
 ## Por que muda
 
@@ -13,7 +14,7 @@ máquina, commitando **direto na `main`** — sem branch de feature, sem PR, sem
 terceiro (a "revisão" era o próprio Claude Code auditando o diff, mais teste manual do
 Marcelo). Isso funcionou por ser 1 pessoa só. Com 2+ devs no mesmo repo, commit direto na
 `main` gera conflito e código sem segundo par de olhos antes de ir pro ambiente compartilhado
-(Instância A). Dessa data em diante, todo código novo entra por PR.
+(Instância A). A partir de 2026-08-13 (Sessão 197), todo código novo entra por PR.
 
 ## Fluxo
 

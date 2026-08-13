@@ -90,18 +90,21 @@ nunca compartilham banco. Script único de deploy A+B: `scripts/deploy_ab.sh <ta
 (roda **no VPS de dev**, via SSH). Produção é deploy manual, sempre com backup antes
 (`bash /root/backup_orizon.sh`).
 
-## 6. O fluxo de hoje (1 dev + IA, não escala para equipe)
+## 6. O fluxo antigo (até 2026-08-12 — referência histórica, 1 dev + IA)
 
-Hoje: commit direto na `main` (sem PR, sem revisão de terceiro) → push → deploy manual na
-Instância A → teste visual/técnico (localhost ≈ Instância A, mesmo rigor) → tag nova →
+Até a Sessão 197: commit direto na `main` (sem PR, sem revisão de terceiro) → push → deploy
+manual na Instância A → teste visual/técnico (localhost ≈ Instância A, mesmo rigor) → tag nova →
 `deploy_ab.sh` promove a Instância B → teste aberto (usuário comum) → tag nova → deploy manual
-em Produção com backup antes. **Aprovação de Marcelo em cada promoção entre ambientes já é a
-prática atual** — isso não muda.
+em Produção com backup antes. Funcionou por ser 1 dev só (Marcelo, via Claude Code); deixou de
+ser suficiente assim que Juliana passou a desenvolver também.
 
-## 7. O fluxo NOVO (equipe — o que o Plano de Transição pede)
+## 7. O fluxo atual (ATIVO desde 2026-08-13, Sessão 197)
 
 O que muda é **antes** da Instância A: cada dev deixa de commitar direto na `main` compartilhada
-e passa a trabalhar isolado.
+e passa a trabalhar isolado. Confirmado nessa sessão: **VPS A/Instância A é definitivamente o
+ambiente de teste técnico** (equiparado ao localhost, mesmo rigor) — não uma parada informal;
+**VPS B/Instância B fica reservada só para homologação com equipe/usuário real**, nunca para
+depuração de dev; **o banco de Produção segue limpo por ora** (sem dado real de cliente ainda).
 
 1. **Cada dev trabalha na própria máquina** (clone próprio do repo, não mais um WSL
    compartilhado) — branch de feature a partir da `main`.

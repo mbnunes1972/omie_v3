@@ -3277,6 +3277,33 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 197 — Metodologia de ambientes formalizada + fluxo branch+PR ativado (Juliana entra no desenvolvimento)
+
+**Contexto:** Marcelo tirou dúvidas conceituais sobre os 4 ambientes (Localhost, VPS A, VPS B,
+Produção) — o que um commit alcança, diferença entre "base de código" (GitHub, única,
+compartilhada) e "base de dados" (uma por ambiente, sem sincronização entre elas), como
+funciona a atualização via GitHub. A partir da conversa, duas decisões de processo:
+
+**[DECIDIDO] VPS A vira definitivamente o ambiente de teste técnico** — equiparado ao
+localhost (mesmo rigor), não mais uma parada informal. **VPS B fica reservada só para
+homologação com equipe/usuário real** (tag `Pre_Teste`/sucessora), nunca pra depuração de dev.
+Banco de Produção segue **limpo por ora** (sem dado real de cliente). Isso essencialmente
+confirma por escrito o que já estava em `docs/transicao/01-arquitetura-e-fluxo-ambientes.md`
+(seção 5) e na memória `pipeline-testes-promocao` do Claude Code — nada de arquitetura nova,
+só formalização.
+
+**[DECIDIDO] Fluxo branch + PR ativado AGORA**, não mais esperando o Wesley entrar (Fase 3 do
+Plano de Transição). Com Juliana já desenvolvendo (junto com Marcelo, que segue sendo quem mais
+codifica), commit direto na `main` compartilhada foi trocado por: branch de feature → suíte
+verde localmente → PR no GitHub → revisão (Juliana, ou Marcelo quando for o único ativo) →
+merge → deploy manual na Instância A (segue `deploy_ab.sh`). Promoção A→B e B→Produção continua
+exigindo aprovação visual de Marcelo — isso não mudou.
+
+**[ARQUIVOS]** `DEV_RULES.md` (seção Git reescrita pro fluxo branch+PR),
+`docs/transicao/01-arquitetura-e-fluxo-ambientes.md` (seção 6 virou histórico, seção 7 marcada
+ATIVA), `docs/transicao/02-processo-branch-pr.md` (cabeçalho e "Por que muda" atualizados de
+plano futuro pra processo corrente).
+
 ## Sessão 196 — Madrugada autônoma (`/loop`): 3 bugs financeiros críticos + auditoria de segurança completa (2 rodadas) + usabilidade, tudo validado pela tela
 
 **Mandato do usuário** (autorizando trabalho autônomo durante a noite, sem supervisão): "use o

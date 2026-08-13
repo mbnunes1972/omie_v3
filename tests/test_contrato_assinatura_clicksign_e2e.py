@@ -277,3 +277,44 @@ def test_reconciliar_via_endpoint_verificar(app_db, seed, monkeypatch, http_clie
     st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/verificar")
     assert st == 200
     assert b["status"] == "assinado_loja"
+
+
+class _FakeClickSignClientRejeitaNome(_FakeClickSignClient):
+    """Simula a ClickSign rejeitando o nome do signatário (achado da Vera: nome de cliente com
+    dígito, ex. 'Cliente P1', volta 'name não está em um formato válido')."""
+    def adicionar_signatario(self, envelope_id, email, nome, cpf=None):
+        from integracoes.clicksign_client import ClickSignError
+        raise ClickSignError("name não está em um formato válido", status_code=422,
+                             erros=[{"detail": "name não está em um formato válido"}])
+
+
+def test_enviar_via_endpoint_erro_da_clicksign_vira_400_nao_500(
+        app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado da Vera (2026-08-12/13): erro de validação de negócio OU erro remoto da própria
+    ClickSign chegava ao cliente HTTP como 500 (código quebrado) em vez de 400 (a mensagem já vem
+    limpa do JSON:API da ClickSign, não é um crash do servidor)."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    _garantir_email_do_consultor(app_db, "dir_l1")
+    import mod_clicksign
+    fake = _FakeClickSignClientRejeitaNome()
+    monkeypatch.setattr(mod_clicksign, "client_de", lambda cfg: fake)
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, seed["contrato_l1_id"])
+        pdf = tmp_path / "contrato2.pdf"
+        pdf.write_bytes(b"%PDF-fake")
+        contrato.pdf_path = str(pdf)
+        proj = db.query(app_db.Projeto).filter_by(nome_safe=seed["projeto_l1"]).first()
+        cli = db.get(app_db.Cliente, proj.cliente_id)
+        cli.email = "cliente@teste.com"
+        db.commit()
+    finally:
+        db.close()
+
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/enviar", {})
+    assert st == 400, b   # antes do fix: 500
+    assert b["ok"] is False
+    assert "não está em um formato válido" in b["erro"]

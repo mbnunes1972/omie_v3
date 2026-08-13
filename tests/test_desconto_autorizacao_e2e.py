@@ -248,3 +248,36 @@ def test_composicao_pequena_dentro_do_limite_nao_e_bloqueada(http_client_factory
     link = db.query(app_db.OrcamentoAmbiente).filter_by(orcamento_id=oid, pool_ambiente_id=pa_id).first()
     assert link.desconto_individual_pct == 5
     db.close()
+
+
+def test_composicao_exata_no_limite_nao_e_sensivel_a_ponto_flutuante(http_client_factory, seed, app_db):
+    """Achado da Vera (2026-08-13): duas composições matematicamente iguais a exatamente 10%
+    caíam de lados opostos da trava só por erro de ponto flutuante na multiplicação
+    (1-(1-0.04)*(1-0.0625) = 10.000000000000009; 1-(1-0)*(1-0.10) = 9.999999999999998). Limite do
+    operador é exatamente 10% — as duas composições têm que ser ACEITAS (nenhuma é "mais que 10%"
+    de verdade), não depender de qual par de percentuais foi multiplicado."""
+    _reset_orc_descontos(app_db, seed["orcamento_l1_id"])
+    db = app_db.get_session()
+    pa = app_db.PoolAmbiente(projeto_id=seed["projeto_l1"], nome="f", nome_exibicao="Ambiente F",
+                             xml_path="w2", ambientes_json="[]", order_total=1000.0, budget_total=2000.0)
+    db.add(pa); db.flush()
+    oid = seed["orcamento_l1_id"]
+    db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=1))
+    db.commit()
+    pa_id = pa.id
+    db.close()
+
+    c = _login(http_client_factory, "cons_l1")   # operador, limite 10%
+
+    st, body = c.post(f"/api/orcamentos/{oid}/margens", {"desconto_pct": 4})
+    assert st == 200 and body["ok"] is True
+
+    st, body = c.put(f"/api/orcamentos/{oid}/descontos", {"descontos": {str(pa_id): 6.25}})
+    assert st == 200 and body["ok"] is True, body   # 4%×6,25% = exatamente 10% — não pode bloquear
+
+    _reset_orc_descontos(app_db, seed["orcamento_l1_id"])
+    st, body = c.post(f"/api/orcamentos/{oid}/margens", {"desconto_pct": 0})
+    assert st == 200 and body["ok"] is True
+
+    st, body = c.put(f"/api/orcamentos/{oid}/descontos", {"descontos": {str(pa_id): 10}})
+    assert st == 200 and body["ok"] is True, body   # 0%×10% = exatamente 10% — não pode bloquear

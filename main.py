@@ -375,7 +375,11 @@ def _maior_desconto_efetivo_pct(db, orc, novo_desconto_pct=None, overrides_indiv
     maior = 0.0
     for lk in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc.id).all():
         d_amb_pct = overrides_individuais.get(lk.pool_ambiente_id, lk.desconto_individual_pct or 0.0)
-        efetivo = (1 - (1 - d_orc) * (1 - d_amb_pct / 100.0)) * 100.0
+        # round: achado da Vera (2026-08-13) — sem arredondar, duas composições matematicamente
+        # iguais a exatamente X% caem de lados opostos da trava só por causa de erro de ponto
+        # flutuante na multiplicação (ex.: 4%×6,25% e 0%×10% "deveriam" dar 10% nos dois casos,
+        # mas um float vira 9,999999999999998 e o outro 10,000000000000009).
+        efetivo = round((1 - (1 - d_orc) * (1 - d_amb_pct / 100.0)) * 100.0, 2)
         if efetivo > maior:
             maior = efetivo
     return maior
@@ -11925,6 +11929,7 @@ class Handler(BaseHTTPRequestHandler):
                             "erro": "Este contrato já tem assinatura interna registrada — não é "
                                     "possível mudar de canal."}, code=400); return
                     import mod_clicksign
+                    from integracoes.clicksign_client import ClickSignError
                     loja_obj = db.get(Loja, loja_id)
                     cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
                     if cfg is None:
@@ -11942,6 +11947,14 @@ class Handler(BaseHTTPRequestHandler):
                         cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
                     db.commit()
                     self.send_json({"ok": True, "assinatura_canal": contrato.assinatura_canal})
+                except (ValueError, ClickSignError) as e:
+                    # achado da Vera (2026-08-12/13): erro de validação de negócio (e-mail
+                    # faltando, PDF ausente) OU erro remoto da própria ClickSign (ex.: "name não
+                    # está em um formato válido" quando o nome do cliente tem dígito) chegavam
+                    # como 500 — código quebrado, não "faltou preencher um campo". 400 com a
+                    # mensagem já limpa (ClickSignError já extrai `detail`/`title` do JSON:API).
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)

@@ -708,7 +708,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   <div style="background:var(--card);border:1px solid var(--border2);border-radius:16px;
               padding:32px;width:100%;max-width:420px;position:relative">
     <!-- Fechar -->
-    <button onclick="fecharModalPerfil()"
+    <button onclick="fecharModalPerfil()" title="Fechar" aria-label="Fechar"
             style="position:absolute;top:16px;right:16px;background:transparent;border:none;
                    color:var(--muted);font-size:18px;cursor:pointer;line-height:1"><i class="ti ti-x"></i></button>
     <div style="font-family:var(--font-sans);font-weight:700;font-size:16px;margin-bottom:24px">
@@ -6069,7 +6069,7 @@ async function expCriar(){
     const d = await r.json();
     if(!d.ok){ st.textContent='Erro: '+(d.erro||'falha'); st.style.color='var(--err)'; return; }
     expNovoFechar(); showToast('Pedido criado.', false); expedicaoKanbanCarregar();
-  }catch(e){ st.textContent='Erro: '+e; st.style.color='var(--err)'; }
+  }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); st.style.color='var(--err)'; }
 }
 
 // ── Painel de Detalhe (reaproveita o template Detalhe/Formulário) ─────────────
@@ -6146,7 +6146,7 @@ async function expDetSalvar(){
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})).json();
     if(!d.ok){ st.textContent='Erro: '+(d.erro||'falha'); st.style.color='var(--err)'; return; }
     expDetFechar(); showToast('Pedido atualizado.', false); expedicaoKanbanCarregar();
-  }catch(e){ st.textContent='Erro: '+e; st.style.color='var(--err)'; }
+  }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); st.style.color='var(--err)'; }
 }
 async function expMover(){
   const st = document.getElementById('exp-det-status');
@@ -6160,7 +6160,7 @@ async function expMover(){
     showToast('Status atualizado.', false);
     expedicaoKanbanCarregar();
     expDetAbrir(_expDetId);   // recarrega o detalhe c/ o histórico atualizado
-  }catch(e){ st.textContent='Erro: '+e; st.style.color='var(--err)'; }
+  }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); st.style.color='var(--err)'; }
 }
 
 // ── Assistências (Modulos_Orizon_v5 módulo 10 / Financeiro v7 §6) ────────────────────────────
@@ -6204,7 +6204,7 @@ function _assistBadge(tc, label){
 async function assistRealizar(id, valor){
   let v = valor;
   if(!v || v<=0){
-    const inp = prompt('Valor do caso (R$):'); if(inp===null) return;
+    const inp = await promptPopup('Valor do caso (R$):', {titulo:'Valor do caso', placeholder:'0,00'}); if(inp===null) return;
     v = parseFloat(String(inp).replace(',','.')); if(!v || v<=0){ showToast('Valor inválido.', true); return; }
   }
   const d = await (await fetch('/api/assistencias/casos/'+id+'/realizar', {method:'POST', credentials:'same-origin',
@@ -6614,6 +6614,17 @@ async function uploadFormData(url, fd){
   return await r.json().catch(()=>({ok:false, erro:'Resposta inválida do servidor.'}));
 }
 
+// Detalhe amigável pro catch(e) de um fetch que falhou de forma inesperada (rede caiu, JSON
+// inválido) — mesmo espírito do MSG_UPLOAD_REDE acima: nunca vazar "TypeError: Failed to fetch"
+// ou "SyntaxError: Unexpected token" cru pro usuário final. Usar só nesse catch de exceção; o
+// caminho normal de erro de negócio continua sendo d.erro (mensagem do backend).
+function _detalheErroRede(e){
+  const msg = String((e && e.message) || e || '').trim();
+  if(/failed to fetch|networkerror|load failed|err_|timeout/i.test(msg)) return 'falha de conexão — verifique a internet e tente de novo';
+  if(/json|unexpected token/i.test(msg)) return 'resposta inválida do servidor';
+  return msg || 'erro inesperado';
+}
+
 // ---- Page 00: Projetos -------------------------------------------------------
 const _PROJ_STATUS_LABEL = {
   quente:     { label: '<i class="ti ti-flame"></i> Quente',    cls: 'quente'     },
@@ -6718,7 +6729,7 @@ async function projStatusSet(nomeSafe, novoStatus){
     const p = _projListaBase.find(x=>x.nome_safe===nomeSafe);
     if(p){ p.status = novoStatus; p.status_at = new Date().toISOString(); }
     projAplicarFiltros();
-  }catch(e){ showToast('Erro: '+esc(String(e)), true); }
+  }catch(e){ showToast('Erro: '+esc(_detalheErroRede(e)), true); }
 }
 
 function projToggleStatusFilter(e){
@@ -6775,7 +6786,7 @@ async function negStatusSet(novoStatus){
     const p = _projListaBase.find(x=>x.nome_safe===projetoAtivo.nome_safe);
     if(p) p.status = novoStatus;
     showToast('Status atualizado');
-  }catch(e){ showToast('Erro: '+esc(String(e)), true); }
+  }catch(e){ showToast('Erro: '+esc(_detalheErroRede(e)), true); }
 }
 
 document.addEventListener('click', ()=>{
@@ -6848,7 +6859,7 @@ async function comercialDashCarregar(){
     const d = await r.json();
     if(!d.ok){ if(box) box.innerHTML = '<span style="color:var(--warn)">'+esc(d.erro||'Falha ao carregar')+'</span>'; return; }
     comercialDashRender(d.dashboard);
-  }catch(e){ if(box) box.innerHTML = '<span style="color:var(--warn)">Erro: '+esc(e.message)+'</span>'; }
+  }catch(e){ if(box) box.innerHTML = '<span style="color:var(--warn)">Erro: '+esc(_detalheErroRede(e))+'</span>'; }
 }
 function _dashBRL(v){ return (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'}); }
 function _dashKpi(label, valor, sub){
@@ -6979,7 +6990,7 @@ async function abrirProjeto(nome_safe){
     await carregarOrcamentos();  // EP-07: carrega lista de orçamentos
     carregarCicloSilencioso();   // carrega dados do ciclo em background para verificar aprovação
     goPage(2);  // vai direto para negociação
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 // ── EP-07: Orçamentos ─────────────────────────────────────────────────────────
@@ -7102,7 +7113,7 @@ async function salvarRenomearOrc(id, novoNome){
       showToast('Erro ao renomear: '+(d.erro||''), true);
       renderOrcamentosBar();
     }
-  }catch(e){ showToast('Erro: '+e, true); renderOrcamentosBar(); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); renderOrcamentosBar(); }
 }
 
 // Change 4: busca ambientes do orçamento e seta _orcAmbientesAtivos diretamente
@@ -7198,7 +7209,7 @@ async function confirmarNovoOrc(){
     _orcamentos.push(d.orcamento);
     await ativarOrcamento(d.orcamento.id);  // já renderiza barra e aplica filtro vazio
     showToast('Orçamento criado: '+d.orcamento.nome);
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 // ── Painel de ambientes do pool ───────────────────────────────────────────────
@@ -7292,7 +7303,7 @@ async function confirmarRemoverAmbOrc(){
     if(orc) Object.assign(orc, d.orcamento);
     await ativarOrcamento(_orcamentoAtivoId);
     if(_removerAmbPending && _removerAmbPending._doPainel) await renderPainelPool();
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 // ── fim EP-07 ─────────────────────────────────────────────────────────────────
@@ -7733,7 +7744,7 @@ async function uploadXmls(fileList){
         // toast visível em vez de fechar como se tivesse dado certo (BUG achado no UAT da Vera).
         st.textContent = 'Nenhum XML foi adicionado — veja o erro acima.';
       }
-    }catch(e){ st.textContent='Erro: '+e; showToast('Erro: '+e, true); }
+    }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); showToast('Erro: '+_detalheErroRede(e), true); }
     return;
   }
 
@@ -7756,7 +7767,7 @@ async function uploadXmls(fileList){
     if(document.getElementById('page-02').classList.contains('active')){
       carregarMargensSalvas();
     }
-  }catch(e){ st.textContent='Erro: '+e; showToast('Erro: '+e, true); }
+  }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 // ── EP-07: helpers para modais de duplicata no pool ──────────────────────────
@@ -7790,7 +7801,7 @@ async function confirmarPoolSobrescrever(){
     showToast('"'+d.ambiente.nome_exibicao+'" atualizado'+(n?' em '+n+' orçamento(s)':'')+' e adicionado.');
     fecharModalNovoAmbiente();
     if(_orcamentoAtivoId) await ativarOrcamento(_orcamentoAtivoId);
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 async function confirmarPoolRenomear(){
@@ -7807,7 +7818,7 @@ async function confirmarPoolRenomear(){
     showToast('"'+p.nome_exibicao+'" renomeado para "'+p.nome_novo+'" e adicionado.');
     fecharModalNovoAmbiente();
     if(_orcamentoAtivoId) await ativarOrcamento(_orcamentoAtivoId);
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 async function confirmarPoolCarregarAssim(){
@@ -7822,7 +7833,7 @@ async function confirmarPoolCarregarAssim(){
     showToast('"'+d.ambiente.nome_exibicao+'" adicionado ao orçamento.');
     fecharModalNovoAmbiente();
     if(_orcamentoAtivoId) await ativarOrcamento(_orcamentoAtivoId);
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 async function removerAmbiente(evt, arquivo, idx){
@@ -7839,7 +7850,7 @@ async function removerAmbiente(evt, arquivo, idx){
     renderAmbientes();
     atualizarBanner();
     showToast('Ambiente removido');
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 async function atualizarXml(fileList, arquivoAntigo, idx){
@@ -7857,7 +7868,7 @@ async function atualizarXml(fileList, arquivoAntigo, idx){
     renderAmbientes();
     atualizarBanner();
     showToast('Ambiente atualizado!');
-  }catch(e){ showToast('Erro: '+e, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 
 async function salvarSelecao(){
@@ -7873,7 +7884,7 @@ async function salvarSelecao(){
     st.textContent='Selecao salva!'; st.style.color='var(--ok)';
     showToast('Selecao salva!');
     setTimeout(()=>st.textContent='',3000);
-  }catch(e){ st.textContent='Erro: '+e; st.style.color='var(--err)'; }
+  }catch(e){ st.textContent='Erro: '+_detalheErroRede(e); st.style.color='var(--err)'; }
 }
 
 // ---- Pagina 02: Negociacao ---------------------------------------------------
@@ -13130,8 +13141,8 @@ function simRenderResultado(r){
 }
 
 async function orizonRedeNova(){
-  const nome = prompt('Nome da rede:'); if(!nome) return;
-  const cnpj = prompt('CNPJ (opcional):') || '';
+  const nome = await promptPopup('Nome da rede:', {titulo:'Nova rede', placeholder:'Nome da rede'}); if(!nome) return;
+  const cnpj = await promptPopup('CNPJ (opcional):', {titulo:'Nova rede', placeholder:'00.000.000/0000-00'}) || '';
   const r = await fetch('/api/admin/redes', {method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body: JSON.stringify({nome, cnpj})});
   const d = await r.json();
@@ -14089,7 +14100,7 @@ function fluxoCaixaMudarView(v){
   _fluxoRender();   // dados já em cache — só re-renderiza, sem refetch
 }
 async function fluxoCaixaAddConta(){
-  const nome = prompt('Nome da nova conta (ex.: Banco Itaú, Banco Inter):');
+  const nome = await promptPopup('Nome da nova conta (ex.: Banco Itaú, Banco Inter):', {titulo:'Nova conta'});
   if(!nome) return;
   if(!_fluxoRaizId){
     const arv = await fetch('/api/financeiro/contas', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
@@ -14175,7 +14186,7 @@ async function folhaGerar(){
   showToast('Folha gerada.', false); folhaRender(d.folha);
 }
 async function folhaPagar(id){
-  if(!confirm('Confirmar o pagamento desta folha? A despesa será lançada nas contas 5.3 (Salários / Comissão de Vendedor).')) return;
+  if(!(await confirmarPopup('Confirmar o pagamento desta folha? A despesa será lançada nas contas 5.3 (Salários / Comissão de Vendedor).', {titulo:'Pagar folha', okLabel:'Confirmar pagamento'}))) return;
   const d = await (await fetch('/api/folha/'+id+'/pagar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Folha paga.', false); folhaCarregar();
@@ -14325,6 +14336,7 @@ async function adiantamentoToggleAbater(id, on){
   if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { showToast((d&&d.erro)||'Erro.', true); }
 }
 async function adiantamentoRemover(id){
+  if(!(await confirmarPopup('Remover este adiantamento?', {titulo:'Remover adiantamento', okLabel:'Remover', perigo:true}))) return;
   const r=await fetch('/api/adiantamentos/'+id,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({remover:true})});
   const d=await r.json().catch(()=>({}));
   if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { showToast((d&&d.erro)||'Erro.', true); }
@@ -14447,7 +14459,7 @@ async function reconRodar(){
 }
 async function reconFechar(){
   const metodologia = document.getElementById('recon-metodo').value;
-  if(!confirm('Fechar o período com esta base de rateio? (registra um snapshot)')) return;
+  if(!(await confirmarPopup('Fechar o período com esta base de rateio? (registra um snapshot)', {titulo:'Fechar período', okLabel:'Fechar período'}))) return;
   const r = await fetch('/api/financeiro/periodos', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({metodologia})});
   const d = await r.json().catch(()=>({}));
@@ -15129,7 +15141,7 @@ function _pcNode(cfgKey, c, nivel){
 
 async function pcNovo(cfgKey, paiId){
   const cfg = _PC_CFGS[cfgKey];
-  const nome = prompt('Nome do novo item:');
+  const nome = await promptPopup('Nome do novo item:', {titulo:'Novo item'});
   if(!nome) return;
   const r = await fetch(cfg.criarUrl, {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome})});
@@ -15139,7 +15151,7 @@ async function pcNovo(cfgKey, paiId){
 }
 async function pcRenomear(cfgKey, id){
   const cfg = _PC_CFGS[cfgKey];
-  const nome = prompt('Novo nome:');
+  const nome = await promptPopup('Novo nome:', {titulo:'Renomear'});
   if(!nome) return;
   await fetch(cfg.putUrlBase+id, {method:'PUT', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({nome})});
@@ -15147,7 +15159,7 @@ async function pcRenomear(cfgKey, id){
 }
 async function pcRemover(cfgKey, id){
   const cfg = _PC_CFGS[cfgKey];
-  if(!confirm('Remover este item? (com filhos/uso será apenas inativado)')) return;
+  if(!(await confirmarPopup('Remover este item? (com filhos/uso será apenas inativado)', {titulo:'Remover item', okLabel:'Remover', perigo:true}))) return;
   const r = await fetch(cfg.removerUrlBase+id+'/remover', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body:'{}'});
   const d = await r.json().catch(()=>({}));
@@ -15236,7 +15248,7 @@ async function adminModulosCarregar() {
       ${linhas}
       <div id="mods-aviso" style="display:none;color:var(--err);font-size:.78rem;margin-top:8px"></div>
       <button class="btn btn-primary btn-sm" style="margin-top:10px" onclick="adminModulosSalvar()">Salvar módulos</button>`;
-  } catch(e) { box.innerHTML = `<p style="color:var(--err)">Erro de rede: ${esc(e.message)}</p>`; }
+  } catch(e) { box.innerHTML = `<p style="color:var(--err)">Erro de rede: ${esc(_detalheErroRede(e))}</p>`; }
 }
 
 function _modsSelecionados() {
@@ -15275,7 +15287,7 @@ async function adminModulosSalvar() {
     if (String(lid) === String(_usuarioAtual && _usuarioAtual.loja_id)) { await carregarUsuarioAutenticado(); }
     adminRenderLoja(document.getElementById('admin-console'));  // reconstrói a barra de abas (some/aparece Fiscal/Financeiro)
     adminLojaTab('modulos'); // mantém o usuário na aba Módulos e recarrega o painel
-  } catch(e) { await avisoPopup('Erro de rede: ' + esc(e.message), {titulo:'Módulos'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Módulos'}); }
 }
 
 // ── Painel de Configuração Fiscal (PerfilFiscal, Sub-frente I) ──────────────
@@ -17148,8 +17160,14 @@ async function _ocMembroPost(payload){
     await ocMembrosCarregar();   // recarrega o painel com a lista atualizada
   }catch(e){ showToast('Erro de rede.', true); }
 }
-async function ocMembroGerir(usuario_id, acao){ await _ocMembroPost({usuario_id, acao}); }
-async function ocMembroExternoRemover(externo_id){ await _ocMembroPost({acao:'remove_externo', externo_id}); }
+async function ocMembroGerir(usuario_id, acao){
+  if(acao==='remove' && !(await confirmarPopup('Remover este membro da conversa?', {titulo:'Remover membro', okLabel:'Remover', perigo:true}))) return;
+  await _ocMembroPost({usuario_id, acao});
+}
+async function ocMembroExternoRemover(externo_id){
+  if(!(await confirmarPopup('Remover este contato externo da conversa?', {titulo:'Remover membro', okLabel:'Remover', perigo:true}))) return;
+  await _ocMembroPost({acao:'remove_externo', externo_id});
+}
 async function ocMembroExternoAdd(){
   const nome = ((await promptPopup('Nome do contato externo:', {titulo:'Contato externo', okLabel:'Próximo'}))||'').trim();
   if(!nome) return;
@@ -17459,7 +17477,7 @@ async function convResolver(mid){
 async function convDestravar(mid){
   const proj = _ocConvProjeto || (projetoAtivo && projetoAtivo.nome_safe);
   if(!proj) return;
-  const motivo = (prompt('Motivo do destravamento de emergência (obrigatório):') || '').trim();
+  const motivo = ((await promptPopup('Motivo do destravamento de emergência (obrigatório):', {titulo:'Destravar (emergência)'})) || '').trim();
   if(!motivo) return;
   const cred = await pedirCredenciaisGerente({titulo:'Destravar bloqueador (emergência)',
     mensagem:'Login e senha de Gerente/Diretor. O destravamento fica registrado na auditoria.'});
@@ -18130,7 +18148,7 @@ async function conciliarFinal() {
     }
     _projetoStatusAtual = 'concluido'; negAtualizarStatusBtn();
     await carregarCiclo();
-  } catch (e) { showToast('Erro: ' + e, true); }
+  } catch (e) { showToast('Erro: ' + _detalheErroRede(e), true); }
 }
 
 // ── Cronograma do Ciclo (Modulos_Orizon_v11): datas prevista/conclusão + edição reautenticada ──
@@ -18765,7 +18783,7 @@ async function concluirAprovacaoFinanceira(codigo) {
     if (!d.ok) { await avisoPopup(d.erro || 'Falha na aprovação', {titulo:'Aprovação Financeira'}); return; }
     showToast('Aprovação financeira concluída!', false);
     await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'Aprovação Financeira'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Aprovação Financeira'}); }
 }
 
 // ---- Provisões versionadas -----------------------------------------------
@@ -18808,7 +18826,7 @@ async function abrirProvisoes(oid, afCodigo) {
   try {
     const r = await fetch('/api/orcamentos/' + oid + '/provisoes', {credentials:'same-origin'});
     pdata = await r.json();
-  } catch(e) { showToast('Erro ao carregar provisões: ' + e.message, true); return; }
+  } catch(e) { showToast('Erro ao carregar provisões: ' + _detalheErroRede(e), true); return; }
   if (!pdata.ok) { await avisoPopup(pdata.erro || 'Falha ao carregar provisões.', {titulo:'Provisões'}); return; }
 
   const prov = pdata.provisoes || {};
@@ -19013,7 +19031,7 @@ async function _provAprovar(oid, rev) {
     showToast('Aprovação financeira concluída!', false);
     if (window._provModalOv) { window._provModalOv.remove(); window._provModalOv = null; }
     await carregarCiclo();
-  } catch (e) { if (erroEl) erroEl.textContent = 'Erro: ' + e.message; }
+  } catch (e) { if (erroEl) erroEl.textContent = 'Erro: ' + _detalheErroRede(e); }
 }
 
 async function _provAcao(oid, rev, decisao) {
@@ -19053,7 +19071,7 @@ async function _provAcao(oid, rev, decisao) {
     if (window._provModalOv) { window._provModalOv.remove(); window._provModalOv = null; }
     await abrirProvisoes(oid, window._provAfCodigo);
   } catch(e) {
-    if (erroEl) erroEl.textContent = 'Erro: ' + e.message;
+    if (erroEl) erroEl.textContent = 'Erro: ' + _detalheErroRede(e);
   }
 }
 // ---- fim Provisões versionadas -------------------------------------------
@@ -19062,7 +19080,7 @@ async function _provAcao(oid, rev, decisao) {
 async function abrirAuditoria(nomeSafe){
   let j;
   try { j = await fetch('/api/projetos/'+encodeURIComponent(nomeSafe)+'/auditoria-contabil', {credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ await avisoPopup('Erro ao carregar: '+e.message, {titulo:'Auditoria Contábil'}); return; }
+  catch(e){ await avisoPopup('Erro ao carregar: '+_detalheErroRede(e), {titulo:'Auditoria Contábil'}); return; }
   if(!j.ok){ await avisoPopup(j.erro||'Falha ao carregar.', {titulo:'Auditoria Contábil'}); return; }
   const fmt = v => 'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const ESTORNO = {devolucao:1, cancelamento_contrato:1, ajuste_provisao_af:1, resolucao_sobra:1, resolucao_falta:1};
@@ -19096,7 +19114,7 @@ async function abrirAuditoria(nomeSafe){
 async function abrirCronograma(nomeSafe){
   let j;
   try { j = await fetch('/api/projetos/'+encodeURIComponent(nomeSafe)+'/cronograma', {credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ await avisoPopup('Erro ao carregar: '+e.message, {titulo:'Cronograma'}); return; }
+  catch(e){ await avisoPopup('Erro ao carregar: '+_detalheErroRede(e), {titulo:'Cronograma'}); return; }
   if(!j.ok){ await avisoPopup(j.erro||'Falha ao carregar.', {titulo:'Cronograma'}); return; }
   const nomeEt = c => { const e = ETAPAS_CICLO.find(x=>x.codigo===c); return e ? e.nome : ('Etapa '+c); };
   const d = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
@@ -19130,7 +19148,7 @@ async function equipeAbrir(nomeSafe){
   _equipeNome = nomeSafe;
   let j;
   try { j = await fetch('/api/projetos/'+encodeURIComponent(nomeSafe)+'/equipe', {credentials:'same-origin'}).then(r=>r.json()); }
-  catch(e){ await avisoPopup('Erro ao carregar: '+e.message, {titulo:'Equipe'}); return; }
+  catch(e){ await avisoPopup('Erro ao carregar: '+_detalheErroRede(e), {titulo:'Equipe'}); return; }
   if(!j.ok){ await avisoPopup(j.erro||'Falha ao carregar.', {titulo:'Equipe'}); return; }
   _equipeCand = j.candidatos || {funcionarios:[], terceiros:[]};
   _equipeCandMontagem = j.candidatos_montagem || {funcionarios:[], terceiros:[]};   // só montador/ajudante
@@ -19204,7 +19222,7 @@ async function _equipePost(papel, selecao){
     if(!d.ok){ showToast(d.erro||'Falha ao salvar.', true); return; }
     _equipeRender(d.equipe);
     showToast('Equipe atualizada.', false);
-  }catch(e){ showToast('Erro: '+e.message, true); }
+  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
 }
 function _equipeSalvarUm(selEl){ _equipePost(selEl.getAttribute('data-papel'), _equipeParseSel(selEl.value)); }
 function _equipeSalvarMontagem(){
@@ -20093,7 +20111,7 @@ async function peUpload(codigo, inputFile) {
     await peCarregar(projetoAtivo.nome_safe);
     await carregarCiclo();
     return true;
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'PE — Upload'}); return false; }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'PE — Upload'}); return false; }
 }
 
 // ── Etapa 12 — Implantação do pedido ───────────────────────────────────────
@@ -20175,7 +20193,7 @@ async function enviarPedidosXml(inputFile) {
     inputFile.value = '';
     showToast('Pedido(s) carregado(s)!', false);
     await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'Implantação — Upload'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Implantação — Upload'}); }
 }
 
 async function encaminharPedidosFabrica() {
@@ -20229,7 +20247,7 @@ async function _patchEtapa(codigo, payload, okMsg, titulo) {
     showToast(okMsg, false);
     await carregarCiclo();
     return true;
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo}); return false; }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo}); return false; }
 }
 
 async function salvarNumerosPedidos() {
@@ -20339,7 +20357,7 @@ async function enviarNfeFabrica(inputFile) {
     const j = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/15/nfe-fabrica`, fd);
     if (!j.ok) { await avisoPopup(j.erro || 'Falha ao carregar.', {titulo:'NF-e — Fábrica'}); return; }
     showToast('NF-e da fábrica carregada!', false); await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'NF-e — Fábrica'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'NF-e — Fábrica'}); }
 }
 
 async function emitirNfseServico() {
@@ -20354,7 +20372,7 @@ async function emitirNfseServico() {
     const j = await r.json();
     if (!j.ok) { await avisoPopup(esc(j.erro || 'Falha na emissão.'), {titulo:'Emitir NFS-e'}); return; }
     showToast('NFS-e: ' + esc(j.status), false); await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + esc(e.message), {titulo:'Emitir NFS-e'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NFS-e'}); }
 }
 
 async function emitirNfeLoja(docId) {
@@ -20372,7 +20390,7 @@ async function emitirNfeLoja(docId) {
     }
     if (!j.ok) { await avisoPopup(esc(j.erro || 'Falha na emissão.'), {titulo:'Emitir NF-e'}); return; }
     showToast('Emissão: ' + esc(j.status), false); await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + esc(e.message), {titulo:'Emitir NF-e'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NF-e'}); }
 }
 
 async function _postEmitirNfe(body) {
@@ -20387,7 +20405,7 @@ async function consultarNfeLoja(ref) {
     const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha.', {titulo:'Consultar NF-e'}); return; }
     showToast('Status: ' + j.status, false); await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'Consultar NF-e'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Consultar NF-e'}); }
 }
 
 async function cancelarNfeLoja(ref) {
@@ -20400,7 +20418,7 @@ async function cancelarNfeLoja(ref) {
     const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha.', {titulo:'Cancelar NF-e'}); return; }
     showToast('Cancelamento: ' + j.status, false); await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'Cancelar NF-e'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Cancelar NF-e'}); }
 }
 
 async function salvarRelatorioEntrega() {
@@ -20432,7 +20450,7 @@ async function peConcluir(codigo) {
     showToast('Subfase do PE concluída!', false);
     await peCarregar(projetoAtivo.nome_safe);
     await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'PE — Concluir'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'PE — Concluir'}); }
 }
 
 async function peRevisao(codigo, inputRelatorio) {
@@ -20443,7 +20461,7 @@ async function peRevisao(codigo, inputRelatorio) {
     'A revisão reabre esta e as fases seguintes do PE. Continuar?',
     { titulo: 'Confirmar Revisão PE', okLabel: 'Continuar', perigo: true });
   if (!ok) return;
-  const motivo = (prompt('Motivo da revisão (opcional):') || '').trim();
+  const motivo = ((await promptPopup('Motivo da revisão (opcional):', {titulo:'Revisão PE'})) || '').trim();
   const cred = await pedirCredenciaisGerente({
     capacidade: 'revisar_pe',
     titulo: 'Revisão PE',
@@ -20466,7 +20484,7 @@ async function peRevisao(codigo, inputRelatorio) {
       { titulo: 'PE — Revisão' });
     await peCarregar(projetoAtivo.nome_safe);
     await carregarCiclo();
-  } catch(e) { await avisoPopup('Erro de rede: ' + e.message, {titulo:'PE — Revisão'}); }
+  } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'PE — Revisão'}); }
 }
 
 // ── fim Projeto Executivo (PE) ─────────────────────────────────────────────
@@ -20489,7 +20507,7 @@ async function toggleSalvarEtapa(codigo) {
     if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
     showToast(novoStatus === 'concluido' ? 'Etapa concluída!' : 'Etapa reaberta.');
     await carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 let _reabrirCodigo = null;
@@ -20520,7 +20538,7 @@ async function reabrirEtapaCascata(login, senha) {
     showToast('Etapas reabertas: ' + (d.resetadas || []).join(', '));
     _reabrirCodigo = null;
     await carregarCiclo();
-  } catch (e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch (e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 // Revisar contrato: com senha gerencial, devolve o contrato à fase de Orçamento
@@ -20548,7 +20566,7 @@ async function revisarContrato() {
     if (!d.ok) { mostrarErroModal(d.erro || 'Não foi possível revisar o contrato.'); return; }
     showToast('Contrato devolvido à fase de Orçamento.');
     await carregarCiclo();
-  } catch (e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch (e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 function _renderCardContrato() {
@@ -20919,7 +20937,7 @@ async function carregarDadosContrato() {
                           { credentials: 'same-origin' });
     const d = await r.json();
     renderContratoUI(d.contrato);
-  } catch(e) { showToast('Erro ao carregar contrato: ' + e.message, true); }
+  } catch(e) { showToast('Erro ao carregar contrato: ' + _detalheErroRede(e), true); }
 }
 
 // Passo 2 (cronograma): define/valida a data de entrega no card do Contrato → mostra a folga.
@@ -21156,7 +21174,7 @@ async function enviarContratoParaClickSign() {
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
     showToast('Contrato enviado para assinatura eletrônica (ClickSign).', false);
     carregarDadosContrato();
-  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 async function verificarClickSignContratoAgora() {
@@ -21168,7 +21186,7 @@ async function verificarClickSignContratoAgora() {
     showToast('Status verificado: ' + d.status, false);
     carregarDadosContrato();
     carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 function mascaraMoedaInput(el) {
@@ -21268,7 +21286,7 @@ async function confirmarVoltarOrcamento() {
     if (_cicloAberto) { await carregarCiclo(); }
     fecharCiclo();
     atualizarBotoesAprovacao();
-  } catch(e) { if(erroEl) erroEl.textContent = 'Erro de rede: ' + e.message; }
+  } catch(e) { if(erroEl) erroEl.textContent = 'Erro de rede: ' + _detalheErroRede(e); }
 }
 
 function toggleAssinaturas() {
@@ -21652,7 +21670,7 @@ async function gerarContrato(confirmarLojaIncompleta = false, signatarioPre = un
       showToast('Contrato gerado! Revise e assine na aba Etapas do Projeto.', false);
     }
   } catch(e) {
-    mostrarErroModal('Erro de rede ao gerar contrato:\n\n' + e.message);
+    mostrarErroModal('Erro de rede ao gerar contrato:\n\n' + _detalheErroRede(e));
     if (btn) { btn.disabled = false; btn.textContent = 'Gerar Contrato'; }
   }
 }
@@ -21757,7 +21775,7 @@ async function confirmarAssinatura(parte) {
     fecharModalAssinatura();
     carregarDadosContrato();
     carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 function abrirModalAdendo() {
@@ -21810,7 +21828,7 @@ async function salvarAdendo(confirmarLojaIncompleta = false) {
     }
     document.getElementById('modal-adendo-overlay')?.remove();
     showToast('Erro: ' + d.erro, true);
-  } catch(e) { showToast('Erro de rede: ' + e.message, true); }
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 // ── Home tabs ──────────────────────────────────────────────────────────────
@@ -21888,7 +21906,7 @@ async function parHomeCarregar(){
         <td style="padding:8px">${projHtml}</td>
       </tr>`;
     }).join('') || `<tr><td colspan="4" style="padding:12px;color:var(--muted)">Nenhum parceiro.</td></tr>`;
-  } catch(e){ tb.innerHTML = `<tr><td colspan="4" style="padding:12px;color:var(--err)">Erro ao carregar: ${esc(e.message)}</td></tr>`; }
+  } catch(e){ tb.innerHTML = `<tr><td colspan="4" style="padding:12px;color:var(--err)">Erro ao carregar: ${esc(_detalheErroRede(e))}</td></tr>`; }
 }
 
 // Aliases for home tab client buttons

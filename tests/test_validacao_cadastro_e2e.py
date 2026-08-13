@@ -109,3 +109,36 @@ def test_loja_cnpj_valido_200(http_client_factory, seed):
         "nome": "L Ok", "codigo": "XOK", "rede_id": seed["rede_id"],
         "cnpj": "11.222.333/0001-81"})
     assert st == 200 and d.get("ok"), d
+
+
+# ── Achado de auditoria 2026-08-13: Funcionário/Fornecedor/Terceiro nunca validavam
+#    dígito verificador de CPF/CNPJ (Cliente/Parceiro/Rede/Loja/Usuario/Emitente já validam) ──
+def test_funcionario_cpf_invalido_400(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/funcionarios", {"nome": "X", "cpf": "111.444.777-00"})
+    assert st == 400 and "cpf" in d.get("erro", "").lower()
+
+def test_funcionario_cpf_valido_201(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/funcionarios", {"nome": "X", "cpf": "390.533.447-05"})
+    assert st == 201, d
+
+def test_funcionario_sem_cpf_201(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/funcionarios", {"nome": "X"})
+    assert st == 201, d
+
+def test_terceiro_cpf_invalido_400(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/terceiros", {"nome": "X", "cpf": "111.444.777-00"})
+    assert st == 400 and "cpf" in d.get("erro", "").lower()
+
+def test_fornecedor_cnpj_cpf_invalido_400(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/fornecedores", {"nome": "X", "cnpj_cpf": "11.222.333/0001-00"})
+    assert st == 400 and "cpf" in d.get("erro", "").lower()
+
+def test_fornecedor_cnpj_valido_201(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/fornecedores", {"nome": "X", "cnpj_cpf": "11.222.333/0001-81"})
+    assert st == 201, d

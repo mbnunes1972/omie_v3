@@ -7,6 +7,8 @@ import os
 import json
 import hashlib
 import secrets
+import threading
+import time
 from datetime import datetime, timedelta
 from database import get_session, Usuario, Sessao, LogAutorizacao
 from . import perfis
@@ -17,6 +19,37 @@ SESSION_DURATION_HOURS = 8
 # Efeito colateral consciente: sessões ativas caem UMA vez no deploy (re-login geral).
 COOKIE_NAME            = "orizon_session"
 
+# ── Rate limiting de login (achado de auditoria 2026-08-13) ───────────────────
+# fazer_login não tinha nenhum contador/lockout — força bruta *online* sem barreira nenhuma,
+# agravado pelo hash sem salt (achado à parte, migração maior, deferida) e pelo super_admin
+# semeado com senha de bootstrap conhecida. Em memória (por processo — cada instância A/B/prod
+# tem a sua, aceitável: reinício do processo já invalida sessões existentes, mesmo padrão já
+# assumido pelo projeto); thread-safe (ThreadingHTTPServer). Chave = identificador normalizado
+# (login OU e-mail em minúsculo), não IP — bloqueia a CONTA visada, que é o alvo real do ataque.
+_LOGIN_TENTATIVAS = {}
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_MAX_TENTATIVAS = 5
+_LOGIN_JANELA_SEGUNDOS = 300     # 5 min: falhas fora dessa janela não contam mais
+_LOGIN_MSG_BLOQUEIO = "Muitas tentativas de login. Aguarde alguns minutos e tente novamente."
+
+
+def _login_falhas_recentes(ident):
+    agora = time.time()
+    with _LOGIN_LOCK:
+        hist = [t for t in _LOGIN_TENTATIVAS.get(ident, []) if agora - t < _LOGIN_JANELA_SEGUNDOS]
+        _LOGIN_TENTATIVAS[ident] = hist
+        return len(hist)
+
+
+def _login_registrar_falha(ident):
+    with _LOGIN_LOCK:
+        _LOGIN_TENTATIVAS.setdefault(ident, []).append(time.time())
+
+
+def _login_limpar_falhas(ident):
+    with _LOGIN_LOCK:
+        _LOGIN_TENTATIVAS.pop(ident, None)
+
 # ── Login ─────────────────────────────────────────────────────────────────────
 def fazer_login(login: str, senha: str) -> dict:
     """
@@ -25,16 +58,25 @@ def fazer_login(login: str, senha: str) -> dict:
     Retorna: {"ok": True, "token": "...", "usuario": {...}} ou {"ok": False, "erro": "..."}
     """
     from sqlalchemy import or_, func
+    ident = (login or "").strip()
     db = get_session()
     try:
-        ident = (login or "").strip()
         usuario = (db.query(Usuario)
                    .filter(Usuario.ativo == 1,
                            or_(Usuario.login == ident,
                                func.lower(Usuario.email) == ident.lower()))
                    .first())
+        # Chave do lockout: ID do usuário RESOLVIDO quando a conta existe (login e e-mail da
+        # MESMA conta caem no mesmo balde — não dobra o orçamento de tentativas alternando
+        # entre os dois); string crua como fallback pra também limitar varredura de
+        # identificadores inexistentes.
+        chave = ("u:%d" % usuario.id) if usuario else ("s:%s" % ident.lower())
+        if _login_falhas_recentes(chave) >= _LOGIN_MAX_TENTATIVAS:
+            return {"ok": False, "erro": _LOGIN_MSG_BLOQUEIO}
         if not usuario or not usuario.check_senha(senha):
+            _login_registrar_falha(chave)
             return {"ok": False, "erro": "Usuário ou senha inválidos."}
+        _login_limpar_falhas(chave)
 
         # Invalida sessões anteriores do mesmo usuário
         db.query(Sessao).filter_by(usuario_id=usuario.id, ativa=1).update({"ativa": 0})

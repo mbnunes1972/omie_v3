@@ -4,6 +4,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _sem_rate_limit_de_login_entre_testes():
+    """O rate limiter de login (achado de auditoria 2026-08-13) guarda estado em memória de
+    PROCESSO (`auth.auth._LOGIN_TENTATIVAS`) — correto em produção (1 processo por instância),
+    mas a suíte inteira roda num processo só e reusa um punhado de logins do seed (dir_l1, super,
+    cons_l1...) em milhares de testes. Sem isto, falhas de login intencionais em um arquivo
+    (ex. senha errada testada de propósito) se acumulam e derrubam logins LEGÍTIMOS de outro
+    arquivo bem depois na mesma rodada — falso positivo de teste, não bug do rate limit em si."""
+    from auth import auth as _auth
+    with _auth._LOGIN_LOCK:
+        _auth._LOGIN_TENTATIVAS.clear()
+    yield
+    with _auth._LOGIN_LOCK:
+        _auth._LOGIN_TENTATIVAS.clear()
+
+
 def _test_database_url():
     """URL do banco de TESTE (sempre Postgres — o SQLite saiu da suíte na faxina 2026-07-23).
 

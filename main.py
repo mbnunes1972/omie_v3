@@ -8483,6 +8483,16 @@ class Handler(BaseHTTPRequestHandler):
                     obj = Model(loja_id=loja_id); db.add(obj)
                 if not ((req.get("nome") or "").strip() or (rid and obj.nome)):
                     self.send_json({"ok": False, "erro": "Nome é obrigatório."}, code=400); return
+                # achado de auditoria 2026-08-13: Funcionário/Fornecedor/Terceiro nunca validavam
+                # dígito verificador de CPF/CNPJ (Cliente/Parceiro/Rede/Loja/Usuario/Emitente já
+                # validam) — um CPF estruturalmente inválido entrava normal e seguia até a Folha.
+                _campo_doc = {"funcionarios": ("cpf", "cpf"), "terceiros": ("cpf", "cpf"),
+                             "fornecedores": ("cnpj_cpf", None)}.get(ent)
+                if _campo_doc and _campo_doc[0] in req:
+                    import validacao_doc
+                    _e = validacao_doc.erro_doc(req.get(_campo_doc[0]), "CPF/CNPJ", _campo_doc[1])
+                    if _e:
+                        self.send_json({"ok": False, "erro": _e}, code=400); return
                 apl(db, obj, req, loja_id)
                 db.flush()
                 if ent == "funcionarios":   # fronteira: sincroniza a conta de login vinculada

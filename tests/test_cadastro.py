@@ -69,7 +69,7 @@ def test_acesso_email_duplicado_barrado(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     c.post("/api/funcionarios", {"nome": "A", "cpf": "111.444.777-35",
         "acesso": {"tem_acesso": True, "email": "dup@loja.com", "perfil": "operador"}})
-    st, d = c.post("/api/funcionarios", {"nome": "B", "cpf": "222.222.222-22",
+    st, d = c.post("/api/funcionarios", {"nome": "B", "cpf": "168.995.350-09",
         "acesso": {"tem_acesso": True, "email": "dup@loja.com", "perfil": "operador"}})
     assert st == 400 and "conta" in d["erro"].lower()
 
@@ -77,7 +77,7 @@ def test_acesso_email_duplicado_barrado(http_client_factory, seed, app_db):
 def test_fornecedor_crud_busca(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/fornecedores", {"nome": "Dal Mobile", "tipo_pessoa": "pj",
-        "cnpj_cpf": "11.111.111/0001-11", "categoria": "materia_prima", "prazo_pagamento": 30})
+        "cnpj_cpf": "11.444.777/0001-61", "categoria": "materia_prima", "prazo_pagamento": 30})
     assert st == 201, d
     _, lst = c.get("/api/fornecedores?q=dal")
     it = next(x for x in lst["itens"] if x["nome"] == "Dal Mobile")
@@ -87,10 +87,10 @@ def test_fornecedor_crud_busca(http_client_factory, seed, app_db):
 
 def test_terceiro_crud(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
-    st, d = c.post("/api/terceiros", {"nome": "Zé Montador", "cpf": "222.222.222-22",
+    st, d = c.post("/api/terceiros", {"nome": "Zé Montador", "cpf": "168.995.350-09",
         "tipo_servico": "montador", "pix": "ze@pix", "condicao": "mei"})
     assert st == 201, d
-    _, lst = c.get("/api/terceiros?q=222")   # busca por documento
+    _, lst = c.get("/api/terceiros?q=168")   # busca por documento
     it = next(x for x in lst["itens"] if x["id"] == d["id"])
     assert it["tipo_servico"] == "montador" and it["pix"] == "ze@pix" and it["condicao"] == "mei"
 

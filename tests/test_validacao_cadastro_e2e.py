@@ -37,6 +37,33 @@ def test_cliente_editar_cpf_invalido_400(http_client_factory, seed):
     assert st2 == 400
 
 
+def test_cliente_cpf_duplicado_por_corrida_devolve_erro_limpo_nao_500(
+        http_client_factory, seed, monkeypatch):
+    """Achado de auditoria 2026-08-13 (achado baixo): o except genérico da criação de Cliente
+    vazava a mensagem crua do Postgres numa corrida de CPF duplicado (a checagem em memória,
+    `db.query(Cliente).filter_by(cpf=cpf).first()`, é TOCTOU). Simulado com uma query que nunca
+    acha nada — o CPF já existe de verdade, o INSERT tem que estourar a constraint do banco, e o
+    servidor tem que devolver erro de negócio limpo (não 500 com detalhe cru do Postgres)."""
+    import main as _main
+    from database import Cliente as _Cliente
+    from sqlalchemy.orm import Query as _Query
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st0, d0 = _cli(c, cpf="529.982.247-25")
+    assert st0 == 200 and d0["ok"], d0
+
+    orig_first = _Query.first
+    def _first_que_ignora_cliente(self):
+        if self.column_descriptions and self.column_descriptions[0]["type"] is _Cliente:
+            return None
+        return orig_first(self)
+    monkeypatch.setattr(_Query, "first", _first_que_ignora_cliente)
+
+    st, body = _cli(c, cpf="529.982.247-25")
+    assert body.get("ok") is False
+    assert st == 409, body
+    assert "cpf" in body.get("erro", "").lower()
+
+
 # ── VD-Task 3: parceiro / usuário / rede / loja ──────────────────────────────
 
 def test_parceiro_cpf_cnpj_invalido_400(http_client_factory, seed):

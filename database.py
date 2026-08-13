@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, 
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship, validates
 from datetime import datetime
 import hashlib
+import hmac
 import os
 from auth import perfis
 
@@ -83,7 +84,10 @@ class Usuario(Base):
         self.senha_hash = _hash_senha(senha)
 
     def check_senha(self, senha: str) -> bool:
-        return self.senha_hash == _hash_senha(senha)
+        # hmac.compare_digest (tempo constante) em vez de == — achado de auditoria 2026-08-13,
+        # defesa em profundidade (timing attack remoto sobre SHA-256 de 32 bytes é impraticável
+        # dado o jitter de rede, mas a troca é grátis e correta).
+        return hmac.compare_digest(self.senha_hash or "", _hash_senha(senha))
 
     @property
     def limite_desconto(self) -> float:

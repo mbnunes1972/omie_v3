@@ -20,7 +20,7 @@ def test_funcionario_crud_e_isolamento(http_client_factory, seed, app_db):
 
 def test_funcionario_acesso_cria_usuario_vinculado_sem_duplicar(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
-    st, d = c.post("/api/funcionarios", {"nome": "Maria Acesso", "cpf": "111.444.777-35",
+    st, d = c.post("/api/funcionarios", {"nome": "Maria Acesso", "cpf": "398.259.791-94",
         "acesso": {"tem_acesso": True, "email": "maria@loja.com", "perfil": "operador"}})
     assert st == 201, d
     fid = d["id"]
@@ -34,7 +34,7 @@ def test_funcionario_acesso_cria_usuario_vinculado_sem_duplicar(http_client_fact
         db.close()
     # a conta entra com a senha inicial = dígitos do CPF
     c2 = http_client_factory()
-    st2, d2 = c2.post("/api/auth/login", {"login": "maria@loja.com", "senha": "11144477735"})
+    st2, d2 = c2.post("/api/auth/login", {"login": "maria@loja.com", "senha": "39825979194"})
     assert st2 == 200 and d2["ok"] is True
     # remover acesso -> desativa a conta (não apaga)
     st3, _ = c.post("/api/funcionarios/%d" % fid, {"acesso": {"tem_acesso": False}})
@@ -67,7 +67,7 @@ def test_funcionario_sem_cpf_ganha_senha_aleatoria_nao_previsivel(http_client_fa
 
 def test_acesso_email_duplicado_barrado(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
-    c.post("/api/funcionarios", {"nome": "A", "cpf": "111.444.777-35",
+    c.post("/api/funcionarios", {"nome": "A", "cpf": "907.483.378-06",
         "acesso": {"tem_acesso": True, "email": "dup@loja.com", "perfil": "operador"}})
     st, d = c.post("/api/funcionarios", {"nome": "B", "cpf": "168.995.350-09",
         "acesso": {"tem_acesso": True, "email": "dup@loja.com", "perfil": "operador"}})
@@ -93,6 +93,41 @@ def test_terceiro_crud(http_client_factory, seed, app_db):
     _, lst = c.get("/api/terceiros?q=168")   # busca por documento
     it = next(x for x in lst["itens"] if x["id"] == d["id"])
     assert it["tipo_servico"] == "montador" and it["pix"] == "ze@pix" and it["condicao"] == "mei"
+
+
+# ── Achado de auditoria 2026-08-13 (achado 10): duplicidade de CPF/CNPJ sem checagem ─────────
+def test_funcionario_cpf_duplicado_na_mesma_loja_400(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st1, d1 = c.post("/api/funcionarios", {"nome": "Original", "cpf": "666.972.510-85"})
+    assert st1 == 201, d1
+    st2, d2 = c.post("/api/funcionarios", {"nome": "Duplicado", "cpf": "666.972.510-85"})
+    assert st2 == 409 and "cadastrado" in d2["erro"].lower()
+
+def test_funcionario_cpf_duplicado_em_outra_loja_permitido(http_client_factory, seed, app_db):
+    """Duplicidade ENTRE lojas diferentes não é bloqueada — só dentro da mesma loja."""
+    c1 = http_client_factory(); c1.login("dir_l1", "senha123")
+    st1, d1 = c1.post("/api/funcionarios", {"nome": "Loja 1", "cpf": "273.464.686-27"})
+    assert st1 == 201, d1
+    c2 = http_client_factory(); c2.login("dir_l2", "senha123")
+    st2, d2 = c2.post("/api/funcionarios", {"nome": "Loja 2", "cpf": "273.464.686-27"})
+    assert st2 == 201, d2
+
+def test_fornecedor_cnpj_duplicado_na_mesma_loja_400(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st1, d1 = c.post("/api/fornecedores", {"nome": "Original", "cnpj_cpf": "45.723.174/0001-10"})
+    assert st1 == 201, d1
+    st2, d2 = c.post("/api/fornecedores", {"nome": "Duplicado", "cnpj_cpf": "45.723.174/0001-10"})
+    assert st2 == 409 and "cadastrado" in d2["erro"].lower()
+
+def test_funcionario_editar_nao_e_bloqueado_pelo_proprio_cpf(http_client_factory, seed, app_db):
+    """Regressão do bug de autoflush: editar um funcionário SEM trocar o CPF não pode disparar
+    o check de duplicidade contra si mesmo (a checagem só roda na criação)."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st1, d1 = c.post("/api/funcionarios", {"nome": "Editável", "cpf": "663.923.321-54"})
+    assert st1 == 201, d1
+    fid = d1["id"]
+    st2, d2 = c.post("/api/funcionarios/%d" % fid, {"cpf": "663.923.321-54", "cargo": "Novo Cargo"})
+    assert st2 == 200, d2
 
 
 def test_funcoes_catalogo_e_referencia(http_client_factory, seed, app_db):

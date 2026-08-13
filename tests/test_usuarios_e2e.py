@@ -107,6 +107,31 @@ def test_diretor_cria_usuario_loja_com_contato(http_client_factory, seed):
     assert novo["email"] == "n@p.com" and novo["whatsapp"] == "2"
 
 
+def test_criar_usuario_login_conflitante_devolve_erro_limpo_nao_500(
+        http_client_factory, seed, app_db, monkeypatch):
+    """Achado de auditoria 2026-08-13 (achado 12): POST /api/admin/usuarios só tinha
+    try/finally, sem except — a checagem de login duplicado (`validar_novo_usuario` contra a
+    lista de logins lida ANTES do commit) é TOCTOU: uma corrida real (2 requests concorrentes)
+    passa pela checagem e um dos dois estoura IntegrityError crua, 500. Simulado aqui via
+    monkeypatch da validação (bypassa o check em memória, como a corrida faria na prática) —
+    o login já existe de verdade no banco, então o INSERT tem que estourar a constraint mesmo
+    assim, e o servidor precisa devolver JSON limpo, não 500."""
+    import auth.mod_usuarios as mod_usuarios
+    c = _login(http_client_factory, "dir_l1")
+    st0, d0 = c.post("/api/admin/usuarios", {
+        "nome": "Primeiro", "login": "corrida@loja.com", "senha": "s1", "nivel": "operador",
+        "loja_id": seed["loja1_id"]})
+    assert st0 == 200 and d0["ok"], d0
+
+    monkeypatch.setattr(mod_usuarios, "validar_novo_usuario", lambda dados, logins: [])
+    st, body = c.post("/api/admin/usuarios", {
+        "nome": "Segundo (corrida)", "login": "corrida@loja.com", "senha": "s2",
+        "nivel": "operador", "loja_id": seed["loja1_id"]})
+    assert body.get("ok") is False
+    assert st == 409, body
+    assert "login" in body.get("erro", "").lower()
+
+
 def test_admin_rede_cria_par(http_client_factory, seed):
     c = _login(http_client_factory, "adm_rede")
     st, body = c.post("/api/admin/usuarios", {

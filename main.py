@@ -8475,14 +8475,6 @@ class Handler(BaseHTTPRequestHandler):
                 ent = m.group(1); rid = m.group(2)
                 Model, ser, apl = _cad_ent(ent)
                 req = json.loads(body or b'{}')
-                if rid:
-                    obj = db.query(Model).filter_by(id=int(rid), loja_id=loja_id).first()
-                    if obj is None:
-                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                else:
-                    obj = Model(loja_id=loja_id); db.add(obj)
-                if not ((req.get("nome") or "").strip() or (rid and obj.nome)):
-                    self.send_json({"ok": False, "erro": "Nome é obrigatório."}, code=400); return
                 # achado de auditoria 2026-08-13: Funcionário/Fornecedor/Terceiro nunca validavam
                 # dígito verificador de CPF/CNPJ (Cliente/Parceiro/Rede/Loja/Usuario/Emitente já
                 # validam) — um CPF estruturalmente inválido entrava normal e seguia até a Folha.
@@ -8493,6 +8485,28 @@ class Handler(BaseHTTPRequestHandler):
                     _e = validacao_doc.erro_doc(req.get(_campo_doc[0]), "CPF/CNPJ", _campo_doc[1])
                     if _e:
                         self.send_json({"ok": False, "erro": _e}, code=400); return
+                if rid:
+                    obj = db.query(Model).filter_by(id=int(rid), loja_id=loja_id).first()
+                    if obj is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                else:
+                    # achado de auditoria 2026-08-13 (achado 10): sem checagem de duplicidade
+                    # nenhuma (Cliente/Usuario já têm) — dava pra cadastrar o MESMO CPF/CNPJ várias
+                    # vezes na mesma loja sem aviso. Só na CRIAÇÃO (mesmo escopo do check de
+                    # Cliente, que também não re-checa na edição) e só dentro da PRÓPRIA loja —
+                    # duplicidade entre lojas diferentes (ex. fornecedor comum à rede) não é
+                    # necessariamente erro. Checa ANTES de instanciar/adicionar o objeto novo à
+                    # sessão — senão o autoflush da própria query tenta inserir a linha em branco
+                    # (sem os campos que só `apl()` preenche) e estoura.
+                    if _campo_doc:
+                        _doc_val = (req.get(_campo_doc[0]) or "").strip()
+                        if _doc_val and db.query(Model).filter_by(
+                                loja_id=loja_id, **{_campo_doc[0]: _doc_val}).first() is not None:
+                            self.send_json({"ok": False,
+                                            "erro": "CPF/CNPJ já cadastrado nesta loja."}, code=409); return
+                    obj = Model(loja_id=loja_id); db.add(obj)
+                if not ((req.get("nome") or "").strip() or (rid and obj.nome)):
+                    self.send_json({"ok": False, "erro": "Nome é obrigatório."}, code=400); return
                 apl(db, obj, req, loja_id)
                 db.flush()
                 if ent == "funcionarios":   # fronteira: sincroniza a conta de login vinculada
@@ -9152,6 +9166,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             nome = (req.get("nome") or "").strip()
             import validacao_doc
+            from sqlalchemy.exc import IntegrityError
             for _val, _rot, _tipo in ((req.get("cpf"), "CPF", "cpf"),
                                       (req.get("cnpj"), "CNPJ", "cnpj")):
                 _e = validacao_doc.erro_doc(_val, _rot, _tipo)
@@ -9200,6 +9215,12 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
                 db.refresh(c)
                 self.send_json({"ok": True, "cliente": _cliente_dict(c)})
+            except IntegrityError:
+                # achado de auditoria 2026-08-13 (achado baixo): o except genérico abaixo vazava
+                # a mensagem crua do Postgres (detalhe de constraint/schema) numa corrida de CPF
+                # duplicado — mensagem de negócio limpa em vez disso.
+                db.rollback()
+                self.send_json({"ok": False, "erro": "CPF já cadastrado."}, code=409)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)})
@@ -10902,6 +10923,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 req = json.loads(body) if body else {}
                 db  = get_session()
+                from sqlalchemy.exc import IntegrityError
                 try:
                     logins = [u.login for u in db.query(Usuario.login).all()]
                     erros  = mod_usuarios.validar_novo_usuario(req, logins)
@@ -10944,6 +10966,13 @@ class Handler(BaseHTTPRequestHandler):
                         db.add(UsuarioLoja(usuario_id=u.id, loja_id=lid))
                     db.commit()
                     self.send_json({"ok": True, "id": u.id})
+                except IntegrityError:
+                    # achado de auditoria 2026-08-13 (achado 12): sem este except, a corrida de
+                    # 2 POSTs com o mesmo login (a checagem de `logins` acima é TOCTOU — não
+                    # trava a linha) estourava IntegrityError crua até o handler genérico do
+                    # do_POST, 500 em vez de erro de negócio limpo.
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": "Já existe uma conta com este login."}, code=409)
                 finally:
                     db.close()
                 return

@@ -37,8 +37,12 @@ def _key_bytes():
         f.write(chave)
     try:
         os.chmod(_KEYFILE, 0o600)
-    except OSError:
-        pass
+    except OSError as e:
+        # achado de auditoria 2026-08-13: falha engolida em silêncio deixava a chave com
+        # permissão frouxa sem ninguém saber (ex. filesystem que não suporta chmod, como
+        # alguns mounts de rede) — agora pelo menos fica no log.
+        logging.getLogger(__name__).warning(
+            "não foi possível restringir permissão de %s (0600): %s", _KEYFILE, e)
     logging.getLogger(__name__).warning("chave de segredos gerada em %s", _KEYFILE)
     return chave
 

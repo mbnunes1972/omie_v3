@@ -698,6 +698,10 @@ class Orcamento(Base):
     # marcados "Renegociar" na 11c, base de valores = PE (arquivo_pe). Isento das travas de contrato
     # assinado nos endpoints de negociação (margens/descontos/valor); NUNCA vira o contratado.
     complemento_pe           = Column(Integer, default=0)
+    # Conciliação de PE/AF2 (spec 2026-08-14): generaliza o Complemento de "1 por projeto inteiro"
+    # pra "1 por FASE" — o desmembramento libera fases independentemente, a cobrança acompanha.
+    # NULL = projeto não desmembrado (fase única implícita, todo o pool).
+    parcela_id      = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
     created_by      = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
     updated_at      = Column(DateTime, nullable=True)
@@ -2100,6 +2104,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE pool_ambientes ADD COLUMN IF NOT EXISTS renegociar_pe INTEGER DEFAULT 0",
         # Fatia 3 PE: orçamento de ajuste pós-assinatura.
         "ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS complemento_pe INTEGER DEFAULT 0",
+        # Conciliação de PE/AF2 (spec 2026-08-14): Complemento de Projeto por fase.
+        "ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS parcela_id INTEGER",
         # Acordos Financeiros (revisão 2026-07-21): contraparte generalizada.
         "ALTER TABLE acordo_fabrica ADD COLUMN IF NOT EXISTS contraparte_tipo VARCHAR(10) DEFAULT 'fabrica'",
         "ALTER TABLE acordo_fabrica ADD COLUMN IF NOT EXISTS contraparte_nome TEXT",

@@ -9,9 +9,10 @@ Duas grandezas de "diferença de valor de contrato" coexistem de propósito, cad
 - `diferenca_valor_contrato` (CFO × Markup, esta função): estimativa rápida pra DECISÃO na AF2
   ("vale a pena repassar isso ao cliente?") e o default editável do Estorno (que não tem outra
   grandeza melhor à disposição, por ser mecanismo manual/simples).
-- O valor que de fato entra no Complemento de Projeto (Cobrar) vem depois, do motor de venda
-  (`_complemento_diferencas`, fator proporcional VAVA/VBVA) — mais preciso, mas calculado só na
-  montagem do complemento (Fatia 2), não aqui.
+- O valor que de fato entra no Complemento de Projeto (Cobrar) vem de `valor_complemento_por_fator`
+  (fator proporcional VAVA/VBVA do ambiente contratado, mesma fórmula de `main._complemento_diferencas`
+  generalizada pra fase — mais preciso que o CFO×Markup, pois carrega o desconto e os custos
+  adicionais exatamente como negociados naquele ambiente).
 
 Spec: docs/superpowers/specs/financeiro/2026-08-14-conciliacao-pe-af2-complemento-credito-design.md
 """
@@ -76,6 +77,32 @@ def montar_decisao(pool_ambiente_id, diferenca_cfo, markup, tipo_decisao, valor_
         "tipo_decisao": tipo_decisao,
         "valor_aprovado": valor,
     }
+
+
+def valor_complemento_por_fator(valor_venda_pe, vava_contratado, vbva_contratado,
+                                fator_ca=1.0, desconto_orc_pct=0.0, desconto_amb_pct=0.0):
+    """Valor à vista do ambiente no Complemento de Projeto — mesma fórmula de
+    `main._complemento_diferencas` (Fatia 3, 2026-07-21), generalizada pra fase e alimentada
+    direto pelo XML de PE (`ArquivoPE` formato `xml_pe`), sem exigir um 3º upload separado
+    (`xml_compl`) como o mecanismo legado exigia.
+
+    Caminho principal: `valor_venda_pe × (vava_contratado / vbva_contratado)` — a razão à
+    vista÷bruto do PRÓPRIO ambiente contratado carrega o desconto (global+individual) e os custos
+    adicionais exatamente como negociados, sem duplicar. Fallback (usado só quando o ambiente
+    contratado não tem `vbva_contratado`/`vava_contratado` positivo, ex.: ambiente sem valor no
+    contrato): `valor_venda_pe × (1 − desconto_orc) × (1 − desconto_amb) × fator_ca` — aproximação
+    via os percentuais brutos.
+
+    `diferenca = round(valor_complemento - vava_contratado, 2)` é responsabilidade do chamador
+    (ele já tem os dois números). Retorna só o valor à vista do complemento, arredondado."""
+    vc = round(float(vava_contratado or 0), 2)
+    vb = round(float(vbva_contratado or 0), 2)
+    vv = round(float(valor_venda_pe or 0), 2)
+    if vb > 0 and vc > 0:
+        return round(vv * (vc / vb), 2)
+    d_orc = float(desconto_orc_pct or 0) / 100.0
+    d_amb = float(desconto_amb_pct or 0) / 100.0
+    return round(vv * (1 - d_orc) * (1 - d_amb) * float(fator_ca or 1.0), 2)
 
 
 def decisao_ambiente_novo(pool_ambiente_id, valor_venda_xml):

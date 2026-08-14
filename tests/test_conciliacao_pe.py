@@ -5,7 +5,8 @@ import pytest
 
 from mod_conciliacao_pe import (
     sinal_diferenca, decisao_valida, diferenca_valor_contrato, montar_decisao,
-    decisao_ambiente_novo, fase_completa, agregar_complemento, agregar_estorno,
+    valor_complemento_por_fator, decisao_ambiente_novo, fase_completa,
+    agregar_complemento, agregar_estorno,
 )
 
 
@@ -71,6 +72,27 @@ def test_montar_decisao_incompativel_levanta_erro():
         montar_decisao(pool_ambiente_id=1, diferenca_cfo=-500.0, markup=2.0, tipo_decisao="cobrar")
     with pytest.raises(ValueError):
         montar_decisao(pool_ambiente_id=1, diferenca_cfo=500.0, markup=2.0, tipo_decisao="estornar")
+
+
+def test_valor_complemento_por_fator_caminho_principal():
+    # ambiente contratado: VBVA 10000 bruto, VAVA 8000 à vista (20% de desconto/custos embutidos)
+    # PE novo pede 12000 de venda bruta pro mesmo ambiente
+    v = valor_complemento_por_fator(valor_venda_pe=12000.0, vava_contratado=8000.0, vbva_contratado=10000.0)
+    assert v == 9600.0   # 12000 * (8000/10000) — mesmo fator do contratado, sem duplicar desconto
+
+
+def test_valor_complemento_por_fator_xml_identico_diferenca_zero():
+    # propriedade de validação (precedente 2026-07-21): XML idêntico ao original ⇒ diferença ZERO
+    vava_contratado = 8000.0
+    v = valor_complemento_por_fator(valor_venda_pe=10000.0, vava_contratado=vava_contratado, vbva_contratado=10000.0)
+    assert round(v - vava_contratado, 2) == 0.0
+
+
+def test_valor_complemento_por_fator_fallback_sem_baseline_contratado():
+    # ambiente contratado sem VBVA/VAVA positivo → cai no fallback por percentuais
+    v = valor_complemento_por_fator(valor_venda_pe=10000.0, vava_contratado=0.0, vbva_contratado=0.0,
+                                    fator_ca=1.1, desconto_orc_pct=10.0, desconto_amb_pct=5.0)
+    assert v == round(10000.0 * 0.9 * 0.95 * 1.1, 2)
 
 
 def test_decisao_ambiente_novo_sempre_cobrar_valor_cheio():

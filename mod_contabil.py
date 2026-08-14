@@ -75,6 +75,10 @@ PLANO_PADRAO = [
     ("2.1.08", "Acordos com a Fábrica a Amortizar"),
     ("2.1.09", "Débitos com Empresas (conta corrente)"),
     ("2.1.10", "Empréstimos Bancários"),   # Acordos Financeiros (2026-07-21): contraparte banco
+    # Conciliação de PE/AF2 (spec 2026-08-14): crédito ao cliente por Estorno (diferença de Custo de
+    # Fábrica devolvida) — FORA do grupo 2.1.04 (Provisões) de propósito, pra não ser varrida pela
+    # Conciliação Final (conciliar_final itera só o prefixo "2.1.04."). Fica em aberto até baixa manual.
+    ("2.1.11", "Créditos a Clientes"),
     ("2.2", "Não Circulante"),
     ("2.2.01", "Financiamentos de Longo Prazo (principal)"),
     ("3", "PATRIMÔNIO LÍQUIDO"),

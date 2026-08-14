@@ -862,6 +862,25 @@ class ParcelaAmbiente(Base):
     valor_ambiente   = Column(Float, nullable=False, default=0.0)
 
 
+class ConciliacaoPeFase(Base):
+    """Decisão de conciliação de Custo de Fábrica do PE na AF2 (11d), por ambiente dentro de uma
+    fase (spec 2026-08-14). Tabela ISOLADA — não mexe em CicloEtapa/ProvisaoRegistro (usados
+    também pela AF1); a conclusão de "11d" faz uma checagem DERIVADA sobre esta tabela, não uma
+    coluna nova nelas. `parcela_id` NULL = projeto não desmembrado (fase única implícita)."""
+    __tablename__ = "conciliacao_pe_fase"
+    id                     = Column(Integer,  primary_key=True, autoincrement=True)
+    projeto_nome           = Column(Text,     nullable=False, index=True)   # nome_safe
+    parcela_id             = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
+    pool_ambiente_id       = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False)
+    tipo_decisao           = Column(String(16), nullable=False)   # manter|absorver|cobrar|estornar
+    diferenca_cfo          = Column(Float,    nullable=False, default=0.0)
+    diferenca_valor_contrato = Column(Float,  nullable=False, default=0.0)
+    valor_aprovado         = Column(Float,    nullable=False, default=0.0)   # editável (Estornar)
+    aprovador_id           = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    aprovado_em            = Column(DateTime, default=datetime.utcnow)
+    criado_em              = Column(DateTime, default=datetime.utcnow)
+
+
 class SinalRetido(Base):
     """Desmembramento OPERACIONAL (Fatia 1, spec 2026-07-27): o MEDIDOR sinaliza que um ambiente está
     RETIDO pela obra. Por AMBIENTE. A gerência CONFIRMA → vira parcela retida (`confirmado=1`)."""

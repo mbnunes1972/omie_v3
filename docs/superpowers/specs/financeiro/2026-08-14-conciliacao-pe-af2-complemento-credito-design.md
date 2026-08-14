@@ -144,6 +144,22 @@ Toda decisão/lançamento grava nos dois lugares, na mesma ação:
   Formato JSONL: `{"quando": ISO8601, "quem": usuario_id, "etapa": "11d", "parcela_id":...,
   "pool_ambiente_id":..., "tipo_decisao":..., "valor":...}`.
 
+## Ambiente/peça nova — decisão (2026-08-14, pós-implementação da Fatia 2)
+Avaliado incluir ambiente/peça nova (sem contratado correspondente) no mesmo fluxo do Complemento
+de Projeto. **Decisão: fica de fora desta frente — trata-se como nova venda separada** (opção que
+"sempre será uma possibilidade", nas palavras do usuário). Motivo concreto encontrado no código: o
+endpoint de upload de XML pro pool (`POST` que cria `PoolAmbiente`, `main.py:10444`) tem uma trava
+de contrato assinado **incondicional** (`if _contrato_assinado(nome_safe, db): ... 403`, sem
+exceção — diferente dos endpoints de negociação, que já têm a exceção `complemento_pe` em vários
+pontos, ex. `main.py:13802`). É um endpoint fundamental, usado por **todo** projeto pra montar o
+pool inicial, com lógica delicada de detecção de duplicata (nome/hash) e prompts de
+sobrescrever/renomear — abrir uma exceção ali pra permitir upload pós-assinatura é mexer numa
+trava de integridade que protege o escopo vendido de adulteração, num endpoint de alto uso. Um
+endpoint **novo e dedicado** seria mais seguro, mas é escopo considerável por si só (upload
+próprio, amarração à fase, ainda sem desenho completo) — não compensa o risco/esforço frente à
+alternativa já aceita (nova venda). Reavaliar como frente própria se a demanda aparecer forte na
+prática.
+
 ## Fora de escopo desta frente
 - **Fatia 2 do desmembramento** (etapas 12-16 correndo por parcela dentro de `CicloEtapa`/
   `CicloLogistico`, ainda não implementada — `docs/superpowers/specs/ciclo/
@@ -194,6 +210,15 @@ Toda decisão/lançamento grava nos dois lugares, na mesma ação:
 - Decisão por fase em tabela nova isolada — não mexe em `CicloEtapa`/`ProvisaoRegistro`/AF1.
 - Auditoria dupla: `LogAcaoGerencial` + arquivo JSONL por projeto (append atômico, sem lock).
 
-**Pendente de confirmação antes de codar:** a leitura de que a 11c deixa de ser ponto de decisão
-manual (`renegociar_pe`) e vira só upload/comparação, com a decisão única centralizada na AF2
-(§4). Se confirmado, parto para TDD por fatias (schema+motor puro → contábil → endpoints → UI).
+**Confirmado (2026-08-14):** a 11c deixa de ser ponto de decisão manual (`renegociar_pe`) e vira
+só upload/comparação, com a decisão única centralizada na AF2 (§4). Ambiente/peça nova fica de
+fora desta frente — trata-se como nova venda separada (ver seção própria acima).
+
+**Progresso (TDD por fatias):**
+- ✅ Fatia 1 — schema (`ConciliacaoPeFase`, conta `2.1.11`) + motor puro (`mod_conciliacao_pe.py`).
+- ✅ Fatia 2 — Estorno (lançamentos `registrar_credito_cliente`/`baixar_credito_cliente`) +
+  Complemento por fase (`Orcamento.parcela_id`, fórmula `valor_complemento_por_fator`).
+- ⏳ Fatia 3 — endpoints (decisão por ambiente/fase na AF2, complemento por fase, gancho na
+  assinatura do aditivo — reaproveita `registro_venda_contrato`+`constituir_provisoes_fechamento`
+  já existentes).
+- ⏳ Fatia 4 — UI (tela "Comparar Valores" da AF2 ganha seletor de fase + botões de decisão).

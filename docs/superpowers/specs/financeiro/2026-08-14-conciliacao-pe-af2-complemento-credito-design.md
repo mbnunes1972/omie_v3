@@ -225,5 +225,11 @@ fora desta frente — trata-se como nova venda separada (ver seção própria ac
   provisionamento na assinatura do aditivo já existia (achado Vera 2026-08-12) — só precisou do
   parâmetro `parcela_id` opcional em `POST /aditivo` pra escolher o complemento certo quando há
   mais de um simultâneo no projeto.
-- ⏳ Fatia 4 — UI (tela "Comparar Valores" da AF2 ganha seletor de fase + botões de decisão +
-  indicador visual de aprovado/reprovado).
+- ✅ Fatia 4 — UI: `peConciliacaoRender()` estende a tela "Comparar Valores" da AF2 (11d) — banner
+  de status, seções por fase com botões de decisão restritos ao sinal da diferença, "Gerar
+  Complemento desta Fase", rodapé Aprovar/Reprovar. Testado ao vivo (Playwright, dados reais).
+
+**Frente encerrada — pronta para revisão/merge.** Falta em aberto, fora desta frente (registrado
+acima): a conexão automática entre "Gerar Complemento" e a geração do Termo Aditivo na 11e (hoje
+o usuário precisa ir manualmente na 11e; o backend já aceita `parcela_id` em `POST /aditivo`, só
+falta a 11e passar esse parâmetro quando vier do fluxo por fase).

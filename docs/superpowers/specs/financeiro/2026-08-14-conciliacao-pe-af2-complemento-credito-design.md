@@ -218,7 +218,12 @@ fora desta frente — trata-se como nova venda separada (ver seção própria ac
 - ✅ Fatia 1 — schema (`ConciliacaoPeFase`, conta `2.1.11`) + motor puro (`mod_conciliacao_pe.py`).
 - ✅ Fatia 2 — Estorno (lançamentos `registrar_credito_cliente`/`baixar_credito_cliente`) +
   Complemento por fase (`Orcamento.parcela_id`, fórmula `valor_complemento_por_fator`).
-- ⏳ Fatia 3 — endpoints (decisão por ambiente/fase na AF2, complemento por fase, gancho na
-  assinatura do aditivo — reaproveita `registro_venda_contrato`+`constituir_provisoes_fechamento`
-  já existentes).
-- ⏳ Fatia 4 — UI (tela "Comparar Valores" da AF2 ganha seletor de fase + botões de decisão).
+- ✅ Fatia 3 — endpoints: `GET/POST /pe/conciliacao[/<ambiente>]` (decisão por ambiente/fase),
+  `POST /ciclo/11d/aprovar|reprovar` (aprovação/reprovação explícita, notificação no Chat do
+  projeto — extensão pedida pelo usuário ao ver que a conclusão da 11d nunca teve mecanismo real),
+  `POST /pe/complemento/fase/<parcela_id|none>` (Complemento de Projeto por fase). O gancho de
+  provisionamento na assinatura do aditivo já existia (achado Vera 2026-08-12) — só precisou do
+  parâmetro `parcela_id` opcional em `POST /aditivo` pra escolher o complemento certo quando há
+  mais de um simultâneo no projeto.
+- ⏳ Fatia 4 — UI (tela "Comparar Valores" da AF2 ganha seletor de fase + botões de decisão +
+  indicador visual de aprovado/reprovado).

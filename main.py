@@ -6936,8 +6936,13 @@ class Handler(BaseHTTPRequestHandler):
             # Aprovação da AF2 (11d) — spec 2026-08-14: checagem DERIVADA sobre ConciliacaoPeFase
             # (toda fase com decisão completa), além do que já valia (Revisão de Provisões — Rev2
             # aprovada). Isolada de CicloEtapa/ProvisaoRegistro da AF1 — só ADICIONA uma condição.
-            # Achado ao investigar (2026-08-14): a conclusão da 11d NUNCA teve mecanismo real (o
-            # E2E existente fingia esse estado escrevendo direto no banco) — este é o primeiro.
+            # Achado ao investigar (2026-08-14): o PATCH genérico /ciclo/<codigo> JÁ concluía "8"/
+            # "11d" (data de entrega definida + contrato assinado pelas DUAS partes, ver
+            # mod_ciclo.exige_aprovacao_financeira) — a "conclusão nunca teve mecanismo real" da
+            # nota anterior estava errada; só não tinha a checagem de fase_completa. Este endpoint
+            # replica as MESMAS exigências do PATCH genérico + a checagem nova, pra virar o
+            # caminho único que a UI usa; o PATCH genérico também ganhou a checagem nova (defesa
+            # em profundidade, pra não virar um jeito de contornar esta).
             nome = unquote(m_pe11d.group(1))
             import mod_conciliacao_pe as _mconc
             usuario = get_usuario_sessao(self)
@@ -6959,6 +6964,15 @@ class Handler(BaseHTTPRequestHandler):
                               .order_by(Contrato.id.desc()).first())
                 if contrato is None:
                     self.send_json({"ok": False, "erro": "Projeto sem contrato"}, code=400); return
+                _pm = db.get(Projeto, nome)
+                if _pm is None or _pm.data_entrega is None:
+                    self.send_json({"ok": False,
+                        "erro": "Defina a data de entrega esperada do cliente antes de aprovar a AF."},
+                        code=400); return
+                if not _contrato_totalmente_assinado(nome, db):
+                    self.send_json({"ok": False,
+                        "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
+                                "aprovar a AF."}, code=400); return
                 rev2 = db.query(ProvisaoRegistro).filter_by(
                     orcamento_id=contrato.orcamento_id, versao="rev2").first()
                 if rev2 is None:
@@ -14340,6 +14354,24 @@ class Handler(BaseHTTPRequestHandler):
                                 "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
                                         "aprovar a AF."}, code=400)
                             return
+                        # Conciliação de PE/AF2 (spec 2026-08-14): defesa em profundidade — a UI usa
+                        # o endpoint dedicado /ciclo/11d/aprovar (mesma checagem), mas este PATCH
+                        # genérico também precisa dela, senão vira um jeito de contornar a outra.
+                        if etapa_cod == "11d":
+                            import mod_conciliacao_pe as _mconc
+                            _pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()]
+                            _com_pe = {a.pool_ambiente_id for a in
+                                      db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_pe").all()
+                                      if a.valor_atualizado is not None and a.pool_ambiente_id in _pool_ids}
+                            _registradas = {d.pool_ambiente_id for d in
+                                           db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome_safe).all()}
+                            _completa, _faltam = _mconc.fase_completa(_com_pe, _registradas)
+                            if not _completa:
+                                self.send_json({"ok": False,
+                                    "erro": "Registre a decisão (Manter/Absorver/Cobrar/Estornar) de %d "
+                                            "ambiente(s) antes de concluir." % len(_faltam),
+                                    "faltam": _faltam}, code=400)
+                                return
                     if novo_status:
                         if etapa.status == "pendente" and novo_status != "pendente":
                             etapa.iniciado_em = datetime.utcnow()

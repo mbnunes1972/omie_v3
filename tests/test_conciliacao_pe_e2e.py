@@ -58,8 +58,16 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=1))
     ct = (db.query(app_db.Contrato).filter_by(projeto_nome=nome)
             .order_by(app_db.Contrato.id.desc()).first())
+    # Assinatura das DUAS partes + data de entrega: exigidas por _contrato_totalmente_assinado
+    # pra concluir a AF (8/11d, mesmo gate do PATCH genérico de ciclo, achado 2026-08-14).
     db.add(app_db.ContratoAssinatura(contrato_id=ct.id, parte="loja", nome="Loja",
                                      cpf="000.000.000-00", hash_sha256="x"))
+    db.add(app_db.ContratoAssinatura(contrato_id=ct.id, parte="cliente", nome="Cliente",
+                                     cpf="111.222.333-44", hash_sha256="y"))
+    proj = db.query(app_db.Projeto).filter_by(nome_safe=nome).first()
+    if proj is not None:
+        from datetime import datetime as _dt, timedelta as _td
+        proj.data_entrega = _dt.utcnow() + _td(days=60)
     db.commit()
     pid = pa.id
     db.close()
@@ -499,3 +507,53 @@ def test_aditivo_da_fase_assinatura_completa_constitui_provisao(http_client_fact
                .filter(app_db.Lancamento.ref.like("prov:aditivo:%d:%%" % aditivo_id)).all())
     db.close()
     assert len(novos) > 0, "assinatura completa do aditivo da FASE deveria constituir provisão(ões)"
+
+
+# ── Defesa em profundidade: o PATCH genérico /ciclo/<codigo> também respeita fase_completa ──────
+# pode_avancar('11d') sobe pra etapa-mãe '11', que exige a PRINCIPAL anterior ('10') concluída —
+# atalho de seed direto (mesmo padrão já usado em test_complemento_pe_e2e.py) pra não montar o
+# ciclo inteiro só pra provar que o PATCH genérico respeita a checagem nova.
+def _seed_etapas_ate_10(app_db, nome):
+    db = app_db.get_session()
+    for cod in ("1", "2", "3", "4", "7", "9", "10"):
+        if db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo=cod).first() is None:
+            db.add(app_db.CicloEtapa(projeto_nome=nome, etapa_codigo=cod, status="concluido"))
+    db.commit(); db.close()
+
+
+def test_patch_generico_ciclo_11d_tambem_bloqueia_decisao_faltante(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0)
+    _registra_venda_baseline(app_db, oid)
+    c = _login(http_client_factory)
+    _aprova_af1_af2(c, oid)
+    _seed_etapas_ate_10(app_db, nome)
+    # decisão do ambiente NUNCA foi registrada — nem pelo endpoint dedicado, nem pelo genérico
+
+    st, body = c.patch(f"/api/projetos/{nome}/ciclo/11d",
+                       {"status": "concluido", "login": "dir_l1", "senha": "senha123"})
+    assert st == 400 and "ambiente" in body["erro"], body
+
+    db = app_db.get_session()
+    et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
+    assert et is None or et.status != "concluido"
+    db.close()
+
+
+def test_patch_generico_ciclo_11d_conclui_com_fase_completa(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0)
+    _registra_venda_baseline(app_db, oid)
+    c = _login(http_client_factory)
+    _aprova_af1_af2(c, oid)
+    _seed_etapas_ate_10(app_db, nome)
+    _decide_cobrar(c, nome, pid)
+
+    st, body = c.patch(f"/api/projetos/{nome}/ciclo/11d",
+                       {"status": "concluido", "login": "dir_l1", "senha": "senha123"})
+    assert st == 200 and body["ok"], body
+
+    db = app_db.get_session()
+    et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
+    assert et is not None and et.status == "concluido"
+    db.close()

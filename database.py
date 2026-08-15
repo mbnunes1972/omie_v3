@@ -698,6 +698,10 @@ class Orcamento(Base):
     # marcados "Renegociar" na 11c, base de valores = PE (arquivo_pe). Isento das travas de contrato
     # assinado nos endpoints de negociação (margens/descontos/valor); NUNCA vira o contratado.
     complemento_pe           = Column(Integer, default=0)
+    # Conciliação de PE/AF2 (spec 2026-08-14): generaliza o Complemento de "1 por projeto inteiro"
+    # pra "1 por FASE" — o desmembramento libera fases independentemente, a cobrança acompanha.
+    # NULL = projeto não desmembrado (fase única implícita, todo o pool).
+    parcela_id      = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
     created_by      = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
     updated_at      = Column(DateTime, nullable=True)
@@ -860,6 +864,25 @@ class ParcelaAmbiente(Base):
     # Valor de contrato BRUTO do ambiente (Val_Cont rateado, não o CFO — #4/#5). Guardado na
     # confirmação p/ permitir SPLIT exato na liberação em ondas (Fatia 3) sem reler o contrato.
     valor_ambiente   = Column(Float, nullable=False, default=0.0)
+
+
+class ConciliacaoPeFase(Base):
+    """Decisão de conciliação de Custo de Fábrica do PE na AF2 (11d), por ambiente dentro de uma
+    fase (spec 2026-08-14). Tabela ISOLADA — não mexe em CicloEtapa/ProvisaoRegistro (usados
+    também pela AF1); a conclusão de "11d" faz uma checagem DERIVADA sobre esta tabela, não uma
+    coluna nova nelas. `parcela_id` NULL = projeto não desmembrado (fase única implícita)."""
+    __tablename__ = "conciliacao_pe_fase"
+    id                     = Column(Integer,  primary_key=True, autoincrement=True)
+    projeto_nome           = Column(Text,     nullable=False, index=True)   # nome_safe
+    parcela_id             = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
+    pool_ambiente_id       = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False)
+    tipo_decisao           = Column(String(16), nullable=False)   # manter|absorver|cobrar|estornar
+    diferenca_cfo          = Column(Float,    nullable=False, default=0.0)
+    diferenca_valor_contrato = Column(Float,  nullable=False, default=0.0)
+    valor_aprovado         = Column(Float,    nullable=False, default=0.0)   # editável (Estornar)
+    aprovador_id           = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    aprovado_em            = Column(DateTime, default=datetime.utcnow)
+    criado_em              = Column(DateTime, default=datetime.utcnow)
 
 
 class SinalRetido(Base):
@@ -2081,6 +2104,8 @@ def _migrar_colunas_pg():
         "ALTER TABLE pool_ambientes ADD COLUMN IF NOT EXISTS renegociar_pe INTEGER DEFAULT 0",
         # Fatia 3 PE: orçamento de ajuste pós-assinatura.
         "ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS complemento_pe INTEGER DEFAULT 0",
+        # Conciliação de PE/AF2 (spec 2026-08-14): Complemento de Projeto por fase.
+        "ALTER TABLE orcamentos ADD COLUMN IF NOT EXISTS parcela_id INTEGER",
         # Acordos Financeiros (revisão 2026-07-21): contraparte generalizada.
         "ALTER TABLE acordo_fabrica ADD COLUMN IF NOT EXISTS contraparte_tipo VARCHAR(10) DEFAULT 'fabrica'",
         "ALTER TABLE acordo_fabrica ADD COLUMN IF NOT EXISTS contraparte_nome TEXT",

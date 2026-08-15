@@ -99,11 +99,13 @@ MODULOS = {
                     "arquivos": ["mod_provisoes.py", "mod_contabil.py", "mod_ajustes_fabrica.py",
                                  "mod_indicadores.py", "mod_recebiveis.py", "mod_estrategico.py",
                                  "mod_simulador.py", "mod_simulador_autorizacao.py",
-                                 "mod_simulador_dados.py"],
+                                 "mod_simulador_dados.py",
+                                 "mod_conciliacao_pe.py"],   # AF2/11d por fase (spec 2026-08-14)
                     "tabelas": ["provisao_registro", "conta", "centro_custo", "lancamento", "periodo_contabil",
                                 "acordo_fabrica", "ajuste_fabrica", "ajuste_fabrica_aplicacao",
                                 "acordo_movimento", "contraparte_financeira", "recebivel",
-                                "provisao_data_prevista", "simulador_autorizacoes", "simulador_log_acessos"],
+                                "provisao_data_prevista", "simulador_autorizacoes", "simulador_log_acessos",
+                                "conciliacao_pe_fase"],
                     "rotas": ["/api/provisoes", "/api/financeiro/contas", "/api/financeiro/lancamentos",
                               "/api/financeiro/eventos", "/api/financeiro/dre", "/api/financeiro/projetos-dre",
                               "/api/financeiro/reconciliar", "/api/financeiro/periodos", "/api/financeiro/balanco",
@@ -112,7 +114,9 @@ MODULOS = {
                               "/api/admin/acordos-fabrica", "/api/admin/ajustes-fabrica",
                               "/api/financeiro/indicadores", "/api/recebiveis",
                               "/api/financeiro/recebiveis", "/api/financeiro/provisao-data-prevista",
-                              "/api/estrategico/indicadores", "/api/simulador"]},
+                              "/api/estrategico/indicadores", "/api/simulador",
+                              "/api/projetos/<nome>/pe/conciliacao",
+                              "/api/projetos/<nome>/ciclo/11d/concluir"]},
     # domínios NOVOS — fronteira só (stub, sem código/tabela hoje). Montagem e Assistências substituem
     # o antigo "posvenda" (que virou FAIXA, não módulo — Modulos_Orizon_v4).
     "estoque":     {"camada": "dominio", "depende_de": ["cadastro", "comercial"], "rotulo": "Estoque", "faixa": "expedicao",

@@ -75,6 +75,10 @@ PLANO_PADRAO = [
     ("2.1.08", "Acordos com a Fábrica a Amortizar"),
     ("2.1.09", "Débitos com Empresas (conta corrente)"),
     ("2.1.10", "Empréstimos Bancários"),   # Acordos Financeiros (2026-07-21): contraparte banco
+    # Conciliação de PE/AF2 (spec 2026-08-14): crédito ao cliente por Estorno (diferença de Custo de
+    # Fábrica devolvida) — FORA do grupo 2.1.04 (Provisões) de propósito, pra não ser varrida pela
+    # Conciliação Final (conciliar_final itera só o prefixo "2.1.04."). Fica em aberto até baixa manual.
+    ("2.1.11", "Créditos a Clientes"),
     ("2.2", "Não Circulante"),
     ("2.2.01", "Financiamentos de Longo Prazo (principal)"),
     ("3", "PATRIMÔNIO LÍQUIDO"),
@@ -1125,6 +1129,14 @@ EVENTOS = {
     "folha_fixa":                   ("5.3.06", "1.1.01",    "Folha — parte fixa (Salários de Vendas)"),
     "folha_variavel":               ("5.3.01", "1.1.01",    "Folha — parte variável (Comissão de Vendedor)"),
     "folha_beneficios":             ("5.3.16", "1.1.01",    "Folha — benefícios (AT/VA/PS)"),
+    # ── Conciliação de PE/AF2 — Estorno (Crédito a Clientes) — spec 2026-08-14 ───────────────
+    # Lançamento A (imediato, no clique "Aprovar" o Estorno): nasce o passivo, reduz a receita
+    # reconhecida. NUNCA se compensa automaticamente com o Complemento de Projeto (Cobrar).
+    "estorno_credito_cliente":      ("4.3.02", "2.1.11",    "Estorno — crédito ao cliente por diferença de Custo de Fábrica (Devolução de Vendas)"),
+    # Lançamento B (evento futuro, manual): baixa do crédito — abate o que o cliente ainda deve
+    # (inclusive um Complemento de Projeto futuro) ou devolve em dinheiro.
+    "baixa_credito_cliente_receber": ("2.1.11", "1.1.02",   "Baixa de Crédito a Clientes — abate Contas a Receber"),
+    "baixa_credito_cliente_caixa":   ("2.1.11", "1.1.01",   "Baixa de Crédito a Clientes — devolvido em dinheiro"),
 }
 
 
@@ -1822,6 +1834,45 @@ def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base):
         if lan is not None:
             out[c.codigo] = saldo
     return out
+
+
+# ── Conciliação de PE/AF2 — Crédito a Clientes (Estorno) — spec 2026-08-14 ───────────────────
+def registrar_credito_cliente(db, owner_tipo, owner_id, projeto_id, valor, ref, data=None, historico=None):
+    """Lançamento A — imediato, no clique "Aprovar" o Estorno na AF2 (11d). DR 4.3.02 (Devolução
+    de Vendas) × CR 2.1.11 (Créditos a Clientes) — fica em aberto até baixa manual
+    (`baixar_credito_cliente`). Idempotente por `ref`. NUNCA se compensa automaticamente com o
+    Complemento de Projeto (Cobrar) — mecanismos deliberadamente separados (decisão do usuário)."""
+    if valor is None or float(valor) <= 0:
+        raise ValueError("valor deve ser > 0")
+    return registrar_evento(db, owner_tipo, owner_id, "estorno_credito_cliente", valor,
+                            projeto_id=projeto_id, data=data, ref=ref, historico=historico)
+
+
+def saldo_credito_cliente(db, owner_tipo, owner_id, projeto_id):
+    """Saldo em aberto de Créditos a Clientes (2.1.11) do projeto — nunca abaixo de 0. Fora do
+    grupo Provisões (2.1.04) de propósito: `conciliar_final` (etapa 21) não varre esta conta, o
+    projeto pode fechar com saldo pendente aqui (evento futuro, sem prazo)."""
+    saldo = round(total_lancado(db, owner_tipo, owner_id, "2.1.11", "credito", projeto_id)
+                 - total_lancado(db, owner_tipo, owner_id, "2.1.11", "debito", projeto_id), 2)
+    return max(saldo, 0.0)
+
+
+def baixar_credito_cliente(db, owner_tipo, owner_id, projeto_id, valor, destino, ref, data=None):
+    """Lançamento B — evento futuro e manual (o gerente adm/fin decide quando tratar). `destino`:
+    'receber' (abate Contas a Receber — inclusive um Complemento de Projeto futuro, por
+    tratamento manual e paralelo, nunca automático) ou 'caixa' (devolvido em dinheiro). Capado ao
+    saldo em aberto do crédito do projeto. Idempotente por `ref`. Retorna None se não sobrar
+    saldo pra baixar após o cap."""
+    if destino not in ("receber", "caixa"):
+        raise ValueError("destino deve ser 'receber' ou 'caixa'")
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
+    if ja is not None:
+        return ja
+    mv = round(min(float(valor or 0), saldo_credito_cliente(db, owner_tipo, owner_id, projeto_id)), 2)
+    if mv <= 0:
+        return None
+    evento = "baixa_credito_cliente_receber" if destino == "receber" else "baixa_credito_cliente_caixa"
+    return registrar_evento(db, owner_tipo, owner_id, evento, mv, projeto_id=projeto_id, data=data, ref=ref)
 
 
 _ORIGEM_DEVOLUCAO = "devolucao"

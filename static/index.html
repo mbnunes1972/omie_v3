@@ -986,9 +986,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">
-          <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px">—</span>
-          <span id="proj-ctx-cli" style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
+        <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:2px;flex-wrap:wrap">
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Projeto:</span>
+            <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">—</span>
+          </span>
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Cliente:</span>
+            <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
+          </span>
         </div>
         <div class="page-title">Negociacao</div>
         <div class="page-sub" id="neg-orc-nome-hdr">Valores finais apresentados ao cliente</div>
@@ -18788,7 +18794,7 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
   // subiram na Revisão de PE). Container próprio p/ não colidir com o da 11c.
   const peEspelho = (codigo === '11d') ? `
     <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
-      ${_usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn-ciclo" onclick="peComparacaoCfoRender()"><i class="ti ti-arrows-diff"></i> Comparar Valores</button>` : ''}
+      ${_usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn-ciclo" onclick="peConciliacaoRender()"><i class="ti ti-arrows-diff"></i> Comparar Valores</button>` : ''}
       <div id="pe-cmp-container-af" style="margin-top:12px"></div>
     </div>` : '';
   // Fatia B (box): ramo do custo financeiro (loja próprio × antecipação bancária × financeira). Só na AF.
@@ -19888,6 +19894,219 @@ async function peComparacaoCfoRender(){
     + `<th style="text-align:right">Δ %</th></tr></thead><tbody>${cmpRows}</tbody></table></div>`;
   cont.innerHTML = header + cmpTable;
 }
+
+// ── Conciliação de PE/AF2 por fase (spec 2026-08-14) ──────────────────────────────────────────
+// Estende a AF2 (11d): decisão Manter/Absorver/Cobrar/Estornar por ambiente, agrupada por Fase,
+// com Aprovar/Reprovar explícitos no rodapé quando toda fase estiver completa. Substitui
+// peComparacaoCfoRender (que segue existindo, sem uso) como o que o botão "Comparar Valores" chama.
+const _peConcTipos = {
+  manter:   {label:'Manter',   cor:'var(--ok)'},
+  absorver: {label:'Absorver', cor:'var(--warn)'},
+  cobrar:   {label:'Cobrar',   cor:'var(--accent)'},
+  estornar: {label:'Estornar', cor:'var(--warn)'},
+};
+let _peConcEditando = new Set();
+
+function _peConcValidasPorSinal(dif){
+  if (dif > 0.005) return ['absorver', 'cobrar'];
+  if (dif < -0.005) return ['manter', 'estornar'];
+  return ['manter', 'absorver'];
+}
+
+async function peConciliacaoRender(){
+  if(!projetoAtivo) return;
+  const cont = document.getElementById('pe-cmp-container-af');
+  if(!cont) return;
+  cont.innerHTML = '<span style="color:var(--muted);font-size:.82rem">Carregando…</span>';
+  let j;
+  try {
+    j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/conciliacao`,
+      {credentials:'same-origin'}).then(r=>r.json());
+  } catch(e){ cont.innerHTML = '<span style="color:var(--err)">Erro ao carregar.</span>'; return; }
+  if(!j.ok){ cont.innerHTML = `<span style="color:var(--err)">${esc(j.erro||'Erro')}</span>`; return; }
+  const {fmt, sig} = _peCmpHelpers();
+
+  let banner = '';
+  if(j.etapa_status === 'reprovado'){
+    banner = `<div style="background:var(--err-soft);border:1px solid var(--err);border-radius:var(--radius);
+      padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:var(--err)">
+      <i class="ti ti-alert-triangle"></i> <strong>AF2 reprovada</strong>${j.motivo_reprovacao ? ': ' + esc(j.motivo_reprovacao) : ''}
+      </div>`;
+  } else if(j.etapa_status === 'concluido'){
+    banner = `<div style="background:var(--ok-soft);border:1px solid var(--ok);border-radius:var(--radius);
+      padding:10px 14px;margin-bottom:12px;font-size:.85rem;color:var(--ok)">
+      <i class="ti ti-circle-check"></i> <strong>AF2 aprovada</strong></div>`;
+  }
+
+  let todasCompletas = true;
+  const fasesHtml = (j.fases || []).map(fase => {
+    if(!fase.completa) todasCompletas = false;
+    const titulo = fase.parcela_id === null ? 'Projeto inteiro' : `Fase ${esc(String(fase.parcela_id))}`;
+    const decididos = fase.ambientes.filter(a => a.decisao).length;
+    const temCobrar = fase.ambientes.some(a => a.decisao && a.decisao.tipo_decisao === 'cobrar');
+
+    const rows = fase.ambientes.map((a, idx) => {
+      const zebra = idx % 2 ? 'background:var(--surface-2)' : '';
+      if(!a.pe_carregado){
+        return `<tr style="${zebra}"><td style="vertical-align:top">${esc(a.ambiente)}</td><td class="num" style="vertical-align:top">${fmt(a.cfo_original)}</td>
+          <td colspan="4" style="color:var(--text-3);font-size:var(--fs-xs);vertical-align:top">PE não carregado</td></tr>`;
+      }
+      const corDif = a.diferenca > 0.005 ? 'var(--err)' : (a.diferenca < -0.005 ? 'var(--ok)' : 'var(--text-3)');
+      let acao;
+      if(a.decisao && !_peConcEditando.has(a.pool_ambiente_id)){
+        const t = _peConcTipos[a.decisao.tipo_decisao] || {label: a.decisao.tipo_decisao, cor:'var(--text)'};
+        acao = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+          <span style="color:${t.cor};font-weight:700">${esc(t.label)}</span> ${fmt(a.decisao.valor_aprovado)}
+          <button class="btn-ciclo" style="padding:2px 8px;font-size:.72rem"
+            onclick="_peConcEditando.add(${a.pool_ambiente_id});peConciliacaoRender()">alterar</button></div>`;
+      } else {
+        const decisaoAnterior = a.decisao
+          ? `<div style="font-size:.72rem;color:var(--text-3);margin-bottom:4px">
+              Decidido antes: <strong>${esc(_peConcTipos[a.decisao.tipo_decisao].label)} ${fmt(a.decisao.valor_aprovado)}</strong>
+              — escolha de novo pra atualizar pro valor recalculado
+              (<button class="link-like" style="font:inherit;color:var(--accent);background:none;border:none;cursor:pointer;padding:0"
+                onclick="_peConcEditando.delete(${a.pool_ambiente_id});peConciliacaoRender()">cancelar</button>)</div>`
+          : '';
+        const botoes = `<div style="display:flex;flex-wrap:wrap;gap:4px">` + _peConcValidasPorSinal(a.diferenca).map(k =>
+          `<button class="btn-ciclo" style="padding:3px 10px;font-size:.76rem"
+            onclick='peConciliacaoDecidir(${a.pool_ambiente_id}, "${k}", ${a.diferenca_valor_contrato}, ${JSON.stringify(a.ambiente)})'>
+            ${esc(_peConcTipos[k].label)}</button>`).join('') + `</div>`;
+        acao = decisaoAnterior + botoes;
+      }
+      return `<tr style="${zebra}">
+        <td style="vertical-align:top">${esc(a.ambiente)}</td>
+        <td class="num" style="vertical-align:top">${fmt(a.cfo_original)}</td>
+        <td class="num" style="vertical-align:top">${fmt(a.cfo_pe)}</td>
+        <td class="num" style="color:${corDif};vertical-align:top" title="Diferença de custo de fábrica — referência p/ conferência de contas">${sig(a.diferenca)}</td>
+        <td class="num" style="vertical-align:top" title="Valor que será efetivamente cobrado/estornado do cliente (já com o markup/desconto real do ambiente)">${sig(a.diferenca_valor_contrato)}</td>
+        <td style="vertical-align:top">${acao}</td>
+      </tr>`;
+    }).join('');
+
+    const btnComplemento = temCobrar
+      ? `<button class="btn-ciclo" style="margin-top:8px"
+          onclick="peConciliacaoGerarComplemento(${fase.parcela_id === null ? 'null' : fase.parcela_id})">
+          <i class="ti ti-file-plus"></i> Gerar Complemento desta Fase</button>`
+      : '';
+
+    return `<div style="margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius);padding:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+        <strong style="font-size:.9rem">${esc(titulo)}</strong>
+        <span style="font-size:.78rem;color:${fase.completa ? 'var(--ok)' : 'var(--text-3)'}">
+          ${fase.completa ? '&#x2713; completa' : `${decididos} de ${fase.ambientes.length} ambiente(s) decidido(s)`}
+        </span>
+      </div>
+      <div class="table-wrap"><table class="tbl"><thead><tr>
+        <th>Ambiente</th><th style="text-align:right">CFO venda</th><th style="text-align:right">CFO PE</th>
+        <th style="text-align:right" title="Diferença de custo de fábrica — só referência, não é o valor cobrado">Δ custo</th>
+        <th style="text-align:right" title="Valor que será efetivamente cobrado/estornado do cliente">Δ a cobrar/estornar</th><th>Decisão</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+      ${btnComplemento}
+    </div>`;
+  }).join('');
+
+  let rodape = '';
+  if(j.etapa_status !== 'concluido' && j.etapa_status !== 'reprovado'){
+    if(todasCompletas && j.rev2_aprovada){
+      rodape = `<div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-ciclo" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);font-weight:700"
+          onclick="peConciliacaoAprovar()"><i class="ti ti-check"></i> Aprovar AF2</button>
+        <button class="btn-ciclo" style="color:var(--err);border-color:var(--err)" onclick="peConciliacaoReprovar()">
+          <i class="ti ti-x"></i> Reprovar AF2</button>
+      </div>`;
+    } else {
+      const pend = [];
+      if(!j.rev2_aprovada) pend.push('aprove a Revisão de Provisões');
+      if(!todasCompletas) pend.push('registre a decisão de todo ambiente');
+      rodape = `<div style="font-size:.78rem;color:var(--text-3);margin-top:8px">
+        Pendente: ${pend.join(' e ')}.</div>`;
+    }
+  }
+
+  cont.innerHTML = banner + (fasesHtml || '<span style="color:var(--muted);font-size:.82rem">Nenhum ambiente com PE carregado.</span>') + rodape;
+}
+
+async function peConciliacaoDecidir(poolAmbienteId, tipoDecisao, diferencaValorContrato, nomeAmbiente){
+  if(!projetoAtivo) return;
+  let valorAprovado;
+  if(tipoDecisao === 'estornar'){
+    const sugestao = Math.abs(diferencaValorContrato).toFixed(2);
+    const txt = await promptPopup(`Valor do estorno para "${nomeAmbiente}" (editável):`,
+      {titulo:'Estornar — crédito ao cliente', valor: sugestao, placeholder:'0,00'});
+    if(txt === null) return;
+    valorAprovado = parseFloat(String(txt).replace(',', '.'));
+    if(!isFinite(valorAprovado) || valorAprovado <= 0){
+      await avisoPopup('Valor inválido.', {titulo:'Estornar'}); return;
+    }
+  }
+  const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Conciliação de PE',
+    mensagem:`Confirma a decisão "${_peConcTipos[tipoDecisao].label}" para "${nomeAmbiente}"?`});
+  if(!cred) return;
+  try {
+    const body = {login: cred.login, senha: cred.senha, tipo_decisao: tipoDecisao};
+    if(valorAprovado !== undefined) body.valor_aprovado = valorAprovado;
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/conciliacao/${poolAmbienteId}`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(body)}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Conciliação de PE'}); return; }
+    _peConcEditando.delete(poolAmbienteId);
+    showToast('Decisão registrada.');
+    peConciliacaoRender();
+  } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Conciliação de PE'}); }
+}
+
+async function peConciliacaoGerarComplemento(parcelaId){
+  if(!projetoAtivo) return;
+  const ok = await confirmarPopup('Gerar (ou atualizar) o Complemento de Projeto desta fase, com os ambientes marcados "Cobrar"?',
+    {titulo:'Gerar Complemento', okLabel:'Gerar'});
+  if(!ok) return;
+  try {
+    const alvo = (parcelaId === null) ? 'none' : parcelaId;
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/complemento/fase/${alvo}`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Gerar Complemento'}); return; }
+    const {fmt} = _peCmpHelpers();
+    await avisoPopup(`Complemento gerado: ${fmt(j.resumo.total_complemento)} (diferença ${fmt(j.resumo.total_diferenca)}).\n` +
+      'Acesse "Negociar Complemento" na etapa 11e para gerar o Termo Aditivo desta fase.',
+      {titulo:'Complemento de Projeto'});
+  } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Gerar Complemento'}); }
+}
+
+async function peConciliacaoAprovar(){
+  if(!projetoAtivo) return;
+  const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Aprovar AF2',
+    mensagem:'Login e senha do Gerente Administrativo/Financeiro ou Diretor.'});
+  if(!cred) return;
+  try {
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/11d/aprovar`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({login: cred.login, senha: cred.senha})}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Aprovar AF2'}); return; }
+    showToast('AF2 aprovada!');
+    peConciliacaoRender();
+    await carregarCiclo();
+  } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Aprovar AF2'}); }
+}
+
+async function peConciliacaoReprovar(){
+  if(!projetoAtivo) return;
+  const motivo = await promptPopup('Motivo da reprovação (obrigatório):',
+    {titulo:'Reprovar AF2', placeholder:'Ex.: revisar o valor do ambiente X'});
+  if(!motivo) return;
+  const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Reprovar AF2',
+    mensagem:'Login e senha do Gerente Administrativo/Financeiro ou Diretor.'});
+  if(!cred) return;
+  try {
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/11d/reprovar`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({login: cred.login, senha: cred.senha, motivo})}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Reprovar AF2'}); return; }
+    showToast('AF2 reprovada.', true);
+    peConciliacaoRender();
+    await carregarCiclo();
+  } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Reprovar AF2'}); }
+}
+
 async function pePeUpload(poolAmbienteId, inputFile){
   if(!projetoAtivo) return;
   const f = inputFile.files[0];

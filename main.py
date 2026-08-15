@@ -25,7 +25,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
                        ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao,
-                       IntegracaoClickSign)
+                       IntegracaoClickSign, ConciliacaoPeFase)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -472,6 +472,36 @@ def _bloqueio_execucao_etapa(db, nome_safe, loja_id, codigo):
 def _aprovador_financeiro(db, login, senha, sessao=None):
     """Usuario apto a aprovar financeiro, ou None. Sessão-primeiro: ver _usuario_com_capacidade."""
     return _usuario_com_capacidade(db, login, senha, "aprovar_financeiro", sessao=sessao)
+
+
+def _auditoria_pe_jsonl(nome_safe, registro):
+    """Conciliação de PE/AF2 (spec 2026-08-14): append-only, 1 arquivo por projeto. Escrita segura
+    sob concorrência — abre em modo append e escreve a linha inteira (JSON+\\n) numa chamada única
+    de write(); no Linux, write() em modo O_APPEND de até PIPE_BUF bytes é atômico, então múltiplas
+    escritas concorrentes não se intercalam nem corrompem, sem precisar de lock de arquivo.
+    BEST-EFFORT: nunca derruba o chamador (o LogAcaoGerencial no banco é a fonte confiável)."""
+    try:
+        pasta = os.path.join(_projeto_path(nome_safe), "conciliacao_pe")
+        os.makedirs(pasta, exist_ok=True)
+        linha = json.dumps(registro, ensure_ascii=False, default=str) + "\n"
+        with open(os.path.join(pasta, "auditoria.jsonl"), "a", encoding="utf-8") as f:
+            f.write(linha)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("auditoria_pe_jsonl falhou (%s): %s", nome_safe, _e)
+
+
+def _chat_registrar_af2(db, nome_safe, loja_id, corpo, evento, usuario_id):
+    """Gancho do host → chat (spec 2026-08-14, mesmo padrão de _chat_registrar_documento):
+    aprovação/reprovação da AF2 (11d) vira evento inline na conversa do projeto. BEST-EFFORT:
+    nunca derruba o endpoint (efeito principal já foi feito). Chamar ANTES do commit do
+    chamador (mesma transação)."""
+    try:
+        db.flush()
+        import mod_chat
+        conv = mod_chat.get_or_create_conversa_projeto(db, loja_id, nome_safe)
+        mod_chat.enviar_mensagem(db, conv, usuario_id, corpo, evento=evento)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("chat_registrar_af2 falhou (%s): %s", nome_safe, _e)
 
 
 def _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario_id):
@@ -2103,6 +2133,103 @@ class Handler(BaseHTTPRequestHandler):
                                 "comparacao_venda": comparacao_venda,
                                 "venda_totais": venda_totais,
                                 "reconciliacao_estimada": rec_est})
+            finally:
+                db.close()
+            return
+
+        m_peconc = re.match(r'^/api/projetos/([^/]+)/pe/conciliacao$', path)
+        if m_peconc:
+            # Conciliação de PE/AF2 por fase (spec 2026-08-14): CFO venda×PE (mod_pe_comparacao)
+            # + decisão já registrada (ConciliacaoPeFase) + fase_completa, agrupado por parcela.
+            nome = unquote(m_peconc.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            import mod_conciliacao_pe as _mconc
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                pool = (db.query(PoolAmbiente).filter_by(projeto_id=nome)
+                          .order_by(PoolAmbiente.id.asc()).all())
+                pa_por_id = {pa.id: pa for pa in pool}
+                pa_nome = {pa.id: (pa.nome_exibicao or pa.nome) for pa in pool}
+                itens_cfo = [(pa_nome[pa.id], pa.order_total or 0.0) for pa in pool]
+                pes = db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
+                valores_pe = {pa_nome[a.pool_ambiente_id]: a.valor_atualizado
+                              for a in pes if a.valor_atualizado is not None and a.pool_ambiente_id in pa_nome}
+                venda_por_pid = {a.pool_ambiente_id: a.valor_venda for a in pes}
+                linhas = mod_pe_comparacao.montar_comparacao_pe(itens_cfo, valores_pe)
+                _id_por_nome = {v: k for k, v in pa_nome.items()}
+                for _l in linhas:
+                    _l["pool_ambiente_id"] = _id_por_nome.get(_l["ambiente"])
+
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                    _pe_fator_contexto(db, nome)
+                markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+
+                decisoes = {d.pool_ambiente_id: d for d in
+                            db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome).all()}
+                parc_de_ambiente = {pa2.pool_ambiente_id: pa2.parcela_id for pa2 in
+                                    db.query(ParcelaAmbiente).join(
+                                        ParcelaProjeto, ParcelaAmbiente.parcela_id == ParcelaProjeto.id
+                                    ).filter(ParcelaProjeto.projeto_nome == nome).all()}
+                parcelas = (db.query(ParcelaProjeto).filter_by(projeto_nome=nome)
+                              .order_by(ParcelaProjeto.ordem.asc()).all())
+                fases_por_id = {p.id: {"parcela_id": p.id, "ordem": p.ordem, "ambientes": []}
+                                for p in parcelas}
+                fases_por_id[None] = {"parcela_id": None, "ordem": 0, "ambientes": []}
+
+                for _l in linhas:
+                    pid = _l["pool_ambiente_id"]
+                    fase_id = parc_de_ambiente.get(pid) if pid is not None else None
+                    if fase_id not in fases_por_id:
+                        fase_id = None
+                    d = decisoes.get(pid)
+                    pa_l = pa_por_id.get(pid)
+                    _l["diferenca_valor_contrato"] = _mconc.diferenca_valor_contrato_estimada(
+                        diferenca_cfo=_l["diferenca"], markup=markup, valor_venda_pe=venda_por_pid.get(pid),
+                        vava_contratado=vava_ct.get(pid, 0.0),
+                        vbva_contratado=float(pa_l.budget_total or 0.0) if pa_l else 0.0,
+                        fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+                        desconto_amb_pct=d_amb_pct.get(pid, 0.0))
+                    _l["decisao"] = ({"tipo_decisao": d.tipo_decisao, "valor_aprovado": d.valor_aprovado}
+                                     if d is not None else None)
+                    fases_por_id[fase_id]["ambientes"].append(_l)
+
+                fases_out = []
+                for fase_id, f in fases_por_id.items():
+                    if not f["ambientes"]:
+                        continue
+                    com_pe = [a["pool_ambiente_id"] for a in f["ambientes"] if a["pe_carregado"]]
+                    registradas = [a["pool_ambiente_id"] for a in f["ambientes"] if a["decisao"] is not None]
+                    completa, faltam = _mconc.fase_completa(com_pe, registradas)
+                    fases_out.append({"parcela_id": f["parcela_id"], "ambientes": f["ambientes"],
+                                      "completa": completa, "faltam": faltam})
+                fases_out.sort(key=lambda f: (f["parcela_id"] is None, f["parcela_id"] or 0))
+                # Estado da própria etapa 11d (aprovado/reprovado) + pré-requisito Rev2 — pra tela
+                # mostrar o banner de status e decidir quando exibir Aprovar/Reprovar sem outro fetch.
+                etapa11d = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
+                motivo_reprovacao = None
+                if etapa11d is not None and etapa11d.status == "reprovado":
+                    log = (db.query(LogAcaoGerencial)
+                             .filter_by(projeto_nome=nome, etapa_alvo="11d", acao="pe_11d_reprovar")
+                             .order_by(LogAcaoGerencial.id.desc()).first())
+                    if log is not None and log.contexto:
+                        try:
+                            motivo_reprovacao = json.loads(log.contexto).get("motivo")
+                        except Exception:
+                            motivo_reprovacao = None
+                rev2_aprovada = (orc_ct is not None and db.query(ProvisaoRegistro).filter_by(
+                    orcamento_id=orc_ct.id, versao="rev2").first() is not None)
+                self.send_json({"ok": True, "fases": fases_out, "markup": markup,
+                                "etapa_status": (etapa11d.status if etapa11d else "pendente"),
+                                "motivo_reprovacao": motivo_reprovacao,
+                                "rev2_aprovada": rev2_aprovada})
             finally:
                 db.close()
             return
@@ -6753,6 +6880,197 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        m_peconcd = re.match(r'^/api/projetos/([^/]+)/pe/conciliacao/(\d+)$', path)
+        if m_peconcd:
+            # Conciliação de PE/AF2 por ambiente (spec 2026-08-14): registra Manter/Absorver/
+            # Cobrar/Estornar. Estornar lança IMEDIATO (crédito ao cliente); Cobrar só entra na
+            # soma do Complemento de Projeto da fase (lançamento fica pra assinatura do aditivo,
+            # Fatia 3 seguinte). Auditoria dupla: LogAcaoGerencial (banco) + JSONL (arquivo).
+            nome = unquote(m_peconcd.group(1))
+            pool_ambiente_id = int(m_peconcd.group(2))
+            import mod_conciliacao_pe as _mconc
+            import mod_contabil as _mc
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                pa = db.query(PoolAmbiente).filter_by(id=pool_ambiente_id, projeto_id=nome).first()
+                if pa is None:
+                    self.send_json({"ok": False, "erro": "Ambiente não encontrado"}, code=404); return
+                arq = (db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe",
+                                                     pool_ambiente_id=pool_ambiente_id).first())
+                if arq is None or arq.valor_atualizado is None:
+                    self.send_json({"ok": False, "erro": "PE não carregado para este ambiente"}, code=400); return
+                diferenca_cfo = round(float(arq.valor_atualizado) - float(pa.order_total or 0.0), 2)
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                    _pe_fator_contexto(db, nome)
+                markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+                dvc = _mconc.diferenca_valor_contrato_estimada(
+                    diferenca_cfo=diferenca_cfo, markup=markup, valor_venda_pe=arq.valor_venda,
+                    vava_contratado=vava_ct.get(pool_ambiente_id, 0.0),
+                    vbva_contratado=float(pa.budget_total or 0.0),
+                    fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+                    desconto_amb_pct=d_amb_pct.get(pool_ambiente_id, 0.0))
+                tipo_decisao = (req.get("tipo_decisao") or "").strip()
+                valor_aprovado = req.get("valor_aprovado")
+                try:
+                    montada = _mconc.montar_decisao(pool_ambiente_id, diferenca_cfo, dvc,
+                                                    tipo_decisao, valor_aprovado=valor_aprovado)
+                except ValueError as _e:
+                    self.send_json({"ok": False, "erro": str(_e)}, code=400); return
+                pa_ambiente = (db.query(ParcelaAmbiente).filter_by(pool_ambiente_id=pool_ambiente_id)
+                                 .join(ParcelaProjeto, ParcelaAmbiente.parcela_id == ParcelaProjeto.id)
+                                 .filter(ParcelaProjeto.projeto_nome == nome).first())
+                parcela_id = pa_ambiente.parcela_id if pa_ambiente else None
+                existente = db.query(ConciliacaoPeFase).filter_by(
+                    projeto_nome=nome, pool_ambiente_id=pool_ambiente_id).first()
+                if existente:
+                    db.delete(existente); db.flush()
+                db.add(ConciliacaoPeFase(
+                    projeto_nome=nome, parcela_id=parcela_id, pool_ambiente_id=pool_ambiente_id,
+                    tipo_decisao=montada["tipo_decisao"], diferenca_cfo=montada["diferenca_cfo"],
+                    diferenca_valor_contrato=montada["diferenca_valor_contrato"],
+                    valor_aprovado=montada["valor_aprovado"], aprovador_id=aprovador.id))
+                if montada["tipo_decisao"] == "estornar":
+                    ot, oid = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                    _mc.registrar_credito_cliente(
+                        db, ot, oid, projeto_id=nome, valor=montada["valor_aprovado"],
+                        ref="est:%s:%d" % (nome, pool_ambiente_id))
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_conciliacao_" + montada["tipo_decisao"], projeto_nome=nome,
+                        etapa_alvo="11d",
+                        contexto=json.dumps({"pool_ambiente_id": pool_ambiente_id,
+                                            "parcela_id": parcela_id, **montada}, default=str)))
+                db.commit()
+                _auditoria_pe_jsonl(nome, {
+                    "quando": datetime.utcnow().isoformat(), "quem": aprovador.id,
+                    "etapa": "11d", "parcela_id": parcela_id, **montada})
+                self.send_json({"ok": True, "decisao": montada})
+            finally:
+                db.close()
+            return
+
+        m_pe11d = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/aprovar$', path)
+        if m_pe11d:
+            # Aprovação da AF2 (11d) — spec 2026-08-14: checagem DERIVADA sobre ConciliacaoPeFase
+            # (toda fase com decisão completa), além do que já valia (Revisão de Provisões — Rev2
+            # aprovada). Isolada de CicloEtapa/ProvisaoRegistro da AF1 — só ADICIONA uma condição.
+            # Achado ao investigar (2026-08-14): o PATCH genérico /ciclo/<codigo> JÁ concluía "8"/
+            # "11d" (data de entrega definida + contrato assinado pelas DUAS partes, ver
+            # mod_ciclo.exige_aprovacao_financeira) — a "conclusão nunca teve mecanismo real" da
+            # nota anterior estava errada; só não tinha a checagem de fase_completa. Este endpoint
+            # replica as MESMAS exigências do PATCH genérico + a checagem nova, pra virar o
+            # caminho único que a UI usa; o PATCH genérico também ganhou a checagem nova (defesa
+            # em profundidade, pra não virar um jeito de contornar esta).
+            nome = unquote(m_pe11d.group(1))
+            import mod_conciliacao_pe as _mconc
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                if contrato is None:
+                    self.send_json({"ok": False, "erro": "Projeto sem contrato"}, code=400); return
+                _pm = db.get(Projeto, nome)
+                if _pm is None or _pm.data_entrega is None:
+                    self.send_json({"ok": False,
+                        "erro": "Defina a data de entrega esperada do cliente antes de aprovar a AF."},
+                        code=400); return
+                if not _contrato_totalmente_assinado(nome, db):
+                    self.send_json({"ok": False,
+                        "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
+                                "aprovar a AF."}, code=400); return
+                rev2 = db.query(ProvisaoRegistro).filter_by(
+                    orcamento_id=contrato.orcamento_id, versao="rev2").first()
+                if rev2 is None:
+                    self.send_json({"ok": False,
+                        "erro": "Aprove a Revisão de Provisões (AF2) antes de concluir."}, code=400); return
+                pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()]
+                com_pe = {a.pool_ambiente_id for a in
+                          db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
+                          if a.valor_atualizado is not None and a.pool_ambiente_id in pool_ids}
+                registradas = {d.pool_ambiente_id for d in
+                               db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome).all()}
+                completa, faltam = _mconc.fase_completa(com_pe, registradas)
+                if not completa:
+                    self.send_json({"ok": False,
+                        "erro": "Registre a decisão (Manter/Absorver/Cobrar/Estornar) de %d ambiente(s) "
+                                "antes de concluir." % len(faltam),
+                        "faltam": faltam}, code=400); return
+                _set_etapa_status(db, nome, "11d", "concluido", aprovador.id)
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_11d_aprovar", projeto_nome=nome, etapa_alvo="11d"))
+                _chat_registrar_af2(db, nome, loja_id,
+                    "AF2 (Conciliação de PE) aprovada por %s." % (aprovador.nome or aprovador.login),
+                    "pe_af2_aprovada", aprovador.id)
+                db.commit()
+                self.send_json({"ok": True})
+            finally:
+                db.close()
+            return
+
+        m_pe11dr = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/reprovar$', path)
+        if m_pe11dr:
+            # Reprovação da AF2 (spec 2026-08-14, pedido do usuário): ação EXPLÍCITA — devolve pra
+            # revisão com motivo. Não exige fase_completa (o revisor pode reprovar mesmo faltando
+            # decisão, ou justamente por discordar de alguma já tomada). Status "reprovado" NÃO
+            # está em STATUS_CONCLUSIVOS — não satisfaz nenhum gate por engano.
+            nome = unquote(m_pe11dr.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            motivo = (req.get("motivo") or "").strip()
+            if not motivo:
+                self.send_json({"ok": False, "erro": "Informe o motivo da reprovação."}, code=400); return
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para reprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                _set_etapa_status(db, nome, "11d", "reprovado", aprovador.id)
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_11d_reprovar", projeto_nome=nome, etapa_alvo="11d",
+                        contexto=json.dumps({"motivo": motivo})))
+                _chat_registrar_af2(db, nome, loja_id,
+                    "AF2 (Conciliação de PE) reprovada por %s: %s"
+                    % (aprovador.nome or aprovador.login, motivo),
+                    "pe_af2_reprovada", aprovador.id)
+                db.commit()
+                self.send_json({"ok": True})
+            finally:
+                db.close()
+            return
+
         m_peaj = re.match(r'^/api/projetos/([^/]+)/pe/complemento/orcamento$', path)
         if m_peaj:
             # Fatia 3 PE: get-or-create do ORÇAMENTO DE COMPLEMENTO (11e "Negociar Complemento") — contém só
@@ -6777,7 +7095,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not marcados:
                     self.send_json({"ok": False, "erro": "Nenhum ambiente marcado para complemento "
                                     "na Revisão de PE."}, code=400); return
-                orc = (db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1)
+                # parcela_id=None: nunca pega/mexe num Complemento de Projeto por fase (spec
+                # 2026-08-14, endpoint /pe/complemento/fase/<id> abaixo) — mecanismos distintos.
+                orc = (db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1, parcela_id=None)
                          .order_by(Orcamento.id.desc()).first())
                 if orc is None:
                     maior = max([o.ordem or 0 for o in
@@ -6810,6 +7130,71 @@ class Handler(BaseHTTPRequestHandler):
                 orc.updated_at = datetime.utcnow()
                 db.commit()
                 self.send_json({"ok": True, "orcamento": _orcamento_dict(orc)})
+            finally:
+                db.close()
+            return
+
+        m_pefase = re.match(r'^/api/projetos/([^/]+)/pe/complemento/fase/(\w+)$', path)
+        if m_pefase:
+            # Complemento de Projeto POR FASE (spec 2026-08-14): get-or-create do orçamento de
+            # complemento da FASE — contém só os ambientes com decisão 'cobrar' registrada na
+            # AF2 (ConciliacaoPeFase), valor pelo fator proporcional direto do XML de PE (sem
+            # xml_compl). "none" no lugar do parcela_id = projeto não desmembrado. Distinto do
+            # endpoint legado acima (parcela_id=None ali é reservado, nunca colide com este).
+            nome = unquote(m_pefase.group(1))
+            fase_raw = m_pefase.group(2)
+            parcela_id = None if fase_raw == "none" else int(fase_raw)
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                if parcela_id is not None:
+                    parc = db.get(ParcelaProjeto, parcela_id)
+                    if parc is None or parc.projeto_nome != nome:
+                        self.send_json({"ok": False, "erro": "Fase não encontrada"}, code=404); return
+                linhas, resumo_ou_erro = _complemento_diferencas_fase(db, nome, parcela_id)
+                if linhas is None:
+                    self.send_json({"ok": False, "erro": resumo_ou_erro}, code=400); return
+                if not linhas:
+                    self.send_json({"ok": False,
+                        "erro": "Nenhum ambiente com decisão 'Cobrar' registrada nesta fase."},
+                        code=400); return
+                marcados = [l["pool_ambiente_id"] for l in linhas]
+                orc = (db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1,
+                                                     parcela_id=parcela_id)
+                         .order_by(Orcamento.id.desc()).first())
+                if orc is None:
+                    maior = max([o.ordem or 0 for o in
+                                 db.query(Orcamento).filter_by(projeto_id=nome).all()] or [0])
+                    nome_orc = ("Complemento PE — Fase %d" % parcela_id if parcela_id is not None
+                               else "Complemento PE")
+                    orc = Orcamento(projeto_id=nome, nome=nome_orc, ordem=maior + 1,
+                                    desconto_pct=0.0, complemento_pe=1, parcela_id=parcela_id,
+                                    loja_id=loja_id, created_by=usuario.get("id"))
+                    db.add(orc); db.flush()
+                atuais = {oa.pool_ambiente_id: oa for oa in
+                          db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc.id).all()}
+                for i, pid in enumerate(marcados):
+                    if pid not in atuais:
+                        db.add(OrcamentoAmbiente(orcamento_id=orc.id, pool_ambiente_id=pid, ordem=i + 1))
+                for pid, oa in atuais.items():
+                    if pid not in set(marcados):
+                        db.delete(oa)
+                db.flush()
+                try:
+                    _recalcular_orcamento(orc, db)
+                except Exception as _e:
+                    print("[COMPLEMENTO-FASE] recálculo falhou:", _e)
+                orc.updated_at = datetime.utcnow()
+                db.commit()
+                self.send_json({"ok": True, "orcamento": _orcamento_dict(orc), "resumo": resumo_ou_erro})
             finally:
                 db.close()
             return
@@ -7780,19 +8165,24 @@ class Handler(BaseHTTPRequestHandler):
                 if contrato is None or not _contrato_assinado(nome, db):
                     self.send_json({"ok": False, "erro": "O termo aditivo exige contrato assinado."},
                                    code=400); return
-                orc_aj = (db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1)
-                            .order_by(Orcamento.id.desc()).first())
-                if orc_aj is None:
-                    self.send_json({"ok": False, "erro": "Negocie o complemento antes de gerar o termo "
-                                    "aditivo (11e → Negociar Complemento)."}, code=400); return
                 # Spec 2026-07-22 (modelo jurídico + modais): o request pode trazer os 5 blocos
                 # editados no wizard ({"blocos": {...}}; ausente/vazio → default), "preview"
                 # (PDF sem persistir NADA) e "novo" (após o último assinado, abre o PRÓXIMO
-                # aditivo — o assinado nunca é regerado).
+                # aditivo — o assinado nunca é regerado). Spec 2026-08-14: "parcela_id" opcional
+                # escolhe QUAL Complemento de Projeto vira este aditivo (várias fases podem ter
+                # complemento simultâneo) — ausente preserva 100% o comportamento legado (pega o
+                # complemento_pe=1 mais recente, sem dimensão de fase).
                 try:
                     req = json.loads(body) if body else {}
                 except Exception:
                     req = {}
+                q_orc_aj = db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1)
+                if "parcela_id" in req:
+                    q_orc_aj = q_orc_aj.filter_by(parcela_id=req.get("parcela_id"))
+                orc_aj = q_orc_aj.order_by(Orcamento.id.desc()).first()
+                if orc_aj is None:
+                    self.send_json({"ok": False, "erro": "Negocie o complemento antes de gerar o termo "
+                                    "aditivo (11e → Negociar Complemento)."}, code=400); return
                 preview = bool(req.get("preview"))
                 blocos_req = req.get("blocos") or {}
                 aditivo = (db.query(Aditivo).filter_by(projeto_nome=nome)
@@ -13994,6 +14384,24 @@ class Handler(BaseHTTPRequestHandler):
                                 "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
                                         "aprovar a AF."}, code=400)
                             return
+                        # Conciliação de PE/AF2 (spec 2026-08-14): defesa em profundidade — a UI usa
+                        # o endpoint dedicado /ciclo/11d/aprovar (mesma checagem), mas este PATCH
+                        # genérico também precisa dela, senão vira um jeito de contornar a outra.
+                        if etapa_cod == "11d":
+                            import mod_conciliacao_pe as _mconc
+                            _pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()]
+                            _com_pe = {a.pool_ambiente_id for a in
+                                      db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_pe").all()
+                                      if a.valor_atualizado is not None and a.pool_ambiente_id in _pool_ids}
+                            _registradas = {d.pool_ambiente_id for d in
+                                           db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome_safe).all()}
+                            _completa, _faltam = _mconc.fase_completa(_com_pe, _registradas)
+                            if not _completa:
+                                self.send_json({"ok": False,
+                                    "erro": "Registre a decisão (Manter/Absorver/Cobrar/Estornar) de %d "
+                                            "ambiente(s) antes de concluir." % len(_faltam),
+                                    "faltam": _faltam}, code=400)
+                                return
                     if novo_status:
                         if etapa.status == "pendente" and novo_status != "pendente":
                             etapa.iniciado_em = datetime.utcnow()
@@ -14686,6 +15094,78 @@ def _complemento_diferencas(db, nome_safe):
     return linhas, resumo
 
 
+def _pe_fator_contexto(db, nome_safe):
+    """Contexto do fator VAVA/VBVA por ambiente contratado — compartilhado entre a Conciliação de
+    PE/AF2 (decisão) e o Complemento de Projeto de fato (`_complemento_diferencas_fase`), pra
+    garantir que os dois momentos usem exatamente a mesma conta (achado do usuário 2026-08-15: o
+    valor mostrado na decisão divergia do valor cobrado no Complemento).
+    Retorna `(orc_ct, vava_por_ambiente, fator_ca, desconto_orc_pct, desconto_amb_pct_por_ambiente,
+    vavo_ct, cad_ct)` — os dois `_pct` já em PERCENTUAL (0-100), formato que
+    `valor_complemento_por_fator` espera; os dois últimos crus, pro resumo do Complemento.
+    `(None, {}, 1.0, 0.0, {}, 0.0, 0.0)` se o projeto não tem contrato."""
+    ct = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+            .order_by(Contrato.id.desc()).first())
+    orc_ct = db.get(Orcamento, ct.orcamento_id) if ct else None
+    if orc_ct is None:
+        return None, {}, 1.0, 0.0, {}, 0.0, 0.0
+    d_ct = _negociacao_breakdown(orc_ct, db)
+    vava_ct = {a.get("id"): float(a.get("VAVA", 0.0)) for a in d_ct.get("ambientes", [])}
+    vavo_ct = float(d_ct.get("VAVO") or 0.0)
+    cad_ct = float(d_ct.get("Cust_Ad") or 0.0)
+    fator_ca = (vavo_ct / (vavo_ct - cad_ct)) if (vavo_ct - cad_ct) > 0 else 1.0
+    d_orc_pct = float(orc_ct.desconto_pct or 0.0)
+    d_amb_pct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0)
+                for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
+    return orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct
+
+
+def _complemento_diferencas_fase(db, nome_safe, parcela_id):
+    """Complemento de Projeto POR FASE (spec 2026-08-14) — generaliza `_complemento_diferencas`:
+    ambiente entra pela decisão 'cobrar' registrada em `ConciliacaoPeFase` (AF2/11d), não mais
+    pela flag manual `renegociar_pe` da 11c; o valor de venda vem DIRETO do XML de PE
+    (`ArquivoPE.formato='xml_pe'`), sem exigir o 3º upload `xml_compl` que o mecanismo legado
+    pedia. Mesma fórmula (fator proporcional VAVA/VBVA do ambiente contratado), agora em
+    `mod_conciliacao_pe.valor_complemento_por_fator`. `parcela_id=None` = projeto não
+    desmembrado (fase única implícita). Retorna (linhas, resumo) ou (None, erro_str)."""
+    import mod_conciliacao_pe as _mconc
+    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct = _pe_fator_contexto(db, nome_safe)
+    if orc_ct is None:
+        return None, "Projeto sem contrato para comparar."
+    decisoes = (db.query(ConciliacaoPeFase)
+                  .filter_by(projeto_nome=nome_safe, parcela_id=parcela_id, tipo_decisao="cobrar")
+                  .all())
+    pes = {a.pool_ambiente_id: a for a in
+           db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_pe").all()}
+    pa_por_id = {pa.id: pa for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()}
+    linhas = []
+    for d in decisoes:
+        pa = pa_por_id.get(d.pool_ambiente_id)
+        arq = pes.get(d.pool_ambiente_id)
+        if pa is None or arq is None or arq.valor_venda is None:
+            continue
+        nome_amb = pa.nome_exibicao or pa.nome
+        vc = round(vava_ct.get(pa.id, 0.0), 2)
+        vbva_c = float(pa.budget_total or 0.0)
+        va_compl = _mconc.valor_complemento_por_fator(
+            valor_venda_pe=arq.valor_venda, vava_contratado=vc, vbva_contratado=vbva_c,
+            fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+            desconto_amb_pct=d_amb_pct.get(pa.id, 0.0))
+        linhas.append({"pool_ambiente_id": pa.id, "ambiente": nome_amb,
+                       "vava_contratado": vc, "vava_complemento": va_compl,
+                       "diferenca": round(va_compl - vc, 2),
+                       "cfo_diferenca": d.diferenca_cfo, "compl_carregado": True})
+    resumo = {
+        "pct_custos_adicionais": round((cad_ct / vavo_ct * 100.0) if vavo_ct else 0.0, 4),
+        "fator_ca": round(fator_ca, 6),
+        "desc_global_pct": d_orc_pct,
+        "total_contratado": round(sum(l["vava_contratado"] for l in linhas), 2),
+        "total_complemento": round(sum(l["vava_complemento"] for l in linhas), 2),
+        "total_diferenca": round(sum(l["diferenca"] for l in linhas), 2),
+        "ambientes": len(linhas),
+    }
+    return linhas, resumo
+
+
 def _aditivo_dados_calculo(db, nome, contrato, orc_aj):
     """Números do Termo Aditivo numa passada só (spec 2026-07-22): as linhas por ambiente
     MARCADO (dados/6 marcadores antigos da Fatia 3) + a visão INTEGRAL do contrato
@@ -15091,7 +15571,13 @@ def _negociacao_breakdown(orc, db, vbva_override=None):
     # por ambiente, sobre a diferença). Negociação nasce à vista.
     compl_diff, compl_cfa = {}, {}
     if getattr(orc, "complemento_pe", 0):
-        linhas_c, _res = _complemento_diferencas(db, orc.projeto_id)
+        # Complemento de Projeto por FASE (spec 2026-08-14): orc.parcela_id setado → generaliza
+        # pra _complemento_diferencas_fase (decisão 'cobrar' da AF2 + XML de PE direto, sem
+        # xml_compl). parcela_id NULL preserva o mecanismo legado (11c/renegociar_pe) intocado.
+        if getattr(orc, "parcela_id", None) is not None:
+            linhas_c, _res = _complemento_diferencas_fase(db, orc.projeto_id, orc.parcela_id)
+        else:
+            linhas_c, _res = _complemento_diferencas(db, orc.projeto_id)
         for l in (linhas_c or []):
             if l["compl_carregado"]:
                 compl_diff[l["pool_ambiente_id"]] = l["diferenca"]

@@ -884,15 +884,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                 onclick="projToggleStatusFilter(event)" style="font-size:11px;white-space:nowrap">
           Status &#9660;
         </button>
-        <div class="proj-status-filter-dd" id="proj-status-filter-dd">
-          <label class="proj-status-filter-item"><input type="checkbox" value="quente"     checked onchange="projAplicarFiltros()"> <i class="ti ti-flame"></i> Quente</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="morno"      checked onchange="projAplicarFiltros()"> ● Morno</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="frio"       checked onchange="projAplicarFiltros()"> <i class="ti ti-snowflake"></i> Frio</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="convertido" checked onchange="projAplicarFiltros()"> ✓ Convertido</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="fechado" checked onchange="projAplicarFiltros()"> <i class="ti ti-lock"></i> Fechado</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="perdido"    checked onchange="projAplicarFiltros()"> ✗ Perdido</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="cancelado"  checked onchange="projAplicarFiltros()"> <i class="ti ti-x"></i> Cancelado</label>
-          <label class="proj-status-filter-item"><input type="checkbox" value="sem"        checked onchange="projAplicarFiltros()"> — Sem status</label>
+        <div class="proj-status-filter-dd" id="proj-status-filter-dd" onclick="event.stopPropagation()">
+          <label class="proj-status-filter-item" style="font-weight:700">
+            <input type="checkbox" id="proj-status-todos" checked onchange="projStatusTodosToggle(this)"> Todos</label>
+          <div style="border-top:1px solid var(--border);margin:4px 0"></div>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="quente"     checked onchange="projStatusItemToggle()"> <i class="ti ti-flame"></i> Quente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="morno"      checked onchange="projStatusItemToggle()"> ● Morno</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="frio"       checked onchange="projStatusItemToggle()"> <i class="ti ti-snowflake"></i> Frio</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="convertido" checked onchange="projStatusItemToggle()"> ✓ Convertido</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="fechado" checked onchange="projStatusItemToggle()"> <i class="ti ti-lock"></i> Fechado</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="perdido"    checked onchange="projStatusItemToggle()"> ✗ Perdido</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="cancelado"  checked onchange="projStatusItemToggle()"> <i class="ti ti-x"></i> Cancelado</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="sem"        checked onchange="projStatusItemToggle()"> — Sem status</label>
         </div>
       </div>
       <div class="proj-status-filter-wrap">
@@ -6787,6 +6790,20 @@ function projToggleStatusFilter(e){
   document.getElementById('proj-status-filter-dd')?.classList.toggle('open');
 }
 
+// "Todos" do filtro de Status: liga/desliga TODOS os itens de uma vez (achado do usuário
+// 2026-08-15) — diferente do "Todos" da Fase do Ciclo (que desmarca os itens individuais e
+// vira um estado à parte); aqui é literalmente marcar/desmarcar tudo, pro usuário partir de
+// zero e escolher só o que quer.
+function projStatusTodosToggle(cb){
+  document.querySelectorAll('.proj-status-item').forEach(c=>{ c.checked = cb.checked; });
+  projAplicarFiltros();
+}
+function projStatusItemToggle(){
+  const todos = document.getElementById('proj-status-todos');
+  if(todos) todos.checked = [...document.querySelectorAll('.proj-status-item')].every(c=>c.checked);
+  projAplicarFiltros();
+}
+
 // ── Status do projeto na page-02 ───────────────────────────────────────────────
 let _projetoStatusAtual = null;
 
@@ -6870,7 +6887,7 @@ function projFaseConfirmar(){
 
 function projAplicarFiltros(){
   const txt = (document.getElementById('proj-search')?.value || '').trim().toLowerCase();
-  const checks = [...(document.querySelectorAll('#proj-status-filter-dd input[type=checkbox]') || [])];
+  const checks = [...(document.querySelectorAll('#proj-status-filter-dd input.proj-status-item') || [])];
   const ativos = new Set(checks.filter(c=>c.checked).map(c=>c.value));
   const todosAtivos = checks.length === 0 || checks.every(c=>c.checked) || checks.every(c=>!c.checked);
 

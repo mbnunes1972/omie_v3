@@ -24,6 +24,10 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     # o mesmo projeto/orçamento de `seed` é reaproveitado em todas as funções aqui).
     db.query(app_db.ConciliacaoPeFase).filter_by(projeto_nome=nome).delete()
     db.query(app_db.ArquivoPE).filter_by(projeto_nome=nome).delete()
+    db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome).delete()
+    db.query(app_db.ProvisaoRegistro).filter(
+        app_db.ProvisaoRegistro.orcamento_id == oid).delete(synchronize_session=False)
+    db.query(app_db.LogAcaoGerencial).filter_by(projeto_nome=nome).delete()
     conv = (db.query(app_db.Conversa).filter_by(projeto_nome=nome).first()
             if hasattr(app_db, "Conversa") else None)
     if conv is not None:
@@ -121,6 +125,31 @@ def test_get_conciliacao_mostra_diferenca_e_sem_decisao(http_client_factory, see
     assert amb["decisao"] is None
     assert fase["completa"] is False
     assert fase["faltam"] == [pid]
+    assert body["etapa_status"] == "pendente"
+    assert body["motivo_reprovacao"] is None
+    assert body["rev2_aprovada"] is False
+
+
+def test_get_conciliacao_expoe_status_reprovado_com_motivo(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    c = _login(http_client_factory)
+    c.post(f"/api/projetos/{nome}/ciclo/11d/reprovar",
+          {"login": "dir_l1", "senha": "senha123", "motivo": "Falta revisar o ambiente X"})
+
+    st, body = c.get(f"/api/projetos/{nome}/pe/conciliacao")
+    assert st == 200 and body["ok"], body
+    assert body["etapa_status"] == "reprovado"
+    assert body["motivo_reprovacao"] == "Falta revisar o ambiente X"
+
+
+def test_get_conciliacao_expoe_rev2_aprovada(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _registra_venda_baseline(app_db, oid)
+    c = _login(http_client_factory)
+    _aprova_af1_af2(c, oid)
+
+    st, body = c.get(f"/api/projetos/{nome}/pe/conciliacao")
+    assert st == 200 and body["rev2_aprovada"] is True
 
 
 # ── POST /pe/conciliacao/<pool_ambiente_id> ────────────────────────────────────────────────

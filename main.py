@@ -2204,7 +2204,25 @@ class Handler(BaseHTTPRequestHandler):
                     fases_out.append({"parcela_id": f["parcela_id"], "ambientes": f["ambientes"],
                                       "completa": completa, "faltam": faltam})
                 fases_out.sort(key=lambda f: (f["parcela_id"] is None, f["parcela_id"] or 0))
-                self.send_json({"ok": True, "fases": fases_out, "markup": markup})
+                # Estado da própria etapa 11d (aprovado/reprovado) + pré-requisito Rev2 — pra tela
+                # mostrar o banner de status e decidir quando exibir Aprovar/Reprovar sem outro fetch.
+                etapa11d = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
+                motivo_reprovacao = None
+                if etapa11d is not None and etapa11d.status == "reprovado":
+                    log = (db.query(LogAcaoGerencial)
+                             .filter_by(projeto_nome=nome, etapa_alvo="11d", acao="pe_11d_reprovar")
+                             .order_by(LogAcaoGerencial.id.desc()).first())
+                    if log is not None and log.contexto:
+                        try:
+                            motivo_reprovacao = json.loads(log.contexto).get("motivo")
+                        except Exception:
+                            motivo_reprovacao = None
+                rev2_aprovada = (contrato is not None and db.query(ProvisaoRegistro).filter_by(
+                    orcamento_id=contrato.orcamento_id, versao="rev2").first() is not None)
+                self.send_json({"ok": True, "fases": fases_out, "markup": markup,
+                                "etapa_status": (etapa11d.status if etapa11d else "pendente"),
+                                "motivo_reprovacao": motivo_reprovacao,
+                                "rev2_aprovada": rev2_aprovada})
             finally:
                 db.close()
             return

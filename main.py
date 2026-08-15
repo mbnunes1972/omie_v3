@@ -25,7 +25,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
                        ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao,
-                       IntegracaoClickSign)
+                       IntegracaoClickSign, ConciliacaoPeFase)
 import mod_expedicao
 import mod_assistencias
 import mod_cadastro
@@ -472,6 +472,22 @@ def _bloqueio_execucao_etapa(db, nome_safe, loja_id, codigo):
 def _aprovador_financeiro(db, login, senha, sessao=None):
     """Usuario apto a aprovar financeiro, ou None. Sessão-primeiro: ver _usuario_com_capacidade."""
     return _usuario_com_capacidade(db, login, senha, "aprovar_financeiro", sessao=sessao)
+
+
+def _auditoria_pe_jsonl(nome_safe, registro):
+    """Conciliação de PE/AF2 (spec 2026-08-14): append-only, 1 arquivo por projeto. Escrita segura
+    sob concorrência — abre em modo append e escreve a linha inteira (JSON+\\n) numa chamada única
+    de write(); no Linux, write() em modo O_APPEND de até PIPE_BUF bytes é atômico, então múltiplas
+    escritas concorrentes não se intercalam nem corrompem, sem precisar de lock de arquivo.
+    BEST-EFFORT: nunca derruba o chamador (o LogAcaoGerencial no banco é a fonte confiável)."""
+    try:
+        pasta = os.path.join(_projeto_path(nome_safe), "conciliacao_pe")
+        os.makedirs(pasta, exist_ok=True)
+        linha = json.dumps(registro, ensure_ascii=False, default=str) + "\n"
+        with open(os.path.join(pasta, "auditoria.jsonl"), "a", encoding="utf-8") as f:
+            f.write(linha)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("auditoria_pe_jsonl falhou (%s): %s", nome_safe, _e)
 
 
 def _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario_id):
@@ -2103,6 +2119,78 @@ class Handler(BaseHTTPRequestHandler):
                                 "comparacao_venda": comparacao_venda,
                                 "venda_totais": venda_totais,
                                 "reconciliacao_estimada": rec_est})
+            finally:
+                db.close()
+            return
+
+        m_peconc = re.match(r'^/api/projetos/([^/]+)/pe/conciliacao$', path)
+        if m_peconc:
+            # Conciliação de PE/AF2 por fase (spec 2026-08-14): CFO venda×PE (mod_pe_comparacao)
+            # + decisão já registrada (ConciliacaoPeFase) + fase_completa, agrupado por parcela.
+            nome = unquote(m_peconc.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            import mod_conciliacao_pe as _mconc
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                pool = (db.query(PoolAmbiente).filter_by(projeto_id=nome)
+                          .order_by(PoolAmbiente.id.asc()).all())
+                pa_nome = {pa.id: (pa.nome_exibicao or pa.nome) for pa in pool}
+                itens_cfo = [(pa_nome[pa.id], pa.order_total or 0.0) for pa in pool]
+                pes = db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
+                valores_pe = {pa_nome[a.pool_ambiente_id]: a.valor_atualizado
+                              for a in pes if a.valor_atualizado is not None and a.pool_ambiente_id in pa_nome}
+                linhas = mod_pe_comparacao.montar_comparacao_pe(itens_cfo, valores_pe)
+                _id_por_nome = {v: k for k, v in pa_nome.items()}
+                for _l in linhas:
+                    _l["pool_ambiente_id"] = _id_por_nome.get(_l["ambiente"])
+
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                orc_ct = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+                markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+
+                decisoes = {d.pool_ambiente_id: d for d in
+                            db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome).all()}
+                parc_de_ambiente = {pa2.pool_ambiente_id: pa2.parcela_id for pa2 in
+                                    db.query(ParcelaAmbiente).join(
+                                        ParcelaProjeto, ParcelaAmbiente.parcela_id == ParcelaProjeto.id
+                                    ).filter(ParcelaProjeto.projeto_nome == nome).all()}
+                parcelas = (db.query(ParcelaProjeto).filter_by(projeto_nome=nome)
+                              .order_by(ParcelaProjeto.ordem.asc()).all())
+                fases_por_id = {p.id: {"parcela_id": p.id, "ordem": p.ordem, "ambientes": []}
+                                for p in parcelas}
+                fases_por_id[None] = {"parcela_id": None, "ordem": 0, "ambientes": []}
+
+                for _l in linhas:
+                    pid = _l["pool_ambiente_id"]
+                    fase_id = parc_de_ambiente.get(pid) if pid is not None else None
+                    if fase_id not in fases_por_id:
+                        fase_id = None
+                    d = decisoes.get(pid)
+                    _l["diferenca_valor_contrato"] = _mconc.diferenca_valor_contrato(_l["diferenca"], markup)
+                    _l["decisao"] = ({"tipo_decisao": d.tipo_decisao, "valor_aprovado": d.valor_aprovado}
+                                     if d is not None else None)
+                    fases_por_id[fase_id]["ambientes"].append(_l)
+
+                fases_out = []
+                for fase_id, f in fases_por_id.items():
+                    if not f["ambientes"]:
+                        continue
+                    com_pe = [a["pool_ambiente_id"] for a in f["ambientes"] if a["pe_carregado"]]
+                    registradas = [a["pool_ambiente_id"] for a in f["ambientes"] if a["decisao"] is not None]
+                    completa, faltam = _mconc.fase_completa(com_pe, registradas)
+                    fases_out.append({"parcela_id": f["parcela_id"], "ambientes": f["ambientes"],
+                                      "completa": completa, "faltam": faltam})
+                fases_out.sort(key=lambda f: (f["parcela_id"] is None, f["parcela_id"] or 0))
+                self.send_json({"ok": True, "fases": fases_out, "markup": markup})
             finally:
                 db.close()
             return
@@ -6749,6 +6837,134 @@ class Handler(BaseHTTPRequestHandler):
                 db.commit()
                 self.send_json({"ok": True, "pool_ambiente_id": pa_id,
                                 "renegociar": bool(pa.renegociar_pe)})
+            finally:
+                db.close()
+            return
+
+        m_peconcd = re.match(r'^/api/projetos/([^/]+)/pe/conciliacao/(\d+)$', path)
+        if m_peconcd:
+            # Conciliação de PE/AF2 por ambiente (spec 2026-08-14): registra Manter/Absorver/
+            # Cobrar/Estornar. Estornar lança IMEDIATO (crédito ao cliente); Cobrar só entra na
+            # soma do Complemento de Projeto da fase (lançamento fica pra assinatura do aditivo,
+            # Fatia 3 seguinte). Auditoria dupla: LogAcaoGerencial (banco) + JSONL (arquivo).
+            nome = unquote(m_peconcd.group(1))
+            pool_ambiente_id = int(m_peconcd.group(2))
+            import mod_conciliacao_pe as _mconc
+            import mod_contabil as _mc
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                pa = db.query(PoolAmbiente).filter_by(id=pool_ambiente_id, projeto_id=nome).first()
+                if pa is None:
+                    self.send_json({"ok": False, "erro": "Ambiente não encontrado"}, code=404); return
+                arq = (db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe",
+                                                     pool_ambiente_id=pool_ambiente_id).first())
+                if arq is None or arq.valor_atualizado is None:
+                    self.send_json({"ok": False, "erro": "PE não carregado para este ambiente"}, code=400); return
+                diferenca_cfo = round(float(arq.valor_atualizado) - float(pa.order_total or 0.0), 2)
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                orc_ct = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+                markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+                tipo_decisao = (req.get("tipo_decisao") or "").strip()
+                valor_aprovado = req.get("valor_aprovado")
+                try:
+                    montada = _mconc.montar_decisao(pool_ambiente_id, diferenca_cfo, markup,
+                                                    tipo_decisao, valor_aprovado=valor_aprovado)
+                except ValueError as _e:
+                    self.send_json({"ok": False, "erro": str(_e)}, code=400); return
+                pa_ambiente = (db.query(ParcelaAmbiente).filter_by(pool_ambiente_id=pool_ambiente_id)
+                                 .join(ParcelaProjeto, ParcelaAmbiente.parcela_id == ParcelaProjeto.id)
+                                 .filter(ParcelaProjeto.projeto_nome == nome).first())
+                parcela_id = pa_ambiente.parcela_id if pa_ambiente else None
+                existente = db.query(ConciliacaoPeFase).filter_by(
+                    projeto_nome=nome, pool_ambiente_id=pool_ambiente_id).first()
+                if existente:
+                    db.delete(existente); db.flush()
+                db.add(ConciliacaoPeFase(
+                    projeto_nome=nome, parcela_id=parcela_id, pool_ambiente_id=pool_ambiente_id,
+                    tipo_decisao=montada["tipo_decisao"], diferenca_cfo=montada["diferenca_cfo"],
+                    diferenca_valor_contrato=montada["diferenca_valor_contrato"],
+                    valor_aprovado=montada["valor_aprovado"], aprovador_id=aprovador.id))
+                if montada["tipo_decisao"] == "estornar":
+                    ot, oid = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                    _mc.registrar_credito_cliente(
+                        db, ot, oid, projeto_id=nome, valor=montada["valor_aprovado"],
+                        ref="est:%s:%d" % (nome, pool_ambiente_id))
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_conciliacao_" + montada["tipo_decisao"], projeto_nome=nome,
+                        etapa_alvo="11d",
+                        contexto=json.dumps({"pool_ambiente_id": pool_ambiente_id,
+                                            "parcela_id": parcela_id, **montada}, default=str)))
+                db.commit()
+                _auditoria_pe_jsonl(nome, {
+                    "quando": datetime.utcnow().isoformat(), "quem": aprovador.id,
+                    "etapa": "11d", "parcela_id": parcela_id, **montada})
+                self.send_json({"ok": True, "decisao": montada})
+            finally:
+                db.close()
+            return
+
+        m_pe11d = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/concluir$', path)
+        if m_pe11d:
+            # Conclusão da AF2 (11d) — spec 2026-08-14: checagem DERIVADA sobre ConciliacaoPeFase
+            # (toda fase com decisão completa), além do que já valia (Revisão de Provisões — Rev2
+            # aprovada). Isolada de CicloEtapa/ProvisaoRegistro da AF1 — só ADICIONA uma condição.
+            nome = unquote(m_pe11d.group(1))
+            import mod_conciliacao_pe as _mconc
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
+                              .order_by(Contrato.id.desc()).first())
+                if contrato is None:
+                    self.send_json({"ok": False, "erro": "Projeto sem contrato"}, code=400); return
+                rev2 = db.query(ProvisaoRegistro).filter_by(
+                    orcamento_id=contrato.orcamento_id, versao="rev2").first()
+                if rev2 is None:
+                    self.send_json({"ok": False,
+                        "erro": "Aprove a Revisão de Provisões (AF2) antes de concluir."}, code=400); return
+                pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()]
+                com_pe = {a.pool_ambiente_id for a in
+                          db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
+                          if a.valor_atualizado is not None and a.pool_ambiente_id in pool_ids}
+                registradas = {d.pool_ambiente_id for d in
+                               db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome).all()}
+                completa, faltam = _mconc.fase_completa(com_pe, registradas)
+                if not completa:
+                    self.send_json({"ok": False,
+                        "erro": "Registre a decisão (Manter/Absorver/Cobrar/Estornar) de %d ambiente(s) "
+                                "antes de concluir." % len(faltam),
+                        "faltam": faltam}, code=400); return
+                _set_etapa_status(db, nome, "11d", "concluido", aprovador.id)
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_11d_concluir", projeto_nome=nome, etapa_alvo="11d"))
+                db.commit()
+                self.send_json({"ok": True})
             finally:
                 db.close()
             return

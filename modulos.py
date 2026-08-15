@@ -114,7 +114,9 @@ MODULOS = {
                               "/api/admin/acordos-fabrica", "/api/admin/ajustes-fabrica",
                               "/api/financeiro/indicadores", "/api/recebiveis",
                               "/api/financeiro/recebiveis", "/api/financeiro/provisao-data-prevista",
-                              "/api/estrategico/indicadores", "/api/simulador"]},
+                              "/api/estrategico/indicadores", "/api/simulador",
+                              "/api/projetos/<nome>/pe/conciliacao",
+                              "/api/projetos/<nome>/ciclo/11d/concluir"]},
     # domínios NOVOS — fronteira só (stub, sem código/tabela hoje). Montagem e Assistências substituem
     # o antigo "posvenda" (que virou FAIXA, não módulo — Modulos_Orizon_v4).
     "estoque":     {"camada": "dominio", "depende_de": ["cadastro", "comercial"], "rotulo": "Estoque", "faixa": "expedicao",

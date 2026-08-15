@@ -1616,6 +1616,38 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/dre-serie-mensal":
+            # Achado do usuário 2026-08-15: a DRE somava a história inteira sem mostrar de qual
+            # período era — visão em colunas (uma por mês do período + Total) pras 3 visões.
+            ctx = _contabil_ctx(self, exige_edicao=False, consolidado_ok=True)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            qs = parse_qs(urlparse(self.path).query)
+            ini = _parse_data((qs.get("ini") or [None])[0])
+            fim = _parse_data((qs.get("fim") or [None])[0])
+            modo = (qs.get("modo") or ["real"])[0]
+            if ini is None or fim is None:
+                self.send_json({"ok": False, "erro": "Informe o período (ini/fim)."}, code=400)
+                db.close()
+                return
+            try:
+                if ot == "consolidado":
+                    # dre_consolidada não tem `modo` — mesma limitação que /api/financeiro/dre já
+                    # tem hoje pra consolidado (só a visão Real).
+                    meses = [mod_contabil.dre_consolidada(db, oid, ini=mi, fim=mf)
+                             for mi, mf in mod_contabil.meses_do_periodo(ini, fim)]
+                    total = mod_contabil.dre_consolidada(db, oid, ini=ini, fim=fim)
+                    self.send_json({"ok": True, "dre": {"meses": meses, "total": total}})
+                else:
+                    self.send_json({"ok": True,
+                                    "dre": mod_contabil.dre_serie_mensal(db, ot, oid, ini, fim, modo)})
+            except ValueError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/projetos-dre":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return

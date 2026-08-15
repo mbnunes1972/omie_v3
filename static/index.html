@@ -14626,50 +14626,119 @@ const _DRE_VISOES = [
   {id:'antecipacao_contrato', lbl:'Antecipação no contrato'},
 ];
 function dreSetVisao(v){ _dreVisao = v; dreCarregar(); }
+
+// Período (achado do usuário 2026-08-15: a DRE somava a história inteira sem mostrar de qual
+// período era) — mesmo padrão do Fluxo de Caixa (_fluxoMes/_fluxoIni/_fluxoFim), mas em PAR de
+// mês (De/Até), já que cada coluna da DRE é um mês inteiro. Default = mês corrente nos dois.
+let _dreMesIni = null, _dreMesFim = null;   // "AAAA-MM"
+function _dreMesAtual(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function _dreMesParaIni(mes){ return mes+'-01'; }
+function _dreMesParaFim(mes){ const [a,m]=mes.split('-').map(Number); return mes+'-'+String(new Date(a,m,0).getDate()).padStart(2,'0'); }
+function dreMudarPeriodo(campo, valor){
+  if(campo==='ini') _dreMesIni = valor; else _dreMesFim = valor;
+  if(_dreMesIni > _dreMesFim){ if(campo==='ini') _dreMesFim = valor; else _dreMesIni = valor; }   // evita range invertido
+  dreCarregar();
+}
+const _DRE_MESES_NOME = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function _dreColunaLabel(periodo){
+  const [a,m] = (periodo && periodo.ini || '').slice(0,7).split('-');
+  return m ? _DRE_MESES_NOME[+m-1]+'/'+a : '—';
+}
+
+const DRE_LINHAS = [
+  {lbl:'Receita Bruta (produto + serviço)', campo:'receita_bruta', sinal:1, det:'receita_bruta'},
+  {lbl:'(−) Deduções', campo:'deducoes', sinal:-1, det:'deducoes', sub:true},
+  {lbl:'= Receita Líquida', campo:'receita_liquida', sinal:1, total:true},
+  {lbl:'(−) CMV / Custo de Serviço', campo:'cmv_csp', sinal:-1, det:'cmv_csp', sub:true},
+  {lbl:'= Lucro Bruto', campo:'lucro_bruto', sinal:1, total:true},
+  {lbl:'(−) Despesas Comerciais', campo:'despesas_comerciais', sinal:-1, det:'despesas_comerciais', sub:true},
+  {lbl:'(−) Despesas Administrativas', campo:'despesas_administrativas', sinal:-1, det:'despesas_administrativas', sub:true},
+  {lbl:'(−) Constituição de Provisões', campo:'constituicao_provisoes', sinal:-1, det:'constituicao_provisoes', sub:true},
+  {lbl:'= EBITDA', campo:'ebitda', sinal:1, total:true},
+  {lbl:'(−) Depreciação', campo:'depreciacao', sinal:-1, sub:true},
+  {lbl:'= EBIT', campo:'ebit', sinal:1, total:true},
+  {lbl:'(±) Resultado Financeiro', campo:'resultado_financeiro', sinal:1, det:'resultado_financeiro', sub:true},
+  {lbl:'(+) Outras Receitas (reversão de provisões)', campo:'outras_receitas', sinal:1, det:'outras_receitas', sub:true},
+  {lbl:'= Resultado antes de impostos', campo:'resultado_antes_impostos', sinal:1, total:true},
+  {lbl:'(−) Impostos', campo:'impostos', sinal:-1, sub:true},
+  {lbl:'= Lucro Líquido', campo:'lucro_liquido', sinal:1, total:true},
+];
+
 async function dreCarregar(){
   const box = document.getElementById('dre-box');
   if(!box) return;
-  const qs = _dreVisao==='real' ? '' : ('?modo='+encodeURIComponent(_dreVisao));
-  const r = await fetch('/api/financeiro/dre'+qs, {credentials:'same-origin'});
+  if(!_dreMesIni) _dreMesIni = _dreMesAtual();
+  if(!_dreMesFim) _dreMesFim = _dreMesIni;
+  const ini = _dreMesParaIni(_dreMesIni), fim = _dreMesParaFim(_dreMesFim);
+  const qs = '?ini='+ini+'&fim='+fim+(_dreVisao==='real' ? '' : '&modo='+encodeURIComponent(_dreVisao));
+  const r = await fetch('/api/financeiro/dre-serie-mensal'+qs, {credentials:'same-origin'});
   if(r.status===403){ box.innerHTML='<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
-  const d = (await r.json().catch(()=>({}))).dre;
-  if(!d){ box.innerHTML='<em style="color:var(--muted)">Falha ao carregar a DRE.</em>'; return; }
-  const det = d.detalhe || {};
-  const linha=(lbl,val,opts)=>{ opts=opts||{};
-    const cor = opts.total ? 'var(--accent)' : (val<0?'var(--st-quente)':'var(--text)');
-    let html = '<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--border);'
-      +(opts.total?'font-weight:700;border-top:1px solid var(--border-strong)':'')+(opts.sub?'padding-left:26px;color:var(--muted)':'')+'">'
-      +'<span>'+lbl+'</span><span style="font-family:var(--font-mono);color:'+cor+'">'+_fBRL(val)+'</span></div>';
-    if(_dreModo==='analitico' && opts.chave && (det[opts.chave]||[]).length){
-      html += (det[opts.chave]||[]).map(c =>
-        '<div style="display:flex;justify-content:space-between;padding:3px 10px 3px 44px;font-size:11px;color:var(--muted)">'
-        +'<span><span style="font-family:var(--font-mono);font-size:9px;margin-right:6px">'+esc(c.codigo)+'</span>'+esc(c.nome)+'</span>'
-        +'<span style="font-family:var(--font-mono)">'+_fBRL(c.valor)+'</span></div>').join('');
-    }
-    return html; };
+  const resp = (await r.json().catch(()=>({}))).dre;
+  if(!resp || !resp.meses || !resp.meses.length){ box.innerHTML='<em style="color:var(--muted)">Falha ao carregar a DRE.</em>'; return; }
+  const meses = resp.meses, total = resp.total, multi = meses.length > 1;
+  const colunas = multi ? meses.concat([Object.assign({_total:true}, total)]) : meses;
+
   const btn=(m,lbl)=>'<button class="btn '+(_dreModo===m?'btn-primary':'btn-ghost')+' btn-sm" onclick="dreSetModo(\''+m+'\')">'+lbl+'</button>';
   const btnVisao=(v)=>'<button class="btn '+(_dreVisao===v.id?'btn-primary':'btn-ghost')+' btn-sm" onclick="dreSetVisao(\''+v.id+'\')">'+esc(v.lbl)+'</button>';
-  box.innerHTML = '<div style="max-width:560px">'
+  const periodoLbl = _dreMesIni===_dreMesFim ? _dreColunaLabel({ini:ini}) : (_dreColunaLabel({ini:ini})+' – '+_dreColunaLabel({ini:fim}));
+
+  const controles = '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
+    +'<label style="font-size:11px;color:var(--muted)">De</label>'
+    +'<input type="month" value="'+esc(_dreMesIni)+'" onchange="dreMudarPeriodo(\'ini\',this.value)" class="inp" style="width:auto">'
+    +'<label style="font-size:11px;color:var(--muted)">Até</label>'
+    +'<input type="month" value="'+esc(_dreMesFim)+'" onchange="dreMudarPeriodo(\'fim\',this.value)" class="inp" style="width:auto">'
+    +'<span style="font-size:11px;color:var(--muted)">Período: '+esc(periodoLbl)+'</span>'
+    +'</div>';
+
+  // grid: rótulo (sticky esquerda) + N colunas de mês (rolam) + Total (sticky direita, só se multi)
+  const larguraCol = 130;
+  const cols = 'minmax(260px,1fr) repeat('+colunas.length+', '+larguraCol+'px)';
+  const th = (c,i) => '<div style="padding:6px 8px;font-size:10px;color:var(--muted);text-transform:uppercase;'
+    +'letter-spacing:.4px;text-align:right;'+(c._total?'position:sticky;right:0;background:var(--bg);font-weight:700;border-left:1px solid var(--border-strong)':'')+'">'
+    +(c._total?'Total do período':esc(_dreColunaLabel(c.periodo)))+'</div>';
+
+  const linhaHtml = (def) => {
+    const cor = def.total ? 'var(--accent)' : null;
+    const rotulo = '<div style="padding:6px 10px;border-bottom:1px solid var(--border);position:sticky;left:0;background:var(--bg);'
+      +(def.total?'font-weight:700;border-top:1px solid var(--border-strong)':'')+(def.sub?'padding-left:26px;color:var(--muted)':'')+'">'+def.lbl+'</div>';
+    const celulas = colunas.map(c => {
+      const val = def.sinal * (c[def.campo] || 0);
+      const corCel = cor || (val<0 ? 'var(--st-quente)' : 'var(--text)');
+      return '<div style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:var(--font-mono);color:'+corCel+';'
+        +(def.total?'font-weight:700;border-top:1px solid var(--border-strong)':'')
+        +(c._total?'position:sticky;right:0;background:var(--bg);border-left:1px solid var(--border-strong)':'')+'">'+_fBRL(val)+'</div>';
+    }).join('');
+    let html = rotulo + celulas;
+    if(_dreModo==='analitico' && def.det){
+      // união dos códigos de TODAS as colunas (meses + total) — nem toda conta aparece em todo mês
+      const porCodigo = {};   // {codigo: nome} — o nome é o mesmo em qualquer coluna que tenha o código
+      colunas.forEach(c => (c.detalhe && c.detalhe[def.det] || []).forEach(x => { porCodigo[x.codigo] = x.nome; }));
+      Object.keys(porCodigo).sort().forEach(cod => {
+        const subRotulo = '<div style="padding:3px 10px 3px 44px;font-size:11px;color:var(--muted);position:sticky;left:0;background:var(--bg)">'
+          +'<span style="font-family:var(--font-mono);font-size:9px;margin-right:6px">'+esc(cod)+'</span>'+esc(porCodigo[cod])+'</div>';
+        const subCelulas = colunas.map(c => {
+          const item = (c.detalhe && c.detalhe[def.det] || []).find(x => x.codigo===cod);
+          return '<div style="padding:3px 8px;font-size:11px;color:var(--muted);text-align:right;font-family:var(--font-mono);'
+            +(c._total?'position:sticky;right:0;background:var(--bg)':'')+'">'+(item ? _fBRL(item.valor) : '—')+'</div>';
+        }).join('');
+        html += subRotulo + subCelulas;
+      });
+    }
+    return html;
+  };
+
+  box.innerHTML = '<div>'
     + '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">'+_DRE_VISOES.map(btnVisao).join('')+'</div>'
     + (_dreVisao!=='real' ? '<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Visão simulada — leitura, nunca lançada no razão (ver observação abaixo).</div>' : '')
     + '<div style="display:flex;gap:6px;margin-bottom:10px">'+btn('resumido','Resumido')+btn('analitico','Analítico')+'</div>'
-    + linha('Receita Bruta (produto + serviço)', d.receita_bruta, {chave:'receita_bruta'})
-    + linha('(−) Deduções', -d.deducoes, {sub:true, chave:'deducoes'})
-    + linha('= Receita Líquida', d.receita_liquida, {total:true})
-    + linha('(−) CMV / Custo de Serviço', -d.cmv_csp, {sub:true, chave:'cmv_csp'})
-    + linha('= Lucro Bruto', d.lucro_bruto, {total:true})
-    + linha('(−) Despesas Comerciais', -d.despesas_comerciais, {sub:true, chave:'despesas_comerciais'})
-    + linha('(−) Despesas Administrativas', -d.despesas_administrativas, {sub:true, chave:'despesas_administrativas'})
-    + linha('(−) Constituição de Provisões', -d.constituicao_provisoes, {sub:true, chave:'constituicao_provisoes'})
-    + linha('= EBITDA', d.ebitda, {total:true})
-    + linha('(−) Depreciação', -d.depreciacao, {sub:true})
-    + linha('= EBIT', d.ebit, {total:true})
-    + linha('(±) Resultado Financeiro', d.resultado_financeiro, {sub:true, chave:'resultado_financeiro'})
-    + linha('(+) Outras Receitas (reversão de provisões)', d.outras_receitas||0, {sub:true, chave:'outras_receitas'})
-    + linha('= Resultado antes de impostos', d.resultado_antes_impostos, {total:true})
-    + linha('(−) Impostos', -d.impostos, {sub:true})
-    + linha('= Lucro Líquido', d.lucro_liquido, {total:true})
-    + '<div style="font-size:10px;color:var(--muted);margin-top:8px">'+esc(d.obs||'')+'</div></div>';
+    + controles
+    + '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)">'
+    +   '<div style="display:grid;grid-template-columns:'+cols+';min-width:'+(260+colunas.length*larguraCol)+'px">'
+    +     '<div style="position:sticky;left:0;background:var(--bg)"></div>' + colunas.map(th).join('')
+    +     DRE_LINHAS.map(linhaHtml).join('')
+    +   '</div>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--muted);margin-top:8px">'+esc(total.obs||'')+'</div></div>';
 }
 
 const _finInput = 'width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 9px;color:var(--text);font-size:12px';

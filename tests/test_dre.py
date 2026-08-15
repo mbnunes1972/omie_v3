@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import mod_contabil as mc
 
 # app_db module-scoped -> uso owner distinto por teste para isolar os lançamentos.
@@ -44,3 +46,64 @@ def test_dre_vazio_zerado(app_db):
     d = mc.dre(db, "loja", 12)
     db.close()
     assert d["receita_bruta"] == 0.0 and d["lucro_liquido"] == 0.0
+
+
+# ── meses_do_periodo (achado do usuário 2026-08-15: DRE em colunas mês a mês) ────────────────────
+
+def test_meses_do_periodo_mes_unico():
+    out = mc.meses_do_periodo(datetime(2026, 8, 1), datetime(2026, 8, 31))
+    assert len(out) == 1
+    ini, fim = out[0]
+    assert ini == datetime(2026, 8, 1, 0, 0, 0)
+    assert fim.date() == datetime(2026, 8, 31).date() and fim.hour == 23 and fim.minute == 59
+
+
+def test_meses_do_periodo_mesmo_ano():
+    out = mc.meses_do_periodo(datetime(2026, 6, 15), datetime(2026, 9, 3))
+    assert [(i.year, i.month) for i, f in out] == [(2026, 6), (2026, 7), (2026, 8), (2026, 9)]
+    # cada mês termina no ÚLTIMO dia dele, não no dia de `fim` original
+    assert out[0][1].day == 30 and out[-1][1].day == 30   # jun/set têm 30 dias
+
+
+def test_meses_do_periodo_cruza_ano():
+    out = mc.meses_do_periodo(datetime(2025, 12, 1), datetime(2026, 2, 28))
+    assert [(i.year, i.month) for i, f in out] == [(2025, 12), (2026, 1), (2026, 2)]
+
+
+def test_meses_do_periodo_fevereiro_bissexto():
+    out = mc.meses_do_periodo(datetime(2024, 2, 1), datetime(2024, 2, 1))
+    assert out[0][1].day == 29
+
+
+# ── dre_serie_mensal ──────────────────────────────────────────────────────────────────────────
+
+def test_dre_serie_mensal_bate_com_chamadas_individuais(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 13; mc.seed_plano(db, ot, oid); c = _q(db, 13)
+    mc.lancar(db, ot, oid, c("5.4.01"), c("1.1.01"), 100.0, data=datetime(2026, 6, 10))
+    mc.lancar(db, ot, oid, c("5.4.01"), c("1.1.01"), 200.0, data=datetime(2026, 7, 10))
+    mc.registrar_evento(db, ot, oid, "faturamento", 900.0, projeto_id="P", data=datetime(2026, 7, 20))
+    serie = mc.dre_serie_mensal(db, ot, oid, datetime(2026, 6, 1), datetime(2026, 7, 31))
+    jun = mc.dre(db, ot, oid, datetime(2026, 6, 1), datetime(2026, 6, 30, 23, 59, 59))
+    jul = mc.dre(db, ot, oid, datetime(2026, 7, 1), datetime(2026, 7, 31, 23, 59, 59))
+    total = mc.dre(db, ot, oid, datetime(2026, 6, 1), datetime(2026, 7, 31))
+    db.close()
+    assert len(serie["meses"]) == 2
+    assert serie["meses"][0]["despesas_administrativas"] == jun["despesas_administrativas"] == 100.0
+    assert serie["meses"][1]["despesas_administrativas"] == jul["despesas_administrativas"] == 200.0
+    assert serie["meses"][1]["receita_bruta"] == jul["receita_bruta"] == 900.0
+    assert serie["total"]["despesas_administrativas"] == total["despesas_administrativas"] == 300.0
+    assert serie["total"]["receita_bruta"] == total["receita_bruta"] == 900.0
+
+
+def test_dre_serie_mensal_modo_simulado(app_db):
+    from datetime import datetime as _dt
+    db = app_db.get_session(); ot, oid = "loja", 14; mc.seed_plano(db, ot, oid)
+    mc.registrar_evento(db, ot, oid, "registro_venda_contrato", 50000.0, projeto_id="P",
+                        ref="venda:P", data=_dt(2026, 5, 1))
+    mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"montagem": 500.0}, ref_base="pf:P")
+    serie = mc.dre_serie_mensal(db, ot, oid, _dt(2026, 5, 1), _dt(2026, 5, 31), modo="antecipacao_contrato")
+    db.close()
+    assert len(serie["meses"]) == 1
+    assert serie["meses"][0]["modo"] == "antecipacao_contrato"
+    assert serie["meses"][0]["receita_bruta"] == 50000.0
+    assert serie["total"]["receita_bruta"] == 50000.0

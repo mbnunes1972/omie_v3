@@ -19,6 +19,7 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     orc = db.get(app_db.Orcamento, oid)
     nome = orc.projeto_id
     orc.markup = 2.0
+    orc.desconto_pct = 0.0   # previsibilidade: VAVA contratado == VBVA (sem desconto/custo adicional)
     # limpa resíduo de outros testes deste arquivo (DROP SCHEMA é só por MÓDULO, não por teste —
     # o mesmo projeto/orçamento de `seed` é reaproveitado em todas as funções aqui).
     db.query(app_db.ConciliacaoPeFase).filter_by(projeto_nome=nome).delete()
@@ -27,6 +28,23 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
             if hasattr(app_db, "Conversa") else None)
     if conv is not None:
         db.query(app_db.ConversaMensagem).filter_by(conversa_id=conv.id).delete()
+    aditivos_velhos = [a.id for a in db.query(app_db.Aditivo).filter_by(projeto_nome=nome).all()]
+    if aditivos_velhos:
+        db.query(app_db.AditivoAssinatura).filter(
+            app_db.AditivoAssinatura.aditivo_id.in_(aditivos_velhos)).delete(synchronize_session=False)
+        db.query(app_db.Aditivo).filter(app_db.Aditivo.id.in_(aditivos_velhos)).delete(synchronize_session=False)
+    compls = [o.id for o in db.query(app_db.Orcamento)
+              .filter_by(projeto_id=nome, complemento_pe=1).all()]
+    if compls:
+        db.query(app_db.OrcamentoAmbiente).filter(
+            app_db.OrcamentoAmbiente.orcamento_id.in_(compls)).delete(synchronize_session=False)
+        db.query(app_db.Orcamento).filter(app_db.Orcamento.id.in_(compls)).delete(synchronize_session=False)
+    parcelas_velhas = [p.id for p in db.query(app_db.ParcelaProjeto).filter_by(projeto_nome=nome).all()]
+    if parcelas_velhas:
+        db.query(app_db.ParcelaAmbiente).filter(
+            app_db.ParcelaAmbiente.parcela_id.in_(parcelas_velhas)).delete(synchronize_session=False)
+        db.query(app_db.ParcelaProjeto).filter(
+            app_db.ParcelaProjeto.id.in_(parcelas_velhas)).delete(synchronize_session=False)
     velhos = [pa2.id for pa2 in db.query(app_db.PoolAmbiente).filter_by(projeto_id=nome).all()]
     if velhos:
         db.query(app_db.OrcamentoAmbiente).filter(
@@ -53,10 +71,10 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     return nome, pid, oid
 
 
-def _carrega_pe(app_db, nome, pid, cfo_pe):
+def _carrega_pe(app_db, nome, pid, cfo_pe, venda_pe=None):
     db = app_db.get_session()
     db.add(app_db.ArquivoPE(projeto_nome=nome, pool_ambiente_id=pid, formato="xml_pe",
-                            valor_atualizado=cfo_pe))
+                            valor_atualizado=cfo_pe, valor_venda=venda_pe))
     db.commit(); db.close()
 
 
@@ -278,3 +296,206 @@ def test_11d_reprovar_marca_status_e_notifica(http_client_factory, seed, app_db)
         conversa_id=conv.id, evento="pe_af2_reprovada").all()
     assert len(msgs) == 1 and "revisar o XML" in msgs[0].corpo
     db.close()
+
+
+# ── POST /pe/complemento/fase/<parcela_id|none> ─────────────────────────────────────────────
+
+def _decide_cobrar(c, nome, pid):
+    st, body = c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
+                      {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
+    assert st == 200 and body["ok"], body
+
+
+def test_complemento_fase_none_projeto_nao_desmembrado(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+    _decide_cobrar(c, nome, pid)
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/none", {})
+    assert st == 200 and body["ok"], body
+    assert body["resumo"]["total_complemento"] == 84000.0   # fator 1.0 (sem desconto/custo ad.)
+    assert body["resumo"]["total_diferenca"] == 4000.0      # 84000 - 80000
+
+    db = app_db.get_session()
+    orc = db.get(app_db.Orcamento, body["orcamento"]["id"])
+    assert orc.complemento_pe == 1 and orc.parcela_id is None
+    ambs = db.query(app_db.OrcamentoAmbiente).filter_by(orcamento_id=orc.id).all()
+    assert {a.pool_ambiente_id for a in ambs} == {pid}
+    db.close()
+
+
+def test_complemento_fase_sem_decisao_cobrar_400(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+    # decisão NUNCA registrada
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/none", {})
+    assert st == 400 and not body["ok"]
+
+
+def test_complemento_fase_por_parcela_nao_colide_com_legado(http_client_factory, seed, app_db):
+    """Um complemento por FASE (parcela_id=X) e o mecanismo legado (parcela_id=None) são
+    Orcamento DIFERENTES — a query de cada endpoint nunca pega o do outro."""
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+    _decide_cobrar(c, nome, pid)
+
+    db = app_db.get_session()
+    parcela = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status="aguardando")
+    db.add(parcela); db.flush()
+    db.add(app_db.ParcelaAmbiente(parcela_id=parcela.id, pool_ambiente_id=pid, valor_ambiente=80000.0))
+    db.commit()
+    parcela_id = parcela.id
+    db.close()
+
+    # decisão do ambiente foi registrada ANTES da fase existir (parcela_id fica None nela) —
+    # o complemento por fase, filtrando por parcela_id=X, não deve achar nada.
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/{parcela_id}", {})
+    assert st == 400 and not body["ok"], body
+
+    # o legado (fase "none") continua funcionando normalmente
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/none", {})
+    assert st == 200 and body["ok"], body
+    orc_legado_id = body["orcamento"]["id"]
+
+    db = app_db.get_session()
+    n = db.query(app_db.Orcamento).filter_by(projeto_id=nome, complemento_pe=1).count()
+    assert n == 1   # só o legado existe — a chamada por parcela falhou antes de criar nada
+    orc = db.get(app_db.Orcamento, orc_legado_id)
+    assert orc.parcela_id is None
+    db.close()
+
+
+def test_complemento_fase_registrado_apos_desmembrar(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    db = app_db.get_session()
+    parcela = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status="aguardando")
+    db.add(parcela); db.flush()
+    db.add(app_db.ParcelaAmbiente(parcela_id=parcela.id, pool_ambiente_id=pid, valor_ambiente=80000.0))
+    db.commit()
+    parcela_id = parcela.id
+    db.close()
+
+    c = _login(http_client_factory)
+    _decide_cobrar(c, nome, pid)   # agora a decisão já nasce com parcela_id resolvido
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/{parcela_id}", {})
+    assert st == 200 and body["ok"], body
+    assert body["resumo"]["total_diferenca"] == 4000.0
+
+    db = app_db.get_session()
+    orc = db.get(app_db.Orcamento, body["orcamento"]["id"])
+    assert orc.parcela_id == parcela_id
+    assert "Fase" in orc.nome
+    db.close()
+
+
+# ── Aditivo do complemento por fase — reaproveita o mecanismo já existente (achado Vera 2026-08-12:
+# a assinatura completa já constitui provisão contábil; só faltava o /aditivo saber ESCOLHER o
+# complemento certo quando há mais de um simultâneo no mesmo projeto) ──────────────────────────
+
+def _add_ambiente_extra(app_db, nome, oid, budget=50000.0, cfo=20000.0):
+    """2º ambiente do projeto, fora da fase — pro cenário de 2 complementos simultâneos."""
+    db = app_db.get_session()
+    pa = app_db.PoolAmbiente(nome="Sala", nome_exibicao="Sala", xml_path="fake/sala.xml",
+                             ambientes_json="{}", projeto_id=nome, budget_total=budget, order_total=cfo)
+    db.add(pa); db.flush()
+    db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=2))
+    db.commit()
+    pid2 = pa.id
+    db.close()
+    return pid2
+
+
+def test_aditivo_por_parcela_nao_pega_o_complemento_errado(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    pid2 = _add_ambiente_extra(app_db, nome, oid)
+    _carrega_pe(app_db, nome, pid2, cfo_pe=22000.0, venda_pe=53000.0)
+    c = _login(http_client_factory)
+
+    db = app_db.get_session()
+    parcela = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status="aguardando")
+    db.add(parcela); db.flush()
+    db.add(app_db.ParcelaAmbiente(parcela_id=parcela.id, pool_ambiente_id=pid, valor_ambiente=80000.0))
+    db.commit()
+    parcela_id = parcela.id
+    db.close()
+    _decide_cobrar(c, nome, pid)    # ambiente DA FASE → decisão nasce com parcela_id resolvido
+    _decide_cobrar(c, nome, pid2)   # ambiente FORA da fase → decisão nasce com parcela_id=None
+
+    # cria os DOIS complementos no mesmo projeto: o legado (fase "none", pega só pid2) e o por fase (só pid)
+    st, body_legado = c.post(f"/api/projetos/{nome}/pe/complemento/fase/none", {})
+    assert st == 200 and body_legado["ok"], body_legado
+    orc_legado_id = body_legado["orcamento"]["id"]
+
+    st, body_fase = c.post(f"/api/projetos/{nome}/pe/complemento/fase/{parcela_id}", {})
+    assert st == 200 and body_fase["ok"], body_fase
+    orc_fase_id = body_fase["orcamento"]["id"]
+    assert orc_fase_id != orc_legado_id
+
+    import mod_documentos
+    db = app_db.get_session()
+    mv = mod_documentos.criar_versao(db, seed["loja1_id"], "termo_aditivo",
+                                     "# TERMO ADITIVO [NUM_ADITIVO]\n1. [AMBIENTES_COMPLEMENTO]\n"
+                                     "2. Complemento: [VALOR_COMPLEMENTO].\n", "t.md", None)
+    mod_documentos.ativar(db, mv.id)
+    db.close()
+
+    # pedindo o aditivo DA FASE explicitamente — tem que amarrar no complemento da fase, não no legado
+    st, body = c.post(f"/api/projetos/{nome}/aditivo", {"parcela_id": parcela_id})
+    assert st == 200 and body["ok"], body
+    db = app_db.get_session()
+    aditivo = db.get(app_db.Aditivo, body["aditivo"]["id"])
+    assert aditivo.orcamento_complemento_id == orc_fase_id
+    db.close()
+
+
+def test_aditivo_da_fase_assinatura_completa_constitui_provisao(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+
+    db = app_db.get_session()
+    parcela = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status="aguardando")
+    db.add(parcela); db.flush()
+    db.add(app_db.ParcelaAmbiente(parcela_id=parcela.id, pool_ambiente_id=pid, valor_ambiente=80000.0))
+    db.commit()
+    parcela_id = parcela.id
+    db.close()
+    _decide_cobrar(c, nome, pid)   # decide DEPOIS da fase existir → parcela_id já resolvido
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/{parcela_id}", {})
+    assert st == 200 and body["ok"], body
+
+    import mod_documentos
+    db = app_db.get_session()
+    mv = mod_documentos.criar_versao(db, seed["loja1_id"], "termo_aditivo",
+                                     "# TERMO ADITIVO [NUM_ADITIVO]\n1. [AMBIENTES_COMPLEMENTO]\n"
+                                     "2. Complemento: [VALOR_COMPLEMENTO].\n", "t.md", None)
+    mod_documentos.ativar(db, mv.id)
+    db.close()
+
+    st, body = c.post(f"/api/projetos/{nome}/aditivo", {"parcela_id": parcela_id})
+    assert st == 200 and body["ok"], body
+    aditivo_id = body["aditivo"]["id"]
+
+    st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
+                      {"parte": "loja", "nome": "Rep Loja", "cpf": "111.444.777-35"})
+    assert st == 200 and body["status"] == "assinado_loja", body
+    st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
+                      {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05"})
+    assert st == 200 and body["status"] == "assinado", body
+
+    import mod_contabil
+    db = app_db.get_session()
+    ot, owner_id = mod_contabil.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None})
+    novos = (db.query(app_db.Lancamento)
+               .filter_by(owner_tipo=ot, owner_id=owner_id, projeto_id=nome)
+               .filter(app_db.Lancamento.ref.like("prov:aditivo:%d:%%" % aditivo_id)).all())
+    db.close()
+    assert len(novos) > 0, "assinatura completa do aditivo da FASE deveria constituir provisão(ões)"

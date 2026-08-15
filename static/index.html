@@ -14819,6 +14819,15 @@ document.addEventListener('click', function(ev){
   });
 });
 
+// Contas de despesa que NUNCA devem ser lançadas por esta tela genérica — têm painel próprio
+// que já lança a despesa formal (achado do usuário 2026-08-15: Encargos sobre Folha é custo
+// fixo lançado manualmente, mas só pelo Painel de Folha de Pagamento, pra não bagunçar o
+// cálculo/rastreio de lá). Some do seletor "Lançar outra despesa" e, se aparecer como sugestão
+// (repetição do mês passado), fica sem o botão "Lançar" — clicar mostra a mensagem.
+const CONTAS_BLOQUEADAS_DESPESA = {
+  '5.4.13': 'Essa conta deve ser tratada pelo painel de Folha de Pagamento.',
+};
+
 // Formulário simples de lançamento — tipo já vem fixado pela aba (Despesa ou Receita), sem
 // escolher de novo na tela.
 function _lancFormaHtml(flat, tipo){
@@ -14828,7 +14837,8 @@ function _lancFormaHtml(flat, tipo){
   // aba Receita completamente inoperante depois de visitar as duas.
   const pfx = 'lan-forma-'+tipo+'-';
   const grupoAlvo = tipo === 'receita' ? 4 : 5;
-  const contaItens = flat.filter(n=>n.grupo===grupoAlvo).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
+  const contaItens = flat.filter(n=>n.grupo===grupoAlvo && !(tipo==='despesa' && CONTAS_BLOQUEADAS_DESPESA[n.codigo]))
+                          .map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
   const contraItens = flat.filter(n=>n.grupo===1||n.grupo===2).map(n=>({id:n.id, label:n.codigo+' — '+n.nome}));
   return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
     +'<div><label class="field-label">'+(tipo==='receita'?'Conta de receita':'Conta de despesa')+'</label>'+_selBuscavelHtml(pfx+'conta', contaItens, {placeholder:'Digite pra buscar a conta…'})+'</div>'
@@ -14896,7 +14906,8 @@ function _lancSugestoesHtml(sugestoes, flat){
   const cols = 'minmax(260px,2fr) 120px 150px minmax(220px,1.3fr) 130px';
   const th = txt => '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:0 0 6px">'+esc(txt)+'</div>';
   const linha = s => {
-    const dis = s.ja_lancado_mes_atual;
+    const bloqueioMsg = CONTAS_BLOQUEADAS_DESPESA[s.codigo];
+    const dis = s.ja_lancado_mes_atual || !!bloqueioMsg;
     // contrapartida sugerida pode ter sido inativada depois — não pré-seleciona às cegas
     const selId = (s.contrapartida_sugerida_ativa && s.contrapartida_sugerida_id) || null;
     const natLbl = s.natureza_custo && _NATUREZA_LABELS[s.natureza_custo];
@@ -14906,12 +14917,18 @@ function _lancSugestoesHtml(sugestoes, flat){
       : '';
     const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:6px">'+esc(s.codigo)+'</span>';
     const cel = 'padding:7px 0;opacity:'+(dis?'.55':'1');
-    return '<div style="'+cel+';font-size:12px;align-self:center">'+cod+esc(s.nome)+natBadge+'</div>'
+    const lockIcon = bloqueioMsg
+      ? ' <i class="ti ti-lock" title="Bloqueada — clique pra saber por quê" style="cursor:pointer"'
+        +' onclick="_lancContaBloqueadaAviso(\''+s.codigo+'\')"></i>'
+      : '';
+    return '<div style="'+cel+';font-size:12px;align-self:center'+(bloqueioMsg?';cursor:pointer':'')+'"'
+        +(bloqueioMsg?' onclick="_lancContaBloqueadaAviso(\''+s.codigo+'\')"':'')+'>'+cod+esc(s.nome)+natBadge+lockIcon+'</div>'
       +'<div style="'+cel+'"><input id="sug-valor-'+s.conta_id+'" type="number" step="0.01" value="'+s.valor_sugerido+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
       +'<div style="'+cel+'"><input id="sug-data-'+s.conta_id+'" type="date" value="'+_hojeISO()+'"'+(dis?' disabled':'')+' style="'+_finInput+'"></div>'
       +'<div style="'+cel+'">'+_selBuscavelHtml('sug-contra-'+s.conta_id, contraItens, {placeholder:'Digite pra buscar…', selecionadoId:selId, disabled:dis})+'</div>'
       +'<div style="'+cel+';align-self:center">'
-        +(dis?'<span style="font-size:11px;color:var(--muted)">já lançado este mês</span>'
+        +(bloqueioMsg?'<span style="font-size:11px;color:var(--muted);cursor:pointer" onclick="_lancContaBloqueadaAviso(\''+s.codigo+'\')">bloqueada</span>'
+             :dis?'<span style="font-size:11px;color:var(--muted)">já lançado este mês</span>'
              :'<button class="btn btn-primary btn-sm" onclick="_lancSugestaoLancar('+s.conta_id+',this)">Lançar</button>')
       +'</div>'
       +'<div style="grid-column:1/-1;border-bottom:1px solid var(--border)"></div>';
@@ -14920,6 +14937,10 @@ function _lancSugestoesHtml(sugestoes, flat){
     + th('Conta') + th('Valor') + th('Data') + th('Contrapartida') + th('')
     + sugestoes.map(linha).join('')
     + '</div></div>';
+}
+function _lancContaBloqueadaAviso(codigo){
+  avisoPopup(CONTAS_BLOQUEADAS_DESPESA[codigo] || 'Essa conta não pode ser lançada por aqui.',
+    {titulo:'Conta bloqueada'});
 }
 async function _lancSugestaoLancar(contaId, btn){
   if(btn){ if(btn.disabled) return; btn.disabled = true; }

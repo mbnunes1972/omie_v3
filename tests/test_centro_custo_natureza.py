@@ -421,6 +421,45 @@ def test_migracao_classificacao_grupo5_v2_idempotente(app_db):
     db.close()
 
 
+# ── migrar_classificacao_grupo5_v3 (achado do usuário 2026-08-15: Combustível é Fixo) ──────────
+def test_migracao_classificacao_grupo5_v3_corrige_combustivel(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 996
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)   # deixa 5.2.06 no default antigo ("variavel")
+    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "variavel"
+
+    # migração roda em TODOS os owners — outros testes do módulo já deixaram owners com 5.2.06
+    # em "variavel" também, então o contador GLOBAL não é necessariamente 1 (mesma pegadinha já
+    # documentada em test_migracao_classificacao_grupo5_idempotente). O que importa é o estado
+    # DESTE owner (996), checado direto abaixo.
+    out = mc.migrar_classificacao_grupo5_v3(db)
+    assert out["corrigidos"] >= 1
+    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "fixo"
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_v3_nao_sobrescreve_manual(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 997
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    contas = _contas(db, ot, oid)
+    contas["5.2.06"].natureza_custo = "semivariavel"   # reclassificação manual, depois do v1
+    db.commit()
+    mc.migrar_classificacao_grupo5_v3(db)
+    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "semivariavel"   # intocado
+    db.close()
+
+
+def test_migracao_classificacao_grupo5_v3_idempotente(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 998
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    mc.migrar_classificacao_grupo5_v3(db)
+    out2 = mc.migrar_classificacao_grupo5_v3(db)
+    assert out2 == {"corrigidos": 0}
+    db.close()
+
+
 def test_endpoint_classificar_lote(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.get("/api/financeiro/contas")

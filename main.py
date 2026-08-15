@@ -16816,6 +16816,9 @@ def main():
             # Correção pós-aprovação: Brindes/Ajuste de Provisões viram Variável (associadas à
             # venda); Ajuste de Provisões também muda de Centro de Custo (2026-08-08).
             _mc.migrar_classificacao_grupo5_v2(_dbp)
+            # Correção (achado do usuário, 2026-08-15): Combustível (5.2.06) é despesa FIXA, não
+            # associada ao volume de vendas.
+            _mc.migrar_classificacao_grupo5_v3(_dbp)
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

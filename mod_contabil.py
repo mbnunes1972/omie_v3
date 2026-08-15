@@ -810,6 +810,25 @@ def migrar_classificacao_grupo5_v2(db):
     return {"corrigidos": corrigidos}
 
 
+def migrar_classificacao_grupo5_v3(db):
+    """Correção 2026-08-15 (achado do usuário): Combustível (5.2.06) é despesa FIXA — é dos
+    veículos da loja/montagem, não por projeto; mesmo variando de mês a mês (abastecimento não é
+    idêntico todo mês), não depende do volume de vendas, então não é "variável" no sentido da
+    classificação (associado à venda). Só corrige quem AINDA estiver no default antigo do v1
+    ("variavel"); uma reclassificação manual feita depois nunca é sobrescrita. Roda no boot logo
+    depois de migrar_classificacao_grupo5_v2."""
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    corrigidos = 0
+    for ot, oid in owners:
+        combustivel = (db.query(Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo="5.2.06")
+                         .first())
+        if combustivel is not None and combustivel.natureza_custo == "variavel":
+            combustivel.natureza_custo = "fixo"
+            corrigidos += 1
+    db.commit()
+    return {"corrigidos": corrigidos}
+
+
 # ── Livro de Lançamentos (sub-projeto #2) ────────────────────────────────────
 def _lanc_serial(l):
     return {"id": l.id, "data": l.data.isoformat() if l.data else None, "valor": l.valor,
@@ -2402,16 +2421,26 @@ def _contas_com_lancamento_debito(db, ot, oid, conta_ids, ini, fim):
     return {row[0] for row in q.distinct().all()}
 
 
+CONTAS_EXCLUIDAS_SUGESTAO_DESPESA = {"5.3.04"}   # Pontos Programa de Relacionamento (Fidelidade)
+# ^ contas cujo lançamento é INTEIRAMENTE automático, pelo caminho da venda (parâmetros da
+# negociação) — nunca sugerir repetição manual aqui, senão duplica o que o motor já lançou
+# sozinho (achado do usuário 2026-08-15). Continuam lançáveis manualmente no formulário genérico
+# "Lançar outra despesa" da mesma tela — cobre a exceção de o toggle da negociação ter ficado
+# esquecido (aí não há lançamento automático nenhum pra duplicar).
+
+
 def sugestoes_despesas_mes_anterior(db, owner_tipo, owner_id, ref=None):
     """Sugestões pro painel guiado de Lançamentos: toda conta analítica ATIVA do grupo 5 com
-    movimento líquido POSITIVO (D−C > 0) no mês anterior a `ref`. contrapartida_sugerida = outra
-    ponta do lançamento mais recente dessa conta na mesma janela. ja_lancado_mes_atual = já tem
-    lançamento como débito no mês em curso (a UI não insiste na sugestão)."""
+    movimento líquido POSITIVO (D−C > 0) no mês anterior a `ref`, EXCETO
+    `CONTAS_EXCLUIDAS_SUGESTAO_DESPESA`. contrapartida_sugerida = outra ponta do lançamento mais
+    recente dessa conta na mesma janela. ja_lancado_mes_atual = já tem lançamento como débito no
+    mês em curso (a UI não insiste na sugestão)."""
     seed_plano(db, owner_tipo, owner_id)
     ini_ant, fim_ant = _intervalo_mes_anterior(ref)
     ini_atu, fim_atu = _intervalo_mes_atual(ref)
     contas_g5 = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
-                 grupo=5, tipo="analitica", ativa=1).all())
+                 grupo=5, tipo="analitica", ativa=1)
+                 .filter(~Conta.codigo.in_(CONTAS_EXCLUIDAS_SUGESTAO_DESPESA)).all())
     ids = [c.id for c in contas_g5]
     debs = _somas_por_conta(db, owner_tipo, owner_id, ids, "debito", ini_ant, fim_ant)
     creds = _somas_por_conta(db, owner_tipo, owner_id, ids, "credito", ini_ant, fim_ant)

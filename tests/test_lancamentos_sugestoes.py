@@ -133,6 +133,20 @@ def test_ja_lancado_mes_atual_so_conta_debito(app_db):
     db.close()
 
 
+def test_conta_excluida_da_sugestao_pontos_fidelidade_nao_aparece(app_db):
+    # achado do usuário 2026-08-15: 5.3.04 (Pontos Programa de Relacionamento/Fidelidade) é
+    # lançada automaticamente pelo caminho da venda — sugerir repetição manual arriscaria
+    # duplicar. Continua fora da lista mesmo tendo tido movimento líquido positivo mês passado.
+    db = app_db.get_session(); ot, oid = "loja", 1019
+    mc.seed_plano(db, ot, oid)
+    contas = _contas(db, ot, oid)
+    mc.lancar(db, ot, oid, contas["5.3.04"].id, contas["1.1.01"].id, 700.0,
+              data=dt.datetime(2026, 7, 10), historico="fidelidade automática")
+    out = mc.sugestoes_despesas_mes_anterior(db, ot, oid, ref=dt.datetime(2026, 8, 5))
+    assert not any(s["codigo"] == "5.3.04" for s in out["sugestoes"])
+    db.close()
+
+
 def test_conta_inativa_nao_aparece(app_db):
     db = app_db.get_session(); ot, oid = "loja", 1017
     mc.seed_plano(db, ot, oid)

@@ -5,14 +5,18 @@ CFO revelada pelo PE (`mod_pe_comparacao.montar_comparacao_pe`) e agrega por fas
 mecanismos financeiros: Complemento de Projeto (Cobrar) e Crédito a Clientes (Estornar) — que
 NUNCA se compensam automaticamente entre si (decisão do usuário).
 
-Duas grandezas de "diferença de valor de contrato" coexistem de propósito, cada uma pro seu uso:
-- `diferenca_valor_contrato` (CFO × Markup, esta função): estimativa rápida pra DECISÃO na AF2
-  ("vale a pena repassar isso ao cliente?") e o default editável do Estorno (que não tem outra
-  grandeza melhor à disposição, por ser mecanismo manual/simples).
-- O valor que de fato entra no Complemento de Projeto (Cobrar) vem de `valor_complemento_por_fator`
-  (fator proporcional VAVA/VBVA do ambiente contratado, mesma fórmula de `main._complemento_diferencas`
-  generalizada pra fase — mais preciso que o CFO×Markup, pois carrega o desconto e os custos
-  adicionais exatamente como negociados naquele ambiente).
+`diferenca_valor_contrato_estimada` decide qual grandeza usar pra decisão/exibição na AF2 e pro
+default do valor aprovado — SEMPRE a mesma que vai virar o Complemento/Estorno de fato, pra não
+divergir (achado do usuário 2026-08-15: a tela mostrava CFO×markup médio do orçamento enquanto o
+Complemento gerado cobrava pelo fator VAVA/VBVA do ambiente, e os dois números divergiam sem o
+gerente perceber ao aprovar a decisão):
+- Caminho principal: `valor_complemento_por_fator` (fator proporcional VAVA/VBVA do ambiente
+  contratado sobre o valor de venda do PE) — carrega o desconto e os custos adicionais exatamente
+  como negociados naquele ambiente; MESMA fórmula usada em `main._complemento_diferencas_fase`
+  pra gerar o Complemento de Projeto de fato.
+- Fallback: `diferenca_valor_contrato` (CFO × Markup médio do orçamento) — só quando não há
+  `valor_venda_pe` (PE carregado sem XML, ou registro anterior à Fatia venda 2026-07-21 sem o
+  campo preenchido).
 
 Spec: docs/superpowers/specs/financeiro/2026-08-14-conciliacao-pe-af2-complemento-credito-design.md
 """
@@ -57,18 +61,22 @@ def diferenca_valor_contrato(diferenca_cfo, markup):
     return round(float(diferenca_cfo or 0) * float(markup or 0), 2)
 
 
-def montar_decisao(pool_ambiente_id, diferenca_cfo, markup, tipo_decisao, valor_aprovado=None):
+def montar_decisao(pool_ambiente_id, diferenca_cfo, diferenca_valor_contrato, tipo_decisao,
+                   valor_aprovado=None):
     """Monta uma linha de decisão pronta pra persistir em `ConciliacaoPeFase`.
 
+    `diferenca_valor_contrato`: já calculada pelo chamador (de preferência via
+    `diferenca_valor_contrato_estimada`) — a MESMA grandeza mostrada na tela, pra não divergir do
+    que efetivamente vira Complemento/Estorno depois.
     `valor_aprovado`: valor editável pelo gerente (tipicamente usado no Estorno); default é o
-    módulo da diferença de valor de contrato calculada. Levanta ValueError se a decisão não bate
+    módulo da diferença de valor de contrato recebida. Levanta ValueError se a decisão não bate
     com o sinal da diferença (ver `decisao_valida`).
     """
     if not decisao_valida(diferenca_cfo, tipo_decisao):
         raise ValueError(
             "decisão '%s' incompatível com diferença de CFO %.2f"
             % (tipo_decisao, float(diferenca_cfo or 0)))
-    dvc = diferenca_valor_contrato(diferenca_cfo, markup)
+    dvc = round(float(diferenca_valor_contrato or 0), 2)
     valor = round(float(valor_aprovado), 2) if valor_aprovado is not None else abs(dvc)
     return {
         "pool_ambiente_id": pool_ambiente_id,
@@ -103,6 +111,20 @@ def valor_complemento_por_fator(valor_venda_pe, vava_contratado, vbva_contratado
     d_orc = float(desconto_orc_pct or 0) / 100.0
     d_amb = float(desconto_amb_pct or 0) / 100.0
     return round(vv * (1 - d_orc) * (1 - d_amb) * float(fator_ca or 1.0), 2)
+
+
+def diferenca_valor_contrato_estimada(diferenca_cfo, markup, valor_venda_pe=None,
+                                      vava_contratado=0.0, vbva_contratado=0.0,
+                                      fator_ca=1.0, desconto_orc_pct=0.0, desconto_amb_pct=0.0):
+    """Diferença de Valor de Contrato pra decisão/exibição na AF2 — a MESMA grandeza que acaba
+    virando o Complemento/Estorno de fato, calculada com o `valor_complemento_por_fator` sempre
+    que possível (ver docstring do módulo). Fallback pro CFO×Markup só quando não há
+    `valor_venda_pe` disponível."""
+    if valor_venda_pe is not None:
+        va = valor_complemento_por_fator(valor_venda_pe, vava_contratado, vbva_contratado,
+                                         fator_ca, desconto_orc_pct, desconto_amb_pct)
+        return round(va - float(vava_contratado or 0), 2)
+    return diferenca_valor_contrato(diferenca_cfo, markup)
 
 
 def decisao_ambiente_novo(pool_ambiente_id, valor_venda_xml):

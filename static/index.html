@@ -986,9 +986,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px">
-          <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px">—</span>
-          <span id="proj-ctx-cli" style="font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
+        <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:2px;flex-wrap:wrap">
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Projeto:</span>
+            <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">—</span>
+          </span>
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Cliente:</span>
+            <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
+          </span>
         </div>
         <div class="page-title">Negociacao</div>
         <div class="page-sub" id="neg-orc-nome-hdr">Valores finais apresentados ao cliente</div>
@@ -19939,31 +19945,41 @@ async function peConciliacaoRender(){
     const decididos = fase.ambientes.filter(a => a.decisao).length;
     const temCobrar = fase.ambientes.some(a => a.decisao && a.decisao.tipo_decisao === 'cobrar');
 
-    const rows = fase.ambientes.map(a => {
+    const rows = fase.ambientes.map((a, idx) => {
+      const zebra = idx % 2 ? 'background:var(--surface-2)' : '';
       if(!a.pe_carregado){
-        return `<tr><td>${esc(a.ambiente)}</td><td class="num">${fmt(a.cfo_original)}</td>
-          <td colspan="4" style="color:var(--text-3);font-size:var(--fs-xs)">PE não carregado</td></tr>`;
+        return `<tr style="${zebra}"><td style="vertical-align:top">${esc(a.ambiente)}</td><td class="num" style="vertical-align:top">${fmt(a.cfo_original)}</td>
+          <td colspan="4" style="color:var(--text-3);font-size:var(--fs-xs);vertical-align:top">PE não carregado</td></tr>`;
       }
       const corDif = a.diferenca > 0.005 ? 'var(--err)' : (a.diferenca < -0.005 ? 'var(--ok)' : 'var(--text-3)');
       let acao;
       if(a.decisao && !_peConcEditando.has(a.pool_ambiente_id)){
         const t = _peConcTipos[a.decisao.tipo_decisao] || {label: a.decisao.tipo_decisao, cor:'var(--text)'};
-        acao = `<span style="color:${t.cor};font-weight:700">${esc(t.label)}</span> ${fmt(a.decisao.valor_aprovado)}
-          <button class="btn-ciclo" style="margin-left:6px;padding:2px 8px;font-size:.72rem"
-            onclick="_peConcEditando.add(${a.pool_ambiente_id});peConciliacaoRender()">alterar</button>`;
+        acao = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+          <span style="color:${t.cor};font-weight:700">${esc(t.label)}</span> ${fmt(a.decisao.valor_aprovado)}
+          <button class="btn-ciclo" style="padding:2px 8px;font-size:.72rem"
+            onclick="_peConcEditando.add(${a.pool_ambiente_id});peConciliacaoRender()">alterar</button></div>`;
       } else {
-        acao = _peConcValidasPorSinal(a.diferenca).map(k =>
-          `<button class="btn-ciclo" style="padding:3px 10px;font-size:.76rem;margin-right:4px"
+        const decisaoAnterior = a.decisao
+          ? `<div style="font-size:.72rem;color:var(--text-3);margin-bottom:4px">
+              Decidido antes: <strong>${esc(_peConcTipos[a.decisao.tipo_decisao].label)} ${fmt(a.decisao.valor_aprovado)}</strong>
+              — escolha de novo pra atualizar pro valor recalculado
+              (<button class="link-like" style="font:inherit;color:var(--accent);background:none;border:none;cursor:pointer;padding:0"
+                onclick="_peConcEditando.delete(${a.pool_ambiente_id});peConciliacaoRender()">cancelar</button>)</div>`
+          : '';
+        const botoes = `<div style="display:flex;flex-wrap:wrap;gap:4px">` + _peConcValidasPorSinal(a.diferenca).map(k =>
+          `<button class="btn-ciclo" style="padding:3px 10px;font-size:.76rem"
             onclick='peConciliacaoDecidir(${a.pool_ambiente_id}, "${k}", ${a.diferenca_valor_contrato}, ${JSON.stringify(a.ambiente)})'>
-            ${esc(_peConcTipos[k].label)}</button>`).join('');
+            ${esc(_peConcTipos[k].label)}</button>`).join('') + `</div>`;
+        acao = decisaoAnterior + botoes;
       }
-      return `<tr>
-        <td>${esc(a.ambiente)}</td>
-        <td class="num">${fmt(a.cfo_original)}</td>
-        <td class="num">${fmt(a.cfo_pe)}</td>
-        <td class="num" style="color:${corDif}">${sig(a.diferenca)}</td>
-        <td class="num">${sig(a.diferenca_valor_contrato)}</td>
-        <td>${acao}</td>
+      return `<tr style="${zebra}">
+        <td style="vertical-align:top">${esc(a.ambiente)}</td>
+        <td class="num" style="vertical-align:top">${fmt(a.cfo_original)}</td>
+        <td class="num" style="vertical-align:top">${fmt(a.cfo_pe)}</td>
+        <td class="num" style="color:${corDif};vertical-align:top" title="Diferença de custo de fábrica — referência p/ conferência de contas">${sig(a.diferenca)}</td>
+        <td class="num" style="vertical-align:top" title="Valor que será efetivamente cobrado/estornado do cliente (já com o markup/desconto real do ambiente)">${sig(a.diferenca_valor_contrato)}</td>
+        <td style="vertical-align:top">${acao}</td>
       </tr>`;
     }).join('');
 
@@ -19982,7 +19998,8 @@ async function peConciliacaoRender(){
       </div>
       <div class="table-wrap"><table class="tbl"><thead><tr>
         <th>Ambiente</th><th style="text-align:right">CFO venda</th><th style="text-align:right">CFO PE</th>
-        <th style="text-align:right">Δ custo</th><th style="text-align:right">Δ valor de contrato</th><th>Decisão</th>
+        <th style="text-align:right" title="Diferença de custo de fábrica — só referência, não é o valor cobrado">Δ custo</th>
+        <th style="text-align:right" title="Valor que será efetivamente cobrado/estornado do cliente">Δ a cobrar/estornar</th><th>Decisão</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
       ${btnComplemento}
     </div>`;

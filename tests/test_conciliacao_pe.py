@@ -5,8 +5,8 @@ import pytest
 
 from mod_conciliacao_pe import (
     sinal_diferenca, decisao_valida, diferenca_valor_contrato, montar_decisao,
-    valor_complemento_por_fator, decisao_ambiente_novo, fase_completa,
-    agregar_complemento, agregar_estorno,
+    valor_complemento_por_fator, diferenca_valor_contrato_estimada, decisao_ambiente_novo,
+    fase_completa, agregar_complemento, agregar_estorno,
 )
 
 
@@ -49,7 +49,8 @@ def test_diferenca_valor_contrato_grossup_por_markup():
 
 
 def test_montar_decisao_cobrar_custo_subiu():
-    d = montar_decisao(pool_ambiente_id=7, diferenca_cfo=1000.0, markup=2.0, tipo_decisao="cobrar")
+    d = montar_decisao(pool_ambiente_id=7, diferenca_cfo=1000.0, diferenca_valor_contrato=2000.0,
+                       tipo_decisao="cobrar")
     assert d == {
         "pool_ambiente_id": 7,
         "diferenca_cfo": 1000.0,
@@ -61,7 +62,7 @@ def test_montar_decisao_cobrar_custo_subiu():
 
 def test_montar_decisao_estornar_valor_editado_pelo_gerente():
     # gerente edita o valor do estorno pra um número diferente do calculado
-    d = montar_decisao(pool_ambiente_id=9, diferenca_cfo=-1000.0, markup=2.0,
+    d = montar_decisao(pool_ambiente_id=9, diferenca_cfo=-1000.0, diferenca_valor_contrato=-2000.0,
                        tipo_decisao="estornar", valor_aprovado=1500.0)
     assert d["diferenca_valor_contrato"] == -2000.0   # cálculo original preservado (auditoria)
     assert d["valor_aprovado"] == 1500.0              # valor que de fato vai pro lançamento
@@ -69,9 +70,24 @@ def test_montar_decisao_estornar_valor_editado_pelo_gerente():
 
 def test_montar_decisao_incompativel_levanta_erro():
     with pytest.raises(ValueError):
-        montar_decisao(pool_ambiente_id=1, diferenca_cfo=-500.0, markup=2.0, tipo_decisao="cobrar")
+        montar_decisao(pool_ambiente_id=1, diferenca_cfo=-500.0, diferenca_valor_contrato=-1000.0,
+                       tipo_decisao="cobrar")
     with pytest.raises(ValueError):
-        montar_decisao(pool_ambiente_id=1, diferenca_cfo=500.0, markup=2.0, tipo_decisao="estornar")
+        montar_decisao(pool_ambiente_id=1, diferenca_cfo=500.0, diferenca_valor_contrato=1000.0,
+                       tipo_decisao="estornar")
+
+
+def test_diferenca_valor_contrato_estimada_usa_fator_quando_ha_venda_pe():
+    # mesmo cenário de valor_complemento_por_fator_caminho_principal: fator 8000/10000 = 0.8
+    d = diferenca_valor_contrato_estimada(diferenca_cfo=1000.0, markup=99.0, valor_venda_pe=12000.0,
+                                          vava_contratado=8000.0, vbva_contratado=10000.0)
+    assert d == 1600.0   # 12000*0.8=9600 complemento; 9600 - 8000 contratado = 1600 (não usa markup 99)
+
+
+def test_diferenca_valor_contrato_estimada_cai_pro_fallback_sem_venda_pe():
+    d = diferenca_valor_contrato_estimada(diferenca_cfo=1000.0, markup=2.0, valor_venda_pe=None,
+                                          vava_contratado=8000.0, vbva_contratado=10000.0)
+    assert d == 2000.0   # CFO×markup, mesma conta de diferenca_valor_contrato
 
 
 def test_valor_complemento_por_fator_caminho_principal():

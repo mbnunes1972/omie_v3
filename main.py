@@ -2156,19 +2156,20 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 pool = (db.query(PoolAmbiente).filter_by(projeto_id=nome)
                           .order_by(PoolAmbiente.id.asc()).all())
+                pa_por_id = {pa.id: pa for pa in pool}
                 pa_nome = {pa.id: (pa.nome_exibicao or pa.nome) for pa in pool}
                 itens_cfo = [(pa_nome[pa.id], pa.order_total or 0.0) for pa in pool]
                 pes = db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
                 valores_pe = {pa_nome[a.pool_ambiente_id]: a.valor_atualizado
                               for a in pes if a.valor_atualizado is not None and a.pool_ambiente_id in pa_nome}
+                venda_por_pid = {a.pool_ambiente_id: a.valor_venda for a in pes}
                 linhas = mod_pe_comparacao.montar_comparacao_pe(itens_cfo, valores_pe)
                 _id_por_nome = {v: k for k, v in pa_nome.items()}
                 for _l in linhas:
                     _l["pool_ambiente_id"] = _id_por_nome.get(_l["ambiente"])
 
-                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
-                              .order_by(Contrato.id.desc()).first())
-                orc_ct = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                    _pe_fator_contexto(db, nome)
                 markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
 
                 decisoes = {d.pool_ambiente_id: d for d in
@@ -2189,7 +2190,13 @@ class Handler(BaseHTTPRequestHandler):
                     if fase_id not in fases_por_id:
                         fase_id = None
                     d = decisoes.get(pid)
-                    _l["diferenca_valor_contrato"] = _mconc.diferenca_valor_contrato(_l["diferenca"], markup)
+                    pa_l = pa_por_id.get(pid)
+                    _l["diferenca_valor_contrato"] = _mconc.diferenca_valor_contrato_estimada(
+                        diferenca_cfo=_l["diferenca"], markup=markup, valor_venda_pe=venda_por_pid.get(pid),
+                        vava_contratado=vava_ct.get(pid, 0.0),
+                        vbva_contratado=float(pa_l.budget_total or 0.0) if pa_l else 0.0,
+                        fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+                        desconto_amb_pct=d_amb_pct.get(pid, 0.0))
                     _l["decisao"] = ({"tipo_decisao": d.tipo_decisao, "valor_aprovado": d.valor_aprovado}
                                      if d is not None else None)
                     fases_por_id[fase_id]["ambientes"].append(_l)
@@ -2217,8 +2224,8 @@ class Handler(BaseHTTPRequestHandler):
                             motivo_reprovacao = json.loads(log.contexto).get("motivo")
                         except Exception:
                             motivo_reprovacao = None
-                rev2_aprovada = (contrato is not None and db.query(ProvisaoRegistro).filter_by(
-                    orcamento_id=contrato.orcamento_id, versao="rev2").first() is not None)
+                rev2_aprovada = (orc_ct is not None and db.query(ProvisaoRegistro).filter_by(
+                    orcamento_id=orc_ct.id, versao="rev2").first() is not None)
                 self.send_json({"ok": True, "fases": fases_out, "markup": markup,
                                 "etapa_status": (etapa11d.status if etapa11d else "pendente"),
                                 "motivo_reprovacao": motivo_reprovacao,
@@ -6906,14 +6913,19 @@ class Handler(BaseHTTPRequestHandler):
                 if arq is None or arq.valor_atualizado is None:
                     self.send_json({"ok": False, "erro": "PE não carregado para este ambiente"}, code=400); return
                 diferenca_cfo = round(float(arq.valor_atualizado) - float(pa.order_total or 0.0), 2)
-                contrato = (db.query(Contrato).filter_by(projeto_nome=nome)
-                              .order_by(Contrato.id.desc()).first())
-                orc_ct = db.get(Orcamento, contrato.orcamento_id) if contrato else None
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                    _pe_fator_contexto(db, nome)
                 markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+                dvc = _mconc.diferenca_valor_contrato_estimada(
+                    diferenca_cfo=diferenca_cfo, markup=markup, valor_venda_pe=arq.valor_venda,
+                    vava_contratado=vava_ct.get(pool_ambiente_id, 0.0),
+                    vbva_contratado=float(pa.budget_total or 0.0),
+                    fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+                    desconto_amb_pct=d_amb_pct.get(pool_ambiente_id, 0.0))
                 tipo_decisao = (req.get("tipo_decisao") or "").strip()
                 valor_aprovado = req.get("valor_aprovado")
                 try:
-                    montada = _mconc.montar_decisao(pool_ambiente_id, diferenca_cfo, markup,
+                    montada = _mconc.montar_decisao(pool_ambiente_id, diferenca_cfo, dvc,
                                                     tipo_decisao, valor_aprovado=valor_aprovado)
                 except ValueError as _e:
                     self.send_json({"ok": False, "erro": str(_e)}, code=400); return
@@ -15082,6 +15094,31 @@ def _complemento_diferencas(db, nome_safe):
     return linhas, resumo
 
 
+def _pe_fator_contexto(db, nome_safe):
+    """Contexto do fator VAVA/VBVA por ambiente contratado — compartilhado entre a Conciliação de
+    PE/AF2 (decisão) e o Complemento de Projeto de fato (`_complemento_diferencas_fase`), pra
+    garantir que os dois momentos usem exatamente a mesma conta (achado do usuário 2026-08-15: o
+    valor mostrado na decisão divergia do valor cobrado no Complemento).
+    Retorna `(orc_ct, vava_por_ambiente, fator_ca, desconto_orc_pct, desconto_amb_pct_por_ambiente,
+    vavo_ct, cad_ct)` — os dois `_pct` já em PERCENTUAL (0-100), formato que
+    `valor_complemento_por_fator` espera; os dois últimos crus, pro resumo do Complemento.
+    `(None, {}, 1.0, 0.0, {}, 0.0, 0.0)` se o projeto não tem contrato."""
+    ct = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+            .order_by(Contrato.id.desc()).first())
+    orc_ct = db.get(Orcamento, ct.orcamento_id) if ct else None
+    if orc_ct is None:
+        return None, {}, 1.0, 0.0, {}, 0.0, 0.0
+    d_ct = _negociacao_breakdown(orc_ct, db)
+    vava_ct = {a.get("id"): float(a.get("VAVA", 0.0)) for a in d_ct.get("ambientes", [])}
+    vavo_ct = float(d_ct.get("VAVO") or 0.0)
+    cad_ct = float(d_ct.get("Cust_Ad") or 0.0)
+    fator_ca = (vavo_ct / (vavo_ct - cad_ct)) if (vavo_ct - cad_ct) > 0 else 1.0
+    d_orc_pct = float(orc_ct.desconto_pct or 0.0)
+    d_amb_pct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0)
+                for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
+    return orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct
+
+
 def _complemento_diferencas_fase(db, nome_safe, parcela_id):
     """Complemento de Projeto POR FASE (spec 2026-08-14) — generaliza `_complemento_diferencas`:
     ambiente entra pela decisão 'cobrar' registrada em `ConciliacaoPeFase` (AF2/11d), não mais
@@ -15091,19 +15128,9 @@ def _complemento_diferencas_fase(db, nome_safe, parcela_id):
     `mod_conciliacao_pe.valor_complemento_por_fator`. `parcela_id=None` = projeto não
     desmembrado (fase única implícita). Retorna (linhas, resumo) ou (None, erro_str)."""
     import mod_conciliacao_pe as _mconc
-    ct = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
-            .order_by(Contrato.id.desc()).first())
-    orc_ct = db.get(Orcamento, ct.orcamento_id) if ct else None
+    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct = _pe_fator_contexto(db, nome_safe)
     if orc_ct is None:
         return None, "Projeto sem contrato para comparar."
-    d_ct = _negociacao_breakdown(orc_ct, db)
-    vava_ct = {a.get("id"): float(a.get("VAVA", 0.0)) for a in d_ct.get("ambientes", [])}
-    vavo_ct = float(d_ct.get("VAVO") or 0.0)
-    cad_ct = float(d_ct.get("Cust_Ad") or 0.0)
-    fator_ca = (vavo_ct / (vavo_ct - cad_ct)) if (vavo_ct - cad_ct) > 0 else 1.0
-    d_orc_ct = float(orc_ct.desconto_pct or 0.0) / 100.0
-    d_amb_ct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0) / 100.0
-                for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
     decisoes = (db.query(ConciliacaoPeFase)
                   .filter_by(projeto_nome=nome_safe, parcela_id=parcela_id, tipo_decisao="cobrar")
                   .all())
@@ -15121,8 +15148,8 @@ def _complemento_diferencas_fase(db, nome_safe, parcela_id):
         vbva_c = float(pa.budget_total or 0.0)
         va_compl = _mconc.valor_complemento_por_fator(
             valor_venda_pe=arq.valor_venda, vava_contratado=vc, vbva_contratado=vbva_c,
-            fator_ca=fator_ca, desconto_orc_pct=d_orc_ct * 100.0,
-            desconto_amb_pct=d_amb_ct.get(pa.id, 0.0) * 100.0)
+            fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+            desconto_amb_pct=d_amb_pct.get(pa.id, 0.0))
         linhas.append({"pool_ambiente_id": pa.id, "ambiente": nome_amb,
                        "vava_contratado": vc, "vava_complemento": va_compl,
                        "diferenca": round(va_compl - vc, 2),
@@ -15130,7 +15157,7 @@ def _complemento_diferencas_fase(db, nome_safe, parcela_id):
     resumo = {
         "pct_custos_adicionais": round((cad_ct / vavo_ct * 100.0) if vavo_ct else 0.0, 4),
         "fator_ca": round(fator_ca, 6),
-        "desc_global_pct": float(orc_ct.desconto_pct or 0.0),
+        "desc_global_pct": d_orc_pct,
         "total_contratado": round(sum(l["vava_contratado"] for l in linhas), 2),
         "total_complemento": round(sum(l["vava_complemento"] for l in linhas), 2),
         "total_diferenca": round(sum(l["diferenca"] for l in linhas), 2),

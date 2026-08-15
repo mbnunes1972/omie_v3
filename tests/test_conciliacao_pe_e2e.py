@@ -130,6 +130,38 @@ def test_get_conciliacao_mostra_diferenca_e_sem_decisao(http_client_factory, see
     assert body["rev2_aprovada"] is False
 
 
+def test_get_conciliacao_usa_fator_venda_quando_pe_tem_xml_com_venda(http_client_factory, seed, app_db):
+    # achado do usuário 2026-08-15: com venda_pe carregado, a tela deve mostrar o MESMO valor que
+    # o Complemento vai cobrar de fato (fator VAVA/VBVA), não mais a estimativa CFO×markup médio.
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+
+    st, body = c.get(f"/api/projetos/{nome}/pe/conciliacao")
+    assert st == 200 and body["ok"], body
+    amb = body["fases"][0]["ambientes"][0]
+    assert amb["diferenca"] == 3000.0          # Δ custo (CFO) — não muda
+    assert amb["diferenca_valor_contrato"] == 4000.0   # fator: 84000*(80000/80000) - 80000 = 4000
+    # NÃO é mais a estimativa antiga (6000.0 = 3000 * markup 2.0)
+
+
+def test_decisao_cobrar_bate_com_complemento_gerado_depois(http_client_factory, seed, app_db):
+    # fecha o loop do achado do usuário: o valor que o gerente aprova na AF2 deve ser exatamente
+    # o valor que o Complemento de Projeto cobra quando gerado — nunca mais dois números diferentes.
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0, budget=80000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0, venda_pe=84000.0)
+    c = _login(http_client_factory)
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
+                      {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
+    assert st == 200 and body["ok"], body
+    valor_decidido = body["decisao"]["valor_aprovado"]
+
+    st, body = c.post(f"/api/projetos/{nome}/pe/complemento/fase/none", {})
+    assert st == 200 and body["ok"], body
+    assert body["resumo"]["total_diferenca"] == valor_decidido == 4000.0
+
+
 def test_get_conciliacao_expoe_status_reprovado_com_motivo(http_client_factory, seed, app_db):
     nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
     c = _login(http_client_factory)

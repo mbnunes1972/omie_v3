@@ -23,6 +23,10 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     # o mesmo projeto/orçamento de `seed` é reaproveitado em todas as funções aqui).
     db.query(app_db.ConciliacaoPeFase).filter_by(projeto_nome=nome).delete()
     db.query(app_db.ArquivoPE).filter_by(projeto_nome=nome).delete()
+    conv = (db.query(app_db.Conversa).filter_by(projeto_nome=nome).first()
+            if hasattr(app_db, "Conversa") else None)
+    if conv is not None:
+        db.query(app_db.ConversaMensagem).filter_by(conversa_id=conv.id).delete()
     velhos = [pa2.id for pa2 in db.query(app_db.PoolAmbiente).filter_by(projeto_id=nome).all()]
     if velhos:
         db.query(app_db.OrcamentoAmbiente).filter(
@@ -170,7 +174,7 @@ def test_post_conciliacao_pe_nao_carregado_400(http_client_factory, seed, app_db
     assert st == 400 and not body["ok"]
 
 
-# ── POST /ciclo/11d/concluir ────────────────────────────────────────────────────────────────
+# ── POST /ciclo/11d/aprovar ─────────────────────────────────────────────────────────────────
 
 def test_11d_concluir_bloqueia_sem_rev2(http_client_factory, seed, app_db):
     nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
@@ -179,7 +183,7 @@ def test_11d_concluir_bloqueia_sem_rev2(http_client_factory, seed, app_db):
     c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
           {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
 
-    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/concluir",
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/aprovar",
                       {"login": "dir_l1", "senha": "senha123"})
     assert st == 400 and "Revisão de Provisões" in body["erro"]
 
@@ -192,7 +196,7 @@ def test_11d_concluir_bloqueia_decisao_faltante(http_client_factory, seed, app_d
     _aprova_af1_af2(c, oid)
     # decisão do ambiente NUNCA foi registrada
 
-    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/concluir",
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/aprovar",
                       {"login": "dir_l1", "senha": "senha123"})
     assert st == 400 and pid in body["faltam"]
 
@@ -206,7 +210,7 @@ def test_11d_concluir_sucesso_marca_ciclo_etapa(http_client_factory, seed, app_d
     c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
           {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
 
-    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/concluir",
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/aprovar",
                       {"login": "dir_l1", "senha": "senha123"})
     assert st == 200 and body["ok"], body
 
@@ -214,6 +218,63 @@ def test_11d_concluir_sucesso_marca_ciclo_etapa(http_client_factory, seed, app_d
     et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
     assert et is not None and et.status == "concluido"
     log = db.query(app_db.LogAcaoGerencial).filter_by(
-        projeto_nome=nome, acao="pe_11d_concluir").first()
+        projeto_nome=nome, acao="pe_11d_aprovar").first()
     assert log is not None
+    db.close()
+
+
+def test_11d_aprovar_notifica_no_chat_do_projeto(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0)
+    _registra_venda_baseline(app_db, oid)
+    c = _login(http_client_factory)
+    _aprova_af1_af2(c, oid)
+    c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
+          {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
+    c.post(f"/api/projetos/{nome}/ciclo/11d/aprovar", {"login": "dir_l1", "senha": "senha123"})
+
+    db = app_db.get_session()
+    import mod_chat
+    conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], nome)
+    msgs = db.query(app_db.ConversaMensagem).filter_by(
+        conversa_id=conv.id, evento="pe_af2_aprovada").all()
+    assert len(msgs) == 1 and "aprovada" in msgs[0].corpo
+    db.close()
+
+
+# ── POST /ciclo/11d/reprovar ────────────────────────────────────────────────────────────────
+
+def test_11d_reprovar_exige_motivo(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    c = _login(http_client_factory)
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/reprovar",
+                      {"login": "dir_l1", "senha": "senha123"})
+    assert st == 400 and not body["ok"]
+
+
+def test_11d_reprovar_marca_status_e_notifica(http_client_factory, seed, app_db):
+    nome, pid, oid = _setup(app_db, seed, cfo_original=30000.0)
+    _carrega_pe(app_db, nome, pid, cfo_pe=33000.0)
+    c = _login(http_client_factory)
+    c.post(f"/api/projetos/{nome}/pe/conciliacao/{pid}",
+          {"login": "dir_l1", "senha": "senha123", "tipo_decisao": "cobrar"})
+
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11d/reprovar",
+                      {"login": "dir_l1", "senha": "senha123",
+                       "motivo": "Valor do Complemento parece alto, revisar o XML do ambiente"})
+    assert st == 200 and body["ok"], body
+
+    db = app_db.get_session()
+    et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="11d").first()
+    assert et is not None and et.status == "reprovado"
+    assert et.status not in __import__("mod_ciclo").STATUS_CONCLUSIVOS   # não satisfaz gate nenhum
+    log = db.query(app_db.LogAcaoGerencial).filter_by(
+        projeto_nome=nome, acao="pe_11d_reprovar").first()
+    assert log is not None and "Valor do Complemento" in log.contexto
+
+    import mod_chat
+    conv = mod_chat.get_or_create_conversa_projeto(db, seed["loja1_id"], nome)
+    msgs = db.query(app_db.ConversaMensagem).filter_by(
+        conversa_id=conv.id, evento="pe_af2_reprovada").all()
+    assert len(msgs) == 1 and "revisar o XML" in msgs[0].corpo
     db.close()

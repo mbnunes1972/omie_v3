@@ -490,6 +490,20 @@ def _auditoria_pe_jsonl(nome_safe, registro):
         logging.getLogger(__name__).warning("auditoria_pe_jsonl falhou (%s): %s", nome_safe, _e)
 
 
+def _chat_registrar_af2(db, nome_safe, loja_id, corpo, evento, usuario_id):
+    """Gancho do host → chat (spec 2026-08-14, mesmo padrão de _chat_registrar_documento):
+    aprovação/reprovação da AF2 (11d) vira evento inline na conversa do projeto. BEST-EFFORT:
+    nunca derruba o endpoint (efeito principal já foi feito). Chamar ANTES do commit do
+    chamador (mesma transação)."""
+    try:
+        db.flush()
+        import mod_chat
+        conv = mod_chat.get_or_create_conversa_projeto(db, loja_id, nome_safe)
+        mod_chat.enviar_mensagem(db, conv, usuario_id, corpo, evento=evento)
+    except Exception as _e:
+        logging.getLogger(__name__).warning("chat_registrar_af2 falhou (%s): %s", nome_safe, _e)
+
+
 def _chat_registrar_documento(db, nome_safe, loja_id, doc, usuario_id):
     """Gancho do host → chat (spec 2026-07-31, decisão 2): documento do ciclo vira evento inline
     na conversa do projeto. BEST-EFFORT: nunca derruba o upload (efeito principal do endpoint).
@@ -6917,11 +6931,13 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
-        m_pe11d = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/concluir$', path)
+        m_pe11d = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/aprovar$', path)
         if m_pe11d:
-            # Conclusão da AF2 (11d) — spec 2026-08-14: checagem DERIVADA sobre ConciliacaoPeFase
+            # Aprovação da AF2 (11d) — spec 2026-08-14: checagem DERIVADA sobre ConciliacaoPeFase
             # (toda fase com decisão completa), além do que já valia (Revisão de Provisões — Rev2
             # aprovada). Isolada de CicloEtapa/ProvisaoRegistro da AF1 — só ADICIONA uma condição.
+            # Achado ao investigar (2026-08-14): a conclusão da 11d NUNCA teve mecanismo real (o
+            # E2E existente fingia esse estado escrevendo direto no banco) — este é o primeiro.
             nome = unquote(m_pe11d.group(1))
             import mod_conciliacao_pe as _mconc
             usuario = get_usuario_sessao(self)
@@ -6962,7 +6978,49 @@ class Handler(BaseHTTPRequestHandler):
                         "faltam": faltam}, code=400); return
                 _set_etapa_status(db, nome, "11d", "concluido", aprovador.id)
                 db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
-                        acao="pe_11d_concluir", projeto_nome=nome, etapa_alvo="11d"))
+                        acao="pe_11d_aprovar", projeto_nome=nome, etapa_alvo="11d"))
+                _chat_registrar_af2(db, nome, loja_id,
+                    "AF2 (Conciliação de PE) aprovada por %s." % (aprovador.nome or aprovador.login),
+                    "pe_af2_aprovada", aprovador.id)
+                db.commit()
+                self.send_json({"ok": True})
+            finally:
+                db.close()
+            return
+
+        m_pe11dr = re.match(r'^/api/projetos/([^/]+)/ciclo/11d/reprovar$', path)
+        if m_pe11dr:
+            # Reprovação da AF2 (spec 2026-08-14, pedido do usuário): ação EXPLÍCITA — devolve pra
+            # revisão com motivo. Não exige fase_completa (o revisor pode reprovar mesmo faltando
+            # decisão, ou justamente por discordar de alguma já tomada). Status "reprovado" NÃO
+            # está em STATUS_CONCLUSIVOS — não satisfaz nenhum gate por engano.
+            nome = unquote(m_pe11dr.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            req = json.loads(body) if body else {}
+            motivo = (req.get("motivo") or "").strip()
+            if not motivo:
+                self.send_json({"ok": False, "erro": "Informe o motivo da reprovação."}, code=400); return
+            db = get_session()
+            try:
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para reprovar"}, code=403); return
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                _set_etapa_status(db, nome, "11d", "reprovado", aprovador.id)
+                db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
+                        acao="pe_11d_reprovar", projeto_nome=nome, etapa_alvo="11d",
+                        contexto=json.dumps({"motivo": motivo})))
+                _chat_registrar_af2(db, nome, loja_id,
+                    "AF2 (Conciliação de PE) reprovada por %s: %s"
+                    % (aprovador.nome or aprovador.login, motivo),
+                    "pe_af2_reprovada", aprovador.id)
                 db.commit()
                 self.send_json({"ok": True})
             finally:

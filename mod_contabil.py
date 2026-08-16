@@ -2267,6 +2267,41 @@ def _detalhe_grupo(db, ot, oid, prefixos, sentido, ini, fim):
     return linhas
 
 
+def meses_do_periodo(ini, fim):
+    """[(mes_ini, mes_fim), ...] pra cada mês civil entre `ini` e `fim` (inclusive), um por mês
+    inteiro (dia 1 00:00 até o último dia 23:59:59) — não corta pelo dia exato de `ini`/`fim`,
+    só usa o ano/mês deles como os dois extremos. Alimenta a visão em colunas da DRE (achado do
+    usuário 2026-08-15: a tela somava a história inteira sem mostrar o período)."""
+    from datetime import datetime as _dt, time as _time
+    import calendar
+    out = []
+    ano, mes = ini.year, ini.month
+    ano_fim, mes_fim = fim.year, fim.month
+    while (ano, mes) <= (ano_fim, mes_fim):
+        ultimo_dia = calendar.monthrange(ano, mes)[1]
+        m_ini = _dt(ano, mes, 1)
+        m_fim = _dt.combine(_dt(ano, mes, ultimo_dia).date(), _time.max)
+        out.append((m_ini, m_fim))
+        mes += 1
+        if mes > 12:
+            mes = 1
+            ano += 1
+    return out
+
+
+def dre_serie_mensal(db, owner_tipo, owner_id, ini, fim, modo="real"):
+    """Série mês a mês de `dre()`/`dre_simulada()` dentro de [ini, fim] — pra visão em colunas
+    (achado do usuário 2026-08-15). Uma função só, sem round-trip por mês no frontend; reusa
+    `dre()`/`dre_simulada()` tal como já testados, só orquestra por mês + o total do período
+    inteiro. `owner_tipo == "consolidado"` fica de fora — resolvido pelo chamador HTTP (não tem
+    `dre_consolidada` com `modo`, mesma limitação que o endpoint `/dre` já tem hoje)."""
+    calc = ((lambda i, f: dre(db, owner_tipo, owner_id, i, f)) if modo == "real"
+            else (lambda i, f: dre_simulada(db, owner_tipo, owner_id, modo, i, f)))
+    meses = [calc(mi, mf) for mi, mf in meses_do_periodo(ini, fim)]
+    total = calc(ini, fim)
+    return {"meses": meses, "total": total}
+
+
 def dre(db, owner_tipo, owner_id, ini=None, fim=None):
     """DRE societário (competência) a partir do livro (.docx §3). Deduções/despesas já com o sinal certo.
     Inclui `detalhe` (composição nível 3 por linha) p/ o toggle Analítico×Resumido (v5 §3.1)."""
@@ -2481,8 +2516,13 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
       - 'antecipacao_contrato': receita E despesa simuladas na data da VENDA/contrato assinado —
         receita = Val_Cont (lançamento `registro_venda_contrato`); despesa = constituído de cada
         rubrica, na mesma data.
-    Mesmo formato de `dre()` (compatível com o frontend); sem `detalhe` (a simulação não tem
-    composição linha-a-linha real pra detalhar)."""
+    Mesmo formato de `dre()`, INCLUINDO `detalhe` (achado do usuário 2026-08-15 — antes não tinha,
+    e por isso o modo Analítico não abria nada nestas 2 visões): pras linhas que ela reusa sem
+    alteração de `real[...]` (deduções/despesas administrativas/constituição de provisões/
+    resultado financeiro/outras receitas, + receita bruta no modo competencia_estimada), o detalhe
+    é o MESMO de `real["detalhe"]` — não mudou o valor, não muda a composição. Pras que ela
+    recalcula (cmv_csp/despesas_comerciais, sempre; receita_bruta no modo antecipacao_contrato),
+    monta um detalhe próprio a partir do que já apura internamente (ver fim da função)."""
     if modo not in ("competencia_estimada", "antecipacao_contrato"):
         raise ValueError("modo inválido: %s" % modo)
     real = dre(db, owner_tipo, owner_id, ini, fim)
@@ -2494,8 +2534,10 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
                    if c.codigo.startswith("4.1.") or c.codigo.startswith("4.2.")]
     contas_prov = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
                    .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
+    nomes_conta = {c.codigo: c.nome for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
     receita_bruta = 0.0 if modo == "antecipacao_contrato" else real["receita_bruta"]
     por_conta_despesa = {}
+    por_projeto_receita = []   # só populado no modo antecipacao_contrato — detalhe da receita_bruta
     for proj in projetos_com_lancamento(db, owner_tipo, owner_id):
         if modo == "antecipacao_contrato":
             marco = (db.query(Lancamento).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,
@@ -2516,6 +2558,8 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
             continue
         if modo == "antecipacao_contrato":
             receita_bruta = round(receita_bruta + marco.valor, 2)
+            por_projeto_receita.append({"codigo": proj, "nome": proj.replace("_", " "),
+                                        "valor": round(marco.valor, 2)})
         for c in contas_prov:
             desp_cod = _PROV_DESPESA_POR_ATIVO.get(_ativo_diferido_de(c.codigo))
             if not desp_cod:
@@ -2540,6 +2584,16 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
     outras_receitas = real["outras_receitas"]
     resultado_antes_impostos = round(ebit + resultado_financeiro + outras_receitas, 2)
     lucro_liquido = round(resultado_antes_impostos - real["impostos"], 2)
+    detalhe_cmv_csp = sorted(
+        ({"codigo": cod, "nome": nomes_conta.get(cod, cod), "valor": v}
+         for cod, v in por_conta_despesa.items() if cod.startswith(("5.1", "5.2"))),
+        key=lambda l: l["codigo"])
+    detalhe_desp_com = sorted(
+        ({"codigo": cod, "nome": nomes_conta.get(cod, cod), "valor": v}
+         for cod, v in por_conta_despesa.items() if cod.startswith("5.3")),
+        key=lambda l: l["codigo"])
+    detalhe_receita = (real["detalhe"]["receita_bruta"] if modo == "competencia_estimada"
+                        else sorted(por_projeto_receita, key=lambda l: l["codigo"]))
     return {
         "modo": modo,
         "periodo": real["periodo"],
@@ -2555,6 +2609,16 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
                 "usa o valor CONSTITUÍDO na venda, não o efetivado real. Deduções/despesas "
                 "administrativas/financeiras/outras receitas/impostos vêm do resultado real (fora do "
                 "escopo desta simulação)."),
+        "detalhe": {
+            "receita_bruta": detalhe_receita,
+            "deducoes": real["detalhe"]["deducoes"],
+            "cmv_csp": detalhe_cmv_csp,
+            "despesas_comerciais": detalhe_desp_com,
+            "despesas_administrativas": real["detalhe"]["despesas_administrativas"],
+            "constituicao_provisoes": real["detalhe"]["constituicao_provisoes"],
+            "resultado_financeiro": real["detalhe"]["resultado_financeiro"],
+            "outras_receitas": real["detalhe"]["outras_receitas"],
+        },
     }
 
 

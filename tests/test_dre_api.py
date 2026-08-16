@@ -33,3 +33,48 @@ def test_dre_endpoint_modo_simulado(http_client_factory, seed, app_db):
     assert st == 200 and d["ok"] is True and d["dre"]["modo"] == "antecipacao_contrato"
     st, d = c.get("/api/financeiro/dre?modo=xpto")
     assert st == 400 and d["ok"] is False, d
+
+
+# ── /api/financeiro/dre-serie-mensal (achado do usuário 2026-08-15) ─────────────────────────────
+
+def test_dre_serie_mensal_sem_login_401(http_client_factory):
+    c = http_client_factory()
+    st, d = c.get("/api/financeiro/dre-serie-mensal?ini=2026-08-01&fim=2026-08-31")
+    assert st == 401
+
+
+def test_dre_serie_mensal_sem_periodo_400(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/financeiro/dre-serie-mensal")
+    assert st == 400 and d["ok"] is False
+
+
+def test_dre_serie_mensal_um_mes(http_client_factory, seed, app_db):
+    # projeto próprio (não "Proj_L1", já usado por outro teste no mesmo owner/DB compartilhado do
+    # módulo) — evita somar faturamento de outro teste no mesmo total.
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    c.post("/api/financeiro/eventos", {"tipo": "faturamento", "valor": 800, "projeto_id": "Proj_SerieMensal"})
+    st, d = c.get("/api/financeiro/dre-serie-mensal?ini=2026-01-01&fim=2026-12-31")
+    assert st == 200 and d["ok"] is True
+    dre = d["dre"]
+    assert len(dre["meses"]) == 12
+    assert dre["total"]["receita_bruta"] >= 800.0
+    # consistência interna: soma das colunas mensais bate com o total do período inteiro
+    assert round(sum(m["receita_bruta"] for m in dre["meses"]), 2) == dre["total"]["receita_bruta"]
+
+
+def test_dre_serie_mensal_modo_simulado(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/financeiro/dre-serie-mensal?ini=2026-08-01&fim=2026-08-31&modo=competencia_estimada")
+    assert st == 200 and d["ok"] is True
+    dre = d["dre"]
+    assert len(dre["meses"]) == 1
+    assert dre["meses"][0]["modo"] == "competencia_estimada"
+    assert dre["total"]["modo"] == "competencia_estimada"
+    assert "detalhe" in dre["meses"][0]   # achado do usuário: analítico não abria nas visões simuladas
+
+
+def test_dre_serie_mensal_modo_invalido_400(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/financeiro/dre-serie-mensal?ini=2026-08-01&fim=2026-08-31&modo=xpto")
+    assert st == 400 and d["ok"] is False

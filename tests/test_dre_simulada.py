@@ -104,3 +104,62 @@ def test_projeto_sem_provisao_ou_sem_venda_nao_quebra(app_db):
     assert d1["receita_bruta"] == 0.0 and d1["cmv_csp"] == 0.0
     assert d2["receita_bruta"] == 0.0 and d2["cmv_csp"] == 0.0
     db.close()
+
+
+# ── detalhe (achado do usuário 2026-08-15: sem isso o modo Analítico não abria nada aqui) ──────
+
+def test_detalhe_linhas_passthrough_batem_com_o_real(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 857; mc.seed_plano(db, ot, oid)
+    _venda_e_nfe(db, ot, oid, "P", 50000.0, {"montagem": 500.0},
+                data_venda=datetime(2026, 5, 1), data_nfe=datetime(2026, 8, 10))
+    c_adm = db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo="5.4.01").first()
+    c_caixa = db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo="1.1.01").first()
+    mc.lancar(db, ot, oid, c_adm.id, c_caixa.id, 800.0, data=datetime(2026, 8, 5), historico="aluguel")
+    real = mc.dre(db, ot, oid)
+    for modo in ("competencia_estimada", "antecipacao_contrato"):
+        d = mc.dre_simulada(db, ot, oid, modo)
+        assert "detalhe" in d
+        for chave in ("deducoes", "despesas_administrativas", "constituicao_provisoes",
+                     "resultado_financeiro", "outras_receitas"):
+            assert d["detalhe"][chave] == real["detalhe"][chave]
+    db.close()
+
+
+def test_detalhe_receita_bruta_competencia_estimada_igual_ao_real(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 858; mc.seed_plano(db, ot, oid)
+    _venda_e_nfe(db, ot, oid, "P", 100000.0, {"montagem": 1000.0},
+                data_venda=datetime(2026, 5, 1), data_nfe=datetime(2026, 8, 10))
+    real = mc.dre(db, ot, oid)
+    d = mc.dre_simulada(db, ot, oid, "competencia_estimada")
+    assert d["detalhe"]["receita_bruta"] == real["detalhe"]["receita_bruta"]
+    db.close()
+
+
+def test_detalhe_cmv_csp_e_despesas_comerciais_por_conta(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 859; mc.seed_plano(db, ot, oid)
+    _venda_e_nfe(db, ot, oid, "P", 100000.0, {"montagem": 1000.0, "assistencia": 300.0, "com_medidor": 250.0},
+                data_venda=datetime(2026, 5, 1), data_nfe=datetime(2026, 8, 10))
+    d = mc.dre_simulada(db, ot, oid, "competencia_estimada")
+    cmv = {l["codigo"]: l["valor"] for l in d["detalhe"]["cmv_csp"]}
+    assert cmv.get("5.2.01") == 1000.0 and cmv.get("5.2.13") == 300.0
+    assert sum(l["valor"] for l in d["detalhe"]["cmv_csp"]) == d["cmv_csp"] == 1300.0
+    com = {l["codigo"]: l["valor"] for l in d["detalhe"]["despesas_comerciais"]}
+    assert com.get("5.3.18") == 250.0
+    assert sum(l["valor"] for l in d["detalhe"]["despesas_comerciais"]) == d["despesas_comerciais"] == 250.0
+    # nome vem do plano de contas, não é só o código cru
+    nomes = {l["codigo"]: l["nome"] for l in d["detalhe"]["cmv_csp"]}
+    assert nomes["5.2.01"] != "5.2.01"
+    db.close()
+
+
+def test_detalhe_receita_bruta_antecipacao_lista_projetos(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 860; mc.seed_plano(db, ot, oid)
+    _venda_e_nfe(db, ot, oid, "P1", 60000.0, {"montagem": 400.0},
+                data_venda=datetime(2026, 5, 1), data_nfe=datetime(2026, 8, 10))
+    _venda_e_nfe(db, ot, oid, "P2", 40000.0, {"montagem": 300.0},
+                data_venda=datetime(2026, 5, 2), data_nfe=datetime(2026, 8, 11))
+    d = mc.dre_simulada(db, ot, oid, "antecipacao_contrato")
+    por_proj = {l["codigo"]: l["valor"] for l in d["detalhe"]["receita_bruta"]}
+    assert por_proj.get("P1") == 60000.0 and por_proj.get("P2") == 40000.0
+    assert sum(l["valor"] for l in d["detalhe"]["receita_bruta"]) == d["receita_bruta"] == 100000.0
+    db.close()

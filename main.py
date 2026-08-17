@@ -11025,16 +11025,21 @@ class Handler(BaseHTTPRequestHandler):
                     pa.qa_markup_xml           = _qa_s["qa_markup_xml"]
                     pa.qa_custo_sem_venda      = _qa_s["qa_custo_sem_venda"]
                     # Passo 12: recalcula todos os orçamentos que referenciam este ambiente
+                    # Achado do usuário 2026-08-17: o recálculo "simples" (soma bruta dos ambientes
+                    # em valor_total, sem tocar vavo/vbno/val_cont) deixava a linha com semânticas
+                    # misturadas — corrigido pra passar pelo motor real (_recalcular_orcamento),
+                    # igual aos demais pontos de recálculo do orçamento. Como o VBVA do ambiente
+                    # mudou, uma forma de pagamento/financiamento já escolhida ficaria calculada em
+                    # cima do valor antigo — zera pra forçar reescolha (mesmo padrão já usado em
+                    # "Negociar Complemento").
                     links_afetados = db.query(OrcamentoAmbiente).filter_by(pool_ambiente_id=pid).all()
                     recalculados = []
                     for lk in links_afetados:
                         orc = db.get(Orcamento, lk.orcamento_id)
                         if orc:
-                            todos = db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc.id).all()
-                            orc.valor_total = round(
-                                sum(db.get(PoolAmbiente, t.pool_ambiente_id).budget_total
-                                    for t in todos), 2
-                            )
+                            orc.forma_pagamento = None
+                            orc.negociacao_json = None
+                            _recalcular_orcamento(orc, db)
                             orc.updated_at = datetime.now()
                             recalculados.append(orc.id)
                     db.commit()
@@ -11280,11 +11285,13 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     db.delete(link)
                     db.flush()
-                    # Recálculo simples — Passo 8 implementa versão completa com margens
-                    links = db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).all()
-                    orc.valor_total = round(
-                        sum(db.get(PoolAmbiente, lk.pool_ambiente_id).budget_total for lk in links), 2
-                    )
+                    # Achado do usuário 2026-08-17: recálculo "simples" (soma bruta em valor_total,
+                    # sem tocar vavo/vbno/val_cont) trocado pelo motor real — mesma correção do
+                    # endpoint de sobrescrita de XML, ver comentário lá. Zera forma de pagamento já
+                    # escolhida (calculada em cima do VBVO antigo).
+                    orc.forma_pagamento = None
+                    orc.negociacao_json = None
+                    _recalcular_orcamento(orc, db)
                     orc.updated_at = datetime.now()
                     db.commit()
                     print("[ORC-AMB] removido: orcamento_id=%d pool_ambiente_id=%d valor_total=%.2f"
@@ -11372,11 +11379,13 @@ class Handler(BaseHTTPRequestHandler):
                     ordem = db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).count() + 1
                     db.add(OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pid, ordem=ordem))
                     db.flush()
-                    # Recálculo simples — Passo 8 implementa versão completa com margens
-                    links = db.query(OrcamentoAmbiente).filter_by(orcamento_id=oid).all()
-                    orc.valor_total = round(
-                        sum(db.get(PoolAmbiente, lk.pool_ambiente_id).budget_total for lk in links), 2
-                    )
+                    # Achado do usuário 2026-08-17: recálculo "simples" (soma bruta em valor_total,
+                    # sem tocar vavo/vbno/val_cont) trocado pelo motor real — mesma correção do
+                    # endpoint de sobrescrita de XML, ver comentário lá. Zera forma de pagamento já
+                    # escolhida (calculada em cima do VBVO antigo).
+                    orc.forma_pagamento = None
+                    orc.negociacao_json = None
+                    _recalcular_orcamento(orc, db)
                     orc.updated_at = datetime.now()
                     db.commit()
                     print("[ORC-AMB] adicionado: orcamento_id=%d pool_ambiente_id=%d valor_total=%.2f"

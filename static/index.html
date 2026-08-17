@@ -9234,6 +9234,13 @@ function avistaRecalcular() {
   _negEntradaValor    = parseMoeda(document.getElementById('av-entrada-valor')?.value) || 0;
   const total   = _ayGetValorVenda() || 0;
   negMostrarParcelado(total);   // "Valor Total do Contrato" = Valor à Vista (à vista)
+  // Achado do usuário 2026-08-17 (print): "#neg-resumo-parcelas" só é escrito pelos updates das
+  // modalidades financiadas (aymore/cartão/VP/TF) — à vista nunca chama atualizarResumoParcelas.
+  // Se o texto ficou visível de uma modalidade anterior (ex.: restauração/troca em sequência),
+  // sobra desatualizado (viu "R$ 50.000,00 de entrada + 1x R$..." de outro orçamento/modalidade).
+  // À vista já tem seu próprio resumo (campos Entrada/Liquidação acima) — some aqui de propósito.
+  const elRPav = document.getElementById('neg-resumo-parcelas');
+  if (elRPav) elRPav.style.display = 'none';
   const entrada = parseMoeda(document.getElementById('av-entrada-valor')?.value) || 0;
   const saldo   = Math.max(0, total - entrada);
   const elLiq = document.getElementById('av-liq-valor');
@@ -10680,6 +10687,16 @@ function _aplicarPreviewNaTela(s) {
   setR('neg-total',    s.Val_Cont);                  // Total (à vista sem financiamento na prévia)
   const elTF = id('neg-total-final');                // input editável do total de contrato
   if (elTF && !elTF._editando) elTF.value = fmt(Number(s.Val_Cont) || 0);
+  // Achado do usuário 2026-08-17 (print): pra modalidade À Vista, a caixa "Valor Total do
+  // Contrato" (topo, #neg-parcelado), "Valor da liquidação" (#av-liq-valor) e window._planoPagamento
+  // só atualizavam via avistaRecalcular(), disparada pelo oninput dos campos de entrada/liquidação
+  // — nunca ao só CARREGAR/VER o orçamento. Ficavam com o que a tela restaurou do forma_pagamento
+  // SALVO (total_cliente), desatualizado assim que desconto/ambientes mudam depois de salvo —
+  // chegou a mostrar um "Total do Contrato" MENOR que o "Valor à Vista", impossível pela fórmula
+  // real. Fix: reusa avistaRecalcular() (fonte única da fórmula à vista) sempre que o preview do
+  // motor atualiza — ela lê '#neg-avista' (setado logo acima, já fresco) via _ayGetValorVenda().
+  if (typeof _tipoAtivo !== 'undefined' && _tipoAtivo === 'avista'
+      && typeof avistaRecalcular === 'function') avistaRecalcular();
   // ── células por ambiente: à vista (VAVA) e financiada (VAVA × Val_Cont/VAVO) ──
   const _vavo = Number(s.VAVO) || 0;
   const _finFactor = _vavo > 0 ? ((Number(s.Val_Cont) || _vavo) / _vavo) : 1;

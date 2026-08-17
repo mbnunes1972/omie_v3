@@ -711,6 +711,56 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
         logging.getLogger(__name__).warning("wiring fechamento (provisões+custo fin, ref=%s) falhou: %s", ref_base, e)
 
 
+def _notificar_signatarios_clicksign_cancelamento(db, contrato, loja_id, status_final):
+    """E-mail (fail-soft) pra quem já tinha recebido este contrato pra assinatura eletrônica
+    (ClickSign) quando ele é cancelado ou devolvido pra revisão ANTES de ser assinado — achado
+    do usuário 2026-08-17: sem isso, o signatário fica com um convite de assinatura pendente sem
+    saber que o contrato mudou (testou exatamente esse cenário: enviou pro ClickSign, cancelou/
+    voltou pro orçamento, e nada avisava quem já tinha recebido o convite).
+    `status_final`: "cancelado" ou "em_revisao" — muda só o texto do e-mail.
+    Também tenta cancelar o envelope na própria ClickSign (best-effort — o nome exato do valor de
+    status pra cancelar ainda não foi confirmado contra o sandbox real, mesmo caveat documentado
+    no resto do client — se falhar, só loga, não trava o cancelamento do contrato)."""
+    import mod_chat_externo as _mce
+    try:
+        signatarios = json.loads(contrato.clicksign_signatarios_json or "{}")
+    except Exception:
+        signatarios = {}
+    if signatarios:
+        if status_final == "cancelado":
+            assunto = "[Orizon] Contrato cancelado — assinatura não é mais necessária"
+            corpo = ("O contrato do projeto \"%s\" foi CANCELADO. Se você recebeu um convite da "
+                     "ClickSign para assiná-lo eletronicamente, desconsidere — a assinatura não "
+                     "é mais necessária." % contrato.projeto_nome)
+        else:
+            assunto = "[Orizon] Contrato em revisão — aguarde uma nova versão"
+            corpo = ("O contrato do projeto \"%s\" voltou para revisão antes de ser assinado. Se "
+                     "você recebeu um convite da ClickSign para assiná-lo eletronicamente, "
+                     "desconsidere esse convite — enviaremos uma nova versão para assinatura em "
+                     "breve." % contrato.projeto_nome)
+        for parte, info in signatarios.items():
+            email = (info.get("email") or "").strip()
+            if not email:
+                continue
+            try:
+                _mce.enviar_email_simples(email, assunto, corpo)
+            except Exception as _e:
+                logging.getLogger(__name__).warning(
+                    "e-mail de %s (ClickSign) p/ %s <%s> (contrato=%s) falhou: %s",
+                    status_final, parte, email, contrato.id, _e)
+    if contrato.clicksign_envelope_id:
+        try:
+            import mod_clicksign
+            loja_obj = db.get(Loja, loja_id)
+            cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+            if cfg is not None:
+                mod_clicksign.client_de(cfg).cancelar_envelope(contrato.clicksign_envelope_id)
+        except Exception as _e:
+            logging.getLogger(__name__).warning(
+                "cancelamento do envelope ClickSign (contrato=%s, envelope=%s) falhou: %s",
+                contrato.id, contrato.clicksign_envelope_id, _e)
+
+
 def _notificar_masters_cancelamento(nome_safe, loja_id):
     """E-mail (fail-soft, sessão própria) para todo usuário Master ativo da loja quando um
     contrato é cancelado DEPOIS da 2ª assinatura (provisões já existiam e foram estornadas).
@@ -10677,20 +10727,37 @@ class Handler(BaseHTTPRequestHandler):
                     if pm is not None:
                         pm.cancelado_definitivo = 1
                         db.commit()
-                elif contrato_atual is not None and partes_assinadas:
-                    # 1 assinatura — invalida pra reabrir _contrato_assinado (o projeto volta a
-                    # ficar editável; a assinatura parcial não fazia mais sentido de qualquer jeito).
-                    db.query(ContratoAssinatura).filter_by(contrato_id=contrato_atual.id).delete()
-                    contrato_atual.status = "para_assinatura"
-                    # Defensivo (2026-08-12): etapa 7 (Contrato) do ciclo não deveria estar
-                    # "concluido" aqui (só fecha com as 2 assinaturas, e viemos do ramo < 2) —
-                    # mas se algum caminho futuro deixar isso acontecer, reabre pra não deixar a
-                    # UI/AF1 acessível com um contrato na prática desfeito.
-                    etapa7_cancel = db.query(CicloEtapa).filter_by(
-                        projeto_nome=nome_safe, etapa_codigo="7").first()
-                    if etapa7_cancel is not None and etapa7_cancel.status == "concluido":
-                        etapa7_cancel.status = "em_andamento"
-                        etapa7_cancel.concluido_em = None
+                    if contrato_atual is not None and contrato_atual.assinatura_canal == "clicksign":
+                        _notificar_signatarios_clicksign_cancelamento(
+                            db, contrato_atual, loja_id, status_final)
+                elif contrato_atual is not None:
+                    if partes_assinadas:
+                        # 1 assinatura — invalida pra reabrir _contrato_assinado (o projeto volta
+                        # a ficar editável; a assinatura parcial não fazia mais sentido de qualquer jeito).
+                        db.query(ContratoAssinatura).filter_by(contrato_id=contrato_atual.id).delete()
+                        contrato_atual.status = "para_assinatura"
+                        # Defensivo (2026-08-12): etapa 7 (Contrato) do ciclo não deveria estar
+                        # "concluido" aqui (só fecha com as 2 assinaturas, e viemos do ramo < 2) —
+                        # mas se algum caminho futuro deixar isso acontecer, reabre pra não deixar
+                        # a UI/AF1 acessível com um contrato na prática desfeito.
+                        etapa7_cancel = db.query(CicloEtapa).filter_by(
+                            projeto_nome=nome_safe, etapa_codigo="7").first()
+                        if etapa7_cancel is not None and etapa7_cancel.status == "concluido":
+                            etapa7_cancel.status = "em_andamento"
+                            etapa7_cancel.concluido_em = None
+                    if contrato_atual.assinatura_canal == "clicksign":
+                        # Achado do usuário 2026-08-17: enviou pro ClickSign, cancelou antes de
+                        # alguém assinar, voltou pro orçamento — tentou assinar de novo e o sistema
+                        # bloqueava com "já enviado pra assinatura eletrônica" (o canal ficava preso
+                        # em "clicksign" pra sempre). Notifica quem recebeu o convite e, se voltou
+                        # pra revisão (não morreu de vez), libera o canal pra escolher de novo.
+                        _notificar_signatarios_clicksign_cancelamento(
+                            db, contrato_atual, loja_id, status_final)
+                        if status_final == "em_revisao":
+                            contrato_atual.assinatura_canal = "interno"
+                            contrato_atual.clicksign_envelope_id = None
+                            contrato_atual.clicksign_signatarios_json = None
+                            contrato_atual.clicksign_enviado_em = None
                     db.commit()
                 upsert_projeto_status(nome_safe, status_final)   # sessão própria (thread-safe), como no conciliar_final
                 if definitivo:

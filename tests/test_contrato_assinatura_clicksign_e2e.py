@@ -35,6 +35,7 @@ class _FakeClickSignClient:
         self._seq = 0
         self.envelope_id = None
         self.signatarios = {}
+        self.cancelados = []
 
     def criar_envelope(self, nome):
         self._seq += 1
@@ -70,6 +71,10 @@ class _FakeClickSignClient:
                         "signed_at": info["signed_at"], "last_seen_ip": info.get("ip", "")}}
                     for sid, info in self.signatarios.items()]
         return {"data": {"id": envelope_id, "attributes": {"status": "running"}}, "included": included}
+
+    def cancelar_envelope(self, envelope_id):
+        self.cancelados.append(envelope_id)
+        return {"ok": True}
 
 
 def _instalar_config_clicksign(app_db, loja_id, webhook_secret="whs-teste"):
@@ -455,3 +460,80 @@ def test_get_contrato_expoe_clicksign_defaults_com_testemunhas_da_loja(
     assert defs["testemunha1"]["email"] == "t1@loja.com"
     assert defs["testemunha1"]["nome"] == "Testemunha Um"
     assert defs["testemunha2"]["email"] == "t2@loja.com"
+
+
+def test_cancelamento_leve_revisao_libera_canal_clicksign_e_notifica(
+        app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-17: enviou pro ClickSign, cancelou ANTES de alguém assinar,
+    escolheu "retornar para orçamento" — tentar assinar de novo ficava bloqueado com "já enviado
+    pra assinatura eletrônica" (o canal ficava preso em 'clicksign' pra sempre). Também precisa
+    notificar por e-mail quem já tinha recebido o convite, e tentar cancelar o envelope."""
+    import main, mod_clicksign
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    monkeypatch.setattr(mod_clicksign, "client_de", lambda cfg: fake)
+    emails_enviados = []
+    import mod_chat_externo
+    monkeypatch.setattr(mod_chat_externo, "enviar_email_simples",
+                        lambda dest, assunto, corpo: emails_enviados.append((dest, assunto, corpo)))
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path,
+                           testemunhas=[{"nome": "Test 1", "cpf": "22233344455",
+                                        "email": "test1@teste.com"}])
+    envelope_id = fake.envelope_id
+
+    c = _login(http_client_factory, "dir_l1")
+    st, d = c.post(f"/api/orcamentos/{seed['orcamento_l1_id']}/cancelamento",
+                   {"login": "dir_l1", "senha": "senha123", "desfecho": "revisao"})
+    assert st == 200 and d.get("ok") and d.get("status") == "em_revisao", d
+
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, cid)
+        assert contrato.assinatura_canal == "interno", "canal deveria liberar pra escolher de novo"
+        assert contrato.clicksign_envelope_id is None
+        assert contrato.clicksign_signatarios_json is None
+    finally:
+        db.close()
+
+    # notificou os 3 signatários (loja/cliente/testemunha1) que tinham recebido o convite
+    assert len(emails_enviados) == 3
+    destinatarios = {e[0] for e in emails_enviados}
+    assert destinatarios == {"loja@teste.com", "cliente@teste.com", "test1@teste.com"}
+    assert all("revisão" in e[1].lower() or "revis" in e[2].lower() for e in emails_enviados)
+
+    # tentou cancelar o envelope na ClickSign também
+    assert envelope_id in fake.cancelados
+
+
+def test_cancelamento_leve_cancelar_notifica_mas_nao_libera_canal(
+        app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Desfecho "cancelar" (projeto travado pra sempre): também notifica quem recebeu o convite,
+    mas não precisa liberar o canal — não haverá nova tentativa de assinar."""
+    import main, mod_clicksign
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    monkeypatch.setattr(mod_clicksign, "client_de", lambda cfg: fake)
+    emails_enviados = []
+    import mod_chat_externo
+    monkeypatch.setattr(mod_chat_externo, "enviar_email_simples",
+                        lambda dest, assunto, corpo: emails_enviados.append((dest, assunto, corpo)))
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path)
+
+    c = _login(http_client_factory, "dir_l1")
+    st, d = c.post(f"/api/orcamentos/{seed['orcamento_l1_id']}/cancelamento",
+                   {"login": "dir_l1", "senha": "senha123", "desfecho": "cancelar"})
+    assert st == 200 and d.get("ok") and d.get("status") == "cancelado", d
+
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, cid)
+        assert contrato.assinatura_canal == "clicksign", "registro histórico — não precisa liberar"
+    finally:
+        db.close()
+
+    assert len(emails_enviados) == 2   # loja + cliente
+    assert all("cancelado" in e[1].lower() for e in emails_enviados)

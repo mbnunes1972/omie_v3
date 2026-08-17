@@ -149,6 +149,16 @@ class ClickSignClient:
                           "attributes": {"status": "running"}}}
         return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
 
+    def cancelar_envelope(self, envelope_id):
+        """PATCH /envelopes/{id} — status='canceled' invalida o envelope (achado do usuário
+        2026-08-17: cancelar/revisar um contrato já enviado pra assinatura não pode deixar o
+        convite pendente no ar). MESMO CAVEAT do resto deste cliente (ver docstring do módulo):
+        o valor exato do status pra cancelar não foi confirmado contra o sandbox real — ajustar
+        assim que testado. Chamador trata fail-soft (best-effort)."""
+        body = {"data": {"id": envelope_id, "type": "envelopes",
+                          "attributes": {"status": "canceled"}}}
+        return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
+
     def consultar_envelope(self, envelope_id):
         """GET /envelopes/{id}?include=signers,documents — status do envelope + signatários.
         Retorna o dict bruto da resposta JSON:API (`data` + `included`)."""

@@ -895,6 +895,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="fechado" checked onchange="projStatusItemToggle()"> <i class="ti ti-lock"></i> Fechado</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="perdido"    checked onchange="projStatusItemToggle()"> ✗ Perdido</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="cancelado"  checked onchange="projStatusItemToggle()"> <i class="ti ti-x"></i> Cancelado</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="em_revisao" checked onchange="projStatusItemToggle()"> <i class="ti ti-refresh"></i> Em Revisão</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="sem"        checked onchange="projStatusItemToggle()"> — Sem status</label>
         </div>
       </div>
@@ -984,6 +985,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="bloqueio-txt">
         <strong>Projeto cancelado definitivamente</strong>
         As provisões foram estornadas. Este projeto ficou travado para sempre — não é possível editar a negociação nem gerar um novo contrato.
+      </div>
+    </div>
+    <!-- Banner: cancelamento LEVE (pré-2ª-assinatura, sem provisão) — 2026-08-17 -->
+    <div class="bloqueio-banner cancelado" id="neg-cancelado-leve-banner">
+      <div class="bloqueio-icon"><i class="ti ti-x"></i></div>
+      <div class="bloqueio-txt">
+        <strong>Projeto cancelado</strong>
+        A negociação está bloqueada. Reabertura ainda não é possível por aqui.
+      </div>
+    </div>
+    <!-- Banner: Em Revisão (cancelamento leve, desfecho "retornar ao orçamento") — 2026-08-17.
+         Informativo, NÃO bloqueia — a negociação segue editável. -->
+    <div class="bloqueio-banner" id="neg-em-revisao-banner">
+      <div class="bloqueio-icon"><i class="ti ti-refresh"></i></div>
+      <div class="bloqueio-txt">
+        <strong>Projeto em revisão</strong>
+        Um contrato anterior deste projeto foi cancelado antes da assinatura completa. A negociação está aberta para revisar e tentar de novo.
       </div>
     </div>
 
@@ -1275,7 +1293,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- Painel Total Flex -->
     <div class="mod-panel" id="painel-tf" style="display:none">
-      <div class="mod-panel-title">&#x26A1; Total Flex — Parcelamento Livre</div>
+      <div class="mod-panel-title">&#x26A1; Parcelamento Loja</div>
       <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
         <div>
           <label>Data do Contrato</label>
@@ -6684,7 +6702,8 @@ const _PROJ_STATUS_LABEL = {
   perdido:    { label: '✗ Perdido',    cls: 'perdido'    },
   fechado:    { label: '<i class="ti ti-lock"></i> Fechado',  cls: 'fechado'    },
   concluido:  { label: '✓ Concluído', cls: 'concluido'  },   // FASE D2: ciclo executado e conciliado
-  cancelado:  { label: '<i class="ti ti-x"></i> Cancelado', cls: 'cancelado'  },   // 2026-08-12: cancelamento leve OU definitivo (ver banner do Ciclo pra distinguir)
+  cancelado:  { label: '<i class="ti ti-x"></i> Cancelado', cls: 'cancelado'  },   // 2026-08-17: desfecho "cancelar" do cancelamento leve, OU definitivo (ver banner do Ciclo pra distinguir)
+  em_revisao: { label: '<i class="ti ti-refresh"></i> Em Revisão', cls: 'morno' },   // 2026-08-17: desfecho "revisao" do cancelamento leve — reabre, não trava
 };
 
 function _projStatusBadge(p){
@@ -7271,6 +7290,7 @@ async function ativarOrcamento(id){
       }
       // 'descartar' → segue a troca sem persistir; a edição em memória é perdida de propósito.
     }
+    await _persistirDescontoGeral();
     try { await _persistirDescontosOrc(); } catch (e) { console.warn('auto-save descontos ao trocar:', e); }
   }
   _orcamentoAtivoId = id;
@@ -9315,7 +9335,7 @@ async function atualizarTF() {
   // mudança de ENTRADA não passa por aqui (muda o financiado, não o à-vista).
   if (_tfValores.length && _tfAvistaRef != null && valorAvista < _tfAvistaRef - 0.01) {
     _tfValores = []; _tfDatas = []; _tfUltimoEditIdx = null;
-    showToast('Total do orçamento diminuiu — parcelas do Total Flex reiniciadas.');
+    showToast('Total do orçamento diminuiu — parcelas do Parcelamento Loja reiniciadas.');
   }
 
   let d;
@@ -9433,7 +9453,7 @@ async function atualizarTF() {
 
   tfRenderTabela(d, valorAvista, entrada);
   window._planoPagamento = {
-    tipo: 'tf', nome_forma: 'Total Flex',
+    tipo: 'tf', nome_forma: 'Parcelamento Loja',
     entrada_valor: entrada,
     entrada_data: document.getElementById('tf-entrada-data')?.value || document.getElementById('tf-data-contrato')?.value || '',
     entrada_forma: _formaEntrada,
@@ -9972,6 +9992,17 @@ let _salvarDescTimer = null;
 function agendarSalvarDesconto(){
   clearTimeout(_salvarDescTimer);
   _salvarDescTimer = setTimeout(salvarDescontoAutomatico, 800);
+}
+
+// Achado do usuário 2026-08-17: o desconto geral (diferente do por-ambiente, já flushado em
+// ativarOrcamento via _persistirDescontosOrc) não tinha flush síncrono ao trocar de orçamento —
+// o timer de 800ms podia disparar DEPOIS da troca, salvando o valor errado no orçamento errado
+// (ou nunca salvando o original). Mesma correção, mesmo padrão.
+async function _persistirDescontoGeral(){
+  clearTimeout(_salvarDescTimer);
+  if (!_orcamentoAtivoId) return;
+  if (typeof _negSaveTravado === 'function' && _negSaveTravado()) return;
+  try { await salvarDescontoAutomatico(); } catch (e) { console.warn('auto-save desconto geral:', e); }
 }
 
 // Sincronização e teclado dos campos de desconto
@@ -16403,6 +16434,8 @@ let _cicloCriadoPorNome = '';   // nome do criador do projeto p/ a tag "com a bo
 let _contratoAssinado = false;
 let _contratoTotalmenteAssinado = false;
 let _projetoCanceladoDefinitivo = false;   // 2026-08-12: trava permanente pós-2ª-assinatura
+let _projetoCancelado = false;   // 2026-08-17: cancelamento leve com desfecho "cancelar" (trava)
+let _projetoEmRevisao = false;   // 2026-08-17: cancelamento leve com desfecho "revisao" (reabre)
 
 // ── Projeto Executivo (PE) — estado e helpers ──────────────────────────────
 let _pePayload = { subfases: {}, documentos: [], revisoes: [] };
@@ -17856,20 +17889,31 @@ async function _fetchCiclo() {
   _contratoAssinado = !!d.contrato_assinado;
   _contratoTotalmenteAssinado = !!d.contrato_totalmente_assinado;
   _projetoCanceladoDefinitivo = !!d.projeto_cancelado_definitivo;
+  _projetoCancelado = !!d.projeto_cancelado;
+  _projetoEmRevisao = !!d.projeto_em_revisao;
   _cicloCriadoPorNome = d.criado_por_nome || '';   // fallback da tag "com a bola" (revisão 2026-07-25)
   _cicloData = {};
   for (const e of (d.ciclo || [])) _cicloData[e.etapa_codigo] = e;
   _renderBannerCancelado();
 }
 
-function _renderBannerCancelado(){
-  const banner = document.getElementById('neg-cancelado-banner');
-  if (!banner) return;
-  banner.classList.toggle('ativo', _projetoCanceladoDefinitivo);
+function _toggleBanner(id, mostrar){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('ativo', mostrar);
   // Reforço explícito (2026-08-12, achado da Vera): a classe .ativo já resolve via CSS, mas
-  // seta o inline direto também — mesmo padrão defensivo de atualizarUIBloqueio() pro banner
-  // irmão, resiliente a qualquer regra de display conflitante que apareça no futuro.
-  banner.style.display = _projetoCanceladoDefinitivo ? 'flex' : 'none';
+  // seta o inline direto também — resiliente a qualquer regra de display conflitante.
+  el.style.display = mostrar ? 'flex' : 'none';
+}
+
+function _renderBannerCancelado(){
+  _toggleBanner('neg-cancelado-banner', _projetoCanceladoDefinitivo);
+  // Cancelamento leve com desfecho "cancelar" (achado do usuário 2026-08-17): banner irmão,
+  // texto diferente (não é permanente) — só se NÃO for o caso definitivo (banner acima já cobre).
+  _toggleBanner('neg-cancelado-leve-banner', _projetoCancelado && !_projetoCanceladoDefinitivo);
+  // Cancelamento leve com desfecho "revisao": NÃO trava (a negociação segue editável) — banner
+  // só informativo, avisando que este orçamento passou por um cancelamento leve.
+  _toggleBanner('neg-em-revisao-banner', _projetoEmRevisao);
 }
 
 async function carregarCiclo() {
@@ -20495,20 +20539,59 @@ async function devolucaoRegistrar(){
   } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Devolução'}); }
 }
 
+// Cancelamento LEVE (< 2ª assinatura) tem 2 desfechos — pergunta ao gerente qual (2026-08-17,
+// achado do usuário). Resolve 'revisao' | 'cancelar' | null (voltar, sem fazer nada).
+function _escolherDesfechoCancelamento(){
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--warn);font-size:1rem">Cancelar contrato</h4>' +
+      '<p style="margin:0 0 16px;color:var(--fg);font-size:.9rem;white-space:pre-line">' +
+      'Este contrato ainda não tem a 2ª assinatura — o cancelamento é livre. Escolha o desfecho:\n\n' +
+      '• Retornar para orçamento: fica "Em Revisão", a negociação continua aberta pra tentar de novo.\n' +
+      '• Cancelar o orçamento: fica "Cancelado", trava tudo — não dá pra editar nem gerar contrato novo.' +
+      '</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
+      '<button data-act="voltar" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Voltar</button>' +
+      '<button data-act="cancelar" style="background:none;border:1px solid var(--err);color:var(--err);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Cancelar orçamento</button>' +
+      '<button data-act="revisao" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);' +
+      'border:var(--btn-primary-border);border-radius:5px;padding:7px 16px;font-size:.88rem;font-weight:700;cursor:pointer">Retornar para orçamento</button>' +
+      '</div>');
+    const fin = (v) => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') fin(null); };
+    ov.querySelector('[data-act="revisao"]').onclick = () => fin('revisao');
+    ov.querySelector('[data-act="cancelar"]').onclick = () => fin('cancelar');
+    ov.querySelector('[data-act="voltar"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => ov.querySelector('[data-act="revisao"]').focus(), 60);
+  });
+}
+
 async function cancelarContrato(){
   if(!_orcamentoAtivoId) return;
+  // Definitivo (2ª assinatura já dada): sem escolha — sempre estorna e trava pra sempre.
+  // Leve: gerente escolhe entre reabrir ("em_revisao") ou cancelar de vez ("cancelado").
+  let desfecho = 'cancelar';
+  if (!_contratoTotalmenteAssinado) {
+    desfecho = await _escolherDesfechoCancelamento();
+    if (!desfecho) return;   // voltou, sem fazer nada
+  }
   const cred = await pedirCredenciaisGerente({capacidade: null,
     titulo: 'Cancelar contrato',
-    mensagem: 'Exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre (projeto continua editável). Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE. Indisponível após a NF-e.' });
+    mensagem: 'Exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre. Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE. Indisponível após a NF-e.' });
   if(!cred) return;
   try {
     const j = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/cancelamento',
       { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ login: cred.login, senha: cred.senha }) }).then(r=>r.json());
+        body: JSON.stringify({ login: cred.login, senha: cred.senha, desfecho }) }).then(r=>r.json());
     if(j.ok){
       showToast(j.definitivo
         ? 'Contrato cancelado — lançamentos estornados. Projeto travado permanentemente.'
-        : 'Contrato cancelado. Projeto continua acessível e editável.');
+        : (j.status === 'em_revisao'
+            ? 'Contrato cancelado. Projeto em revisão — negociação continua aberta.'
+            : 'Orçamento cancelado. Projeto travado.'));
       await carregarCiclo();
     }
     else { await avisoPopup(j.erro||'Erro', {titulo:'Cancelar contrato'}); }

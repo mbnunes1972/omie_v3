@@ -56,9 +56,10 @@ def test_cancelar_contrato_idempotente(app_db):
 
 
 def test_cancelamento_endpoint_estorna_e_trava(http_client_factory, seed, app_db):
-    # cobre o fluxo do BOTÃO com LANÇAMENTOS reais: 200 + estorno + status "cancelado". (NOTA: o lock
-    # "database is locked" do SQLite em ARQUIVO — ordem commit×upsert — NÃO reproduz aqui, pois o app_db
-    # de teste é em memória; este teste garante o contrato do endpoint, não a corrida de sessões.)
+    # cobre o fluxo do BOTÃO com LANÇAMENTOS reais: 200 + estorno + status "cancelado" (desfecho
+    # "cancelar" — trava tudo). (NOTA: o lock "database is locked" do SQLite em ARQUIVO — ordem
+    # commit×upsert — NÃO reproduz aqui, pois o app_db de teste é em memória; este teste garante o
+    # contrato do endpoint, não a corrida de sessões.)
     db = app_db.get_session()
     ot, own = mc.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None})
     mc.seed_plano(db, ot, own)
@@ -67,15 +68,18 @@ def test_cancelamento_endpoint_estorna_e_trava(http_client_factory, seed, app_db
     db.commit(); db.close()
     c = http_client_factory(); c.login("dir_l1", "senha123")
     oid = seed["orcamento_l1_id"]
-    st, d = c.post("/api/orcamentos/%d/cancelamento" % oid, {"login": "dir_l1", "senha": "senha123"})
+    st, d = c.post("/api/orcamentos/%d/cancelamento" % oid,
+                   {"login": "dir_l1", "senha": "senha123", "desfecho": "cancelar"})
     assert st == 200, (st, d)
     assert d.get("ok") and d.get("status") == "cancelado", d
     assert d.get("revertido"), d   # estornou lançamentos de fato
 
 
 def test_cancelamento_leve_1_assinatura_reabre_negociacao(app_db, seed, http_client_factory):
-    """0/1 assinatura no momento do cancelamento (provisão ainda não existia, regra 2026-08-12):
-    invalida a assinatura parcial, projeto continua editável (cancelado_definitivo=0)."""
+    """0/1 assinatura no momento do cancelamento (provisão ainda não existia, regra 2026-08-12,
+    revisada 2026-08-17): sem `desfecho` explícito no request, o default é "revisao" — invalida a
+    assinatura parcial, status vira "em_revisao" (NÃO "cancelado" — achado do usuário: rótulo
+    honesto, já que continua editável), projeto continua editável (cancelado_definitivo=0)."""
     from database import Projeto, Contrato, ContratoAssinatura
     from datetime import datetime
     import main as _main
@@ -89,7 +93,7 @@ def test_cancelamento_leve_1_assinatura_reabre_negociacao(app_db, seed, http_cli
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/orcamentos/%d/cancelamento" % seed["orcamento_l1_id"],
                    {"login": "dir_l1", "senha": "senha123"})
-    assert st == 200 and d.get("ok") and d.get("status") == "cancelado", d
+    assert st == 200 and d.get("ok") and d.get("status") == "em_revisao", d
     assert d.get("definitivo") is False, d
 
     db2 = app_db.get_session()
@@ -100,6 +104,34 @@ def test_cancelamento_leve_1_assinatura_reabre_negociacao(app_db, seed, http_cli
     assert len(ct2.assinaturas) == 0
     assert _main._contrato_assinado(nome, db2) is False, "negociação deve reabrir"
     db2.close()
+
+
+def test_cancelamento_leve_desfecho_cancelar_trava_tudo(app_db, seed, http_client_factory):
+    """Achado do usuário 2026-08-17: cancelamento leve (0 assinaturas) com desfecho explícito
+    "cancelar" grava status="cancelado" — e ISSO trava a negociação, mesmo sem 2ª assinatura.
+    Reproduz o bug relatado: "Projeto Juliana" cancelado continuava com número de parcelas
+    editável — aqui confirma que, escolhendo "cancelar" (não o default "revisao"), o endpoint de
+    margens (que salva desconto/parcelas) passa a recusar com 403."""
+    import main as _main
+    from database import Projeto
+    nome = seed["projeto_l1"]
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/orcamentos/%d/cancelamento" % seed["orcamento_l1_id"],
+                   {"login": "dir_l1", "senha": "senha123", "desfecho": "cancelar"})
+    assert st == 200 and d.get("ok") and d.get("status") == "cancelado", d
+    assert d.get("definitivo") is False, d
+
+    db = app_db.get_session()
+    pm = db.get(Projeto, nome)
+    assert pm.status == "cancelado"
+    assert not pm.cancelado_definitivo, "cancelamento leve não é o definitivo — flag separado"
+    assert _main._contrato_assinado(nome, db) is True, "status=cancelado deve travar mesmo sem assinatura"
+    db.close()
+
+    # regressão do bug relatado: editar o desconto (mesmo endpoint usado p/ nº de parcelas via
+    # forma_pagamento) tem que ser recusado agora.
+    st2, d2 = c.post("/api/orcamentos/%d/margens" % seed["orcamento_l1_id"], {"desconto_pct": 5.0})
+    assert st2 == 403 and not d2.get("ok"), (st2, d2)
 
 
 def test_cancelamento_definitivo_2_assinaturas_trava_projeto(app_db, seed, http_client_factory):

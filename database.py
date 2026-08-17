@@ -566,13 +566,18 @@ class Projeto(Base):
 
     nome_safe  = Column(String,   primary_key=True)
     cliente_id = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
-    status     = Column(String(20), nullable=True)   # quente | morno | frio | convertido | perdido | cancelado
+    # quente | morno | frio | convertido | perdido | cancelado | em_revisao (revisado 2026-08-17:
+    # cancelamento leve, pré-2ª-assinatura, tem 2 desfechos escolhidos pelo gerente — "cancelado"
+    # trava tudo (ver _contrato_assinado); "em_revisao" reabre a negociação, comportamento antigo
+    # com rótulo honesto — não é mais rotulado "cancelado" por engano).
+    status     = Column(String(20), nullable=True)
     status_at  = Column(DateTime,   nullable=True)
     perdido_em     = Column(DateTime,   nullable=True)
     # Trava PERMANENTE: só é setada quando o contrato já tinha as 2 assinaturas (provisões já
-    # constituídas) e foi cancelado depois disso. Diferente de status="cancelado" sozinho (que
-    # também cobre o cancelamento leve, pré-2ª-assinatura, e não trava nada). Uma vez 1, nunca
-    # volta a 0 — nem um novo contrato no mesmo projeto reabre a edição (ver _contrato_assinado).
+    # constituídas) e foi cancelado depois disso — "revender" exige projeto novo, nunca reabre.
+    # status="cancelado" sozinho também trava (ver `_projeto_cancelado`/`_contrato_assinado` em
+    # main.py), mas não é permanente como este flag; "Reabrir Orçamentos" é frente futura. Uma vez
+    # 1, nunca volta a 0 — nem um novo contrato no mesmo projeto reabre a edição.
     cancelado_definitivo = Column(Integer, default=0)
     parametros_json = Column(Text, nullable=True)   # parâmetros estruturais da negociação (JSON, projeto-wide)
     loja_id        = Column(Integer,    ForeignKey("lojas.id"), nullable=True)

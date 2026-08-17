@@ -4699,6 +4699,14 @@ class Handler(BaseHTTPRequestHandler):
                                     # Cancelamento definitivo (2026-08-12): projeto travado pra
                                     # sempre — o frontend mostra banner e trava a negociação.
                                     "projeto_cancelado_definitivo": bool(_proj_meta and _proj_meta.cancelado_definitivo),
+                                    # Cancelamento (achado do usuário 2026-08-17, revisado): o
+                                    # gerente escolhe o desfecho do cancelamento leve — "cancelar"
+                                    # (status="cancelado", trava tudo, ver _contrato_assinado) ou
+                                    # "revisao" (status="em_revisao", reabre a negociação — o
+                                    # comportamento antigo, só com rótulo honesto). Banners
+                                    # distintos pro frontend.
+                                    "projeto_cancelado": bool(_proj_meta and _proj_meta.status == "cancelado"),
+                                    "projeto_em_revisao": bool(_proj_meta and _proj_meta.status == "em_revisao"),
                                     # Revisão 2026-07-25: nome do criador p/ a tag "com a bola"
                                     # quando nenhum Funcionário responsável resolve (fallback visual).
                                     "criado_por_id": (_proj_meta.criado_por_id if _proj_meta else None),
@@ -10613,6 +10621,15 @@ class Handler(BaseHTTPRequestHandler):
                                     .order_by(Contrato.id.desc()).first())
                 partes_assinadas = {a.parte for a in contrato_atual.assinaturas} if contrato_atual else set()
                 definitivo = len(partes_assinadas) >= 2
+                # Achado do usuário 2026-08-17: cancelamento LEVE (< 2ª assinatura) tem 2
+                # desfechos possíveis, escolhidos pelo gerente na confirmação — "revisao"
+                # (default, comportamento antigo: reabre a negociação, status vira "em_revisao",
+                # NÃO trava — pode tentar de novo, inclusive com outro orçamento) ou "cancelar"
+                # (o orçamento fica definitivamente CANCELADO — trava tudo, ver _contrato_assinado).
+                # Sem escolha (ex.: caller antigo) cai no default "revisao", preservando o
+                # comportamento anterior a esta mudança.
+                desfecho = (req.get("desfecho") or "revisao") if not definitivo else "cancelar"
+                status_final = "cancelado" if (definitivo or desfecho == "cancelar") else "em_revisao"
                 ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 out = _mc.cancelar_contrato(db, ot, own_id, nome_safe, ref_base="cancel:%s" % nome_safe)
                 db.commit()                                     # commit os estornos ANTES (libera o lock do SQLite)
@@ -10636,14 +10653,14 @@ class Handler(BaseHTTPRequestHandler):
                         etapa7_cancel.status = "em_andamento"
                         etapa7_cancel.concluido_em = None
                     db.commit()
-                upsert_projeto_status(nome_safe, "cancelado")   # sessão própria (thread-safe), como no conciliar_final
+                upsert_projeto_status(nome_safe, status_final)   # sessão própria (thread-safe), como no conciliar_final
                 if definitivo:
                     try:
                         _notificar_masters_cancelamento(nome_safe, loja_id)
                     except Exception as _email_err:
                         logging.getLogger(__name__).warning(
                             "e-mail de cancelamento (proj=%s) falhou: %s", nome_safe, _email_err)
-                self.send_json({"ok": True, "revertido": out, "status": "cancelado",
+                self.send_json({"ok": True, "revertido": out, "status": status_final,
                                "definitivo": definitivo})
             finally:
                 db.close()
@@ -15068,12 +15085,26 @@ def _projeto_cancelado_definitivo(nome_safe, db) -> bool:
     return bool(pm and pm.cancelado_definitivo)
 
 
+def _projeto_cancelado(nome_safe, db) -> bool:
+    """True se o projeto está com status='cancelado' (trava tudo). Achado do usuário 2026-08-17,
+    revisado no mesmo dia: cancelamento pré-2ª-assinatura ("leve") tem 2 desfechos, escolhidos
+    pelo gerente na confirmação — "cancelar" grava status='cancelado' aqui (orçamento morto,
+    trava total, mesma fonte de `_contrato_assinado`) ou "revisao" grava status='em_revisao'
+    (reabre a negociação — o comportamento antigo, "pode tentar de novo, inclusive com outro
+    orçamento", com rótulo honesto em vez de "cancelado" enquanto segue editável). Cancelamento
+    DEFINITIVO (pós-2ª-assinatura, ver `cancelado_definitivo`) sempre grava 'cancelado' aqui —
+    sem escolha, sempre trava. Reabrir um projeto 'cancelado' fica para frente futura
+    ("Reabrir Orçamentos")."""
+    pm = db.get(Projeto, nome_safe)
+    return bool(pm and pm.status == "cancelado")
+
+
 def _contrato_assinado(nome_safe, db) -> bool:
     """True se o último contrato do projeto tem qualquer assinatura (1ª assinatura)
-    ou status já assinado, OU se o projeto foi cancelado definitivamente (trava
-    permanente pós-2ª-assinatura — um contrato novo não reabre a edição).
-    Fonte única da trava total pós-assinatura."""
-    if _projeto_cancelado_definitivo(nome_safe, db):
+    ou status já assinado, OU se o projeto está cancelado (leve ou definitivo — ver
+    `_projeto_cancelado`/`_projeto_cancelado_definitivo`).
+    Fonte única da trava total pós-assinatura (e agora, pós-cancelamento)."""
+    if _projeto_cancelado(nome_safe, db):
         return True
     c = (db.query(Contrato)
            .filter_by(projeto_nome=nome_safe)

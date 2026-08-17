@@ -72,8 +72,13 @@ def carregar_faixas(codigo: str) -> list:
 
 
 def listar_modalidades() -> list:
-    """Retorna lista de modalidades disponíveis para o dropdown da interface."""
-    codigos = ['a_vista', 'aymore', 'cartao_credito', 'cartao_credito_x', 'venda_programada', 'total_flex']
+    """Retorna lista de modalidades disponíveis para o dropdown da interface.
+    Achado do usuário 2026-08-17: "Cartão de Crédito X" era artefato de dev, sem cálculo próprio
+    (reusava o painel de cartao_credito) — removido daqui (não aparece mais no dropdown), mas o
+    código 'cartao_credito_x' continua em `_TIPO_POR_CODIGO`/o dict `nomes` abaixo, de propósito:
+    orçamentos antigos que já tenham esse código salvo (produção, não visto em dev) continuam
+    classificados certo em `ramo_financiamento` — só a escolha NOVA que some."""
+    codigos = ['a_vista', 'aymore', 'cartao_credito', 'venda_programada', 'total_flex']
     resultado = []
     for codigo in codigos:
         tab = _carregar(codigo)
@@ -90,7 +95,7 @@ def listar_modalidades() -> list:
                 'cartao_credito':   ('Cartão de Crédito',   'financiamento_externo'),
                 'cartao_credito_x': ('Cartão de Crédito X', 'financiamento_externo'),
                 'venda_programada': ('Venda Programada',  'programado'),
-                'total_flex':       ('Total Flex',        'flex'),
+                'total_flex':       ('Parcelamento Loja', 'flex'),
             }
             desc, tipo = nomes.get(codigo, (codigo, ''))
             resultado.append({'codigo': codigo, 'descricao': desc, 'tipo': tipo})

@@ -521,6 +521,11 @@ class Loja(Base):
     testemunha1_cpf  = Column(String(14),  nullable=True)
     testemunha2_nome = Column(String(120), nullable=True)
     testemunha2_cpf  = Column(String(14),  nullable=True)
+    # E-mail das testemunhas (achado do usuário 2026-08-17): só existiam nome+CPF, pro contrato
+    # impresso — a assinatura digital (ClickSign) precisa de e-mail pra cadastrar a testemunha
+    # como signatária. Opcional: sem e-mail, a testemunha simplesmente não entra no envelope.
+    testemunha1_email = Column(String(150), nullable=True)
+    testemunha2_email = Column(String(150), nullable=True)
     emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=True)
     ativo       = Column(Integer,  default=1)
     criado_em   = Column(DateTime, default=datetime.utcnow)
@@ -2299,6 +2304,10 @@ def _migrar_colunas_pg():
         # % de comissão ajustável pelo gerente no ato do pagamento (comissão de venda).
         "ALTER TABLE terceiros ADD COLUMN IF NOT EXISTS cnpj VARCHAR(18)",
         "ALTER TABLE comissao_folha ADD COLUMN IF NOT EXISTS pct_ajustado DOUBLE PRECISION",
+        # Achado do usuário 2026-08-17: e-mail de testemunha, pra assinatura digital (ClickSign)
+        # poder cadastrá-la como signatária — nome/CPF já existiam, só pro contrato impresso.
+        "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha1_email VARCHAR(150)",
+        "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha2_email VARCHAR(150)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

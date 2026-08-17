@@ -119,7 +119,7 @@ def _garantir_email_do_consultor(app_db, login):
 def _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path,
                      email_loja="loja@teste.com", nome_loja="Loja 1",
                      email_cliente="cliente@teste.com", nome_cliente="Cliente L1",
-                     cpf_cliente="11144477735"):
+                     cpf_cliente="11144477735", testemunhas=None):
     import mod_clicksign, main
     monkeypatch.setattr(mod_clicksign, "client_de", lambda cfg: fake)
     db = app_db.get_session()
@@ -131,7 +131,8 @@ def _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path,
         db.commit()
         main._enviar_contrato_para_clicksign(
             db, contrato, None, email_loja=email_loja, nome_loja=nome_loja,
-            email_cliente=email_cliente, nome_cliente=nome_cliente, cpf_cliente=cpf_cliente)
+            email_cliente=email_cliente, nome_cliente=nome_cliente, cpf_cliente=cpf_cliente,
+            testemunhas=testemunhas)
         db.commit()
         return contrato.id
     finally:
@@ -164,6 +165,73 @@ def test_enviar_exige_emails(app_db, seed, monkeypatch, tmp_path):
     fake = _FakeClickSignClient()
     with pytest.raises(ValueError, match="obrigat"):
         _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path, email_loja="")
+
+
+def test_enviar_com_testemunhas_registra_signatarios(app_db, seed, monkeypatch, tmp_path):
+    """Achado do usuário 2026-08-17: testemunha com e-mail vira signatária digital também."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    testemunhas = [
+        {"nome": "Fulano Testemunha", "cpf": "22233344455", "email": "test1@teste.com"},
+        {"nome": "Beltrana Testemunha", "cpf": "66677788899", "email": "test2@teste.com"},
+    ]
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path, testemunhas=testemunhas)
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, cid)
+        signatarios = _json.loads(contrato.clicksign_signatarios_json)
+        assert "testemunha1" in signatarios and "testemunha2" in signatarios
+        assert fake.signatarios[signatarios["testemunha1"]["signer_id"]]["email"] == "test1@teste.com"
+        assert fake.signatarios[signatarios["testemunha2"]["signer_id"]]["email"] == "test2@teste.com"
+        # 4 signatários no envelope: loja, cliente, testemunha1, testemunha2
+        assert len(fake.signatarios) == 4
+    finally:
+        db.close()
+
+
+def test_enviar_testemunha_sem_email_nao_e_convocada(app_db, seed, monkeypatch, tmp_path):
+    """Testemunha sem e-mail é ignorada silenciosamente — não vira signatária, sem erro."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    testemunhas = [
+        {"nome": "Fulano Testemunha", "cpf": "22233344455", "email": ""},
+        {"nome": "", "cpf": "", "email": ""},
+    ]
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path, testemunhas=testemunhas)
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, cid)
+        signatarios = _json.loads(contrato.clicksign_signatarios_json)
+        assert "testemunha1" not in signatarios and "testemunha2" not in signatarios
+        assert len(fake.signatarios) == 2   # só loja + cliente
+    finally:
+        db.close()
+
+
+def test_registrar_assinatura_testemunha_nao_mexe_no_status_intermediario(app_db, seed):
+    """Achado do usuário 2026-08-17: `parte` deixou de ser só loja/cliente (testemunha também
+    pode assinar). Testemunha assinando primeiro não pode fazer o contrato parecer "assinado
+    pelo cliente" por engano."""
+    import main as _main
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, seed["contrato_l1_id"])
+        contrato.status = "para_assinatura"
+        db.commit()
+        status = _main._registrar_assinatura_contrato(
+            db, contrato, "testemunha1", "Fulano Testemunha", "22233344455", "203.0.113.5",
+            seed["loja1_id"])
+        assert status == "para_assinatura", "testemunha assinando não deve mudar o status intermediário"
+        db.refresh(contrato)
+        assert contrato.status == "para_assinatura"
+        assert any(a.parte == "testemunha1" for a in contrato.assinaturas)
+    finally:
+        db.close()
 
 
 def test_webhook_hmac_valido_reconcilia(app_db, seed, monkeypatch, http_client_factory, tmp_path):
@@ -318,3 +386,72 @@ def test_enviar_via_endpoint_erro_da_clicksign_vira_400_nao_500(
     assert st == 400, b   # antes do fix: 500
     assert b["ok"] is False
     assert "não está em um formato válido" in b["erro"]
+
+
+def test_enviar_via_endpoint_aceita_emails_editados_no_body(
+        app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-17: o modal de confirmação deixa o gerente editar os e-mails
+    antes de enviar — o endpoint precisa usar o que veio no body em vez do cadastro automático."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    _garantir_email_do_consultor(app_db, "dir_l1")
+    import mod_clicksign
+    fake = _FakeClickSignClient()
+    monkeypatch.setattr(mod_clicksign, "client_de", lambda cfg: fake)
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, seed["contrato_l1_id"])
+        pdf = tmp_path / "contrato3.pdf"
+        pdf.write_bytes(b"%PDF-fake")
+        contrato.pdf_path = str(pdf)
+        proj = db.query(app_db.Projeto).filter_by(nome_safe=seed["projeto_l1"]).first()
+        cli = db.get(app_db.Cliente, proj.cliente_id)
+        cli.email = "email-cadastrado@teste.com"   # deve ser IGNORADO — o body prevalece
+        db.commit()
+    finally:
+        db.close()
+
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/enviar", {
+        "email_loja": "loja-editado@teste.com",
+        "email_cliente": "cliente-editado@teste.com",
+        "testemunhas": [{"nome": "Test 1", "cpf": "22233344455", "email": "t1-editado@teste.com"}],
+    })
+    assert st == 200, b
+    db2 = app_db.get_session()
+    try:
+        contrato2 = db2.get(app_db.Contrato, seed["contrato_l1_id"])
+        signatarios = _json.loads(contrato2.clicksign_signatarios_json)
+        assert fake.signatarios[signatarios["loja"]["signer_id"]]["email"] == "loja-editado@teste.com"
+        assert fake.signatarios[signatarios["cliente"]["signer_id"]]["email"] == "cliente-editado@teste.com"
+        assert fake.signatarios[signatarios["testemunha1"]["signer_id"]]["email"] == "t1-editado@teste.com"
+        assert "testemunha2" not in signatarios
+    finally:
+        db2.close()
+
+
+def test_get_contrato_expoe_clicksign_defaults_com_testemunhas_da_loja(
+        app_db, seed, http_client_factory):
+    """GET /contrato precisa devolver os defaults pro modal de confirmação — inclui as
+    testemunhas cadastradas na loja (nome/CPF/e-mail)."""
+    db = app_db.get_session()
+    try:
+        loja = db.get(app_db.Loja, seed["loja1_id"])
+        loja.testemunha1_nome = "Testemunha Um"
+        loja.testemunha1_cpf = "22233344455"
+        loja.testemunha1_email = "t1@loja.com"
+        loja.testemunha2_nome = "Testemunha Dois"
+        loja.testemunha2_cpf = "66677788899"
+        loja.testemunha2_email = "t2@loja.com"
+        db.commit()
+    finally:
+        db.close()
+
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.get(f"/api/projetos/{seed['projeto_l1']}/contrato")
+    assert st == 200 and b["ok"], b
+    defs = b["contrato"]["clicksign_defaults"]
+    assert defs["testemunha1"]["email"] == "t1@loja.com"
+    assert defs["testemunha1"]["nome"] == "Testemunha Um"
+    assert defs["testemunha2"]["email"] == "t2@loja.com"

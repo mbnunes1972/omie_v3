@@ -830,7 +830,14 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
                               assinado_em=datetime.utcnow(), ip_origem=ip_origem,
                               hash_sha256=hash_sig))
     partes_assinadas = {a.parte for a in contrato.assinaturas} | {parte}
-    contrato.status = "assinado_loja" if "loja" in partes_assinadas else "assinado_cliente"
+    # Achado do usuário 2026-08-17: testemunhas passaram a poder assinar digitalmente (ClickSign)
+    # também — `parte` deixou de ser só "loja"/"cliente". O status intermediário só reflete
+    # loja/cliente (testemunha assinando não muda nada aqui); a trava "ambas as partes" abaixo
+    # já ignora testemunha por construção ({"loja","cliente"}.issubset).
+    if parte == "loja":
+        contrato.status = "assinado_loja"
+    elif parte == "cliente":
+        contrato.status = "assinado_cliente"
     db.commit()
     # Verificar se ambas as partes assinaram → fechar etapa 7
     assinaturas = db.query(ContratoAssinatura).filter_by(contrato_id=contrato.id).all()
@@ -945,13 +952,15 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
 
 
 def _enviar_contrato_para_clicksign(db, contrato, cfg, email_loja, nome_loja, email_cliente,
-                                    nome_cliente, cpf_cliente):
+                                    nome_cliente, cpf_cliente, testemunhas=None):
     """Envia o PDF já gerado do `contrato` pra ClickSign: cria envelope -> sobe o documento ->
-    cadastra os 2 signatários (loja/cliente) -> liga cada um ao documento (requisito de
-    assinatura + de autenticação) -> ativa o envelope (dispara os convites por e-mail). Grava
-    clicksign_envelope_id/assinatura_canal/clicksign_enviado_em/clicksign_signatarios_json no
-    `contrato` (NÃO commita — o chamador decide). ValueError com mensagem clara se faltar
-    e-mail/PDF."""
+    cadastra os signatários (loja/cliente + testemunhas com e-mail, achado do usuário
+    2026-08-17) -> liga cada um ao documento (requisito de assinatura + de autenticação) ->
+    ativa o envelope (dispara os convites por e-mail). Grava clicksign_envelope_id/
+    assinatura_canal/clicksign_enviado_em/clicksign_signatarios_json no `contrato` (NÃO commita
+    — o chamador decide). ValueError com mensagem clara se faltar e-mail/PDF.
+    `testemunhas`: lista opcional de {nome, cpf, email} — item sem e-mail é ignorado (a
+    testemunha simplesmente não entra como signatária digital, sem erro)."""
     if not email_loja or not email_cliente:
         raise ValueError("E-mail da loja e do cliente são obrigatórios para assinatura eletrônica (ClickSign).")
     if not contrato.pdf_path or not os.path.exists(contrato.pdf_path):
@@ -965,16 +974,26 @@ def _enviar_contrato_para_clicksign(db, contrato, cfg, email_loja, nome_loja, em
     doc_id = cli.adicionar_documento(envelope_id, pdf_bytes, nome_arquivo)
     sig_loja_id    = cli.adicionar_signatario(envelope_id, email_loja, nome_loja)
     sig_cliente_id = cli.adicionar_signatario(envelope_id, email_cliente, nome_cliente, cpf=cpf_cliente)
-    for signer_id in (sig_loja_id, sig_cliente_id):
+    signatarios = {
+        "loja":    {"signer_id": sig_loja_id,    "email": email_loja,    "nome": nome_loja},
+        "cliente": {"signer_id": sig_cliente_id, "email": email_cliente, "nome": nome_cliente,
+                    "cpf": cpf_cliente},
+    }
+    signer_ids = [sig_loja_id, sig_cliente_id]
+    for i, t in enumerate(testemunhas or [], start=1):
+        email_t = (t.get("email") or "").strip()
+        if not email_t:
+            continue
+        sid = cli.adicionar_signatario(envelope_id, email_t, t.get("nome") or "", cpf=t.get("cpf") or None)
+        signer_ids.append(sid)
+        signatarios["testemunha%d" % i] = {"signer_id": sid, "email": email_t,
+                                           "nome": t.get("nome") or "", "cpf": t.get("cpf") or ""}
+    for signer_id in signer_ids:
         cli.adicionar_requisito_assinatura(envelope_id, doc_id, signer_id)
         cli.adicionar_requisito_autenticacao(envelope_id, doc_id, signer_id)
     cli.ativar_envelope(envelope_id)
     contrato.clicksign_envelope_id = envelope_id
-    contrato.clicksign_signatarios_json = json.dumps({
-        "loja":    {"signer_id": sig_loja_id,    "email": email_loja,    "nome": nome_loja},
-        "cliente": {"signer_id": sig_cliente_id, "email": email_cliente, "nome": nome_cliente,
-                    "cpf": cpf_cliente},
-    }, ensure_ascii=False)
+    contrato.clicksign_signatarios_json = json.dumps(signatarios, ensure_ascii=False)
     contrato.assinatura_canal     = "clicksign"
     contrato.clicksign_enviado_em = datetime.utcnow()
 
@@ -5109,6 +5128,25 @@ class Handler(BaseHTTPRequestHandler):
                     _desatualizado = _mod_contrato.contrato_desatualizado(
                         contrato.pagamento_json,
                         _orc_src.forma_pagamento if _orc_src else None)
+                    # Achado do usuário 2026-08-17: defaults pro modal de confirmação da
+                    # assinatura digital (e-mails de loja/cliente/testemunhas, editáveis lá) —
+                    # calculado sempre (barato), o front só usa quando for mostrar o modal.
+                    _cd_proj, _cd_cliente, _od2 = _montar_dados_projeto_para_contrato(
+                        nome_safe, contrato.orcamento_id, db)
+                    _cd_loja = _loja_dict_para_contrato(db, loja_id)
+                    _usu_email = db.get(Usuario, usuario["id"])
+                    _clicksign_defaults = {
+                        "email_loja": (_usu_email.email if _usu_email else "") or "",
+                        "nome_loja": usuario.get("nome", ""),
+                        "email_cliente": _cd_cliente.get("email") or "",
+                        "nome_cliente": _cd_cliente.get("nome") or "",
+                        "testemunha1": {"nome": _cd_loja.get("testemunha1_nome", ""),
+                                        "cpf": _cd_loja.get("testemunha1_cpf", ""),
+                                        "email": _cd_loja.get("testemunha1_email", "")},
+                        "testemunha2": {"nome": _cd_loja.get("testemunha2_nome", ""),
+                                        "cpf": _cd_loja.get("testemunha2_cpf", ""),
+                                        "email": _cd_loja.get("testemunha2_email", "")},
+                    }
                     self.send_json({"ok": True, "contrato": {
                         "id":                   contrato.id,
                         "status":               contrato.status,
@@ -5126,6 +5164,7 @@ class Handler(BaseHTTPRequestHandler):
                         "data_limite_contratual": _meta.data_limite_contratual.isoformat() if (_meta and _meta.data_limite_contratual) else None,
                         "assinatura_canal":     contrato.assinatura_canal or "interno",
                         "clicksign_enviado_em": contrato.clicksign_enviado_em.isoformat() if contrato.clicksign_enviado_em else None,
+                        "clicksign_defaults":   _clicksign_defaults,
                     }})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -11672,8 +11711,10 @@ class Handler(BaseHTTPRequestHandler):
                         estado=((req.get("estado") or req.get("uf") or "").strip() or None),
                         testemunha1_nome=(req.get("testemunha1_nome") or "").strip() or None,
                         testemunha1_cpf=(req.get("testemunha1_cpf") or "").strip() or None,
+                        testemunha1_email=(req.get("testemunha1_email") or "").strip() or None,
                         testemunha2_nome=(req.get("testemunha2_nome") or "").strip() or None,
                         testemunha2_cpf=(req.get("testemunha2_cpf") or "").strip() or None,
+                        testemunha2_email=(req.get("testemunha2_email") or "").strip() or None,
                     )
                     db.add(pdv); db.flush()
                     # Perfis padrão do PDV (master/gerencial/operador) — fiel ao que a
@@ -12461,13 +12502,35 @@ class Handler(BaseHTTPRequestHandler):
                                     "em Admin → Dados da empresa."}, code=400); return
                     _proj, cliente_dict, _od = _montar_dados_projeto_para_contrato(
                         nome_safe, contrato.orcamento_id, db)
-                    _email_loja = db.get(Usuario, usuario["id"]).email or ""
+                    # Achado do usuário 2026-08-17: modal de confirmação (front) deixa o gerente
+                    # revisar/editar os e-mails antes de enviar — se vierem no body, prevalecem
+                    # sobre os defaults (mesmo comportamento de antes quando body vem vazio).
+                    _req = json.loads(body) if body else {}
+                    _email_loja = (_req.get("email_loja") or "").strip() \
+                        or (db.get(Usuario, usuario["id"]).email or "")
+                    _email_cliente = (_req.get("email_cliente") or "").strip() \
+                        or (cliente_dict.get("email") or "")
+                    # nome distinto de _loja_dict (função global, definida mais abaixo) — atribuir
+                    # a esse nome aqui dentro de do_POST tornaria a função inacessível no resto do
+                    # método inteiro (escopo de função do Python, achado ao rodar a suíte).
+                    _loja_dict_ct = _loja_dict_para_contrato(db, loja_id)
+                    _testemunhas_req = _req.get("testemunhas")
+                    if _testemunhas_req is None:
+                        _testemunhas_req = [
+                            {"nome": _loja_dict_ct.get("testemunha1_nome", ""),
+                             "cpf":  _loja_dict_ct.get("testemunha1_cpf", ""),
+                             "email": _loja_dict_ct.get("testemunha1_email", "")},
+                            {"nome": _loja_dict_ct.get("testemunha2_nome", ""),
+                             "cpf":  _loja_dict_ct.get("testemunha2_cpf", ""),
+                             "email": _loja_dict_ct.get("testemunha2_email", "")},
+                        ]
                     _enviar_contrato_para_clicksign(
                         db, contrato, cfg,
                         email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
-                        email_cliente=cliente_dict.get("email") or "",
+                        email_cliente=_email_cliente,
                         nome_cliente=cliente_dict.get("nome") or "",
-                        cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
+                        cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "",
+                        testemunhas=_testemunhas_req)
                     db.commit()
                     self.send_json({"ok": True, "assinatura_canal": contrato.assinatura_canal})
                 except (ValueError, ClickSignError) as e:
@@ -14855,8 +14918,8 @@ class Handler(BaseHTTPRequestHandler):
                             return
                     for campo in ("nome", "cnpj", "telefone", "email", "responsavel", "cep", "logradouro",
                                   "numero", "complemento", "bairro", "cidade", "estado",
-                                  "testemunha1_nome", "testemunha1_cpf",
-                                  "testemunha2_nome", "testemunha2_cpf"):
+                                  "testemunha1_nome", "testemunha1_cpf", "testemunha1_email",
+                                  "testemunha2_nome", "testemunha2_cpf", "testemunha2_email"):
                         if campo in req:
                             val = (req[campo] or "").strip() or None
                             if campo == "nome" and not val:
@@ -16265,8 +16328,10 @@ def _loja_dict(l) -> dict:
         "estado":      l.estado      or "",
         "testemunha1_nome": l.testemunha1_nome or "",
         "testemunha1_cpf":  l.testemunha1_cpf  or "",
+        "testemunha1_email": l.testemunha1_email or "",
         "testemunha2_nome": l.testemunha2_nome or "",
         "testemunha2_cpf":  l.testemunha2_cpf  or "",
+        "testemunha2_email": l.testemunha2_email or "",
         "pct_mercadoria":   l.pct_mercadoria if l.pct_mercadoria is not None else 65.0,
         "pct_servico":      l.pct_servico    if l.pct_servico    is not None else 35.0,
         "loja_mae_id": l.loja_mae_id,
@@ -16844,8 +16909,10 @@ def _loja_dict_para_contrato(db, loja_id):
             dona = mae
     t1n = loja.testemunha1_nome or dona.testemunha1_nome
     t1c = loja.testemunha1_cpf  or dona.testemunha1_cpf
+    t1e = loja.testemunha1_email or dona.testemunha1_email
     t2n = loja.testemunha2_nome or dona.testemunha2_nome
     t2c = loja.testemunha2_cpf  or dona.testemunha2_cpf
+    t2e = loja.testemunha2_email or dona.testemunha2_email
     return {
         "id": loja.id,
         "nome": dona.nome or "", "cnpj": dona.cnpj or "", "codigo": loja.codigo or "",
@@ -16853,8 +16920,8 @@ def _loja_dict_para_contrato(db, loja_id):
         "cep": dona.cep or "", "logradouro": dona.logradouro or "",
         "numero": dona.numero or "", "complemento": dona.complemento or "",
         "bairro": dona.bairro or "", "cidade": dona.cidade or "", "estado": dona.estado or "",
-        "testemunha1_nome": t1n or "", "testemunha1_cpf": t1c or "",
-        "testemunha2_nome": t2n or "", "testemunha2_cpf": t2c or "",
+        "testemunha1_nome": t1n or "", "testemunha1_cpf": t1c or "", "testemunha1_email": t1e or "",
+        "testemunha2_nome": t2n or "", "testemunha2_cpf": t2c or "", "testemunha2_email": t2e or "",
     }
 
 

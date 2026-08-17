@@ -15903,8 +15903,10 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-email','E-mail',loja.email)}
       ${f('loja-t1n','Testemunha 1 — nome',loja.testemunha1_nome)}
       ${f('loja-t1c','Testemunha 1 — CPF',loja.testemunha1_cpf)}
+      ${f('loja-t1e','Testemunha 1 — e-mail (assinatura digital)',loja.testemunha1_email)}
       ${f('loja-t2n','Testemunha 2 — nome',loja.testemunha2_nome)}
       ${f('loja-t2c','Testemunha 2 — CPF',loja.testemunha2_cpf)}
+      ${f('loja-t2e','Testemunha 2 — e-mail (assinatura digital)',loja.testemunha2_email)}
     </div>
     <div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Segmentação de receita — Mercadoria + Serviço deve somar 100%</div>
     <div class="grid2" style="gap:14px;margin-bottom:14px">
@@ -15926,8 +15928,8 @@ async function adminLojaSalvar(lid){
   const payload = {
     nome: v('loja-nome'), codigo: v('loja-codigo'), cnpj: v('loja-cnpj'),
     telefone: v('loja-tel'), email: v('loja-email'),
-    testemunha1_nome: v('loja-t1n'), testemunha1_cpf: v('loja-t1c'),
-    testemunha2_nome: v('loja-t2n'), testemunha2_cpf: v('loja-t2c'),
+    testemunha1_nome: v('loja-t1n'), testemunha1_cpf: v('loja-t1c'), testemunha1_email: v('loja-t1e'),
+    testemunha2_nome: v('loja-t2n'), testemunha2_cpf: v('loja-t2c'), testemunha2_email: v('loja-t2e'),
     pct_mercadoria: nMerc, pct_servico: nServ,
   };
   const r = await fetch('/api/admin/lojas/'+lid, {method:'PATCH', credentials:'same-origin',
@@ -21735,15 +21737,91 @@ function _tempoDecorrido(iso) {
   return Math.floor(h / 24) + 'd';
 }
 
+// Achado do usuário 2026-08-17: clicar "Assinatura ClickSign" enviava direto, sem confirmar pra
+// onde ia (e-mail do cliente vinha automático do cadastro, sem chance de revisar/corrigir).
+// Agora abre um modal confirmando/editando os e-mails de loja, cliente e testemunhas antes de
+// enviar de fato — testemunha com e-mail em branco simplesmente não é convocada a assinar.
+let _csModalDefaults = null;
+
 async function enviarContratoParaClickSign() {
+  if (!projetoAtivo) return;
+  let d;
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato`,
+                          { credentials: 'same-origin' });
+    d = await r.json();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
+  if (!d.ok || !d.contrato) { showToast('Erro ao carregar dados do contrato.', true); return; }
+  _csModalDefaults = d.contrato.clicksign_defaults || {};
+  _abrirModalConfirmarClickSign();
+}
+
+function _abrirModalConfirmarClickSign() {
+  const def = _csModalDefaults || {};
+  const t1 = def.testemunha1 || {}, t2 = def.testemunha2 || {};
+  document.getElementById('modal-clicksign-confirmar')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'modal-clicksign-confirmar';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
+  const campo = (id, label, val, placeholder) => `
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-top:12px">${label}<br>
+      <input id="${id}" type="email" value="${esc(val||'')}" placeholder="${esc(placeholder||'')}"
+        style="width:100%;box-sizing:border-box;padding:8px;margin-top:2px;background:var(--input);
+        border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.85rem"></label>`;
+  ov.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;max-width:480px;width:92%;max-height:88vh;overflow-y:auto">
+      <h4 style="margin:0 0 6px">Assinatura Digital — confirmar destinatários</h4>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 4px">Confira ou corrija os e-mails para onde o contrato será encaminhado para assinatura. Testemunha com e-mail em branco não é convocada.</p>
+      ${campo('cs-email-loja', 'E-mail da loja (assina como responsável)', def.email_loja, 'obrigatório')}
+      ${campo('cs-email-cliente', 'E-mail do cliente — ' + esc(def.nome_cliente||'—'), def.email_cliente, 'obrigatório')}
+      <div style="border-top:1px dashed var(--border);margin:16px 0 4px"></div>
+      ${campo('cs-email-test1', 'Testemunha 1 — ' + esc(t1.nome||'(sem cadastro)'), t1.email, 'em branco = não assina')}
+      ${campo('cs-email-test2', 'Testemunha 2 — ' + esc(t2.nome||'(sem cadastro)'), t2.email, 'em branco = não assina')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('modal-clicksign-confirmar').remove()"
+          class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
+        <button data-act="enviar" onclick="_confirmarEnvioClickSign()" class="btn-ciclo btn-primary">
+          <i class="ti ti-signature"></i> Confirmar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function _confirmarEnvioClickSign() {
+  const def = _csModalDefaults || {};
+  const t1 = def.testemunha1 || {}, t2 = def.testemunha2 || {};
+  const emailLoja    = (document.getElementById('cs-email-loja')?.value || '').trim();
+  const emailCliente = (document.getElementById('cs-email-cliente')?.value || '').trim();
+  const emailT1      = (document.getElementById('cs-email-test1')?.value || '').trim();
+  const emailT2      = (document.getElementById('cs-email-test2')?.value || '').trim();
+  if (!emailLoja || !emailCliente) {
+    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+  }
+  const btn = document.querySelector('#modal-clicksign-confirmar [data-act="enviar"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
   try {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/enviar`,
-      { method: 'POST', credentials: 'same-origin' });
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          email_loja: emailLoja, email_cliente: emailCliente,
+          testemunhas: [
+            { nome: t1.nome || '', cpf: t1.cpf || '', email: emailT1 },
+            { nome: t2.nome || '', cpf: t2.cpf || '', email: emailT2 },
+          ],
+        }) });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) {
+      showToast('Erro: ' + d.erro, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+      return;
+    }
+    document.getElementById('modal-clicksign-confirmar')?.remove();
     showToast('Contrato enviado para assinatura eletrônica (ClickSign).', false);
     carregarDadosContrato();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) {
+    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+  }
 }
 
 async function verificarClickSignContratoAgora() {

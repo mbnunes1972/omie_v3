@@ -6420,6 +6420,7 @@ const _CAD_DEFS = {
     campos:[
       {id:'nome', lbl:'Nome', tipo:'text', req:true, full:true},
       {id:'cpf', lbl:'CPF', tipo:'text'}, {id:'telefone', lbl:'Telefone', tipo:'text'},
+      {id:'cnpj', lbl:'CNPJ (se MEI)', tipo:'text'},
       {id:'funcao_id', lbl:'Tipo de serviço / função', tipo:'select_funcoes'},
       {id:'condicao', lbl:'Condição', tipo:'select', ops:[['','—'],['mei','MEI'],['autonomo','Autônomo']]},
       {id:'status', lbl:'Status', tipo:'select', ops:[['ativo','Ativo'],['inativo','Inativo']]},
@@ -14291,6 +14292,14 @@ async function folhaGerar(){
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Folha gerada.', false); folhaRender(d.folha);
 }
+// Comissão Fixa: coluna colapsável, OCULTA por padrão (achado do usuário 2026-08-17) — a maioria
+// dos funcionários não tem esse valor; cache do último payload evita refetch só pra abrir/fechar.
+let _folhaComissaoFixaVisivel = false;
+let _folhaUltima = null;
+function folhaToggleComissaoFixa(){
+  _folhaComissaoFixaVisivel = !_folhaComissaoFixaVisivel;
+  folhaRender(_folhaUltima);
+}
 async function folhaPagar(id){
   if(!(await confirmarPopup('Confirmar o pagamento desta folha? A despesa será lançada nas contas 5.3 (Salários / Comissão de Vendedor).', {titulo:'Pagar folha', okLabel:'Confirmar pagamento'}))) return;
   const d = await (await fetch('/api/folha/'+id+'/pagar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
@@ -14310,6 +14319,9 @@ async function folhaReabrir(id){
 function folhaRender(folha){
   const box = document.getElementById('folha-mes-box'); if(!box) return;
   folha = folha || {itens:[]};
+  _folhaUltima = folha;
+  const comFixaOn = _folhaComissaoFixaVisivel;
+  const totalCols = 9 + (comFixaOn?1:0);
   const linhas = (folha.itens||[]).map(it => {
     const acao = it.status==='paga'
       ? '<span style="color:var(--st-fechado);font-size:11px;font-weight:600">Paga</span>'
@@ -14320,12 +14332,18 @@ function folhaRender(folha){
           : '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="folhaAprovar('+it.id+')">Aprovar</button>');
     const comItens = it.comissoes||[];
     const _baseInp = (val, fn) => '<input type="number" step="0.01" value="'+val+'" class="inp" style="width:120px;text-align:right;font-family:var(--font-mono);font-size:13px;padding:2px 6px;box-sizing:border-box;margin:0" onchange="'+fn+'">';
-    // "?" pequena (clique) → discrimina a composição da base de TODA a linha (por projeto/ambiente).
-    const _qBase = fid => '<span onclick="comissaoVerBase('+fid+')" title="Ver composição da base (clique)" style="cursor:pointer;color:var(--accent);font-size:9px;font-weight:700;margin-left:5px;border:1px solid var(--accent);border-radius:50%;width:13px;height:13px;min-width:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto">?</span>';
-    const baseTotal = comItens.reduce((s,cm)=> s+((cm.base_ajustada!=null?cm.base_ajustada:cm.base)||0), 0);
+    // "?" pequena (clique) → abre o modal editável de composição da comissão (por venda/ambiente).
+    const _qBase = fid => '<span onclick="comissaoVerBase('+fid+')" title="Ver e ajustar a composição da comissão (clique)" style="cursor:pointer;color:var(--accent);font-size:9px;font-weight:700;margin-left:5px;border:1px solid var(--accent);border-radius:50%;width:13px;height:13px;min-width:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto">?</span>';
+    const comTotal = it.parte_variavel||0;
     const comCel = comItens.length
-      ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(baseTotal)+'</span>'+_qBase(it.id)+'</div>'   // BASE somada + "?"
-      : '<div class="fcell">'+(it.status==='paga' ? '<span style="color:var(--muted)">—</span>' : _baseInp(it.base_comissao||0, "folhaSalvarBase("+it.id+",this.value)"))+'</div>';
+      ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(comTotal)+'</span>'+_qBase(it.id)+'</div>'
+      : (it.status==='paga'
+          ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(comTotal)+'</span></div>'
+          : '<div class="fcell">'+_baseInp(it.base_comissao||0, "folhaSalvarBase("+it.id+",this.value)")+'</div>'
+            +'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">= '+_fBRL(comTotal)+'</div>');
+    const comFixaCel = comFixaOn
+      ? '<td class="num" style="padding:8px 10px"><div class="fcell">'+(it.comissao_fixa?_fBRL(it.comissao_fixa):'<span style="color:var(--muted)">—</span>')+'</div></td>'
+      : '';
     const ads = it.adiantamentos||[];
     const adsList = ads.map(a =>
        '<div style="display:flex;gap:5px;align-items:center;font-size:10.5px;padding:1px 0">'
@@ -14333,38 +14351,42 @@ function folhaRender(folha){
       +(it.status==='paga'?'':'<label style="display:flex;align-items:center;gap:3px;color:var(--muted)"><input type="checkbox" '+(a.abater?'checked':'')+' onchange="adiantamentoToggleAbater('+a.id+',this.checked)" style="width:12px;height:12px"> abater</label>'
         +'<span onclick="adiantamentoRemover('+a.id+')" style="cursor:pointer;color:var(--muted)" title="remover">&times;</span>')
       +'</div>').join('');
-    const adiantCel =
-       '<div class="fcell" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(it.liquido_pagar!=null?it.liquido_pagar:(it.total||0))+'</div>'
-      +(it.saldo_debito?'<div style="font-size:10.5px;color:var(--err)">saldo dev.: '+_fBRL(it.saldo_debito)+'</div>':'')
-      +adsList
+    const adiantCel = '<div class="fcell fcell-l">'+(adsList||'<span style="color:var(--muted);font-size:11px">—</span>')+'</div>'
       +(it.status==='paga'?'':'<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:3px" onclick="adiantamentoAdd('+it.funcionario_id+',\''+esc(it.competencia||'')+'\')">+ adiant.</button>');
+    const aPagarCel = '<div class="fcell" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(it.liquido_pagar!=null?it.liquido_pagar:(it.total||0))+'</div>'
+      +(it.saldo_debito?'<div style="font-size:10.5px;color:var(--err)">saldo dev.: '+_fBRL(it.saldo_debito)+'</div>':'');
     return '<tr class="proj-row">'
       +'<td style="padding:8px 10px;color:var(--text);font-weight:500"><div class="fcell fcell-l">'+esc(it.funcionario||'—')+'</div></td>'
-      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_fixa||0)+'</div>'
-        +(it.comissao_fixa?'<div style="font-size:12px;color:var(--muted)">+'+_fBRL(it.comissao_fixa)+'</div>':'')+'</td>'
+      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_fixa||0)+'</div></td>'
       +'<td class="num" style="padding:8px 10px;min-width:140px">'+comCel+'</td>'
-      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_variavel||0)+'</div></td>'
+      +comFixaCel
       +'<td class="num" style="padding:8px 10px;color:var(--muted)"><div class="fcell">'+_fBRL(it.beneficios||0)+'</div></td>'
+      +'<td style="padding:8px 10px;min-width:150px">'+adiantCel+'</td>'
       +'<td class="num" style="padding:8px 10px;font-weight:700"><div class="fcell">'+_fBRL(it.total||0)+'</div></td>'
-      +'<td style="padding:8px 10px;text-align:right;min-width:160px">'+adiantCel+'</td>'
+      +'<td style="padding:8px 10px;text-align:right;min-width:130px">'+aPagarCel+'</td>'
       +'<td style="padding:8px 10px;font-size:11px;color:var(--muted)"><div class="fcell fcell-l">'+esc(it.pagamento||'—')+'</div></td>'
       +'<td style="padding:8px 10px;text-align:right"><div class="fcell">'+acao+'</div></td></tr>';
-  }).join('') || '<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Nenhuma folha para esta competência. Clique em “Gerar folha”.</td></tr>';
+  }).join('') || '<tr><td colspan="'+totalCols+'" style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Nenhuma folha para esta competência. Clique em “Gerar folha”.</td></tr>';
   box.innerHTML =
-     '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;max-width:760px">Motor de cálculo: a remuneração vem da <strong style="color:var(--text)">Função</strong> do funcionário (Config → Remunerações) — <strong style="color:var(--text)">salário fixo</strong>, <strong style="color:var(--text)">benefícios</strong> (AT/VA/PS) e comissões. As <strong style="color:var(--text)">Comissões</strong> são a soma dos itens: a do Consultor (vendas líquidas × %) e as de cada <strong style="color:var(--text)">papel</strong> (PE/Medição/Montagem/Assistência), preparadas automaticamente ao concluir cada etapa do ciclo. A coluna <strong style="color:var(--text)">Base</strong> (valor dos ambientes atribuídos, ou vendas líquidas) é <strong style="color:var(--text)">editável</strong>; a <strong style="color:var(--text)">Comissão</strong> = Base × % da função (passe o mouse sobre o valor para ver base × %). O pagamento lança a despesa nas contas 5.3 e usa os dados bancários/PIX cadastrados.</div>'
+     '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;max-width:780px">Motor de cálculo: a remuneração vem da <strong style="color:var(--text)">Função</strong> do funcionário (Config → Remunerações) — <strong style="color:var(--text)">salário fixo</strong>, <strong style="color:var(--text)">benefícios</strong> (AT/VA/PS) e comissões. As <strong style="color:var(--text)">Comissões</strong> são apuradas automaticamente: a do Consultor pelas vendas líquidas dos contratos fechados no período × % da meta atingida, e a de cada <strong style="color:var(--text)">papel</strong> (PE/Medição/Montagem/Assistência) pelos ambientes concluídos. Clique no <strong style="color:var(--text)">"?"</strong> ao lado do valor para ver a composição por venda/ambiente — no ato do pagamento o gerente pode ajustar o valor líquido considerado e o % de cada item (fica registrado para auditoria). O pagamento lança a despesa nas contas 5.3 e fecha a provisão constituída na assinatura do contrato.</div>'
     +'<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">'
     +'<label style="font-size:var(--fs-sm);color:var(--muted)">Competência</label>'
     +'<input type="month" value="'+esc(folha.competencia||_folhaComp)+'" onchange="folhaMudarComp(this.value)" class="inp" style="width:auto">'
-    +'<button class="btn btn-primary btn-sm" onclick="folhaGerar()">Gerar folha</button></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="folhaGerar()">Gerar folha</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="folhaToggleComissaoFixa()">'+(comFixaOn?'Ocultar':'Mostrar')+' comissão fixa</button></div>'
     +'<table class="proj-table folha-tbl"><thead><tr>'
-    +'<th>Funcionário</th><th class="num">Parte fixa</th><th class="num">Base</th>'
-    +'<th class="num">Comissões</th><th class="num">Benefícios</th>'
-    +'<th class="num">Total</th><th class="num">Líquido a pagar</th><th>Pagamento</th><th style="width:80px"></th></tr></thead><tbody>'+linhas+'</tbody>'
+    +'<th>Funcionário</th><th class="num">Parte fixa</th>'
+    +'<th class="num">Comissões</th>'
+    +(comFixaOn?'<th class="num">Comissão Fixa</th>':'')
+    +'<th class="num">Benefícios</th><th>Adiantamento</th>'
+    +'<th class="num">Total</th><th class="num">A pagar</th><th>Pagamento</th><th style="width:80px"></th></tr></thead><tbody>'+linhas+'</tbody>'
     +'<tfoot><tr style="border-top:2px solid var(--border-strong);font-weight:700;vertical-align:middle">'
     +'<td style="padding:9px 10px">Totais</td>'
-    +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_fixa||0)+'</td><td></td>'
+    +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_fixa||0)+'</td>'
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_variavel||0)+'</td>'
+    +(comFixaOn?'<td></td>':'')
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_beneficios||0)+'</td>'
+    +'<td></td>'
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_geral||0)+'</td>'
     +'<td class="num" style="padding:9px 10px;color:var(--accent)">'+_fBRL(folha.total_liquido||0)+'</td>'
     +'<td colspan="2"></td></tr></tfoot></table>';
@@ -14378,18 +14400,50 @@ async function folhaSalvarBase(id, valor){
   else { showToast((d&&d.erro)||'Erro ao salvar base.', true); }
 }
 
-async function comissaoSalvarBase(id, valor){
+// Recalcula ao vivo a 3ª coluna (Resultado) do modal — puro JS, sem round-trip ao servidor.
+function _comissaoRecalcLive(id){
+  const liqEl = document.getElementById('cm-liq-'+id), pctEl = document.getElementById('cm-pct-'+id);
+  const resEl = document.getElementById('cm-result-'+id);
+  if(!liqEl || !pctEl || !resEl) return;
+  const liq = parseFloat(liqEl.value)||0, pct = parseFloat(pctEl.value)||0;
+  resEl.textContent = _fBRL(Math.round(liq*pct)/100);
+}
+async function _comissaoSalvarAjuste(id){
+  const liqEl = document.getElementById('cm-liq-'+id), pctEl = document.getElementById('cm-pct-'+id);
+  const body = {};
+  if(liqEl){ const v = parseFloat(liqEl.value); if(!isNaN(v)) body.base_ajustada = v; }
+  if(pctEl){ const v = parseFloat(pctEl.value); if(!isNaN(v)) body.pct_ajustado = v; }
   const r = await fetch('/api/comissao/'+id, {method:'PATCH', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_ajustada: parseFloat(valor)||0})});
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const d = await r.json().catch(()=>({}));
-  if(r.ok && !d.erro){ folhaGerar(); }   // regenera a folha p/ resomar a parte variável (Σ itens)
-  else { showToast((d&&d.erro)||'Erro ao salvar comissão.', true); }
+  if(!r.ok || d.ok===false){ showToast((d&&d.erro)||'Erro ao salvar ajuste.', true); return; }
+  showToast('Ajuste salvo.', false);
+  const ex=document.getElementById('modal-base-com'); if(ex) ex.remove();
+  folhaGerar();   // regenera a folha p/ resomar a parte variável (Σ itens), mesmo padrão de antes
 }
 async function comissaoVerBase(folhaId){
   const r = await fetch('/api/folha/'+folhaId+'/comissoes-base',{credentials:'same-origin'});
   const d = await r.json().catch(()=>({}));
   if(!r.ok || !d.ok){ showToast((d&&d.erro)|| (r.status===404?'Rota não encontrada — reinicie o servidor (python3 main.py).':'Erro ao carregar base.'), true); return; }
   const blocos = (d.itens||[]).map(x=>{
+    if(x.origem === 'venda'){
+      const liq = x.valor_liquido_ajustado!=null ? x.valor_liquido_ajustado : x.valor_liquido_sistema;
+      const pct = x.pct_ajustado!=null ? x.pct_ajustado : x.pct_sistema;
+      const bloqueado = x.status === 'confirmado';
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--border)">'
+        +'<div style="font-size:12px;font-weight:600;margin-bottom:6px">'+esc(x.projeto||'')+(bloqueado?' <span style="color:var(--muted);font-weight:400">(confirmada)</span>':'')+'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 80px 1fr;gap:8px;align-items:end">'
+        +'<label style="font-size:10px;color:var(--muted)">Valor líquido da venda<br>'
+        +'<input type="number" step="0.01" id="cm-liq-'+x.id+'" value="'+(liq!=null?liq:0)+'" class="inp" style="width:100%;box-sizing:border-box" '+(bloqueado?'disabled':'')+' oninput="_comissaoRecalcLive('+x.id+')"></label>'
+        +'<label style="font-size:10px;color:var(--muted)">%<br>'
+        +'<input type="number" step="0.01" id="cm-pct-'+x.id+'" value="'+(pct!=null?pct:0)+'" class="inp" style="width:100%;box-sizing:border-box" '+(bloqueado?'disabled':'')+' oninput="_comissaoRecalcLive('+x.id+')"></label>'
+        +'<div style="font-size:10px;color:var(--muted)">Resultado<br>'
+        +'<span id="cm-result-'+x.id+'" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(x.valor||0)+'</span></div>'
+        +'</div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:4px">Provisão em aberto hoje: '+_fBRL(x.saldo_provisao_atual||0)+'</div>'
+        +(bloqueado?'':'<div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn btn-primary btn-sm" style="font-size:11px" onclick="_comissaoSalvarAjuste('+x.id+')">Salvar ajuste</button></div>')
+        +'</div>';
+    }
     const amb = (x.ambientes||[]).map(a=>
        '<div style="display:flex;justify-content:space-between;gap:14px;padding:2px 0 2px 14px;font-size:11px;color:var(--muted)">'
       +'<span>'+esc(a.nome||'—')+'</span><span style="font-family:var(--font-mono)">'+_fBRL(a.valor||0)+'</span></div>').join('');
@@ -14401,12 +14455,12 @@ async function comissaoVerBase(folhaId){
   const ex=document.getElementById('modal-base-com'); if(ex) ex.remove();
   const ov=document.createElement('div'); ov.id='modal-base-com';
   ov.style.cssText='position:fixed;inset:0;z-index:660;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
-  ov.innerHTML='<div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:22px;max-width:440px;width:92%;max-height:85vh;overflow:auto">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:var(--font-display);font-weight:900;font-size:15px">Composição da base de comissão</div>'
+  ov.innerHTML='<div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:22px;max-width:460px;width:92%;max-height:85vh;overflow:auto">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:var(--font-display);font-weight:900;font-size:15px">Composição da comissão</div>'
     +'<span onclick="document.getElementById(\'modal-base-com\').remove()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Por item de comissão; abaixo de cada um, os valores líquidos que compõem a base (contratos, para venda; ambientes, para os papéis).</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Vendas: valor líquido e % são editáveis (efeito de cálculo); o resultado recalcula ao vivo. Papéis: composição por ambiente, somente leitura.</div>'
     +blocos
-    +'<div style="display:flex;justify-content:space-between;gap:14px;padding:8px 0 0;font-weight:800;font-size:13px"><span>Base total</span><span style="font-family:var(--font-mono)">'+_fBRL(d.total_base||0)+'</span></div></div>';
+    +'<div style="display:flex;justify-content:space-between;gap:14px;padding:8px 0 0;font-weight:800;font-size:13px"><span>Total</span><span style="font-family:var(--font-mono)">'+_fBRL(d.itens.reduce((s,x)=>s+(x.valor||0),0))+'</span></div></div>';
   document.body.appendChild(ov);
 }
 

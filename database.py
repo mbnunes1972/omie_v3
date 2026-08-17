@@ -354,8 +354,9 @@ class ComissaoFolha(Base):
     projeto_nome   = Column(Text,     nullable=True)            # nome_safe (rastreabilidade)
     etapa_codigo   = Column(String(8), nullable=True)           # etapa que disparou (papel); NULL p/ venda
     base           = Column(Float,    nullable=True, default=0.0)   # Σ order_total dos ambientes (ou vendas líq.)
-    base_ajustada  = Column(Float,    nullable=True)            # override manual da base
+    base_ajustada  = Column(Float,    nullable=True)            # override manual da base (venda: valor líquido ajustado)
     pct            = Column(Float,    nullable=True, default=0.0)
+    pct_ajustado   = Column(Float,    nullable=True)            # override manual do % (gerente, no ato do pagamento)
     valor          = Column(Float,    nullable=True, default=0.0)   # base_efetiva × pct/100
     status         = Column(String(12), nullable=False, default="previsto")  # previsto|confirmado|cancelado
     ref_etapa      = Column(String(120), nullable=True)        # idempotência: '<projeto>:<etapa>:<func>' ou 'venda:<func>:<comp>'
@@ -459,6 +460,7 @@ class Terceiro(Base):
     loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
     nome            = Column(String(150), nullable=False)
     cpf             = Column(String(20),  nullable=True)
+    cnpj            = Column(String(18),  nullable=True)   # contratação via MEI (achado do usuário 2026-08-17)
     telefone        = Column(String(20),  nullable=True)
     tipo_servico    = Column(String(20),  nullable=True)   # legado — ver funcao_id
     funcao_id       = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)  # → Tabela de Funções (v10)
@@ -2288,6 +2290,10 @@ def _migrar_colunas_pg():
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_uuid",
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_enviado_em",
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_signatarios_json",
+        # Achado do usuário 2026-08-17: Terceiro (MEI) precisa de CNPJ; Folha de Pagamento ganha
+        # % de comissão ajustável pelo gerente no ato do pagamento (comissão de venda).
+        "ALTER TABLE terceiros ADD COLUMN IF NOT EXISTS cnpj VARCHAR(18)",
+        "ALTER TABLE comissao_folha ADD COLUMN IF NOT EXISTS pct_ajustado DOUBLE PRECISION",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

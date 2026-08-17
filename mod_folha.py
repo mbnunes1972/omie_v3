@@ -161,10 +161,40 @@ def saldo_provisao_venda(db, owner_tipo, owner_id, projeto_nome):
     return 0.0
 
 
+def _valor_liquido_projeto(db, nome_safe):
+    """Valor líquido do orçamento vencedor de um projeto (maior valor_liquido/valor_total entre os
+    orçamentos daquele projeto) — 0.0 se não houver orçamento algum. Mesma regra de
+    `vendas_liquido_detalhe`, só que pra UM projeto específico."""
+    orcs = db.query(Orcamento).filter_by(projeto_id=nome_safe).all()
+    if not orcs:
+        return 0.0
+    return round(max((o.valor_liquido or o.valor_total or 0.0) for o in orcs), 2)
+
+
+def _recalcular_valor_item(item, valor_sistema):
+    """Recalcula `item.valor` a partir dos overrides do gerente (`base_ajustada`/`pct_ajustado`) —
+    ou mantém `valor_sistema` EXATO se nada foi ajustado (achado da validação técnica 2026-08-17:
+    reaplicar `item.pct`, arredondado a 2 casas, sobre `item.base` pra "reconstruir" o valor gera
+    um resíduo de centavos mesmo sem ajuste nenhum do gerente — `pct` existe só como ponto de
+    partida/exibição, nunca como fonte de cálculo quando não há override). `valor_sistema`: pra
+    venda, o saldo real da provisão (`saldo_provisao_venda`); pra papel, `base × pct / 100` (não há
+    fonte externa mais precisa nesse caso — a fórmula MESMA é a verdade)."""
+    if item.base_ajustada is None and item.pct_ajustado is None:
+        item.valor = round(float(valor_sistema or 0.0), 2)
+        return
+    base_ef = item.base_ajustada if item.base_ajustada is not None else item.base
+    pct_ef = item.pct_ajustado if item.pct_ajustado is not None else item.pct
+    item.valor = round(float(base_ef or 0.0) * float(pct_ef or 0.0) / 100.0, 2)
+
+
 def _upsert_itens_venda(db, loja_id, f, competencia, cfg):
-    """Consultor: um item origem='venda' POR PROJETO fechado no mês, valendo o saldo em aberto da
-    Provisão de Comissão de Vendas daquele projeto (constituída na assinatura, com o redutor de
-    desconto já aplicado) — a Folha não recalcula nada, só busca. Idempotente por ref."""
+    """Consultor: um item origem='venda' POR PROJETO fechado no mês. `item.valor` (o que de fato é
+    pago) vale o saldo em aberto da Provisão de Comissão de Vendas daquele projeto (constituída na
+    assinatura, com o redutor de desconto já aplicado) — a Folha não recalcula por padrão, só
+    busca (ver `_recalcular_valor_item`). `base`/`pct` (valor líquido da venda / percentual
+    efetivo) são um SNAPSHOT informativo — ponto de partida pro ajuste manual do gerente no ato do
+    pagamento (`base_ajustada`/`pct_ajustado`); nunca recalculados depois que o item confirma
+    (guarda abaixo). Idempotente por ref."""
     funcao = db.get(Funcao, f.funcao_id) if f.funcao_id else None
     if not (funcao and funcao.usa_comissao_vendas) or not f.usuario_id:
         return
@@ -187,9 +217,12 @@ def _upsert_itens_venda(db, loja_id, f, competencia, cfg):
             item = ComissaoFolha(loja_id=loja_id, funcionario_id=f.id, competencia=competencia,
                                  origem="venda", papel="venda", projeto_nome=p.nome_safe, ref_etapa=ref)
             db.add(item)
-        base_ef = item.base_ajustada if item.base_ajustada is not None else saldo
-        item.competencia = competencia; item.base = saldo; item.pct = None
-        item.valor = round(base_ef, 2); item.status = "previsto"
+        valor_liquido = _valor_liquido_projeto(db, p.nome_safe)
+        item.competencia = competencia
+        item.base = valor_liquido
+        item.pct = round(saldo / valor_liquido * 100.0, 2) if valor_liquido > 0 else None
+        item.status = "previsto"
+        _recalcular_valor_item(item, saldo)
         db.flush()
 
 
@@ -247,7 +280,16 @@ def pagar(db, owner_tipo, owner_id, reg):
     projeto, a Provisão de Comissão de Vendas já constituída no contrato daquele projeto
     (mod_contabil.efetivar_provisao, mesmo mecanismo da Reconciliação). Isso fecha a provisão (que
     antes ficava aberta pra sempre — a Folha pagava por fora, num lançamento duplicado e
-    desconectado) e lança a despesa formal (5.3.01) na hora do pagamento real. Retorna (ok, erro)."""
+    desconectado) e lança a despesa formal (5.3.01) na hora do pagamento real.
+
+    Ajuste do gerente no ato do pagamento (2026-08-17): se `it.valor` (possivelmente ajustado via
+    base_ajustada/pct_ajustado) diverge do que foi originalmente provisionado no contrato, sobra um
+    resíduo na provisão/ativo diferido — `mod_contabil.resolver_saldo_provisao` fecha esse resíduo
+    (sobra: cancela sem tocar DRE, nunca foi gasto; falta: só zera o mecânico, a despesa da
+    diferença já foi reconhecida no `efetivar_provisao` acima). Roda SEMPRE que há projeto (mesmo
+    valor 0 — gerente pode zerar uma comissão indevida, a provisão original não pode ficar órfã), e
+    com `ref` DISTINTO do `efetivar_provisao` (mesmo ref faria resolver_saldo_provisao achar o
+    lançamento já feito e virar no-op silencioso). Retorna (ok, erro)."""
     if reg.status == "paga":
         return True, None
     if reg.status != "aprovada":
@@ -264,6 +306,10 @@ def pagar(db, owner_tipo, owner_id, reg):
             mod_contabil.efetivar_provisao(db, owner_tipo, owner_id, it.projeto_nome,
                                            _PROV_COMISSAO_VENDA, v,
                                            ref=ref + ":venda:" + it.projeto_nome, forma_pagamento="direto")
+        if it.projeto_nome:
+            mod_contabil.resolver_saldo_provisao(db, owner_tipo, owner_id, it.projeto_nome,
+                                                 _PROV_COMISSAO_VENDA,
+                                                 ref=ref + ":venda:" + it.projeto_nome + ":ajuste")
         it.status = "confirmado"
     variavel_nao_venda = round((reg.parte_variavel or 0) - sum(float(i.valor or 0) for i in itens_venda), 2)
     if variavel_nao_venda > 0:
@@ -285,6 +331,13 @@ def _pagamento_str(f):
     return ""
 
 
+def _pago_em_str(reg):
+    """Data de efetivação do pagamento, dd/mm/aaaa — achado do usuário 2026-08-17: a coluna
+    "Pagamento" da tela mostrava dados bancários/PIX (frequentemente vazia) em vez da data; o campo
+    `pago_em` já existia no modelo, só nunca era exposto no serialize."""
+    return reg.pago_em.strftime("%d/%m/%Y") if reg.pago_em else None
+
+
 def serialize(db, reg):
     f = db.get(Funcionario, reg.funcionario_id)
     itens_com = (db.query(ComissaoFolha)
@@ -293,7 +346,8 @@ def serialize(db, reg):
                  .order_by(ComissaoFolha.id.asc()).all())
     comissoes = [{"id": i.id, "origem": i.origem, "papel": i.papel, "projeto": i.projeto_nome,
                   "etapa": i.etapa_codigo, "base": i.base, "base_ajustada": i.base_ajustada,
-                  "pct": i.pct, "valor": i.valor, "status": i.status} for i in itens_com]
+                  "pct": i.pct, "pct_ajustado": i.pct_ajustado, "valor": i.valor, "status": i.status}
+                 for i in itens_com]
     ads = (db.query(AdiantamentoFuncionario)
            .filter_by(funcionario_id=reg.funcionario_id)
            .order_by(AdiantamentoFuncionario.id.asc()).all())
@@ -310,7 +364,7 @@ def serialize(db, reg):
             "comissao_fixa": reg.comissao_fixa, "total": reg.total,
             "comissoes": comissoes, "adiantamentos": adiantamentos, "abatimentos": abat,
             "liquido_pagar": liquido, "saldo_debito": saldo,
-            "status": reg.status, "pagamento": _pagamento_str(f)}
+            "status": reg.status, "pagamento": _pago_em_str(reg), "dados_pagamento": _pagamento_str(f)}
 
 
 def listar(db, loja_id, competencia):

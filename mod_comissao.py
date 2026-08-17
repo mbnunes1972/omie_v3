@@ -194,11 +194,26 @@ def cancelar_comissao_etapa(db, projeto_nome, etapa_codigo, funcionario_id):
     return item
 
 
-def editar_item(db, item, base_ajustada):
-    """Override manual da base de um item (status != confirmado) e recalcula valor."""
+_NAO_INFORMADO = object()   # sentinela: distingue "campo ausente do request" de "None explícito"
+
+
+def editar_item(db, item, base_ajustada=_NAO_INFORMADO, pct_ajustado=_NAO_INFORMADO):
+    """Override manual da base e/ou do % de um item (status != confirmado) e recalcula o valor
+    (achado do usuário 2026-08-17: pra venda, editar SÓ a base não bastava mais — o % também
+    precisa ser ajustável no ato do pagamento). Cada parâmetro só é tocado se vier explicitamente
+    (`_NAO_INFORMADO` = não mexe; `None` = limpa o override e volta ao valor do sistema)."""
     if item.status == "confirmado":
         return False, "comissão já confirmada"
-    item.base_ajustada = float(base_ajustada)
-    item.valor = round(float(base_ajustada) * float(item.pct or 0.0) / 100.0, 2)
+    if base_ajustada is not _NAO_INFORMADO:
+        item.base_ajustada = float(base_ajustada) if base_ajustada is not None else None
+    if pct_ajustado is not _NAO_INFORMADO:
+        item.pct_ajustado = float(pct_ajustado) if pct_ajustado is not None else None
+    if item.origem == "venda" and item.projeto_nome:
+        import mod_contabil
+        ot, oid = mod_contabil.resolver_owner(db, {"loja_id": item.loja_id, "rede_id": None})
+        valor_sistema = mod_folha.saldo_provisao_venda(db, ot, oid, item.projeto_nome)
+    else:
+        valor_sistema = round(float(item.base or 0.0) * float(item.pct or 0.0) / 100.0, 2)
+    mod_folha._recalcular_valor_item(item, valor_sistema)
     db.flush()
     return True, None

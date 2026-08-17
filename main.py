@@ -2843,7 +2843,7 @@ class Handler(BaseHTTPRequestHandler):
             usuario = get_usuario_sessao(self)
             if not usuario:
                 self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-            import mod_comissao
+            import mod_comissao, mod_contabil
             db = get_session()
             try:
                 ator = _ator_dict(db, usuario)
@@ -2857,12 +2857,29 @@ class Handler(BaseHTTPRequestHandler):
                          .filter_by(funcionario_id=reg.funcionario_id, competencia=reg.competencia)
                          .filter(ComissaoFolha.status != "cancelado")
                          .order_by(ComissaoFolha.id.asc()).all())
+                ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 out = []
                 for it in itens:
                     base = it.base_ajustada if it.base_ajustada is not None else it.base
-                    out.append({"projeto": it.projeto_nome, "papel": it.papel or it.origem, "origem": it.origem,
-                                "base": round(base or 0.0, 2), "valor": it.valor,
-                                "ambientes": mod_comissao.base_detalhe(db, it)})
+                    item_out = {"id": it.id, "projeto": it.projeto_nome, "papel": it.papel or it.origem,
+                               "origem": it.origem, "base": round(base or 0.0, 2), "valor": it.valor,
+                               "status": it.status}
+                    # Modal de ajuste no ato do pagamento (2026-08-17, achado do usuário): venda não
+                    # tem detalhe por ambiente (é 1 item = 1 projeto), mas ganha as grandezas
+                    # editáveis (valor líquido da venda + % considerado) que o papel já não precisa
+                    # (o `base`/`pct` do papel já são exatamente isso).
+                    if it.origem == "venda":
+                        item_out.update({
+                            "valor_liquido_sistema": round(it.base or 0.0, 2),
+                            "valor_liquido_ajustado": it.base_ajustada,
+                            "pct_sistema": it.pct,
+                            "pct_ajustado": it.pct_ajustado,
+                            "saldo_provisao_atual": (mod_folha.saldo_provisao_venda(db, ot, oid, it.projeto_nome)
+                                                     if it.projeto_nome else 0.0),
+                        })
+                    else:
+                        item_out["ambientes"] = mod_comissao.base_detalhe(db, it)
+                    out.append(item_out)
                 self.send_json({"ok": True, "itens": out,
                                 "total_base": round(sum(x["base"] for x in out), 2)})
             except Exception as e:
@@ -8955,6 +8972,15 @@ class Handler(BaseHTTPRequestHandler):
                     _e = validacao_doc.erro_doc(req.get(_campo_doc[0]), "CPF/CNPJ", _campo_doc[1])
                     if _e:
                         self.send_json({"ok": False, "erro": _e}, code=400); return
+                # Terceiro ganha CNPJ (achado do usuário 2026-08-17): contratação via MEI, que tem
+                # CNPJ próprio distinto do CPF da pessoa — campo à parte, opcional, validado só se
+                # vier preenchido (nem todo Terceiro é MEI). Sem checagem de duplicidade (mesma
+                # assimetria já existente pro Cliente.cnpj, que também não é unique-checado).
+                if ent == "terceiros" and (req.get("cnpj") or "").strip():
+                    import validacao_doc
+                    _e = validacao_doc.erro_doc(req.get("cnpj"), "CNPJ", "cnpj")
+                    if _e:
+                        self.send_json({"ok": False, "erro": _e}, code=400); return
                 if rid:
                     obj = db.query(Model).filter_by(id=int(rid), loja_id=loja_id).first()
                     if obj is None:
@@ -14155,13 +14181,15 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
-            # ── Comissão: editar base ajustada de um item e recalcular valor (Fase 4) ──
+            # ── Comissão: editar base/% ajustados de um item e recalcular valor (Fase 4; % ajustado
+            # a partir de 2026-08-17, achado do usuário — no ato do pagamento o gerente pode
+            # corrigir tanto o valor de referência quanto o percentual de cada venda) ──
             m = re.match(r'^/api/comissao/(\d+)$', path)
             if m:
                 usuario = get_usuario_sessao(self)
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                import mod_comissao
+                import mod_comissao, mod_contabil
                 db = get_session()
                 try:
                     ator = _ator_dict(db, usuario)
@@ -14171,12 +14199,31 @@ class Handler(BaseHTTPRequestHandler):
                     it = db.query(ComissaoFolha).filter_by(id=int(m.group(1)), loja_id=loja_id).first()
                     if it is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    base = float((json.loads(body or b'{}')).get("base_ajustada") or 0.0)
-                    ok, err = mod_comissao.editar_item(db, it, base)
+                    req = json.loads(body or b'{}')
+                    # sentinela: só toca o campo se ele veio no request (presença, não truthiness —
+                    # `null` explícito precisa poder LIMPAR o override e voltar ao valor do sistema).
+                    kwargs = {}
+                    if "base_ajustada" in req: kwargs["base_ajustada"] = req.get("base_ajustada")
+                    if "pct_ajustado" in req:  kwargs["pct_ajustado"]  = req.get("pct_ajustado")
+                    antes = {"base": it.base, "base_ajustada": it.base_ajustada,
+                            "pct": it.pct, "pct_ajustado": it.pct_ajustado, "valor": it.valor}
+                    ok, err = mod_comissao.editar_item(db, it, **kwargs)
                     if not ok:
                         self.send_json({"ok": False, "erro": err}, code=409); return
+                    if kwargs:   # só audita quando algo de fato foi enviado pra ajustar
+                        db.add(LogAcaoGerencial(solicitante_id=usuario["id"], autorizador_id=usuario["id"],
+                                acao="ajustar_comissao_venda", projeto_nome=it.projeto_nome,
+                                contexto=json.dumps({"comissao_id": it.id, "antes": antes,
+                                    "depois": {"base": it.base, "base_ajustada": it.base_ajustada,
+                                              "pct": it.pct, "pct_ajustado": it.pct_ajustado,
+                                              "valor": it.valor}}, default=str)))
                     db.commit()
-                    self.send_json({"ok": True, "id": it.id, "base_ajustada": it.base_ajustada, "valor": it.valor})
+                    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                    saldo_atual = (mod_folha.saldo_provisao_venda(db, ot, oid, it.projeto_nome)
+                                   if it.origem == "venda" and it.projeto_nome else None)
+                    self.send_json({"ok": True, "id": it.id, "base": it.base, "base_ajustada": it.base_ajustada,
+                                    "pct": it.pct, "pct_ajustado": it.pct_ajustado, "valor": it.valor,
+                                    "saldo_provisao_atual": saldo_atual})
                 except Exception as e:
                     db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=500)
                 finally:

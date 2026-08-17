@@ -170,7 +170,7 @@ def forn_aplicar(db, f, req, loja_id):
 
 # ── Terceiro (sempre PF) ─────────────────────────────────────────────────────
 def terc_serialize(t, db=None):
-    d = {"id": t.id, "nome": t.nome, "cpf": t.cpf or "", "telefone": t.telefone or "",
+    d = {"id": t.id, "nome": t.nome, "cpf": t.cpf or "", "cnpj": t.cnpj or "", "telefone": t.telefone or "",
          "tipo_servico": t.tipo_servico or "", "funcao_id": t.funcao_id,
          "dados_bancarios": t.dados_bancarios or "", "condicao": t.condicao or "",
          "status": t.status or "ativo"}
@@ -185,7 +185,7 @@ def terc_aplicar(db, t, req, loja_id):
         t.loja_id = loja_id
     if _s(req.get("nome")):
         t.nome = _s(req.get("nome"))
-    for campo in ("cpf", "telefone", "dados_bancarios", "condicao", "tipo_servico"):
+    for campo in ("cpf", "cnpj", "telefone", "dados_bancarios", "condicao", "tipo_servico"):
         if campo in req:
             setattr(t, campo, _s(req.get(campo)))
     if "funcao_id" in req:

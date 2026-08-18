@@ -1206,6 +1206,12 @@ class Contrato(Base):
     clicksign_envelope_id         = Column(Text,     nullable=True)
     clicksign_enviado_em          = Column(DateTime, nullable=True)
     clicksign_signatarios_json    = Column(Text,     nullable=True)
+    # Frente 3 (achado do usuário 2026-08-17): signatário do CLIENTE confirmado na aprovação do
+    # orçamento (override do modal ou o Cliente cadastrado, já resolvido) — sobrevive além do
+    # `signatario_override` transiente do request, pra pré-preencher a confirmação de assinatura
+    # manual (interna) sem pedir nome+CPF em branco de novo.
+    cliente_nome_confirmado       = Column(Text,     nullable=True)
+    cliente_cpf_confirmado        = Column(Text,     nullable=True)
 
     gerado_por   = relationship("Usuario",  foreign_keys=[gerado_por_id])
     orcamento    = relationship("Orcamento", foreign_keys=[orcamento_id])
@@ -2353,6 +2359,10 @@ def _migrar_colunas_pg():
         # poder cadastrá-la como signatária — nome/CPF já existiam, só pro contrato impresso.
         "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha1_email VARCHAR(150)",
         "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha2_email VARCHAR(150)",
+        # Frente 3 (achado do usuário 2026-08-17): signatário confirmado na aprovação do
+        # orçamento, reaproveitado na confirmação de assinatura manual.
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_nome_confirmado TEXT",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_cpf_confirmado TEXT",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

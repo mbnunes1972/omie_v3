@@ -22620,6 +22620,7 @@ async function coletarSignatarioOverride() {
 async function abrirModalAssinatura(parte) {
   // Gate (Fatia 2): não abre a assinatura sem as datas do acordo definidas (previsão de medição +
   // expectativa de entrega). O backend também bloqueia a POST; aqui evita abrir a tela à toa.
+  let defs = {};
   try {
     const cj = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/contrato',
                            { credentials:'same-origin' }).then(r=>r.json());
@@ -22628,7 +22629,12 @@ async function abrirModalAssinatura(parte) {
       showToast('Defina a previsão de medição e a expectativa de entrega (card "Datas do acordo") antes de assinar.', true);
       return;
     }
+    // Frente 3 (achado do usuário 2026-08-17): pré-preenche com o signatário já confirmado na
+    // aprovação do orçamento, em vez de nascer em branco — editável, não travado.
+    defs = ct.assinatura_defaults || {};
   } catch(e){ /* se a checagem falhar, o backend ainda bloqueia a assinatura */ }
+  const nomeDefault = parte === 'loja' ? (defs.nome_loja || '') : (defs.nome_cliente || '');
+  const cpfDefault  = parte === 'loja' ? (defs.cpf_loja  || '') : (defs.cpf_cliente  || '');
   const overlay = document.createElement('div');
   overlay.id = 'modal-assinatura-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
@@ -22636,10 +22642,10 @@ async function abrirModalAssinatura(parte) {
     <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:480px">
       <h4 style="margin:0 0 16px">Assinar como: <strong>${parte}</strong></h4>
       <label style="font-size:var(--fs-sm)">Nome completo</label>
-      <input id="sig-nome" type="text" placeholder="Nome completo"
+      <input id="sig-nome" type="text" placeholder="Nome completo" value="${esc(nomeDefault)}"
         style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
       <label style="font-size:var(--fs-sm)">CPF</label>
-      <input id="sig-cpf" type="text" placeholder="000.000.000-00"
+      <input id="sig-cpf" type="text" placeholder="000.000.000-00" value="${esc(cpfDefault)}"
         style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
       <label style="display:flex;gap:8px;align-items:center;margin-bottom:16px;font-size:.85rem">
         <input type="checkbox" id="sig-aceite">

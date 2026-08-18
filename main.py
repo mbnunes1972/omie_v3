@@ -5349,6 +5349,18 @@ class Handler(BaseHTTPRequestHandler):
                                         "cpf": _cd_loja.get("testemunha2_cpf", ""),
                                         "email": _cd_loja.get("testemunha2_email", "")},
                     }
+                    # Frente 3 (achado do usuário 2026-08-17): defaults pro modal de confirmação
+                    # da assinatura MANUAL (interna) — nome/CPF do cliente já confirmados na
+                    # aprovação do orçamento (colunas persistidas), com fallback pro Cliente
+                    # cadastrado (contrato legado, gerado antes desta coluna existir). CPF da
+                    # loja não é dado que o sistema guarda hoje — fica em branco/editável, igual
+                    # já é pro fluxo ClickSign (que também não pede CPF de quem assina pela loja).
+                    _assinatura_defaults = {
+                        "nome_loja": usuario.get("nome", ""),
+                        "cpf_loja": "",
+                        "nome_cliente": contrato.cliente_nome_confirmado or _cd_cliente.get("nome") or "",
+                        "cpf_cliente": contrato.cliente_cpf_confirmado or _cd_cliente.get("cpf") or "",
+                    }
                     self.send_json({"ok": True, "contrato": {
                         "id":                   contrato.id,
                         "status":               contrato.status,
@@ -5367,6 +5379,7 @@ class Handler(BaseHTTPRequestHandler):
                         "assinatura_canal":     contrato.assinatura_canal or "interno",
                         "clicksign_enviado_em": contrato.clicksign_enviado_em.isoformat() if contrato.clicksign_enviado_em else None,
                         "clicksign_defaults":   _clicksign_defaults,
+                        "assinatura_defaults":  _assinatura_defaults,
                     }})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -12967,6 +12980,14 @@ class Handler(BaseHTTPRequestHandler):
                     if not contrato.loja_id:
                         contrato.loja_id = loja_id
                     contrato.loja_snapshot_json = json.dumps(loja_dict, ensure_ascii=False)
+                    # Frente 3 (achado do usuário 2026-08-17): persiste o signatário CONFIRMADO
+                    # aqui — nome+CPF já resolvidos (override do modal de aprovação, se houve,
+                    # senão o Cliente cadastrado) — pra reaproveitar na confirmação de assinatura
+                    # manual depois, em vez de pedir de novo do zero (`signatario_override` em si
+                    # é transiente, só alimenta o texto impresso; isto sobrevive).
+                    contrato.cliente_nome_confirmado = cliente_dict.get("nome") or ""
+                    contrato.cliente_cpf_confirmado = (
+                        cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
                     # Número do contrato (gerado uma vez; mantido em regerações).
                     if not contrato.num_contrato:
                         from mod_contrato import gerar_num_contrato

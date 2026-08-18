@@ -50,7 +50,9 @@ def test_super_ve_projetos_com_agregacao(app_db, seed, com_etapas, ator_super):
     assert p["etapas_concluidas"] == 3
     assert p["etapa_atual_codigo"] == "4"
     assert p["etapa_atual_nome"] == "Orçamento"
-    assert p["total_etapas"] == 19   # 20 − etapas 5/6 eliminadas + 21 (Conciliação Final, FASE D2)
+    # 20 − etapas 5/6 eliminadas + 21 (Conciliação Final, FASE D2) − 8/9 (achado do usuário
+    # 2026-08-17: AF1 e Solicitação de Medição saíram dos principais, viraram gatilhos da 7).
+    assert p["total_etapas"] == 17
 
 
 def test_projetos_sem_pii(app_db, seed, com_etapas, ator_super):

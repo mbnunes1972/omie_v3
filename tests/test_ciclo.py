@@ -80,14 +80,52 @@ def test_reabertura_bloqueada_por_contrato():
     assert mc.reabertura_bloqueada_por_contrato(["8", "9"], "assinado") is False
 
 
+def test_af1_e_solicitacao_medicao_saem_dos_principais():
+    # Achado do usuário 2026-08-17: viraram gatilhos da etapa 7 (Contrato), não mais etapas
+    # próprias do espinhaço principal do ciclo.
+    assert "8" not in mc.ETAPAS_PRINCIPAIS
+    assert "9" not in mc.ETAPAS_PRINCIPAIS
+    assert "7" in mc.ETAPAS_PRINCIPAIS and "10" in mc.ETAPAS_PRINCIPAIS
+
+
+def test_af1_e_medicao_liberam_em_paralelo_so_por_contrato_assinado():
+    # As duas dependem SÓ de "7" concluída — nenhuma depende da outra.
+    assert mc.pode_avancar("8", {"7": "assinado"}) is True
+    assert mc.pode_avancar("9", {"7": "assinado"}) is True
+    assert mc.pode_avancar("8", {"7": "pendente"}) is False
+    assert mc.pode_avancar("9", {"7": "pendente"}) is False
+    # "9" concluída não é pré-requisito de "8", nem vice-versa.
+    assert mc.pode_avancar("8", {"7": "assinado", "9": "pendente"}) is True
+    assert mc.pode_avancar("9", {"7": "assinado", "8": "pendente"}) is True
+
+
+def test_medicao_10_continua_exigindo_solicitacao_9_concluida():
+    # "10" NÃO libera só com o contrato assinado — precisa especificamente de "9" concluída,
+    # mesmo "9" não sendo mais o predecessor posicional de "10" em ETAPAS_PRINCIPAIS.
+    assert mc.etapa_anterior("10") == "9"
+    assert mc.pode_avancar("10", {"7": "assinado", "9": "pendente"}) is False
+    assert mc.pode_avancar("10", {"7": "assinado", "9": "concluido"}) is True
+    # "8" (AF1) concluída ou não não interfere em "10".
+    assert mc.pode_avancar("10", {"7": "assinado", "8": "pendente", "9": "concluido"}) is True
+
+
+def test_predecessor_de_8_e_9_e_explicitamente_7():
+    assert mc.etapa_anterior("8") == "7"
+    assert mc.etapa_anterior("9") == "7"
+
+
 def test_chave_ordenacao():
     assert mc.chave_ordenacao("11a") == (11, "a")
     assert mc.chave_ordenacao("2") == (2, "")
 
 
 def test_etapa_nome_em_sincronia_com_principais():
-    # Toda etapa principal tem nome e vice-versa.
-    assert set(mc.ETAPA_NOME) == set(mc.ETAPAS_PRINCIPAIS)
+    # Toda etapa principal tem nome. "8"/"9" são a única exceção conhecida (achado do
+    # usuário 2026-08-17): saíram de ETAPAS_PRINCIPAIS mas continuam com nome em ETAPA_NOME
+    # — viraram gatilhos dentro da etapa 7 (Contrato), ainda precisam de rótulo pros botões
+    # e pras mensagens de erro de gating (ver PREDECESSOR_OVERRIDE).
+    assert set(mc.ETAPAS_PRINCIPAIS) <= set(mc.ETAPA_NOME)
+    assert set(mc.ETAPA_NOME) - set(mc.ETAPAS_PRINCIPAIS) == {"8", "9"}
 
 
 def test_exige_aprovacao_financeira():

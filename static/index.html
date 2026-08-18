@@ -16431,13 +16431,21 @@ const ETAPAS_CICLO = [
 ];
 
 // Ordem canônica das etapas PRINCIPAIS (espelha mod_ciclo.py no backend).
-const ETAPAS_PRINCIPAIS = ["1","2","3","4","7","8","9","10",
+// "8"/"9" saíram daqui (achado do usuário 2026-08-17) — viraram gatilhos independentes
+// dentro da etapa 7 (Contrato). Ver PREDECESSOR_OVERRIDE.
+const ETAPAS_PRINCIPAIS = ["1","2","3","4","7","10",
                            "11","12","13","14","15","16","17","18","19","20","21"];
+// Espelha mod_ciclo.PREDECESSOR_OVERRIDE: "8"/"9" dependem de "7" (em paralelo entre si);
+// "10" continua dependendo especificamente de "9" (não só do contrato assinado).
+const PREDECESSOR_OVERRIDE = {"8":"7", "9":"7", "10":"9"};
 // Status que contam como "etapa concluída" (espelha STATUS_CONCLUSIVOS no backend).
 const STATUS_CONCLUSIVOS = new Set(["concluido","aprovado","assinado","vigente",
                                     "implantado","realizado","entregue","emitida"]);
 // Bloqueada = etapa principal cuja anterior (na ordem) não está concluída.
 function _etapaBloqueada(codigo) {
+  if (PREDECESSOR_OVERRIDE[codigo]) {
+    return !STATUS_CONCLUSIVOS.has(_cicloData[PREDECESSOR_OVERRIDE[codigo]]?.status);
+  }
   const i = ETAPAS_PRINCIPAIS.indexOf(codigo);
   if (i < 0) {
     // sub-etapa: herda o bloqueio da etapa-mãe (desbloqueia junto com ela)
@@ -21672,10 +21680,47 @@ function renderContratoUI(contrato) {
     ${['assinado','vigente'].includes(status)
       ? `<div>
           <p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>
+          ${_renderBotoesPosAssinaturaContrato()}
         </div>`
       : temArquivo ? _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) : ''
     }
   `;
+}
+
+// Aprovação Financeira I (etapa "8") e Solicitação de Medição (etapa "9") — achado do usuário
+// 2026-08-17: deixaram de ser etapas próprias do espinhaço do fichário e viraram gatilhos
+// independentes dentro da etapa 7 (Contrato), liberados só pelo contrato assinado (não uma
+// pela outra). AF1 reaproveita 100% o modal de provisões já existente — sem `#prov-inline-slot`
+// no DOM, `abrirProvisoes` cai sozinha no caminho de overlay (mesmo modal de sempre). Solicitação
+// de Medição, nesta frente, reaproveita o card/upload já existente (`_renderCardSolicitacaoMedicao`)
+// como uma seção que expande/recolhe — a Frente 2 substitui isso pelo fluxo de geração+assinatura.
+function _renderBotoesPosAssinaturaContrato() {
+  const st8 = (_cicloData['8'] || {}).status || 'pendente';
+  const st9 = (_cicloData['9'] || {}).status || 'pendente';
+  const concl8 = STATUS_CONCLUSIVOS.has(st8);
+  const concl9 = STATUS_CONCLUSIVOS.has(st9);
+  const ok = '<span style="color:var(--ok);margin-left:6px">&#x2713;</span>';
+  return `
+    <div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:10px">Próximos passos</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="abrirProvisoes(_orcamentoAtivoId, '8')" class="btn-ciclo" style="font-size:.82rem">
+          <i class="ti ti-cash"></i> Aprovação Financeira I${concl8 ? ok : ''}
+        </button>
+        <button onclick="_toggleSolicitacaoMedicaoInline()" class="btn-ciclo" style="font-size:.82rem">
+          <i class="ti ti-ruler-measure"></i> Solicitação de Medição${concl9 ? ok : ''}
+        </button>
+      </div>
+      <div id="med-solic-inline" style="display:none;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px"></div>
+    </div>`;
+}
+
+function _toggleSolicitacaoMedicaoInline() {
+  const box = document.getElementById('med-solic-inline');
+  if (!box) return;
+  const abrir = box.style.display === 'none';
+  box.style.display = abrir ? 'block' : 'none';
+  if (abrir) box.innerHTML = _renderCardSolicitacaoMedicao(_cicloData['9'] || {}, false);
 }
 
 // Assinatura Digital (2026-08-12): escolha explícita entre o fluxo interno (Imprimir + assinar

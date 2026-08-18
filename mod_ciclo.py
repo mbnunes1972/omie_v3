@@ -8,8 +8,14 @@ o ETAPAS_CICLO do frontend é alinhado a ela na tarefa de frontend.
 
 # Etapas PRINCIPAIS, na ordem. Sub-etapas ("11a".."11e", "17a") NÃO entram aqui
 # — elas são livres dentro do pai.
+# "8" (Aprovação financeira I) e "9" (Solicitação de medição) SAÍRAM daqui (achado do
+# usuário 2026-08-17): viraram gatilhos independentes dentro da etapa 7 (Contrato) — cada
+# uma um botão no card do Contrato, liberada só pelo contrato assinado, sem depender uma da
+# outra. Continuam existindo como CicloEtapa/código próprio (nada migra) — só não são mais
+# principais. Ver PREDECESSOR_OVERRIDE logo abaixo pra como o gating delas (e do "10", que
+# ainda depende especificamente de "9") é resolvido sem estarem na lista.
 ETAPAS_PRINCIPAIS = [
-    "1", "2", "3", "4", "7", "8", "9", "10",
+    "1", "2", "3", "4", "7", "10",
     "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
     "21",   # FASE D2: Conciliação Final — fecha os números e encerra o projeto (status "Concluído")
 ]
@@ -217,8 +223,19 @@ def etapa_pai(codigo):
     return pai if pai in ETAPAS_PRINCIPAIS else None
 
 
+# Predecessor explícito pra código que não segue mais a posição em ETAPAS_PRINCIPAIS (achado
+# do usuário 2026-08-17, ver comentário acima de ETAPAS_PRINCIPAIS): "8" e "9" dependem
+# diretamente de "7" (em paralelo entre si, não uma da outra); "10" continua dependendo
+# especificamente de "9" (não bastaria só o contrato assinado — a medição precisa da
+# solicitação assinada primeiro), mesmo "9" não sendo mais o predecessor posicional de "10"
+# em ETAPAS_PRINCIPAIS (que agora vai direto de "7" pra "10").
+PREDECESSOR_OVERRIDE = {"8": "7", "9": "7", "10": "9"}
+
+
 def etapa_anterior(codigo):
     """Código da etapa principal imediatamente anterior, ou None."""
+    if codigo in PREDECESSOR_OVERRIDE:
+        return PREDECESSOR_OVERRIDE[codigo]
     if codigo not in ETAPAS_PRINCIPAIS:
         return None
     i = ETAPAS_PRINCIPAIS.index(codigo)
@@ -260,6 +277,11 @@ def pode_avancar(codigo, status_por_codigo, bloqueadores_ativos=None):
     if bloqueadores_ativos:
         if "*" in bloqueadores_ativos or codigo in bloqueadores_ativos:
             return False
+    # PREDECESSOR_OVERRIDE (8/9/10) primeiro: essas exigem a etapa indicada CONCLUÍDA, igual
+    # a uma principal comum — diferente da herança de subfase abaixo (11a etc.), que só exige
+    # a etapa-mãe "alcançável", não necessariamente concluída.
+    if codigo in PREDECESSOR_OVERRIDE:
+        return status_por_codigo.get(PREDECESSOR_OVERRIDE[codigo]) in STATUS_CONCLUSIVOS
     if codigo not in ETAPAS_PRINCIPAIS:
         pai = etapa_pai(codigo)
         if pai is None:

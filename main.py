@@ -23,6 +23,7 @@ from database import (init_db, get_session, Cliente, Parceiro, Orcamento,
                        AdiantamentoFuncionario,
                        AtribuicaoAmbiente, ArquivoPE, ParcelaProjeto, ParcelaAmbiente,
                        Aditivo, AditivoAssinatura, AprovacaoPE, AprovacaoPEAssinatura,
+                       SolicitacaoMedicao, SolicitacaoMedicaoAssinatura,
                        AcordoFabrica, AjusteFabrica, AjusteFabricaAplicacao, AcordoMovimento,
                        ContraparteFinanceira, Recebivel, ProvisaoDataPrevista, LogAutorizacao,
                        IntegracaoClickSign, ConciliacaoPeFase)
@@ -1140,6 +1141,82 @@ def _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg):
             db, aprov, parte, info.get("nome") or "", info.get("cpf") or "",
             attrs.get("last_seen_ip") or "", usuario_id=None)
     return aprov.status
+
+
+def _registrar_assinatura_solicitacao_medicao(db, sol, parte, nome, cpf, ip_origem, usuario_id=None):
+    """Aplica a assinatura de `parte` na Solicitação de Medição: grava
+    SolicitacaoMedicaoAssinatura, atualiza status — e, quando loja+cliente já assinaram, conclui
+    a etapa "9" do ciclo (achado do usuário 2026-08-17: antes a etapa 9 concluía no simples
+    upload de um arquivo; agora só conclui com as DUAS assinaturas do documento gerado pelo
+    sistema, mesmo padrão da etapa 7/Contrato). Idempotente: `parte` já assinada é no-op."""
+    if any(a.parte == parte for a in sol.assinaturas):
+        return sol.status
+    from mod_contrato import calcular_hash_assinatura as _cha3
+    ts = datetime.utcnow().isoformat()
+    sol.assinaturas.append(SolicitacaoMedicaoAssinatura(
+        parte=parte, nome=nome, cpf=cpf, ip_origem=ip_origem,
+        hash_sha256=_cha3(nome, cpf, sol.id, ts)))
+    db.flush()
+    partes = {a.parte for a in sol.assinaturas}
+    if {"loja", "cliente"}.issubset(partes):
+        sol.status = "assinado"
+        _set_etapa_status(db, sol.projeto_nome, "9", "concluido", usuario_id)
+    else:
+        sol.status = "assinado_" + parte
+    db.commit()
+    return sol.status
+
+
+def _enviar_solicitacao_medicao_para_clicksign(db, sol, cfg, email_loja, nome_loja, email_cliente,
+                                               nome_cliente, cpf_cliente):
+    """Envia o PDF da Solicitação de Medição pra ClickSign — mesmo fluxo de
+    _enviar_contrato_para_clicksign/_enviar_aprovacao_pe_para_clicksign (envelope -> documento ->
+    2 signatários -> requisitos -> ativação), só loja+cliente (sem testemunhas, decisão do
+    usuário 2026-08-17). NÃO commita — o chamador decide."""
+    if not email_loja or not email_cliente:
+        raise ValueError("E-mail da loja e do cliente são obrigatórios para assinatura eletrônica (ClickSign).")
+    if not sol.pdf_path or not os.path.exists(sol.pdf_path):
+        raise ValueError("PDF da solicitação de medição não encontrado — gere o documento antes de enviar ao ClickSign.")
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    with open(sol.pdf_path, "rb") as f:
+        pdf_bytes = f.read()
+    nome_arquivo = "solicitacao_medicao_%s.pdf" % sol.id
+    envelope_id = cli.criar_envelope("Solicitação de Medição %s" % sol.id)
+    doc_id = cli.adicionar_documento(envelope_id, pdf_bytes, nome_arquivo)
+    sig_loja_id    = cli.adicionar_signatario(envelope_id, email_loja, nome_loja)
+    sig_cliente_id = cli.adicionar_signatario(envelope_id, email_cliente, nome_cliente, cpf=cpf_cliente)
+    for signer_id in (sig_loja_id, sig_cliente_id):
+        cli.adicionar_requisito_assinatura(envelope_id, doc_id, signer_id)
+        cli.adicionar_requisito_autenticacao(envelope_id, doc_id, signer_id)
+    cli.ativar_envelope(envelope_id)
+    sol.clicksign_envelope_id = envelope_id
+    sol.clicksign_signatarios_json = json.dumps({
+        "loja":    {"signer_id": sig_loja_id,    "email": email_loja,    "nome": nome_loja},
+        "cliente": {"signer_id": sig_cliente_id, "email": email_cliente, "nome": nome_cliente,
+                    "cpf": cpf_cliente},
+    }, ensure_ascii=False)
+    sol.assinatura_canal     = "clicksign"
+    sol.clicksign_enviado_em = datetime.utcnow()
+
+
+def _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg):
+    """Espelho de _reconciliar_contrato_clicksign/_reconciliar_aprovacao_pe_clicksign, pra
+    Solicitação de Medição. Chamada pelo webhook E pelo job de polling."""
+    import mod_clicksign
+    cli = mod_clicksign.client_de(cfg)
+    dados = cli.consultar_envelope(sol.clicksign_envelope_id)
+    incluidos = dados.get("included") or []
+    signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
+    signatarios = json.loads(sol.clicksign_signatarios_json or "{}")
+    for parte, info in signatarios.items():
+        attrs = signers.get(info.get("signer_id"))
+        if not attrs or not attrs.get("signed_at"):
+            continue
+        _registrar_assinatura_solicitacao_medicao(
+            db, sol, parte, info.get("nome") or "", info.get("cpf") or "",
+            attrs.get("last_seen_ip") or "", usuario_id=None)
+    return sol.status
 
 
 def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
@@ -4878,6 +4955,47 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/projetos/<nome>/medicao/solicitacao — estado do Termo de Responsabilidade e
+            # Solicitação de Medição (achado do usuário 2026-08-17), espelho de GET .../contrato.
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401)
+                    return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403)
+                        return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
+                        return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    resp = {"ok": True, "solicitacao": _solicitacao_medicao_dict(sol) if sol else None}
+                    if sol is not None:
+                        contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                                      .order_by(Contrato.id.desc()).first())
+                        _cd_cliente = {}
+                        if contrato is not None:
+                            _proj_sm, _cd_cliente, _od_sm = _montar_dados_projeto_para_contrato(
+                                nome_safe, contrato.orcamento_id, db)
+                        _usu_email = db.get(Usuario, usuario["id"])
+                        resp["clicksign_defaults"] = {
+                            "email_loja": (_usu_email.email if _usu_email else "") or "",
+                            "nome_loja": usuario.get("nome", ""),
+                            "email_cliente": _cd_cliente.get("email") or "",
+                            "nome_cliente": _cd_cliente.get("nome") or "",
+                        }
+                    self.send_json(resp)
+                finally:
+                    db.close()
+                return
+
             m = _re.match(r'^/api/projetos/([^/]+)/conferencia/ajustes-preview$', path)
             if m:
                 # Ajustes Excepcionais (spec 2026-07-21): preview do que a conferência aplicaria
@@ -4982,6 +5100,40 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-Length", len(data))
                     self.send_header("Content-Disposition",
                                      'inline; filename="aprovacao_pe_%d.pdf"' % a.id)
+                    self.end_headers()
+                    self.wfile.write(data)
+                finally:
+                    db.close()
+                return
+
+            # GET /api/projetos/<nome>/medicao/solicitacao/pdf — PDF do Termo de Responsabilidade
+            # e Solicitação de Medição, espelho de .../aprovacao-pe/pdf.
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/pdf$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if sol is None or not sol.pdf_path or not os.path.exists(sol.pdf_path):
+                        self.send_json({"ok": False, "erro": "PDF da solicitação de medição não encontrado."},
+                                       code=404); return
+                    with open(sol.pdf_path, "rb") as fh:
+                        data = fh.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Length", len(data))
+                    self.send_header("Content-Disposition",
+                                     'inline; filename="solicitacao_medicao_%d.pdf"' % sol.id)
                     self.end_headers()
                     self.wfile.write(data)
                 finally:
@@ -5663,13 +5815,17 @@ class Handler(BaseHTTPRequestHandler):
                               or payload.get("envelope_id") or payload.get("id") or "").strip()
                 if not envelope_id:
                     self.send_json({"ok": True}, code=200); return
-                # Documento pode ser um Contrato OU uma AprovacaoPE (mesmo webhook de conta cobre
-                # os dois tipos) — identifica por qual tabela tem esse envelope_id.
+                # Documento pode ser um Contrato, uma AprovacaoPE OU uma SolicitacaoMedicao
+                # (mesmo webhook de conta cobre os três tipos) — identifica por qual tabela tem
+                # esse envelope_id.
                 doc = db.query(Contrato).filter_by(clicksign_envelope_id=envelope_id).first()
                 reconciliar = _reconciliar_contrato_clicksign
                 if doc is None:
                     doc = db.query(AprovacaoPE).filter_by(clicksign_envelope_id=envelope_id).first()
                     reconciliar = _reconciliar_aprovacao_pe_clicksign
+                if doc is None:
+                    doc = db.query(SolicitacaoMedicao).filter_by(clicksign_envelope_id=envelope_id).first()
+                    reconciliar = _reconciliar_solicitacao_medicao_clicksign
                 if doc is None:
                     # Documento de outro sistema apontando pra essa URL por engano — ack sem processar.
                     self.send_json({"ok": True}, code=200); return
@@ -5763,6 +5919,28 @@ class Handler(BaseHTTPRequestHandler):
                         print("[CLICKSIGN] job: reconciliar aprovação PE %s falhou: %s" % (aprov.id, _erp))
                         continue
                     if aprov.status != status_antes:
+                        contratos_atualizados += 1
+                pendentes_sm = (db.query(SolicitacaoMedicao)
+                                 .filter(SolicitacaoMedicao.assinatura_canal == "clicksign",
+                                         SolicitacaoMedicao.status.in_(("para_assinatura", "assinado_loja", "assinado_cliente")),
+                                         SolicitacaoMedicao.clicksign_enviado_em.isnot(None),
+                                         SolicitacaoMedicao.clicksign_enviado_em <= limite)
+                                 .all())
+                for sol in pendentes_sm:
+                    contratos_verificados += 1
+                    loja_obj = db.get(Loja, sol.loja_id) if sol.loja_id else None
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        continue
+                    status_antes = sol.status
+                    try:
+                        _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg)
+                        db.commit()
+                    except Exception as _esm:
+                        db.rollback()
+                        print("[CLICKSIGN] job: reconciliar solicitação de medição %s falhou: %s" % (sol.id, _esm))
+                        continue
+                    if sol.status != status_antes:
                         contratos_atualizados += 1
                 self.send_json({"ok": True, "contratos_verificados": contratos_verificados,
                                 "contratos_atualizados": contratos_atualizados})
@@ -12883,6 +13061,232 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # POST /api/projetos/<nome>/medicao/solicitacao/gerar — gera o Termo de
+            # Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17): documento
+            # do sistema, modelo por loja tipo 'solicitacao_medicao' (versão congelada na 1ª
+            # geração) — substitui o upload simples acima. Mesmo padrão de POST .../aprovacao-pe
+            # (sem capacidade dedicada — quem acessa a tela já passou pelo gate de escopo da
+            # loja); liberado só depois do contrato assinado pelas duas partes (Frente 1).
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/gerar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                                  .order_by(Contrato.id.desc()).first())
+                    if contrato is None or not _contrato_totalmente_assinado(nome_safe, db):
+                        self.send_json({"ok": False, "erro": "Contrato ainda não assinado pelas "
+                                        "duas partes."}, code=400); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if sol is not None and sol.status == "assinado":
+                        self.send_json({"ok": False, "erro": "Solicitação de medição já "
+                                        "assinada — não pode ser regerada."}, code=403); return
+                    import mod_documentos as _mdocm
+                    if sol is None:
+                        sol = SolicitacaoMedicao(projeto_nome=nome_safe, loja_id=loja_id)
+                        db.add(sol); db.flush()
+                    if sol.modelo_versao_id is None:      # congela o modelo na 1ª geração
+                        mv = _mdocm.ativo_de(db, loja_id, "solicitacao_medicao")
+                        if mv is None:
+                            self.send_json({"ok": False, "erro": "Nenhum modelo de Solicitação "
+                                            "de Medição ativo — importe um em Config → "
+                                            "Documentos."}, code=400); return
+                        sol.modelo_versao_id = mv.id
+                    corpo_md = _mdocm.corpo_da_versao(db, sol.modelo_versao_id) or ""
+                    pa_nome = {pa.id: (pa.nome_exibicao or pa.nome) for pa in
+                               db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()}
+                    ambientes_txt = "\n".join(
+                        pa_nome.get(oa.pool_ambiente_id, "?") for oa in
+                        db.query(OrcamentoAmbiente).filter_by(orcamento_id=contrato.orcamento_id).all())
+                    _proj_sm2, cliente_dict, _od_sm2 = _montar_dados_projeto_para_contrato(
+                        nome_safe, contrato.orcamento_id, db)
+                    loja_dict = _loja_dict_para_contrato(db, loja_id)
+                    usuario_ctx = {"nome": usuario.get("nome", ""),
+                                   "telefone": _get_usuario_telefone(usuario["id"], db),
+                                   "email": usuario.get("email", "") or ""}
+                    from mod_contrato import construir_contexto as _cc3, \
+                        gerar_pdf_solicitacao_medicao as _gpsm, CONTRATOS_DIR as _CDIR3
+                    ctx = _cc3(cliente_dict, usuario_ctx, "", loja_dict)
+                    ctx["_corpo_md_solicitacao_medicao"] = corpo_md
+                    ctx["_solicitacao_medicao"] = {"ambientes_txt": ambientes_txt}
+                    pdf_path = _gpsm(ctx, os.path.join(_CDIR3, "solicitacao_medicao_%d.pdf" % sol.id))
+                    sol.pdf_path = pdf_path
+                    sol.gerado_em = datetime.utcnow()
+                    sol.gerado_por_id = usuario.get("id")
+                    sol.status = "para_assinatura"
+                    db.commit()
+                    self.send_json({"ok": True, "solicitacao": _solicitacao_medicao_dict(sol)})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/medicao/solicitacao/assinar — assinatura interna
+            # (loja/cliente), mesmo padrão do contrato: usa a sessão do usuário, sem recapturar
+            # credencial (a confirmação é o próprio nome+CPF digitado na tela).
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/assinar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                req   = json.loads(body or b'{}')
+                parte = (req.get("parte") or "").strip()
+                nome_ass = (req.get("nome") or "").strip()
+                cpf   = (req.get("cpf")   or "").strip()
+                if parte not in ("loja", "cliente"):
+                    self.send_json({"ok": False, "erro": "parte deve ser 'loja' ou 'cliente'"}, code=400); return
+                if not nome_ass or not cpf:
+                    self.send_json({"ok": False, "erro": "nome e cpf são obrigatórios"}, code=400); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if sol is None or not sol.pdf_path:
+                        self.send_json({"ok": False, "erro": "Gere a solicitação de medição "
+                                        "antes de assinar."}, code=400); return
+                    if sol.status == "assinado":
+                        self.send_json({"ok": False, "erro": "Solicitação já assinada."}, code=400); return
+                    if (sol.assinatura_canal or "interno") == "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Esta solicitação foi enviada para assinatura eletrônica "
+                                    "(ClickSign) — assine por lá, não pela tela interna."}, code=400); return
+                    if any(a.parte == parte for a in sol.assinaturas):
+                        self.send_json({"ok": False, "erro": f"Parte '{parte}' já assinou"}, code=400); return
+                    ip = self.client_address[0] if self.client_address else ""
+                    status_final = _registrar_assinatura_solicitacao_medicao(
+                        db, sol, parte, nome_ass, cpf, ip, usuario_id=usuario["id"])
+                    self.send_json({"ok": True, "status": status_final, "parte": parte})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/medicao/solicitacao/clicksign/enviar — escolha explícita
+            # (Imprimir × Assinatura ClickSign), mesmo padrão do contrato — só loja+cliente
+            # (sem testemunha, decisão do usuário 2026-08-17).
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/clicksign/enviar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if sol is None or not sol.pdf_path:
+                        self.send_json({"ok": False, "erro": "Gere a solicitação de medição "
+                                        "antes de enviar."}, code=400); return
+                    if sol.status == "assinado":
+                        self.send_json({"ok": False, "erro": "Solicitação já assinada."}, code=400); return
+                    if (sol.assinatura_canal or "interno") == "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Esta solicitação já foi enviada para assinatura eletrônica."}, code=400); return
+                    if any(a.parte for a in sol.assinaturas):
+                        self.send_json({"ok": False,
+                            "erro": "Esta solicitação já tem assinatura interna registrada — não "
+                                    "é possível mudar de canal."}, code=400); return
+                    import mod_clicksign
+                    from integracoes.clicksign_client import ClickSignError
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja. Configure "
+                                    "em Admin → Dados da empresa."}, code=400); return
+                    contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                                  .order_by(Contrato.id.desc()).first())
+                    if contrato is None:
+                        self.send_json({"ok": False, "erro": "Projeto sem contrato."}, code=400); return
+                    _proj_sm3, cliente_dict, _od_sm3 = _montar_dados_projeto_para_contrato(
+                        nome_safe, contrato.orcamento_id, db)
+                    _req = json.loads(body) if body else {}
+                    _email_loja = (_req.get("email_loja") or "").strip() \
+                        or (db.get(Usuario, usuario["id"]).email or "")
+                    _email_cliente = (_req.get("email_cliente") or "").strip() \
+                        or (cliente_dict.get("email") or "")
+                    _enviar_solicitacao_medicao_para_clicksign(
+                        db, sol, cfg,
+                        email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
+                        email_cliente=_email_cliente,
+                        nome_cliente=cliente_dict.get("nome") or "",
+                        cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
+                    db.commit()
+                    self.send_json({"ok": True, "assinatura_canal": sol.assinatura_canal})
+                except (ValueError, ClickSignError) as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/medicao/solicitacao/clicksign/verificar — reconsulta sob
+            # demanda (botão "Verificar agora"), espelho de .../contrato/clicksign/verificar.
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/clicksign/verificar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if not sol or (sol.assinatura_canal or "interno") != "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Esta solicitação de medição não está no canal ClickSign."}, code=400); return
+                    import mod_clicksign
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                    _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg)
+                    db.commit()
+                    self.send_json({"ok": True, "status": sol.status})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
             m = _re.match(r'^/api/projetos/([^/]+)/medicao/parecer$', path)
             if m:
                 nome_safe = unquote(m.group(1))
@@ -15678,6 +16082,21 @@ def _aprovacao_pe_dict(a) -> dict:
         "assinaturas": [{"parte": s.parte, "nome": s.nome,
                          "assinado_em": s.assinado_em.strftime("%Y-%m-%d %H:%M") if s.assinado_em else ""}
                         for s in a.assinaturas],
+    }
+
+
+def _solicitacao_medicao_dict(s) -> dict:
+    """Serialização da Solicitação de Medição (achado do usuário 2026-08-17) para o frontend —
+    espelho de _aprovacao_pe_dict, com os campos de canal/ClickSign do Contrato."""
+    return {
+        "id": s.id, "status": s.status,
+        "tem_pdf": bool(s.pdf_path and os.path.exists(s.pdf_path)),
+        "gerado_em": s.gerado_em.strftime("%Y-%m-%d %H:%M") if s.gerado_em else "",
+        "assinatura_canal": s.assinatura_canal or "interno",
+        "clicksign_enviado_em": s.clicksign_enviado_em.isoformat() if s.clicksign_enviado_em else None,
+        "assinaturas": [{"parte": a.parte, "nome": a.nome,
+                         "assinado_em": a.assinado_em.strftime("%Y-%m-%d %H:%M") if a.assinado_em else ""}
+                        for a in s.assinaturas],
     }
 
 

@@ -1321,6 +1321,51 @@ class AprovacaoPEAssinatura(Base):
     aprovacao = relationship("AprovacaoPE", back_populates="assinaturas")
 
 
+class SolicitacaoMedicao(Base):
+    """Termo de Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17): a
+    etapa 9 do ciclo deixou de ser um upload simples e virou um documento GERADO pelo sistema
+    (modelo por loja tipo 'solicitacao_medicao'), assinável interno (loja+cliente, sem
+    testemunhas) OU por ClickSign — mesmo mecanismo do Contrato/Aprovação do PE. Tabela PRÓPRIA
+    (não reaproveita `Medicao`, que guarda o parecer/planta da etapa 10 — dado não-relacionado a
+    assinatura) espelhando `AprovacaoPE`."""
+    __tablename__ = "solicitacoes_medicao"
+
+    id               = Column(Integer,  primary_key=True, autoincrement=True)
+    projeto_nome     = Column(Text,     nullable=False, index=True)
+    pdf_path         = Column(Text,     nullable=True)
+    status           = Column(Text,     nullable=False, default="rascunho")
+    # status: rascunho | para_assinatura | assinado_loja | assinado_cliente | assinado
+    gerado_em        = Column(DateTime, nullable=True)
+    gerado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    # Assinatura eletrônica ClickSign — mesmo mecanismo do Contrato/Aprovação do PE.
+    assinatura_canal              = Column(String(16), nullable=True)
+    clicksign_envelope_id         = Column(Text,     nullable=True)
+    clicksign_enviado_em          = Column(DateTime, nullable=True)
+    clicksign_signatarios_json    = Column(Text,     nullable=True)
+
+    assinaturas = relationship("SolicitacaoMedicaoAssinatura", back_populates="solicitacao",
+                               cascade="all, delete-orphan")
+
+
+class SolicitacaoMedicaoAssinatura(Base):
+    """Assinatura interna da Solicitação de Medição — espelho de ContratoAssinatura/
+    AprovacaoPEAssinatura. Só loja/cliente (sem testemunha, decisão do usuário 2026-08-17)."""
+    __tablename__ = "solicitacoes_medicao_assinaturas"
+
+    id             = Column(Integer,  primary_key=True, autoincrement=True)
+    solicitacao_id = Column(Integer,  ForeignKey("solicitacoes_medicao.id"), nullable=False)
+    parte          = Column(Text,     nullable=False)   # loja | cliente
+    nome           = Column(Text,     nullable=False)
+    cpf            = Column(Text,     nullable=False)
+    assinado_em    = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ip_origem      = Column(Text,     nullable=True)
+    hash_sha256    = Column(Text,     nullable=False)
+
+    solicitacao = relationship("SolicitacaoMedicao", back_populates="assinaturas")
+
+
 class IntegracaoClickSign(Base):
     """Credencial ClickSign por loja OU por rede (2026-08-11) — espelha fiscal/mod_fiscal.py
     (resolver_emitente/focus_client_para_emitente), mas mais simples: 1 linha por loja OU por

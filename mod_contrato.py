@@ -685,6 +685,9 @@ def _montar_mapping(ctx, pag):
         # Aprovação do PE (correção Fatia 3): preenchidos via ctx["_aprovacao_pe"]
         "NUM_APROVACAO_PE":    (ctx.get("_aprovacao_pe") or {}).get("num_aprovacao", "") or "",
         "AMBIENTES_APROVADOS": (ctx.get("_aprovacao_pe") or {}).get("ambientes_txt", "") or "",
+        # Solicitação de Medição (achado do usuário 2026-08-17): preenchido via
+        # ctx["_solicitacao_medicao"] pelo endpoint de geração.
+        "AMBIENTES_MEDICAO": (ctx.get("_solicitacao_medicao") or {}).get("ambientes_txt", "") or "",
     }
 
 
@@ -1073,6 +1076,17 @@ def montar_html_aprovacao_pe(ctx):
 
 def gerar_pdf_aprovacao_pe(ctx: dict, destino_pdf: str) -> str:
     return _gerar_pdf_corpo_documento(montar_html_aprovacao_pe(ctx), destino_pdf)
+
+
+def montar_html_solicitacao_medicao(ctx):
+    """Termo de Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17):
+    corpo do modelo 'solicitacao_medicao' (ctx['_corpo_md_solicitacao_medicao']), com
+    [AMBIENTES_MEDICAO]/[PREVISAO_MEDICAO] (este já existia no catálogo geral)."""
+    return _montar_html_corpo_documento(ctx, ctx.get("_corpo_md_solicitacao_medicao"))
+
+
+def gerar_pdf_solicitacao_medicao(ctx: dict, destino_pdf: str) -> str:
+    return _gerar_pdf_corpo_documento(montar_html_solicitacao_medicao(ctx), destino_pdf)
 
 
 # ── LibreOffice ───────────────────────────────────────────────────────────────

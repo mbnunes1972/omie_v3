@@ -19967,29 +19967,40 @@ async function peComplementoRender(){
       </div>`;
   }
   // ── Aprovação do Projeto Executivo (documento assinável — substitui o "PE Assinado") ──
+  // Achado do usuário 2026-08-19: mesmas regras do Contrato/Solicitação de Medição — usa o
+  // renderer de assinatura compartilhado (_renderSecaoAssinaturaUnificada) em vez dos inputs
+  // soltos e sem pré-preenchimento de antes.
   const a2 = ap.ok ? ap.aprovacao : null;
   let apHtml;
   if (!a2) {
     apHtml = `<button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-file-check"></i> Aprovar Projeto Executivo</button>`;
-  } else {
-    const partes = new Set((a2.assinaturas||[]).map(s => s.parte));
-    const assinado = a2.status === 'assinado';
-    const sigBtn = p => partes.has(p)
-      ? `<span style="color:var(--ok)">✓ ${p}</span>`
-      : `<button class="btn-ciclo" style="font-size:var(--fs-xs);padding:2px 8px" onclick="peAprovacaoAssinar('${p}')">Assinar (${p})</button>`;
+  } else if (a2.status === 'assinado') {
     apHtml = `
       <div style="font-size:.82rem;margin-bottom:6px">Aprovação do PE <strong>${esc(a2.num_aprovacao)}</strong>
-        — ${assinado ? '<span style="color:var(--ok)">assinada</span>' : esc(a2.status)}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${a2.tem_pdf ? `<a class="btn-ciclo" style="text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}"><i class="ti ti-printer"></i> Imprimir</a>` : ''}
-        ${!assinado ? `<button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-refresh"></i> Regerar</button>` : ''}
-        ${!assinado ? sigBtn('loja') : '<span style="color:var(--ok);font-size:.82rem">✓ loja</span>'}
-        ${!assinado ? sigBtn('cliente') : '<span style="color:var(--ok);font-size:.82rem">✓ cliente</span>'}
-      </div>
-      ${!assinado ? `<div style="display:flex;gap:8px;margin-top:8px">
-        <input id="pe-ap-nome" placeholder="Nome do signatário" style="flex:1;padding:5px 8px">
-        <input id="pe-ap-cpf" placeholder="CPF" style="width:140px;padding:5px 8px">
-      </div>` : ''}`;
+        — <span style="color:var(--ok)">assinada</span></div>
+      ${a2.tem_pdf ? `<a class="btn-ciclo" style="text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}"><i class="ti ti-printer"></i> Imprimir</a>` : ''}`;
+  } else {
+    _peApClicksignDefaults = ap.clicksign_defaults || {};
+    const cfg = {
+      doc: a2,
+      pdfUrl: `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}`,
+      chaveImpresso: 'aprovacao-pe:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+      prefixo: 'ap',
+      defaults: ap.assinatura_defaults || {},
+      ep: {
+        clicksignVerificar: 'verificarClickSignPEAgora',
+        clicksignReenviar: 'reenviarConviteClickSignPE',
+        clicksignEnviar: 'enviarAprovacaoPEParaClickSign',
+        assinarPath: 'aprovacao-pe/assinar',
+        onRefresh: 'peComplementoRender',
+      },
+    };
+    _ultimaCfgAssinaturaPE = cfg;
+    apHtml = `
+      <div style="font-size:.82rem;margin-bottom:6px">Aprovação do PE <strong>${esc(a2.num_aprovacao)}</strong>
+        — ${esc(a2.status)}</div>
+      <button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-refresh"></i> Regerar</button>
+      <div id="secao-assinatura-pe">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
   }
   // ── Termo Aditivo (documenta a diferença negociada) ──
   const a = ad.ok ? ad.aditivo : null;
@@ -20108,19 +20119,98 @@ async function peAprovacaoGerar(){
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Aprovar Projeto Executivo'}); }
 }
 
-async function peAprovacaoAssinar(parte){
-  if(!projetoAtivo) return;
-  const nome = (document.getElementById('pe-ap-nome')?.value || '').trim();
-  const cpf  = (document.getElementById('pe-ap-cpf')?.value || '').trim();
-  if(!nome || !cpf){ await avisoPopup('Preencha nome e CPF do signatário.',{titulo:'Assinar aprovação'}); return; }
+// Assinatura Digital da Aprovação do PE — escolha explícita (achado do usuário 2026-08-19),
+// mesmo padrão de Contrato/Solicitação de Medição: substitui o antigo peAprovacaoAssinar (assinava
+// direto por inputs soltos, sem escolha de canal nem pré-preenchimento).
+let _ultimaCfgAssinaturaPE = null;
+let _peApClicksignDefaults = {};
+
+function _abrirModalConfirmarClickSignPE() {
+  const def = _peApClicksignDefaults || {};
+  document.getElementById('modal-clicksign-pe-confirmar')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'modal-clicksign-pe-confirmar';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
+  const campo = (id, label, val, placeholder) => `
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-top:12px">${label}<br>
+      <input id="${id}" type="email" value="${esc(val||'')}" placeholder="${esc(placeholder||'')}"
+        style="width:100%;box-sizing:border-box;padding:8px;margin-top:2px;background:var(--input);
+        border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.85rem"></label>`;
+  ov.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;max-width:480px;width:92%;max-height:88vh;overflow-y:auto">
+      <h4 style="margin:0 0 6px">Aprovação do PE — confirmar destinatários</h4>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 4px">Confira ou corrija os e-mails para onde o documento será encaminhado para assinatura.</p>
+      ${campo('csap-email-loja', 'E-mail da loja (assina como responsável)', def.email_loja, 'obrigatório')}
+      ${campo('csap-email-cliente', 'E-mail do cliente — ' + esc(def.nome_cliente||'—'), def.email_cliente, 'obrigatório')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('modal-clicksign-pe-confirmar').remove()"
+          class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
+        <button data-act="enviar" onclick="_confirmarEnvioClickSignPE()" class="btn-ciclo btn-primary">
+          <i class="ti ti-signature"></i> Confirmar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function enviarAprovacaoPEParaClickSign() {
+  if (!projetoAtivo) return;
+  let d;
   try {
-    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/assinar`,
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({parte, nome, cpf})}).then(r=>r.json());
-    if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Assinar aprovação'}); return; }
-    showToast('Assinatura registrada (' + parte + ').');
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe`,
+                          { credentials: 'same-origin' });
+    d = await r.json();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
+  if (!d.ok || !d.aprovacao) { showToast('Erro ao carregar a aprovação do PE.', true); return; }
+  _peApClicksignDefaults = d.clicksign_defaults || {};
+  _abrirModalConfirmarClickSignPE();
+}
+
+async function _confirmarEnvioClickSignPE() {
+  const emailLoja    = (document.getElementById('csap-email-loja')?.value || '').trim();
+  const emailCliente = (document.getElementById('csap-email-cliente')?.value || '').trim();
+  if (!emailLoja || !emailCliente) {
+    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+  }
+  const btn = document.querySelector('#modal-clicksign-pe-confirmar [data-act="enviar"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/enviar`,
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email_loja: emailLoja, email_cliente: emailCliente }) });
+    const d = await r.json();
+    if (!d.ok) {
+      showToast('Erro: ' + d.erro, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+      return;
+    }
+    document.getElementById('modal-clicksign-pe-confirmar')?.remove();
+    showToast('Aprovação do PE enviada para assinatura eletrônica (ClickSign).', false);
     peComplementoRender();
-  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Assinar aprovação'}); }
+  } catch(e) {
+    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+  }
+}
+
+async function verificarClickSignPEAgora() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/verificar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Status verificado: ' + d.status, false);
+    peComplementoRender();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+async function reenviarConviteClickSignPE() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Convite reenviado.', false);
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 async function peAditivoGerar(){
@@ -22021,6 +22111,8 @@ function _reRenderAssinaturaAtual() {
   if (boxCt && _ultimaCfgAssinaturaContrato) boxCt.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaContrato);
   const boxSm = document.getElementById('secao-assinatura-medicao');
   if (boxSm && _ultimaCfgAssinaturaMedicao) boxSm.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaMedicao);
+  const boxAp = document.getElementById('secao-assinatura-pe');
+  if (boxAp && typeof _ultimaCfgAssinaturaPE !== 'undefined' && _ultimaCfgAssinaturaPE) boxAp.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaPE);
 }
 
 function _renderAssinaturasSomenteLeitura(lista) {

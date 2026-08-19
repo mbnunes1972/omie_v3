@@ -5082,7 +5082,30 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     a = (db.query(AprovacaoPE).filter_by(projeto_nome=nome_safe)
                            .order_by(AprovacaoPE.id.desc()).first())
-                    self.send_json({"ok": True, "aprovacao": _aprovacao_pe_dict(a) if a else None})
+                    resp_ap_get = {"ok": True, "aprovacao": _aprovacao_pe_dict(a) if a else None}
+                    if a is not None:
+                        # Achado do usuário 2026-08-19: mesmos defaults do Contrato/Solicitação de
+                        # Medição — pré-preenche o modal de confirmação de e-mails (ClickSign) e a
+                        # caixa de confirmação interna, reaproveitando o signatário já confirmado
+                        # na aprovação do orçamento (Frente 3), sem coluna própria na PE.
+                        _contrato_ap = db.get(Contrato, a.contrato_id)
+                        if _contrato_ap is not None:
+                            _proj_ap, _cliente_ap, _od_ap = _montar_dados_projeto_para_contrato(
+                                nome_safe, _contrato_ap.orcamento_id, db)
+                            _usu_email_ap = db.get(Usuario, usuario["id"])
+                            resp_ap_get["clicksign_defaults"] = {
+                                "email_loja": (_usu_email_ap.email if _usu_email_ap else "") or "",
+                                "nome_loja": usuario.get("nome", ""),
+                                "email_cliente": _cliente_ap.get("email") or "",
+                                "nome_cliente": _cliente_ap.get("nome") or "",
+                            }
+                            resp_ap_get["assinatura_defaults"] = {
+                                "nome_loja": usuario.get("nome", ""),
+                                "cpf_loja": "",
+                                "nome_cliente": _contrato_ap.cliente_nome_confirmado or _cliente_ap.get("nome") or "",
+                                "cpf_cliente": _contrato_ap.cliente_cpf_confirmado or _cliente_ap.get("cpf") or "",
+                            }
+                    self.send_json(resp_ap_get)
                 finally:
                     db.close()
                 return
@@ -8791,30 +8814,11 @@ class Handler(BaseHTTPRequestHandler):
                 aprov.gerado_por_id = usuario.get("id")
                 aprov.status = "para_assinatura"
                 db.commit()
-                # ClickSign (2026-08-11): mesmo padrão do contrato — passo independente e
-                # fail-soft, só dispara se a loja tem credencial configurada.
-                clicksign_erro = None
-                try:
-                    import mod_clicksign
-                    _loja_cs = db.get(Loja, loja_id)
-                    _cfg_cs = mod_clicksign.resolver_config(db, _loja_cs) if _loja_cs else None
-                    if _cfg_cs is not None:
-                        _email_loja = db.get(Usuario, usuario["id"]).email or ""
-                        _enviar_aprovacao_pe_para_clicksign(
-                            db, aprov, _cfg_cs,
-                            email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
-                            email_cliente=cliente_dict.get("email") or "",
-                            nome_cliente=cliente_dict.get("nome") or "",
-                            cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
-                        db.commit()
-                except Exception as _ecs:
-                    db.rollback()
-                    clicksign_erro = str(_ecs)
-                    print("[CLICKSIGN] envio da aprovação do PE falhou:", _ecs)
-                resp_ap = {"ok": True, "aprovacao": _aprovacao_pe_dict(aprov)}
-                if clicksign_erro:
-                    resp_ap["clicksign_erro"] = clicksign_erro
-                self.send_json(resp_ap)
+                # Achado do usuário 2026-08-19: mesmas regras do Contrato/Solicitação de Medição
+                # — a geração deixa de enviar pro ClickSign automaticamente; a escolha do canal
+                # (Imprimir × Assinatura ClickSign) passa a ser explícita na tela, via
+                # POST .../aprovacao-pe/clicksign/enviar.
+                self.send_json({"ok": True, "aprovacao": _aprovacao_pe_dict(aprov)})
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -8863,6 +8867,73 @@ class Handler(BaseHTTPRequestHandler):
                 status_final = _registrar_assinatura_aprovacao_pe(
                     db, aprov, parte, nome_ass, cpf, ip, usuario_id=usuario["id"])
                 self.send_json({"ok": True, "status": status_final})
+            except Exception as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
+        # POST /api/projetos/<nome>/aprovacao-pe/clicksign/enviar — escolha explícita (Imprimir ×
+        # Assinatura ClickSign), achado do usuário 2026-08-19: mesmas regras do Contrato/
+        # Solicitação de Medição, substitui o antigo auto-envio silencioso na geração.
+        m_apenv = re.match(r'^/api/projetos/([^/]+)/aprovacao-pe/clicksign/enviar$', path)
+        if m_apenv:
+            nome = unquote(m_apenv.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                aprov = (db.query(AprovacaoPE).filter_by(projeto_nome=nome)
+                           .order_by(AprovacaoPE.id.desc()).first())
+                if aprov is None or not aprov.pdf_path:
+                    self.send_json({"ok": False, "erro": "Gere a aprovação do PE antes de enviar."},
+                                   code=400); return
+                if aprov.status == "assinado":
+                    self.send_json({"ok": False, "erro": "Aprovação já assinada."}, code=400); return
+                if (aprov.assinatura_canal or "interno") == "clicksign":
+                    self.send_json({"ok": False,
+                        "erro": "Esta Aprovação do PE já foi enviada para assinatura eletrônica."}, code=400); return
+                if any(a.parte for a in aprov.assinaturas):
+                    self.send_json({"ok": False,
+                        "erro": "Esta Aprovação do PE já tem assinatura interna registrada — não "
+                                "é possível mudar de canal."}, code=400); return
+                import mod_clicksign
+                from integracoes.clicksign_client import ClickSignError
+                loja_obj = db.get(Loja, loja_id)
+                cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                if cfg is None:
+                    self.send_json({"ok": False,
+                        "erro": "Integração ClickSign não configurada para esta loja. Configure "
+                                "em Admin → Dados da empresa."}, code=400); return
+                contrato = db.get(Contrato, aprov.contrato_id)
+                if contrato is None:
+                    self.send_json({"ok": False, "erro": "Projeto sem contrato."}, code=400); return
+                _proj_ap2, cliente_dict, _od_ap2 = _montar_dados_projeto_para_contrato(
+                    nome, contrato.orcamento_id, db)
+                _req = json.loads(body) if body else {}
+                _email_loja = (_req.get("email_loja") or "").strip() \
+                    or (db.get(Usuario, usuario["id"]).email or "")
+                _email_cliente = (_req.get("email_cliente") or "").strip() \
+                    or (cliente_dict.get("email") or "")
+                _enviar_aprovacao_pe_para_clicksign(
+                    db, aprov, cfg,
+                    email_loja=_email_loja, nome_loja=usuario.get("nome", ""),
+                    email_cliente=_email_cliente,
+                    nome_cliente=cliente_dict.get("nome") or "",
+                    cpf_cliente=cliente_dict.get("cpf") or cliente_dict.get("cnpj") or "")
+                db.commit()
+                self.send_json({"ok": True, "assinatura_canal": aprov.assinatura_canal})
+            except (ValueError, ClickSignError) as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -16229,6 +16300,11 @@ def _aprovacao_pe_dict(a) -> dict:
         "tem_pdf": bool(a.pdf_path and os.path.exists(a.pdf_path)),
         "gerado_em": a.gerado_em.strftime("%Y-%m-%d %H:%M") if a.gerado_em else "",
         "dados": dados,
+        # Achado do usuário 2026-08-19: mesmas regras de canal do Contrato/Solicitação de
+        # Medição — a PE ganha aqui os dois campos que faltavam pro frontend renderizar a
+        # seção de assinatura unificada.
+        "assinatura_canal": a.assinatura_canal or "interno",
+        "clicksign_enviado_em": a.clicksign_enviado_em.isoformat() if a.clicksign_enviado_em else None,
         "assinaturas": [{"parte": s.parte, "nome": s.nome,
                          "assinado_em": s.assinado_em.strftime("%Y-%m-%d %H:%M") if s.assinado_em else ""}
                         for s in a.assinaturas],

@@ -23,6 +23,7 @@ tiver testado contra uma conta sandbox de verdade. Rodar a suíte de testes (moc
 esse passo manual.
 """
 import base64
+import re
 import time
 import requests
 
@@ -113,10 +114,15 @@ class ClickSignClient:
         return self._id(self._request("POST", "/envelopes/%s/documents" % envelope_id, json_body=body))
 
     def adicionar_signatario(self, envelope_id, email, nome, cpf=None):
-        """POST /envelopes/{id}/signers — cadastra 1 signatário no envelope. Retorna o signer_id."""
-        attrs = {"name": nome, "email": email, "has_documentation": bool(cpf)}
-        if cpf:
-            attrs["documentation"] = cpf
+        """POST /envelopes/{id}/signers — cadastra 1 signatário no envelope. Retorna o signer_id.
+        `documentation` só aceita DÍGITOS (achado do usuário 2026-08-19: a API devolvia
+        "documentation inválido" quando vinha formatado, ex. "111.444.777-35" ou CNPJ com
+        pontuação — o CPF/CNPJ é gravado formatado no cadastro, então limpa aqui antes de
+        enviar, não no chamador)."""
+        doc_digitos = re.sub(r"\D", "", cpf or "")
+        attrs = {"name": nome, "email": email, "has_documentation": bool(doc_digitos)}
+        if doc_digitos:
+            attrs["documentation"] = doc_digitos
         body = {"data": {"type": "signers", "attributes": attrs}}
         return self._id(self._request("POST", "/envelopes/%s/signers" % envelope_id, json_body=body))
 

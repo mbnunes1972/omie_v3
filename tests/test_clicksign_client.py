@@ -80,6 +80,26 @@ def test_adicionar_signatario_com_cpf(monkeypatch):
     assert signer_id == "signer-1"
 
 
+def test_adicionar_signatario_limpa_pontuacao_do_cpf(monkeypatch):
+    """Achado do usuário 2026-08-19: a API da ClickSign devolvia "documentation inválido"
+    quando o CPF ia formatado (o cadastro do Cliente grava com pontuação) — só aceita
+    dígitos."""
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-3"}})])
+    cli = _client()
+    cli.adicionar_signatario("env-1", "cliente@teste.com", "Fulano", cpf="111.444.777-35")
+    attrs = chamadas[0]["json"]["data"]["attributes"]
+    assert attrs["documentation"] == "11144477735"
+    assert attrs["has_documentation"] is True
+
+
+def test_adicionar_signatario_limpa_pontuacao_do_cnpj(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-4"}})])
+    cli = _client()
+    cli.adicionar_signatario("env-1", "cliente@teste.com", "Empresa", cpf="12.345.678/0001-90")
+    attrs = chamadas[0]["json"]["data"]["attributes"]
+    assert attrs["documentation"] == "12345678000190"
+
+
 def test_adicionar_signatario_sem_cpf(monkeypatch):
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-2"}})])
     cli = _client()

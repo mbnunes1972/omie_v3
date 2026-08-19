@@ -6650,10 +6650,15 @@ function focarBuscaProjeto(){
 let _parceiroAtivoProjeto = null;
 
 // ---- Toast -------------------------------------------------------------------
+// Achado do usuário 2026-08-19: erro em canto de página com letra pequena passa despercebido —
+// toda mensagem de ERRO passa a abrir o box padrão do sistema (mostrarErroComAcao, já usado no
+// fluxo de contrato), com botão OK, em vez do toast. Sucesso/info continuam como toast (não foi
+// isso que o usuário reclamou).
 function showToast(msg, isErr){
+  if (isErr) { mostrarErroModal(msg); return; }
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className = 'toast' + (isErr?' err':'');
+  t.className = 'toast';
   t.style.display='block';
   clearTimeout(t._timer);
   t._timer = setTimeout(()=>t.style.display='none', 3000);
@@ -21358,7 +21363,7 @@ function mostrarErroComAcao(mensagem, labelAcao, fnAcao) {
         ${btnAcao}
         <button onclick="document.getElementById('erro-modal-overlay').remove()"
           style="background:var(--err);color:var(--btn-primary-text);border:none;border-radius:6px;
-          padding:10px 28px;font-size:1rem;cursor:pointer;font-weight:600">Fechar</button>
+          padding:10px 28px;font-size:1rem;cursor:pointer;font-weight:600">OK</button>
       </div>
     </div>
   `;

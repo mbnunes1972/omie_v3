@@ -83,6 +83,9 @@ MODULOS = {
                                 "integracoes_clicksign",   # credencial ClickSign por loja/rede (2026-08-11)
                                 "arquivo_pe", "parcela_projeto", "parcela_ambiente",
                                 "sinal_retido", "retencao_obra", "medicoes",
+                                # Termo de Responsabilidade e Solicitação de Medição (achado do
+                                # usuário 2026-08-17): documento gerado/assinável da etapa 9.
+                                "solicitacoes_medicao", "solicitacoes_medicao_assinaturas",
                                 "documento_modelos",
                                 "documento_tipos"],   # tipos customizados ("Novo Documento", 2026-07-22)
                     "rotas": ["/api/orcamentos", "/api/contratos", "/api/medicoes", "/api/comercial",

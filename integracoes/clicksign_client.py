@@ -23,6 +23,7 @@ tiver testado contra uma conta sandbox de verdade. Rodar a suíte de testes (moc
 esse passo manual.
 """
 import base64
+import re
 import time
 import requests
 
@@ -113,10 +114,15 @@ class ClickSignClient:
         return self._id(self._request("POST", "/envelopes/%s/documents" % envelope_id, json_body=body))
 
     def adicionar_signatario(self, envelope_id, email, nome, cpf=None):
-        """POST /envelopes/{id}/signers — cadastra 1 signatário no envelope. Retorna o signer_id."""
-        attrs = {"name": nome, "email": email, "has_documentation": bool(cpf)}
-        if cpf:
-            attrs["documentation"] = cpf
+        """POST /envelopes/{id}/signers — cadastra 1 signatário no envelope. Retorna o signer_id.
+        `documentation` só aceita DÍGITOS (achado do usuário 2026-08-19: a API devolvia
+        "documentation inválido" quando vinha formatado, ex. "111.444.777-35" ou CNPJ com
+        pontuação — o CPF/CNPJ é gravado formatado no cadastro, então limpa aqui antes de
+        enviar, não no chamador)."""
+        doc_digitos = re.sub(r"\D", "", cpf or "")
+        attrs = {"name": nome, "email": email, "has_documentation": bool(doc_digitos)}
+        if doc_digitos:
+            attrs["documentation"] = doc_digitos
         body = {"data": {"type": "signers", "attributes": attrs}}
         return self._id(self._request("POST", "/envelopes/%s/signers" % envelope_id, json_body=body))
 
@@ -149,10 +155,31 @@ class ClickSignClient:
                           "attributes": {"status": "running"}}}
         return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
 
+    def cancelar_envelope(self, envelope_id):
+        """PATCH /envelopes/{id} — status='canceled' invalida o envelope (achado do usuário
+        2026-08-17: cancelar/revisar um contrato já enviado pra assinatura não pode deixar o
+        convite pendente no ar). MESMO CAVEAT do resto deste cliente (ver docstring do módulo):
+        o valor exato do status pra cancelar não foi confirmado contra o sandbox real — ajustar
+        assim que testado. Chamador trata fail-soft (best-effort)."""
+        body = {"data": {"id": envelope_id, "type": "envelopes",
+                          "attributes": {"status": "canceled"}}}
+        return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
+
     def consultar_envelope(self, envelope_id):
         """GET /envelopes/{id}?include=signers,documents — status do envelope + signatários.
         Retorna o dict bruto da resposta JSON:API (`data` + `included`)."""
         return self._request("GET", "/envelopes/%s?include=signers,documents" % envelope_id)
+
+    def reenviar_notificacao(self, envelope_id, mensagem=None):
+        """POST /envelopes/{id}/notifications — reenvia o convite de assinatura (achado do
+        usuário 2026-08-19: caso o signatário não receba/não ache o e-mail original). DIFERENTE
+        do resto deste cliente, este payload foi confirmado contra a documentação oficial
+        (developers.clicksign.com/reference/api-notificar-envelope), não é um achado por
+        inferência. Notifica TODOS os signatários do envelope de uma vez — a API não permite
+        mirar só quem ainda não assinou."""
+        attrs = {"message": mensagem} if mensagem else {}
+        body = {"data": {"type": "notifications", "attributes": attrs}}
+        return self._request("POST", "/envelopes/%s/notifications" % envelope_id, json_body=body)
 
     def registrar_webhook(self, url, eventos=None):
         """POST /webhooks — registro é por CONTA (não por envelope/documento como na D4Sign),

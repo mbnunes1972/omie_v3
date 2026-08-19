@@ -107,6 +107,9 @@ CATALOGO = {
     # ── Aprovação do Projeto Executivo (correção Fatia 3, 2026-07-21) ────────────────────────
     "NUM_APROVACAO_PE":     {"rotulo": "Nº da aprovação do Projeto Executivo",       "escopo": "documento"},
     "AMBIENTES_APROVADOS":  {"rotulo": "Ambientes aprovados no Projeto Executivo",   "escopo": "documento"},
+
+    # ── Termo de Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17) ────
+    "AMBIENTES_MEDICAO":  {"rotulo": "Ambientes a serem medidos",  "escopo": "documento"},
 }
 
 

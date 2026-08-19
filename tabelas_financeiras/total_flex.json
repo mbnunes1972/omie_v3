@@ -1,6 +1,6 @@
 {
   "codigo": "total_flex",
-  "descricao": "Total Flex",
+  "descricao": "Parcelamento Loja",
   "tipo": "flex",
   "recebimento": "parcelado",
   "gerar_boleto": true,

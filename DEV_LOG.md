@@ -3277,6 +3277,63 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 198 — ClickSign: reenvio de convite + unifica a assinatura manual (Contrato, Solicitação de Medição, Aprovação do PE)
+
+**Contexto:** três achados do usuário na mesma área (assinatura de documentos), atacados num
+desenho só via plano aprovado (`_geral`/achado de sessão, sem spec dedicado): (1) não havia como
+reenviar o convite ClickSign se o cliente não recebesse/achasse o e-mail; (2) a "Assinatura
+Interna" era rigorosa demais pro que realmente é — só uma confirmação de prosseguimento — e vinha
+duplicada em modais separados de loja/cliente; (3) no canal ClickSign a UI ainda oferecia botões
+de assinar manualmente, que o backend recusa (achado do usuário no meio da sessão: "quando seguir
+por assinatura digital não precisa da assinatura interna, o mecanismo é automático via
+confirmação do sistema, conforme já existe o botão 'verificar agora'").
+
+**[DECIDIDO] Renderer de assinatura compartilhado.** Em vez de replicar a reestruturação três
+vezes (Contrato, Solicitação de Medição, Aprovação do PE — que já estava divergindo, a PE não
+tinha nem pré-preenchimento), um único `_renderSecaoAssinaturaUnificada(cfg)` no frontend atende
+os três tipos de documento, com wrappers finos preservando as assinaturas de função existentes
+(`_renderSecaoAssinaturaContrato`, `_renderSecaoSolicitacaoMedicao`, o bloco `apHtml` do
+`peComplementoRender`).
+
+**Etapa 1 — reenvio + unificação (Contrato, Solicitação de Medição), commit `50da487`:**
+- `ClickSignClient.reenviar_notificacao` (`integracoes/clicksign_client.py`) — `POST
+  /envelopes/{id}/notifications`, payload **confirmado contra a documentação oficial**
+  (developers.clicksign.com/reference/api-notificar-envelope) via WebFetch, não é um achado por
+  inferência como o resto do cliente. Notifica TODOS os signatários do envelope de uma vez — a
+  API não permite mirar só quem falta assinar.
+- Três endpoints novos de reenvio (`.../contrato/clicksign/reenviar`,
+  `.../medicao/solicitacao/clicksign/reenviar`, mais o da PE na Etapa 2), mesmo padrão fail-soft
+  dos endpoints de verificar.
+- Canal ClickSign: lista de assinaturas **somente leitura** + botões "Verificar agora"/"Reenviar
+  convite", sem nenhum botão de assinar manual.
+- Canal interno: "Imprimir" passa a **liberar** (flag de sessão `_ASSINATURA_IMPRESSO`, por
+  documento) uma caixa única de confirmação — 2 checkboxes (loja/cliente), nome/CPF
+  pré-preenchidos e editáveis (reaproveita `Contrato.cliente_nome_confirmado`/`cpf_confirmado`,
+  Frente 3 da Sessão 194) — no lugar dos dois modais separados de antes. `GET
+  /medicao/solicitacao` ganhou `assinatura_defaults` (não tinha, reaproveita as mesmas colunas do
+  Contrato, sem coluna própria).
+
+**Etapa 2 — paridade da Aprovação do PE, commit `b716550`:** a geração (`POST .../aprovacao-pe`)
+**parou de enviar pro ClickSign automaticamente** — a escolha do canal virou explícita, igual
+Contrato/Medição, via novo `POST .../aprovacao-pe/clicksign/enviar` (reaproveita o helper que já
+existia). `GET .../aprovacao-pe` ganhou `assinatura_canal`/`clicksign_enviado_em` no
+`_aprovacao_pe_dict` + `clicksign_defaults`/`assinatura_defaults` no handler. Frontend
+(`peComplementoRender`) trocou os inputs soltos sem pré-preenchimento (`peAprovacaoAssinar`) pelo
+renderer compartilhado.
+
+**Verificação:** suíte 2254→**2259 passed** (Postgres); `node --check` limpo nos dois momentos;
+Playwright ao vivo nos três documentos — canal ClickSign mostrando reenvio sem botão de assinar
+(inclusive o 400 esperado "Integração ClickSign não configurada" no ambiente local sem
+credencial real), canal interno com o fluxo completo Imprimir→caixa de confirmação
+pré-preenchida→duas assinaturas→status `assinado`. **Achado incidental durante a verificação:**
+a loja 1 (Inspirium PDV) não tinha `documento_modelos` ativo do tipo `aprovacao_pe` no banco de
+dev — a Aprovação do PE estava silenciosamente inutilizável ali; semeado um modelo mínimo pra
+completar a verificação.
+
+**Arquivos:** `integracoes/clicksign_client.py`, `main.py`, `static/index.html`,
+`tests/test_clicksign_client.py`, `tests/test_contrato_assinatura_clicksign_e2e.py`,
+`tests/test_solicitacao_medicao_e2e.py`, `tests/test_aprovacao_pe_clicksign_e2e.py`.
+
 ## Sessão 197 — Metodologia de ambientes formalizada + fluxo branch+PR ativado (Juliana entra no desenvolvimento)
 
 **Contexto:** Marcelo tirou dúvidas conceituais sobre os 4 ambientes (Localhost, VPS A, VPS B,

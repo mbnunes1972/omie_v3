@@ -354,8 +354,9 @@ class ComissaoFolha(Base):
     projeto_nome   = Column(Text,     nullable=True)            # nome_safe (rastreabilidade)
     etapa_codigo   = Column(String(8), nullable=True)           # etapa que disparou (papel); NULL p/ venda
     base           = Column(Float,    nullable=True, default=0.0)   # Σ order_total dos ambientes (ou vendas líq.)
-    base_ajustada  = Column(Float,    nullable=True)            # override manual da base
+    base_ajustada  = Column(Float,    nullable=True)            # override manual da base (venda: valor líquido ajustado)
     pct            = Column(Float,    nullable=True, default=0.0)
+    pct_ajustado   = Column(Float,    nullable=True)            # override manual do % (gerente, no ato do pagamento)
     valor          = Column(Float,    nullable=True, default=0.0)   # base_efetiva × pct/100
     status         = Column(String(12), nullable=False, default="previsto")  # previsto|confirmado|cancelado
     ref_etapa      = Column(String(120), nullable=True)        # idempotência: '<projeto>:<etapa>:<func>' ou 'venda:<func>:<comp>'
@@ -459,6 +460,7 @@ class Terceiro(Base):
     loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
     nome            = Column(String(150), nullable=False)
     cpf             = Column(String(20),  nullable=True)
+    cnpj            = Column(String(18),  nullable=True)   # contratação via MEI (achado do usuário 2026-08-17)
     telefone        = Column(String(20),  nullable=True)
     tipo_servico    = Column(String(20),  nullable=True)   # legado — ver funcao_id
     funcao_id       = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)  # → Tabela de Funções (v10)
@@ -519,6 +521,11 @@ class Loja(Base):
     testemunha1_cpf  = Column(String(14),  nullable=True)
     testemunha2_nome = Column(String(120), nullable=True)
     testemunha2_cpf  = Column(String(14),  nullable=True)
+    # E-mail das testemunhas (achado do usuário 2026-08-17): só existiam nome+CPF, pro contrato
+    # impresso — a assinatura digital (ClickSign) precisa de e-mail pra cadastrar a testemunha
+    # como signatária. Opcional: sem e-mail, a testemunha simplesmente não entra no envelope.
+    testemunha1_email = Column(String(150), nullable=True)
+    testemunha2_email = Column(String(150), nullable=True)
     emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=True)
     ativo       = Column(Integer,  default=1)
     criado_em   = Column(DateTime, default=datetime.utcnow)
@@ -564,13 +571,18 @@ class Projeto(Base):
 
     nome_safe  = Column(String,   primary_key=True)
     cliente_id = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
-    status     = Column(String(20), nullable=True)   # quente | morno | frio | convertido | perdido | cancelado
+    # quente | morno | frio | convertido | perdido | cancelado | em_revisao (revisado 2026-08-17:
+    # cancelamento leve, pré-2ª-assinatura, tem 2 desfechos escolhidos pelo gerente — "cancelado"
+    # trava tudo (ver _contrato_assinado); "em_revisao" reabre a negociação, comportamento antigo
+    # com rótulo honesto — não é mais rotulado "cancelado" por engano).
+    status     = Column(String(20), nullable=True)
     status_at  = Column(DateTime,   nullable=True)
     perdido_em     = Column(DateTime,   nullable=True)
     # Trava PERMANENTE: só é setada quando o contrato já tinha as 2 assinaturas (provisões já
-    # constituídas) e foi cancelado depois disso. Diferente de status="cancelado" sozinho (que
-    # também cobre o cancelamento leve, pré-2ª-assinatura, e não trava nada). Uma vez 1, nunca
-    # volta a 0 — nem um novo contrato no mesmo projeto reabre a edição (ver _contrato_assinado).
+    # constituídas) e foi cancelado depois disso — "revender" exige projeto novo, nunca reabre.
+    # status="cancelado" sozinho também trava (ver `_projeto_cancelado`/`_contrato_assinado` em
+    # main.py), mas não é permanente como este flag; "Reabrir Orçamentos" é frente futura. Uma vez
+    # 1, nunca volta a 0 — nem um novo contrato no mesmo projeto reabre a edição.
     cancelado_definitivo = Column(Integer, default=0)
     parametros_json = Column(Text, nullable=True)   # parâmetros estruturais da negociação (JSON, projeto-wide)
     loja_id        = Column(Integer,    ForeignKey("lojas.id"), nullable=True)
@@ -1194,6 +1206,12 @@ class Contrato(Base):
     clicksign_envelope_id         = Column(Text,     nullable=True)
     clicksign_enviado_em          = Column(DateTime, nullable=True)
     clicksign_signatarios_json    = Column(Text,     nullable=True)
+    # Frente 3 (achado do usuário 2026-08-17): signatário do CLIENTE confirmado na aprovação do
+    # orçamento (override do modal ou o Cliente cadastrado, já resolvido) — sobrevive além do
+    # `signatario_override` transiente do request, pra pré-preencher a confirmação de assinatura
+    # manual (interna) sem pedir nome+CPF em branco de novo.
+    cliente_nome_confirmado       = Column(Text,     nullable=True)
+    cliente_cpf_confirmado        = Column(Text,     nullable=True)
 
     gerado_por   = relationship("Usuario",  foreign_keys=[gerado_por_id])
     orcamento    = relationship("Orcamento", foreign_keys=[orcamento_id])
@@ -1307,6 +1325,51 @@ class AprovacaoPEAssinatura(Base):
     hash_sha256  = Column(Text,     nullable=False)
 
     aprovacao = relationship("AprovacaoPE", back_populates="assinaturas")
+
+
+class SolicitacaoMedicao(Base):
+    """Termo de Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17): a
+    etapa 9 do ciclo deixou de ser um upload simples e virou um documento GERADO pelo sistema
+    (modelo por loja tipo 'solicitacao_medicao'), assinável interno (loja+cliente, sem
+    testemunhas) OU por ClickSign — mesmo mecanismo do Contrato/Aprovação do PE. Tabela PRÓPRIA
+    (não reaproveita `Medicao`, que guarda o parecer/planta da etapa 10 — dado não-relacionado a
+    assinatura) espelhando `AprovacaoPE`."""
+    __tablename__ = "solicitacoes_medicao"
+
+    id               = Column(Integer,  primary_key=True, autoincrement=True)
+    projeto_nome     = Column(Text,     nullable=False, index=True)
+    pdf_path         = Column(Text,     nullable=True)
+    status           = Column(Text,     nullable=False, default="rascunho")
+    # status: rascunho | para_assinatura | assinado_loja | assinado_cliente | assinado
+    gerado_em        = Column(DateTime, nullable=True)
+    gerado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    # Assinatura eletrônica ClickSign — mesmo mecanismo do Contrato/Aprovação do PE.
+    assinatura_canal              = Column(String(16), nullable=True)
+    clicksign_envelope_id         = Column(Text,     nullable=True)
+    clicksign_enviado_em          = Column(DateTime, nullable=True)
+    clicksign_signatarios_json    = Column(Text,     nullable=True)
+
+    assinaturas = relationship("SolicitacaoMedicaoAssinatura", back_populates="solicitacao",
+                               cascade="all, delete-orphan")
+
+
+class SolicitacaoMedicaoAssinatura(Base):
+    """Assinatura interna da Solicitação de Medição — espelho de ContratoAssinatura/
+    AprovacaoPEAssinatura. Só loja/cliente (sem testemunha, decisão do usuário 2026-08-17)."""
+    __tablename__ = "solicitacoes_medicao_assinaturas"
+
+    id             = Column(Integer,  primary_key=True, autoincrement=True)
+    solicitacao_id = Column(Integer,  ForeignKey("solicitacoes_medicao.id"), nullable=False)
+    parte          = Column(Text,     nullable=False)   # loja | cliente
+    nome           = Column(Text,     nullable=False)
+    cpf            = Column(Text,     nullable=False)
+    assinado_em    = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ip_origem      = Column(Text,     nullable=True)
+    hash_sha256    = Column(Text,     nullable=False)
+
+    solicitacao = relationship("SolicitacaoMedicao", back_populates="assinaturas")
 
 
 class IntegracaoClickSign(Base):
@@ -2288,6 +2351,18 @@ def _migrar_colunas_pg():
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_uuid",
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_enviado_em",
         "ALTER TABLE aprovacoes_pe DROP COLUMN IF EXISTS d4sign_signatarios_json",
+        # Achado do usuário 2026-08-17: Terceiro (MEI) precisa de CNPJ; Folha de Pagamento ganha
+        # % de comissão ajustável pelo gerente no ato do pagamento (comissão de venda).
+        "ALTER TABLE terceiros ADD COLUMN IF NOT EXISTS cnpj VARCHAR(18)",
+        "ALTER TABLE comissao_folha ADD COLUMN IF NOT EXISTS pct_ajustado DOUBLE PRECISION",
+        # Achado do usuário 2026-08-17: e-mail de testemunha, pra assinatura digital (ClickSign)
+        # poder cadastrá-la como signatária — nome/CPF já existiam, só pro contrato impresso.
+        "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha1_email VARCHAR(150)",
+        "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS testemunha2_email VARCHAR(150)",
+        # Frente 3 (achado do usuário 2026-08-17): signatário confirmado na aprovação do
+        # orçamento, reaproveitado na confirmação de assinatura manual.
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_nome_confirmado TEXT",
+        "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_cpf_confirmado TEXT",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

@@ -80,6 +80,26 @@ def test_adicionar_signatario_com_cpf(monkeypatch):
     assert signer_id == "signer-1"
 
 
+def test_adicionar_signatario_limpa_pontuacao_do_cpf(monkeypatch):
+    """Achado do usuário 2026-08-19: a API da ClickSign devolvia "documentation inválido"
+    quando o CPF ia formatado (o cadastro do Cliente grava com pontuação) — só aceita
+    dígitos."""
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-3"}})])
+    cli = _client()
+    cli.adicionar_signatario("env-1", "cliente@teste.com", "Fulano", cpf="111.444.777-35")
+    attrs = chamadas[0]["json"]["data"]["attributes"]
+    assert attrs["documentation"] == "11144477735"
+    assert attrs["has_documentation"] is True
+
+
+def test_adicionar_signatario_limpa_pontuacao_do_cnpj(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-4"}})])
+    cli = _client()
+    cli.adicionar_signatario("env-1", "cliente@teste.com", "Empresa", cpf="12.345.678/0001-90")
+    attrs = chamadas[0]["json"]["data"]["attributes"]
+    assert attrs["documentation"] == "12345678000190"
+
+
 def test_adicionar_signatario_sem_cpf(monkeypatch):
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-2"}})])
     cli = _client()
@@ -127,6 +147,24 @@ def test_consultar_envelope(monkeypatch):
     assert "/envelopes/env-1" in chamadas[0]["url"]
     assert "include=" in chamadas[0]["url"]
     assert dados["data"]["id"] == "env-1"
+
+
+def test_reenviar_notificacao(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"summary": [
+        {"signer_id": "s1", "notified": True}]}})])
+    cli = _client()
+    cli.reenviar_notificacao("env-1")
+    assert chamadas[0]["method"] == "POST"
+    assert chamadas[0]["url"].endswith("/envelopes/env-1/notifications")
+    assert chamadas[0]["json"]["data"]["type"] == "notifications"
+    assert chamadas[0]["json"]["data"]["attributes"] == {}
+
+
+def test_reenviar_notificacao_com_mensagem(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {}})])
+    cli = _client()
+    cli.reenviar_notificacao("env-1", mensagem="Por favor, assine o quanto antes.")
+    assert chamadas[0]["json"]["data"]["attributes"]["message"] == "Por favor, assine o quanto antes."
 
 
 def test_registrar_webhook(monkeypatch):

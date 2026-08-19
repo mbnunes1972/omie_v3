@@ -80,14 +80,103 @@ def test_reabertura_bloqueada_por_contrato():
     assert mc.reabertura_bloqueada_por_contrato(["8", "9"], "assinado") is False
 
 
+def test_af1_e_solicitacao_medicao_saem_dos_principais():
+    # Achado do usuário 2026-08-17: viraram gatilhos da etapa 7 (Contrato), não mais etapas
+    # próprias do espinhaço principal do ciclo.
+    assert "8" not in mc.ETAPAS_PRINCIPAIS
+    assert "9" not in mc.ETAPAS_PRINCIPAIS
+    assert "7" in mc.ETAPAS_PRINCIPAIS and "10" in mc.ETAPAS_PRINCIPAIS
+
+
+def test_af1_e_medicao_liberam_em_paralelo_so_por_contrato_assinado():
+    # As duas dependem SÓ de "7" concluída — nenhuma depende da outra.
+    assert mc.pode_avancar("8", {"7": "assinado"}) is True
+    assert mc.pode_avancar("9", {"7": "assinado"}) is True
+    assert mc.pode_avancar("8", {"7": "pendente"}) is False
+    assert mc.pode_avancar("9", {"7": "pendente"}) is False
+    # "9" concluída não é pré-requisito de "8", nem vice-versa.
+    assert mc.pode_avancar("8", {"7": "assinado", "9": "pendente"}) is True
+    assert mc.pode_avancar("9", {"7": "assinado", "8": "pendente"}) is True
+
+
+def test_medicao_10_continua_exigindo_solicitacao_9_concluida():
+    # "10" NÃO libera só com o contrato assinado — precisa especificamente de "9" concluída,
+    # mesmo "9" não sendo mais o predecessor posicional de "10" em ETAPAS_PRINCIPAIS.
+    assert mc.etapa_anterior("10") == "9"
+    assert mc.pode_avancar("10", {"7": "assinado", "9": "pendente"}) is False
+    assert mc.pode_avancar("10", {"7": "assinado", "9": "concluido"}) is True
+    # "8" (AF1) concluída ou não não interfere em "10".
+    assert mc.pode_avancar("10", {"7": "assinado", "8": "pendente", "9": "concluido"}) is True
+
+
+def test_predecessor_de_8_e_9_e_explicitamente_7():
+    assert mc.etapa_anterior("8") == "7"
+    assert mc.etapa_anterior("9") == "7"
+
+
+def test_grupo_logistica_e_expedicao_sai_dos_principais():
+    # Achado do usuário 2026-08-18: 14/15/16 saem de ETAPAS_PRINCIPAIS — "13" representa o
+    # grupo "Logística e Expedição" sozinha.
+    assert "13" in mc.ETAPAS_PRINCIPAIS
+    for cod in ("14", "15", "16"):
+        assert cod not in mc.ETAPAS_PRINCIPAIS
+
+
+def test_grupo_logistica_cadeia_sequencial_preservada():
+    # A cadeia real 13→14→15→16→17 continua exigindo a etapa anterior concluída — só deixou
+    # de ser posicional em ETAPAS_PRINCIPAIS, passou a ser explícita.
+    assert mc.etapa_anterior("14") == "13"
+    assert mc.etapa_anterior("15") == "14"
+    assert mc.etapa_anterior("16") == "15"
+    assert mc.etapa_anterior("17") == "16"   # sem o override, viraria "13" (pularia o grupo)
+    assert mc.pode_avancar("14", {"13": "pendente"}) is False
+    assert mc.pode_avancar("14", {"13": "concluido"}) is True
+    assert mc.pode_avancar("17", {"13": "concluido", "16": "pendente"}) is False
+    assert mc.pode_avancar("17", {"13": "concluido", "16": "concluido"}) is True
+
+
+def test_etapa_seguinte_percorre_o_grupo_logistica():
+    # Achado 2026-08-18: a notificação de passagem de fase precisa continuar avisando o
+    # próximo responsável em cada handoff dentro do grupo (diferente de 8/9, que perderam
+    # essa notificação de propósito por virarem paralelas).
+    assert mc.etapa_seguinte("13") == "14"
+    assert mc.etapa_seguinte("14") == "15"
+    assert mc.etapa_seguinte("15") == "16"
+    assert mc.etapa_seguinte("16") == "17"
+
+
+def test_etapa_concluida_agregada_grupo_parcial_nao_conta():
+    st_parcial = {"13": "concluido", "14": "concluido", "15": "pendente", "16": "pendente"}
+    assert mc.etapa_concluida_agregada("13", st_parcial) is False
+    st_total = {"13": "concluido", "14": "concluido", "15": "emitida", "16": "concluido"}
+    assert mc.etapa_concluida_agregada("13", st_total) is True
+
+
+def test_etapa_concluida_agregada_codigo_fora_de_grupo_comportamento_normal():
+    assert mc.etapa_concluida_agregada("4", {"4": "concluido"}) is True
+    assert mc.etapa_concluida_agregada("4", {"4": "pendente"}) is False
+    assert mc.etapa_concluida_agregada("4", {}) is False
+
+
+def test_codigos_relevantes_fase_inclui_o_grupo_escondido():
+    rel = mc.codigos_relevantes_fase()
+    assert set(mc.ETAPAS_PRINCIPAIS) <= set(rel)
+    assert {"14", "15", "16"} <= set(rel)
+
+
 def test_chave_ordenacao():
     assert mc.chave_ordenacao("11a") == (11, "a")
     assert mc.chave_ordenacao("2") == (2, "")
 
 
 def test_etapa_nome_em_sincronia_com_principais():
-    # Toda etapa principal tem nome e vice-versa.
-    assert set(mc.ETAPA_NOME) == set(mc.ETAPAS_PRINCIPAIS)
+    # Toda etapa principal tem nome. "8"/"9" (achado 2026-08-17, gatilhos da etapa 7) e
+    # "14"/"15"/"16" (achado 2026-08-18, grupo "Logística e Expedição" representado por "13")
+    # são as exceções conhecidas — saíram de ETAPAS_PRINCIPAIS mas continuam com nome em
+    # ETAPA_NOME, ainda precisam de rótulo pros botões/sub-abas e pras mensagens de erro de
+    # gating (ver PREDECESSOR_OVERRIDE).
+    assert set(mc.ETAPAS_PRINCIPAIS) <= set(mc.ETAPA_NOME)
+    assert set(mc.ETAPA_NOME) - set(mc.ETAPAS_PRINCIPAIS) == {"8", "9", "14", "15", "16"}
 
 
 def test_exige_aprovacao_financeira():

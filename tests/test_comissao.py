@@ -266,6 +266,118 @@ def test_pagar_folha_efetiva_provisao_de_venda_sem_duplicar(seed, app_db):
     db.close()
 
 
+# ── pagar() fecha o resíduo de provisão quando o gerente ajusta (achado 2026-08-17) ─────────────
+def _cria_venda_com_provisao(db, app_db, nome_projeto, saldo_provisao, valor_liquido=None,
+                             login="cons_l1", nome_funcao="Consultor de Vendas"):
+    import mod_contabil
+    from datetime import datetime
+    u = db.query(app_db.Usuario).filter_by(login=login).first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome=nome_funcao, salario_fixo=0.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="Vend" + nome_projeto, funcao_id=fn.id,
+                           usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    db.add(app_db.Projeto(nome_safe=nome_projeto, loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    if valor_liquido:
+        db.add(app_db.Orcamento(projeto_id=nome_projeto, nome="O", ordem=1, loja_id=loja,
+                                valor_liquido=valor_liquido))
+    db.commit()
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mod_contabil.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", saldo_provisao,
+                                  projeto_id=nome_projeto, ref="contrato:%s:com_venda" % nome_projeto)
+    db.commit()
+    return loja, f, ot, oid
+
+
+def test_pagar_sem_ajuste_nao_gera_lancamento_de_resolucao(seed, app_db):
+    import mod_folha, mod_provisoes, mod_contabil
+    db = app_db.get_session()
+    loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagExato", 300.0, valor_liquido=10000.0,
+                                                nome_funcao="Consultor Exato")
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    mod_folha.aprovar(db, reg); db.commit()
+    ok, err = mod_folha.pagar(db, ot, oid, reg)
+    assert ok, err
+    db.commit()
+    assert mod_folha.saldo_provisao_venda(db, ot, oid, "PPagExato") == 0.0
+    resol = (db.query(app_db.Lancamento).filter_by(owner_tipo=ot, owner_id=oid)
+             .filter(app_db.Lancamento.origem.in_(
+                 ["resolucao_provisao_sobra", "resolucao_provisao_falta"])).all())
+    assert len(resol) == 0   # sem ajuste, sem resíduo — comportamento idêntico a antes
+    db.close()
+
+
+def test_pagar_ajuste_pra_cima_reconhece_despesa_extra(seed, app_db):
+    import mod_folha, mod_provisoes, mod_contabil, mod_comissao
+    db = app_db.get_session()
+    loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagCima", 300.0, valor_liquido=10000.0,
+                                                nome_funcao="Consultor Cima")
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PPagCima" % f.id).first()
+    ok, err = mod_comissao.editar_item(db, item, base_ajustada=10000.0, pct_ajustado=5.0)   # 500, > 300 provisionado
+    assert ok, err
+    db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    mod_folha.aprovar(db, reg); db.commit()
+    ok2, err2 = mod_folha.pagar(db, ot, oid, reg)
+    assert ok2, err2
+    db.commit()
+    desp = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagCima")
+    assert desp == 500.0   # despesa formal pelo valor AJUSTADO, escopada a este projeto
+    assert mod_folha.saldo_provisao_venda(db, ot, oid, "PPagCima") == 0.0   # provisão fechou, sem sobra
+    db.close()
+
+
+def test_pagar_ajuste_pra_baixo_ate_zero_cancela_sem_dre(seed, app_db):
+    import mod_folha, mod_provisoes, mod_contabil, mod_comissao
+    db = app_db.get_session()
+    loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagZero", 300.0, valor_liquido=10000.0,
+                                                login="cons_l1", nome_funcao="Consultor Zero")
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PPagZero" % f.id).first()
+    ok, err = mod_comissao.editar_item(db, item, base_ajustada=0.0, pct_ajustado=0.0)   # gerente zera
+    assert ok, err
+    db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    mod_folha.aprovar(db, reg); db.commit()
+    ok2, err2 = mod_folha.pagar(db, ot, oid, reg)
+    assert ok2, err2
+    db.commit()
+    desp = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagZero")
+    assert desp == 0.0   # nenhuma despesa reconhecida, escopado a este projeto
+    assert mod_folha.saldo_provisao_venda(db, ot, oid, "PPagZero") == 0.0   # provisão fechou (cancelada)
+    # nenhuma conta de DRE tocada pelo cancelamento (nem 4.4.02 nem 5.6.10 — rota "sem DRE")
+    for cod in ("4.4.02", "5.6.10"):
+        assert mod_contabil._mov(db, ot, oid, cod, "devedor", None, None, projeto_id="PPagZero") == 0.0
+    db.close()
+
+
+def test_pagar_ajustado_idempotente(seed, app_db):
+    import mod_folha, mod_provisoes, mod_contabil, mod_comissao
+    db = app_db.get_session()
+    loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagIdemp", 300.0, valor_liquido=10000.0,
+                                                login="cons_l1", nome_funcao="Consultor Idemp")
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PPagIdemp" % f.id).first()
+    mod_comissao.editar_item(db, item, base_ajustada=10000.0, pct_ajustado=5.0); db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    mod_folha.aprovar(db, reg); db.commit()
+    mod_folha.pagar(db, ot, oid, reg); db.commit()
+    saldo1 = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagIdemp")
+    mod_folha.pagar(db, ot, oid, reg); db.commit()   # 2ª chamada — reg.status já é 'paga', early return
+    saldo2 = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagIdemp")
+    assert saldo1 == saldo2 == 500.0
+    db.close()
+
+
 def test_editar_item_recalcula_valor(seed, app_db):
     db = app_db.get_session()
     loja = db.query(app_db.Usuario).filter_by(login="dir_l2").first().loja_id
@@ -281,6 +393,71 @@ def test_editar_item_recalcula_valor(seed, app_db):
     db.close()
 
 
+def test_editar_item_aceita_pct_ajustado(seed, app_db):
+    # achado do usuário 2026-08-17: editar só o % (sem mexer na base) também precisa recalcular
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l2").first().loja_id
+    it = app_db.ComissaoFolha(loja_id=loja, funcionario_id=1, competencia="2026-07",
+         origem="papel", papel="montagem", base=10000.0, pct=2.0, valor=200.0,
+         status="previsto", ref_etapa="Z:17:2")
+    db.add(it); db.flush()
+    ok, err = mod_comissao.editar_item(db, it, pct_ajustado=5.0)
+    assert ok and err is None
+    assert it.base_ajustada is None and it.pct_ajustado == 5.0
+    assert it.valor == 500.0   # 10000 (base do sistema) × 5%
+    db.close()
+
+
+def test_editar_item_limpar_override_volta_ao_sistema(seed, app_db):
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l2").first().loja_id
+    it = app_db.ComissaoFolha(loja_id=loja, funcionario_id=1, competencia="2026-07",
+         origem="papel", papel="montagem", base=10000.0, pct=2.0, valor=200.0,
+         status="previsto", ref_etapa="Z:17:3")
+    db.add(it); db.flush()
+    mod_comissao.editar_item(db, it, base_ajustada=15000.0)
+    assert it.valor == 300.0
+    ok, _ = mod_comissao.editar_item(db, it, base_ajustada=None)   # None explícito = limpa
+    assert ok and it.base_ajustada is None
+    assert it.valor == 200.0   # volta pro base(10000) × pct(2%) do sistema
+    db.close()
+
+
+def test_editar_item_venda_usa_saldo_provisao_como_sistema(seed, app_db):
+    import mod_provisoes, mod_contabil, mod_folha
+    from datetime import datetime
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome="Consultor de Vendas", salario_fixo=0.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="Vend", funcao_id=fn.id, usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    db.add(app_db.Projeto(nome_safe="PVEdit", loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    db.add(app_db.Orcamento(projeto_id="PVEdit", nome="O", ordem=1, loja_id=loja, valor_liquido=80000.0))
+    db.commit()
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mod_contabil.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 2400.0,
+                                  projeto_id="PVEdit", ref="contrato:PVEdit:com_venda")
+    db.commit()
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PVEdit" % f.id).first()
+    assert item.valor == 2400.0
+    # gerente ajusta o % pra 4% (achou que a faixa de meta não bateu certo)
+    ok, err = mod_comissao.editar_item(db, item, pct_ajustado=4.0)
+    assert ok, err
+    assert item.valor == 3200.0   # 80000 × 4%
+    # limpa o ajuste — volta ao saldo exato da provisão (2400), não a 80000×pct_derivado(3.0)=2400 coincidem
+    # aqui, então força também um ajuste de base pra provar que o retorno usa o SALDO, não a fórmula
+    ok2, _ = mod_comissao.editar_item(db, item, pct_ajustado=None)
+    assert ok2 and item.pct_ajustado is None
+    assert item.valor == 2400.0
+    db.close()
+
+
 def test_comissao_patch_endpoint(http_client_factory, seed, app_db):
     db = app_db.get_session()
     loja = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id
@@ -293,6 +470,78 @@ def test_comissao_patch_endpoint(http_client_factory, seed, app_db):
     st, d = c.patch("/api/comissao/%d" % iid, {"base_ajustada": 15000.0})
     assert st == 200, d
     assert d["base_ajustada"] == 15000.0 and d["valor"] == 300.0
+
+
+def test_comissao_patch_endpoint_aceita_pct_ajustado_e_audita(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id
+    f = app_db.Funcionario(loja_id=loja, nome="PatchComPct", status="ativo"); db.add(f); db.flush()
+    it = app_db.ComissaoFolha(loja_id=loja, funcionario_id=f.id, competencia="2026-07",
+         origem="papel", papel="montagem", projeto_nome="PPatchPct", base=10000.0, pct=2.0, valor=200.0,
+         status="previsto", ref_etapa="EP:17:%d" % f.id)
+    db.add(it); db.commit(); iid = it.id; db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.patch("/api/comissao/%d" % iid, {"pct_ajustado": 5.0})
+    assert st == 200, d
+    assert d["pct_ajustado"] == 5.0 and d["valor"] == 500.0   # 10000 × 5%
+    db2 = app_db.get_session()
+    log = (db2.query(app_db.LogAcaoGerencial)
+           .filter_by(acao="ajustar_comissao_venda", projeto_nome="PPatchPct").first())
+    assert log is not None
+    ctx = json.loads(log.contexto)
+    assert ctx["antes"]["pct_ajustado"] is None and ctx["depois"]["pct_ajustado"] == 5.0
+    db2.close()
+
+
+def test_comissao_patch_endpoint_limpa_override_com_null_explicito(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l1").first().loja_id
+    f = app_db.Funcionario(loja_id=loja, nome="PatchComLimpa", status="ativo"); db.add(f); db.flush()
+    it = app_db.ComissaoFolha(loja_id=loja, funcionario_id=f.id, competencia="2026-07",
+         origem="papel", papel="montagem", base=10000.0, pct=2.0, base_ajustada=15000.0, valor=300.0,
+         status="previsto", ref_etapa="EP:17:%d" % f.id)
+    db.add(it); db.commit(); iid = it.id; db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.patch("/api/comissao/%d" % iid, {"base_ajustada": None})
+    assert st == 200, d
+    assert d["base_ajustada"] is None
+    assert d["valor"] == 200.0   # volta pro base(10000)×pct(2%) do sistema
+
+
+def test_folha_comissoes_base_endpoint_expoe_venda_com_pct(http_client_factory, seed, app_db):
+    import mod_folha, mod_provisoes, mod_contabil
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome="Consultor Endpoint", salario_fixo=0.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="VendEndpoint", funcao_id=fn.id, usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    from datetime import datetime
+    db.add(app_db.Projeto(nome_safe="PEndpointComBase", loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    db.add(app_db.Orcamento(projeto_id="PEndpointComBase", nome="O", ordem=1, loja_id=loja, valor_liquido=80000.0))
+    db.commit()
+    ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mod_contabil.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 2400.0,
+                                  projeto_id="PEndpointComBase", ref="contrato:PEndpointComBase:com_venda")
+    db.commit()
+    cfg = mod_provisoes.config_financeira_default()
+    mod_folha.gerar_folha(db, loja, "2026-07", cfg); db.commit()
+    reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
+    rid = reg.id
+    db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")   # cons_l1/dir_l1 = mesma loja (l1) no seed
+    st, d = c.get("/api/folha/%d/comissoes-base" % rid)
+    assert st == 200, d
+    item = next(x for x in d["itens"] if x["projeto"] == "PEndpointComBase")
+    assert item["origem"] == "venda"
+    assert item["valor_liquido_sistema"] == 80000.0
+    assert item["pct_sistema"] == 3.0
+    assert item["valor"] == 2400.0
+    assert item["saldo_provisao_atual"] == 2400.0
+    assert "id" in item
 
 
 def test_serialize_folha_inclui_comissoes(seed, app_db):

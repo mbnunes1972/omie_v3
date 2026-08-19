@@ -301,8 +301,11 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 .amb-update-wrap{position:relative;display:inline-block}
 .amb-update-wrap input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .fb-row{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--accent-tint);border-top:1px solid var(--border);flex-wrap:wrap}
-/* Feedback toast */
-.toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--ok);z-index:200;display:none;font-family:var(--font-sans);font-weight:700;box-shadow:0 4px 24px rgba(0,0,0,.4)}
+/* Feedback toast — z-index acima de QUALQUER modal (achado do usuário 2026-08-17: erro do
+   showToast() ficava escondido atrás de modais dinâmicos com z-index até 100001, ex. o de
+   assinatura interna do contrato — showToast é o canal de erro único de dezenas de fluxos,
+   nunca deve ficar atrás de nada). */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:12px 20px;font-size:12px;color:var(--ok);z-index:200000;display:none;font-family:var(--font-sans);font-weight:700;box-shadow:0 4px 24px rgba(0,0,0,.4)}
 .toast.err{color:var(--err)}
 /* Coming soon */
 .coming-soon{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:300px;gap:16px;opacity:.5}
@@ -895,6 +898,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="fechado" checked onchange="projStatusItemToggle()"> <i class="ti ti-lock"></i> Fechado</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="perdido"    checked onchange="projStatusItemToggle()"> ✗ Perdido</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="cancelado"  checked onchange="projStatusItemToggle()"> <i class="ti ti-x"></i> Cancelado</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="em_revisao" checked onchange="projStatusItemToggle()"> <i class="ti ti-refresh"></i> Em Revisão</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-status-item" value="sem"        checked onchange="projStatusItemToggle()"> — Sem status</label>
         </div>
       </div>
@@ -916,15 +920,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="3" onchange="projFaseItemToggle()"> Briefing</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="4" onchange="projFaseItemToggle()"> Orçamento</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="7" onchange="projFaseItemToggle()"> Contrato</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="8"  onchange="projFaseItemToggle()"> Aprovação financeira I</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="9"  onchange="projFaseItemToggle()"> Solicitação de medição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="10" onchange="projFaseItemToggle()"> Medição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="11" onchange="projFaseItemToggle()"> Projeto executivo</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="12" onchange="projFaseItemToggle()"> Conferência e Implantação do Pedido</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="13" onchange="projFaseItemToggle()"> Produção</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="14" onchange="projFaseItemToggle()"> Entrega no depósito</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="15" onchange="projFaseItemToggle()"> Emissão da NFe do cliente</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="16" onchange="projFaseItemToggle()"> Entrega no cliente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="13" onchange="projFaseItemToggle()"> Logística e Expedição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="17" onchange="projFaseItemToggle()"> Montagem</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="18" onchange="projFaseItemToggle()"> Assistência pós Montagem</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="19" onchange="projFaseItemToggle()"> Vistoria final</label>
@@ -984,6 +983,23 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div class="bloqueio-txt">
         <strong>Projeto cancelado definitivamente</strong>
         As provisões foram estornadas. Este projeto ficou travado para sempre — não é possível editar a negociação nem gerar um novo contrato.
+      </div>
+    </div>
+    <!-- Banner: cancelamento LEVE (pré-2ª-assinatura, sem provisão) — 2026-08-17 -->
+    <div class="bloqueio-banner cancelado" id="neg-cancelado-leve-banner">
+      <div class="bloqueio-icon"><i class="ti ti-x"></i></div>
+      <div class="bloqueio-txt">
+        <strong>Projeto cancelado</strong>
+        A negociação está bloqueada. Reabertura ainda não é possível por aqui.
+      </div>
+    </div>
+    <!-- Banner: Em Revisão (cancelamento leve, desfecho "retornar ao orçamento") — 2026-08-17.
+         Informativo, NÃO bloqueia — a negociação segue editável. -->
+    <div class="bloqueio-banner" id="neg-em-revisao-banner">
+      <div class="bloqueio-icon"><i class="ti ti-refresh"></i></div>
+      <div class="bloqueio-txt">
+        <strong>Projeto em revisão</strong>
+        Um contrato anterior deste projeto foi cancelado antes da assinatura completa. A negociação está aberta para revisar e tentar de novo.
       </div>
     </div>
 
@@ -1275,7 +1291,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- Painel Total Flex -->
     <div class="mod-panel" id="painel-tf" style="display:none">
-      <div class="mod-panel-title">&#x26A1; Total Flex — Parcelamento Livre</div>
+      <div class="mod-panel-title">&#x26A1; Parcelamento Loja</div>
       <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
         <div>
           <label>Data do Contrato</label>
@@ -6420,6 +6436,7 @@ const _CAD_DEFS = {
     campos:[
       {id:'nome', lbl:'Nome', tipo:'text', req:true, full:true},
       {id:'cpf', lbl:'CPF', tipo:'text'}, {id:'telefone', lbl:'Telefone', tipo:'text'},
+      {id:'cnpj', lbl:'CNPJ (se MEI)', tipo:'text'},
       {id:'funcao_id', lbl:'Tipo de serviço / função', tipo:'select_funcoes'},
       {id:'condicao', lbl:'Condição', tipo:'select', ops:[['','—'],['mei','MEI'],['autonomo','Autônomo']]},
       {id:'status', lbl:'Status', tipo:'select', ops:[['ativo','Ativo'],['inativo','Inativo']]},
@@ -6633,10 +6650,15 @@ function focarBuscaProjeto(){
 let _parceiroAtivoProjeto = null;
 
 // ---- Toast -------------------------------------------------------------------
+// Achado do usuário 2026-08-19: erro em canto de página com letra pequena passa despercebido —
+// toda mensagem de ERRO passa a abrir o box padrão do sistema (mostrarErroComAcao, já usado no
+// fluxo de contrato), com botão OK, em vez do toast. Sucesso/info continuam como toast (não foi
+// isso que o usuário reclamou).
 function showToast(msg, isErr){
+  if (isErr) { mostrarErroModal(msg); return; }
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className = 'toast' + (isErr?' err':'');
+  t.className = 'toast';
   t.style.display='block';
   clearTimeout(t._timer);
   t._timer = setTimeout(()=>t.style.display='none', 3000);
@@ -6683,7 +6705,8 @@ const _PROJ_STATUS_LABEL = {
   perdido:    { label: '✗ Perdido',    cls: 'perdido'    },
   fechado:    { label: '<i class="ti ti-lock"></i> Fechado',  cls: 'fechado'    },
   concluido:  { label: '✓ Concluído', cls: 'concluido'  },   // FASE D2: ciclo executado e conciliado
-  cancelado:  { label: '<i class="ti ti-x"></i> Cancelado', cls: 'cancelado'  },   // 2026-08-12: cancelamento leve OU definitivo (ver banner do Ciclo pra distinguir)
+  cancelado:  { label: '<i class="ti ti-x"></i> Cancelado', cls: 'cancelado'  },   // 2026-08-17: desfecho "cancelar" do cancelamento leve, OU definitivo (ver banner do Ciclo pra distinguir)
+  em_revisao: { label: '<i class="ti ti-refresh"></i> Em Revisão', cls: 'morno' },   // 2026-08-17: desfecho "revisao" do cancelamento leve — reabre, não trava
 };
 
 function _projStatusBadge(p){
@@ -7270,6 +7293,7 @@ async function ativarOrcamento(id){
       }
       // 'descartar' → segue a troca sem persistir; a edição em memória é perdida de propósito.
     }
+    await _persistirDescontoGeral();
     try { await _persistirDescontosOrc(); } catch (e) { console.warn('auto-save descontos ao trocar:', e); }
   }
   _orcamentoAtivoId = id;
@@ -9213,6 +9237,13 @@ function avistaRecalcular() {
   _negEntradaValor    = parseMoeda(document.getElementById('av-entrada-valor')?.value) || 0;
   const total   = _ayGetValorVenda() || 0;
   negMostrarParcelado(total);   // "Valor Total do Contrato" = Valor à Vista (à vista)
+  // Achado do usuário 2026-08-17 (print): "#neg-resumo-parcelas" só é escrito pelos updates das
+  // modalidades financiadas (aymore/cartão/VP/TF) — à vista nunca chama atualizarResumoParcelas.
+  // Se o texto ficou visível de uma modalidade anterior (ex.: restauração/troca em sequência),
+  // sobra desatualizado (viu "R$ 50.000,00 de entrada + 1x R$..." de outro orçamento/modalidade).
+  // À vista já tem seu próprio resumo (campos Entrada/Liquidação acima) — some aqui de propósito.
+  const elRPav = document.getElementById('neg-resumo-parcelas');
+  if (elRPav) elRPav.style.display = 'none';
   const entrada = parseMoeda(document.getElementById('av-entrada-valor')?.value) || 0;
   const saldo   = Math.max(0, total - entrada);
   const elLiq = document.getElementById('av-liq-valor');
@@ -9314,7 +9345,7 @@ async function atualizarTF() {
   // mudança de ENTRADA não passa por aqui (muda o financiado, não o à-vista).
   if (_tfValores.length && _tfAvistaRef != null && valorAvista < _tfAvistaRef - 0.01) {
     _tfValores = []; _tfDatas = []; _tfUltimoEditIdx = null;
-    showToast('Total do orçamento diminuiu — parcelas do Total Flex reiniciadas.');
+    showToast('Total do orçamento diminuiu — parcelas do Parcelamento Loja reiniciadas.');
   }
 
   let d;
@@ -9432,7 +9463,7 @@ async function atualizarTF() {
 
   tfRenderTabela(d, valorAvista, entrada);
   window._planoPagamento = {
-    tipo: 'tf', nome_forma: 'Total Flex',
+    tipo: 'tf', nome_forma: 'Parcelamento Loja',
     entrada_valor: entrada,
     entrada_data: document.getElementById('tf-entrada-data')?.value || document.getElementById('tf-data-contrato')?.value || '',
     entrada_forma: _formaEntrada,
@@ -9971,6 +10002,17 @@ let _salvarDescTimer = null;
 function agendarSalvarDesconto(){
   clearTimeout(_salvarDescTimer);
   _salvarDescTimer = setTimeout(salvarDescontoAutomatico, 800);
+}
+
+// Achado do usuário 2026-08-17: o desconto geral (diferente do por-ambiente, já flushado em
+// ativarOrcamento via _persistirDescontosOrc) não tinha flush síncrono ao trocar de orçamento —
+// o timer de 800ms podia disparar DEPOIS da troca, salvando o valor errado no orçamento errado
+// (ou nunca salvando o original). Mesma correção, mesmo padrão.
+async function _persistirDescontoGeral(){
+  clearTimeout(_salvarDescTimer);
+  if (!_orcamentoAtivoId) return;
+  if (typeof _negSaveTravado === 'function' && _negSaveTravado()) return;
+  try { await salvarDescontoAutomatico(); } catch (e) { console.warn('auto-save desconto geral:', e); }
 }
 
 // Sincronização e teclado dos campos de desconto
@@ -10648,6 +10690,16 @@ function _aplicarPreviewNaTela(s) {
   setR('neg-total',    s.Val_Cont);                  // Total (à vista sem financiamento na prévia)
   const elTF = id('neg-total-final');                // input editável do total de contrato
   if (elTF && !elTF._editando) elTF.value = fmt(Number(s.Val_Cont) || 0);
+  // Achado do usuário 2026-08-17 (print): pra modalidade À Vista, a caixa "Valor Total do
+  // Contrato" (topo, #neg-parcelado), "Valor da liquidação" (#av-liq-valor) e window._planoPagamento
+  // só atualizavam via avistaRecalcular(), disparada pelo oninput dos campos de entrada/liquidação
+  // — nunca ao só CARREGAR/VER o orçamento. Ficavam com o que a tela restaurou do forma_pagamento
+  // SALVO (total_cliente), desatualizado assim que desconto/ambientes mudam depois de salvo —
+  // chegou a mostrar um "Total do Contrato" MENOR que o "Valor à Vista", impossível pela fórmula
+  // real. Fix: reusa avistaRecalcular() (fonte única da fórmula à vista) sempre que o preview do
+  // motor atualiza — ela lê '#neg-avista' (setado logo acima, já fresco) via _ayGetValorVenda().
+  if (typeof _tipoAtivo !== 'undefined' && _tipoAtivo === 'avista'
+      && typeof avistaRecalcular === 'function') avistaRecalcular();
   // ── células por ambiente: à vista (VAVA) e financiada (VAVA × Val_Cont/VAVO) ──
   const _vavo = Number(s.VAVO) || 0;
   const _finFactor = _vavo > 0 ? ((Number(s.Val_Cont) || _vavo) / _vavo) : 1;
@@ -14291,6 +14343,14 @@ async function folhaGerar(){
   if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
   showToast('Folha gerada.', false); folhaRender(d.folha);
 }
+// Comissão Fixa: coluna colapsável, OCULTA por padrão (achado do usuário 2026-08-17) — a maioria
+// dos funcionários não tem esse valor; cache do último payload evita refetch só pra abrir/fechar.
+let _folhaComissaoFixaVisivel = false;
+let _folhaUltima = null;
+function folhaToggleComissaoFixa(){
+  _folhaComissaoFixaVisivel = !_folhaComissaoFixaVisivel;
+  folhaRender(_folhaUltima);
+}
 async function folhaPagar(id){
   if(!(await confirmarPopup('Confirmar o pagamento desta folha? A despesa será lançada nas contas 5.3 (Salários / Comissão de Vendedor).', {titulo:'Pagar folha', okLabel:'Confirmar pagamento'}))) return;
   const d = await (await fetch('/api/folha/'+id+'/pagar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
@@ -14310,6 +14370,9 @@ async function folhaReabrir(id){
 function folhaRender(folha){
   const box = document.getElementById('folha-mes-box'); if(!box) return;
   folha = folha || {itens:[]};
+  _folhaUltima = folha;
+  const comFixaOn = _folhaComissaoFixaVisivel;
+  const totalCols = 9 + (comFixaOn?1:0);
   const linhas = (folha.itens||[]).map(it => {
     const acao = it.status==='paga'
       ? '<span style="color:var(--st-fechado);font-size:11px;font-weight:600">Paga</span>'
@@ -14320,12 +14383,18 @@ function folhaRender(folha){
           : '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="folhaAprovar('+it.id+')">Aprovar</button>');
     const comItens = it.comissoes||[];
     const _baseInp = (val, fn) => '<input type="number" step="0.01" value="'+val+'" class="inp" style="width:120px;text-align:right;font-family:var(--font-mono);font-size:13px;padding:2px 6px;box-sizing:border-box;margin:0" onchange="'+fn+'">';
-    // "?" pequena (clique) → discrimina a composição da base de TODA a linha (por projeto/ambiente).
-    const _qBase = fid => '<span onclick="comissaoVerBase('+fid+')" title="Ver composição da base (clique)" style="cursor:pointer;color:var(--accent);font-size:9px;font-weight:700;margin-left:5px;border:1px solid var(--accent);border-radius:50%;width:13px;height:13px;min-width:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto">?</span>';
-    const baseTotal = comItens.reduce((s,cm)=> s+((cm.base_ajustada!=null?cm.base_ajustada:cm.base)||0), 0);
+    // "?" pequena (clique) → abre o modal editável de composição da comissão (por venda/ambiente).
+    const _qBase = fid => '<span onclick="comissaoVerBase('+fid+')" title="Ver e ajustar a composição da comissão (clique)" style="cursor:pointer;color:var(--accent);font-size:9px;font-weight:700;margin-left:5px;border:1px solid var(--accent);border-radius:50%;width:13px;height:13px;min-width:13px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto">?</span>';
+    const comTotal = it.parte_variavel||0;
     const comCel = comItens.length
-      ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(baseTotal)+'</span>'+_qBase(it.id)+'</div>'   // BASE somada + "?"
-      : '<div class="fcell">'+(it.status==='paga' ? '<span style="color:var(--muted)">—</span>' : _baseInp(it.base_comissao||0, "folhaSalvarBase("+it.id+",this.value)"))+'</div>';
+      ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(comTotal)+'</span>'+_qBase(it.id)+'</div>'
+      : (it.status==='paga'
+          ? '<div class="fcell"><span style="font-family:var(--font-mono)">'+_fBRL(comTotal)+'</span></div>'
+          : '<div class="fcell">'+_baseInp(it.base_comissao||0, "folhaSalvarBase("+it.id+",this.value)")+'</div>'
+            +'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">= '+_fBRL(comTotal)+'</div>');
+    const comFixaCel = comFixaOn
+      ? '<td class="num" style="padding:8px 10px"><div class="fcell">'+(it.comissao_fixa?_fBRL(it.comissao_fixa):'<span style="color:var(--muted)">—</span>')+'</div></td>'
+      : '';
     const ads = it.adiantamentos||[];
     const adsList = ads.map(a =>
        '<div style="display:flex;gap:5px;align-items:center;font-size:10.5px;padding:1px 0">'
@@ -14333,38 +14402,42 @@ function folhaRender(folha){
       +(it.status==='paga'?'':'<label style="display:flex;align-items:center;gap:3px;color:var(--muted)"><input type="checkbox" '+(a.abater?'checked':'')+' onchange="adiantamentoToggleAbater('+a.id+',this.checked)" style="width:12px;height:12px"> abater</label>'
         +'<span onclick="adiantamentoRemover('+a.id+')" style="cursor:pointer;color:var(--muted)" title="remover">&times;</span>')
       +'</div>').join('');
-    const adiantCel =
-       '<div class="fcell" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(it.liquido_pagar!=null?it.liquido_pagar:(it.total||0))+'</div>'
-      +(it.saldo_debito?'<div style="font-size:10.5px;color:var(--err)">saldo dev.: '+_fBRL(it.saldo_debito)+'</div>':'')
-      +adsList
+    const adiantCel = '<div class="fcell fcell-l">'+(adsList||'<span style="color:var(--muted);font-size:11px">—</span>')+'</div>'
       +(it.status==='paga'?'':'<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:3px" onclick="adiantamentoAdd('+it.funcionario_id+',\''+esc(it.competencia||'')+'\')">+ adiant.</button>');
+    const aPagarCel = '<div class="fcell" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(it.liquido_pagar!=null?it.liquido_pagar:(it.total||0))+'</div>'
+      +(it.saldo_debito?'<div style="font-size:10.5px;color:var(--err)">saldo dev.: '+_fBRL(it.saldo_debito)+'</div>':'');
     return '<tr class="proj-row">'
       +'<td style="padding:8px 10px;color:var(--text);font-weight:500"><div class="fcell fcell-l">'+esc(it.funcionario||'—')+'</div></td>'
-      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_fixa||0)+'</div>'
-        +(it.comissao_fixa?'<div style="font-size:12px;color:var(--muted)">+'+_fBRL(it.comissao_fixa)+'</div>':'')+'</td>'
+      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_fixa||0)+'</div></td>'
       +'<td class="num" style="padding:8px 10px;min-width:140px">'+comCel+'</td>'
-      +'<td class="num" style="padding:8px 10px"><div class="fcell">'+_fBRL(it.parte_variavel||0)+'</div></td>'
+      +comFixaCel
       +'<td class="num" style="padding:8px 10px;color:var(--muted)"><div class="fcell">'+_fBRL(it.beneficios||0)+'</div></td>'
+      +'<td style="padding:8px 10px;min-width:150px">'+adiantCel+'</td>'
       +'<td class="num" style="padding:8px 10px;font-weight:700"><div class="fcell">'+_fBRL(it.total||0)+'</div></td>'
-      +'<td style="padding:8px 10px;text-align:right;min-width:160px">'+adiantCel+'</td>'
+      +'<td style="padding:8px 10px;text-align:right;min-width:130px">'+aPagarCel+'</td>'
       +'<td style="padding:8px 10px;font-size:11px;color:var(--muted)"><div class="fcell fcell-l">'+esc(it.pagamento||'—')+'</div></td>'
       +'<td style="padding:8px 10px;text-align:right"><div class="fcell">'+acao+'</div></td></tr>';
-  }).join('') || '<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Nenhuma folha para esta competência. Clique em “Gerar folha”.</td></tr>';
+  }).join('') || '<tr><td colspan="'+totalCols+'" style="padding:20px;text-align:center;color:var(--muted);font-size:12px">Nenhuma folha para esta competência. Clique em “Gerar folha”.</td></tr>';
   box.innerHTML =
-     '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;max-width:760px">Motor de cálculo: a remuneração vem da <strong style="color:var(--text)">Função</strong> do funcionário (Config → Remunerações) — <strong style="color:var(--text)">salário fixo</strong>, <strong style="color:var(--text)">benefícios</strong> (AT/VA/PS) e comissões. As <strong style="color:var(--text)">Comissões</strong> são a soma dos itens: a do Consultor (vendas líquidas × %) e as de cada <strong style="color:var(--text)">papel</strong> (PE/Medição/Montagem/Assistência), preparadas automaticamente ao concluir cada etapa do ciclo. A coluna <strong style="color:var(--text)">Base</strong> (valor dos ambientes atribuídos, ou vendas líquidas) é <strong style="color:var(--text)">editável</strong>; a <strong style="color:var(--text)">Comissão</strong> = Base × % da função (passe o mouse sobre o valor para ver base × %). O pagamento lança a despesa nas contas 5.3 e usa os dados bancários/PIX cadastrados.</div>'
+     '<div style="font-size:11px;color:var(--muted);margin-bottom:10px;max-width:780px">Motor de cálculo: a remuneração vem da <strong style="color:var(--text)">Função</strong> do funcionário (Config → Remunerações) — <strong style="color:var(--text)">salário fixo</strong>, <strong style="color:var(--text)">benefícios</strong> (AT/VA/PS) e comissões. As <strong style="color:var(--text)">Comissões</strong> são apuradas automaticamente: a do Consultor pelas vendas líquidas dos contratos fechados no período × % da meta atingida, e a de cada <strong style="color:var(--text)">papel</strong> (PE/Medição/Montagem/Assistência) pelos ambientes concluídos. Clique no <strong style="color:var(--text)">"?"</strong> ao lado do valor para ver a composição por venda/ambiente — no ato do pagamento o gerente pode ajustar o valor líquido considerado e o % de cada item (fica registrado para auditoria). O pagamento lança a despesa nas contas 5.3 e fecha a provisão constituída na assinatura do contrato.</div>'
     +'<div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">'
     +'<label style="font-size:var(--fs-sm);color:var(--muted)">Competência</label>'
     +'<input type="month" value="'+esc(folha.competencia||_folhaComp)+'" onchange="folhaMudarComp(this.value)" class="inp" style="width:auto">'
-    +'<button class="btn btn-primary btn-sm" onclick="folhaGerar()">Gerar folha</button></div>'
+    +'<button class="btn btn-primary btn-sm" onclick="folhaGerar()">Gerar folha</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="folhaToggleComissaoFixa()">'+(comFixaOn?'Ocultar':'Mostrar')+' comissão fixa</button></div>'
     +'<table class="proj-table folha-tbl"><thead><tr>'
-    +'<th>Funcionário</th><th class="num">Parte fixa</th><th class="num">Base</th>'
-    +'<th class="num">Comissões</th><th class="num">Benefícios</th>'
-    +'<th class="num">Total</th><th class="num">Líquido a pagar</th><th>Pagamento</th><th style="width:80px"></th></tr></thead><tbody>'+linhas+'</tbody>'
+    +'<th>Funcionário</th><th class="num">Parte fixa</th>'
+    +'<th class="num">Comissões</th>'
+    +(comFixaOn?'<th class="num">Comissão Fixa</th>':'')
+    +'<th class="num">Benefícios</th><th>Adiantamento</th>'
+    +'<th class="num">Total</th><th class="num">A pagar</th><th>Pagamento</th><th style="width:80px"></th></tr></thead><tbody>'+linhas+'</tbody>'
     +'<tfoot><tr style="border-top:2px solid var(--border-strong);font-weight:700;vertical-align:middle">'
     +'<td style="padding:9px 10px">Totais</td>'
-    +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_fixa||0)+'</td><td></td>'
+    +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_fixa||0)+'</td>'
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_variavel||0)+'</td>'
+    +(comFixaOn?'<td></td>':'')
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_beneficios||0)+'</td>'
+    +'<td></td>'
     +'<td class="num" style="padding:9px 10px">'+_fBRL(folha.total_geral||0)+'</td>'
     +'<td class="num" style="padding:9px 10px;color:var(--accent)">'+_fBRL(folha.total_liquido||0)+'</td>'
     +'<td colspan="2"></td></tr></tfoot></table>';
@@ -14378,18 +14451,50 @@ async function folhaSalvarBase(id, valor){
   else { showToast((d&&d.erro)||'Erro ao salvar base.', true); }
 }
 
-async function comissaoSalvarBase(id, valor){
+// Recalcula ao vivo a 3ª coluna (Resultado) do modal — puro JS, sem round-trip ao servidor.
+function _comissaoRecalcLive(id){
+  const liqEl = document.getElementById('cm-liq-'+id), pctEl = document.getElementById('cm-pct-'+id);
+  const resEl = document.getElementById('cm-result-'+id);
+  if(!liqEl || !pctEl || !resEl) return;
+  const liq = parseFloat(liqEl.value)||0, pct = parseFloat(pctEl.value)||0;
+  resEl.textContent = _fBRL(Math.round(liq*pct)/100);
+}
+async function _comissaoSalvarAjuste(id){
+  const liqEl = document.getElementById('cm-liq-'+id), pctEl = document.getElementById('cm-pct-'+id);
+  const body = {};
+  if(liqEl){ const v = parseFloat(liqEl.value); if(!isNaN(v)) body.base_ajustada = v; }
+  if(pctEl){ const v = parseFloat(pctEl.value); if(!isNaN(v)) body.pct_ajustado = v; }
   const r = await fetch('/api/comissao/'+id, {method:'PATCH', credentials:'same-origin',
-    headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_ajustada: parseFloat(valor)||0})});
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const d = await r.json().catch(()=>({}));
-  if(r.ok && !d.erro){ folhaGerar(); }   // regenera a folha p/ resomar a parte variável (Σ itens)
-  else { showToast((d&&d.erro)||'Erro ao salvar comissão.', true); }
+  if(!r.ok || d.ok===false){ showToast((d&&d.erro)||'Erro ao salvar ajuste.', true); return; }
+  showToast('Ajuste salvo.', false);
+  const ex=document.getElementById('modal-base-com'); if(ex) ex.remove();
+  folhaGerar();   // regenera a folha p/ resomar a parte variável (Σ itens), mesmo padrão de antes
 }
 async function comissaoVerBase(folhaId){
   const r = await fetch('/api/folha/'+folhaId+'/comissoes-base',{credentials:'same-origin'});
   const d = await r.json().catch(()=>({}));
   if(!r.ok || !d.ok){ showToast((d&&d.erro)|| (r.status===404?'Rota não encontrada — reinicie o servidor (python3 main.py).':'Erro ao carregar base.'), true); return; }
   const blocos = (d.itens||[]).map(x=>{
+    if(x.origem === 'venda'){
+      const liq = x.valor_liquido_ajustado!=null ? x.valor_liquido_ajustado : x.valor_liquido_sistema;
+      const pct = x.pct_ajustado!=null ? x.pct_ajustado : x.pct_sistema;
+      const bloqueado = x.status === 'confirmado';
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--border)">'
+        +'<div style="font-size:12px;font-weight:600;margin-bottom:6px">'+esc(x.projeto||'')+(bloqueado?' <span style="color:var(--muted);font-weight:400">(confirmada)</span>':'')+'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 80px 1fr;gap:8px;align-items:end">'
+        +'<label style="font-size:10px;color:var(--muted)">Valor líquido da venda<br>'
+        +'<input type="number" step="0.01" id="cm-liq-'+x.id+'" value="'+(liq!=null?liq:0)+'" class="inp" style="width:100%;box-sizing:border-box" '+(bloqueado?'disabled':'')+' oninput="_comissaoRecalcLive('+x.id+')"></label>'
+        +'<label style="font-size:10px;color:var(--muted)">%<br>'
+        +'<input type="number" step="0.01" id="cm-pct-'+x.id+'" value="'+(pct!=null?pct:0)+'" class="inp" style="width:100%;box-sizing:border-box" '+(bloqueado?'disabled':'')+' oninput="_comissaoRecalcLive('+x.id+')"></label>'
+        +'<div style="font-size:10px;color:var(--muted)">Resultado<br>'
+        +'<span id="cm-result-'+x.id+'" style="font-family:var(--font-mono);font-weight:700">'+_fBRL(x.valor||0)+'</span></div>'
+        +'</div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:4px">Provisão em aberto hoje: '+_fBRL(x.saldo_provisao_atual||0)+'</div>'
+        +(bloqueado?'':'<div style="display:flex;justify-content:flex-end;margin-top:6px"><button class="btn btn-primary btn-sm" style="font-size:11px" onclick="_comissaoSalvarAjuste('+x.id+')">Salvar ajuste</button></div>')
+        +'</div>';
+    }
     const amb = (x.ambientes||[]).map(a=>
        '<div style="display:flex;justify-content:space-between;gap:14px;padding:2px 0 2px 14px;font-size:11px;color:var(--muted)">'
       +'<span>'+esc(a.nome||'—')+'</span><span style="font-family:var(--font-mono)">'+_fBRL(a.valor||0)+'</span></div>').join('');
@@ -14401,12 +14506,12 @@ async function comissaoVerBase(folhaId){
   const ex=document.getElementById('modal-base-com'); if(ex) ex.remove();
   const ov=document.createElement('div'); ov.id='modal-base-com';
   ov.style.cssText='position:fixed;inset:0;z-index:660;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
-  ov.innerHTML='<div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:22px;max-width:440px;width:92%;max-height:85vh;overflow:auto">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:var(--font-display);font-weight:900;font-size:15px">Composição da base de comissão</div>'
+  ov.innerHTML='<div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:22px;max-width:460px;width:92%;max-height:85vh;overflow:auto">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-family:var(--font-display);font-weight:900;font-size:15px">Composição da comissão</div>'
     +'<span onclick="document.getElementById(\'modal-base-com\').remove()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Por item de comissão; abaixo de cada um, os valores líquidos que compõem a base (contratos, para venda; ambientes, para os papéis).</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Vendas: valor líquido e % são editáveis (efeito de cálculo); o resultado recalcula ao vivo. Papéis: composição por ambiente, somente leitura.</div>'
     +blocos
-    +'<div style="display:flex;justify-content:space-between;gap:14px;padding:8px 0 0;font-weight:800;font-size:13px"><span>Base total</span><span style="font-family:var(--font-mono)">'+_fBRL(d.total_base||0)+'</span></div></div>';
+    +'<div style="display:flex;justify-content:space-between;gap:14px;padding:8px 0 0;font-weight:800;font-size:13px"><span>Total</span><span style="font-family:var(--font-mono)">'+_fBRL(d.itens.reduce((s,x)=>s+(x.valor||0),0))+'</span></div></div>';
   document.body.appendChild(ov);
 }
 
@@ -15798,8 +15903,10 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-email','E-mail',loja.email)}
       ${f('loja-t1n','Testemunha 1 — nome',loja.testemunha1_nome)}
       ${f('loja-t1c','Testemunha 1 — CPF',loja.testemunha1_cpf)}
+      ${f('loja-t1e','Testemunha 1 — e-mail (assinatura digital)',loja.testemunha1_email)}
       ${f('loja-t2n','Testemunha 2 — nome',loja.testemunha2_nome)}
       ${f('loja-t2c','Testemunha 2 — CPF',loja.testemunha2_cpf)}
+      ${f('loja-t2e','Testemunha 2 — e-mail (assinatura digital)',loja.testemunha2_email)}
     </div>
     <div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Segmentação de receita — Mercadoria + Serviço deve somar 100%</div>
     <div class="grid2" style="gap:14px;margin-bottom:14px">
@@ -15821,8 +15928,8 @@ async function adminLojaSalvar(lid){
   const payload = {
     nome: v('loja-nome'), codigo: v('loja-codigo'), cnpj: v('loja-cnpj'),
     telefone: v('loja-tel'), email: v('loja-email'),
-    testemunha1_nome: v('loja-t1n'), testemunha1_cpf: v('loja-t1c'),
-    testemunha2_nome: v('loja-t2n'), testemunha2_cpf: v('loja-t2c'),
+    testemunha1_nome: v('loja-t1n'), testemunha1_cpf: v('loja-t1c'), testemunha1_email: v('loja-t1e'),
+    testemunha2_nome: v('loja-t2n'), testemunha2_cpf: v('loja-t2c'), testemunha2_email: v('loja-t2e'),
     pct_mercadoria: nMerc, pct_servico: nServ,
   };
   const r = await fetch('/api/admin/lojas/'+lid, {method:'PATCH', credentials:'same-origin',
@@ -16312,7 +16419,7 @@ const ETAPAS_CICLO = [
   { codigo: "11e", nome: "Aprovação do PE pelo cliente",       sub: true },
   { codigo: "12",  nome: "Conferência e Implantação do Pedido", sub: false },
   { codigo: "13",  nome: "Produção",                           sub: false },
-  { codigo: "14",  nome: "Entrega no depósito",                sub: false },
+  { codigo: "14",  nome: "Recebimento do Pedido",              sub: false },
   { codigo: "15",  nome: "Emissão da NFe do cliente",          sub: false },
   { codigo: "16",  nome: "Entrega no cliente",                 sub: false, toggleavel: true },
   { codigo: "17",  nome: "Montagem",                           sub: false, toggleavel: true },
@@ -16324,13 +16431,28 @@ const ETAPAS_CICLO = [
 ];
 
 // Ordem canônica das etapas PRINCIPAIS (espelha mod_ciclo.py no backend).
-const ETAPAS_PRINCIPAIS = ["1","2","3","4","7","8","9","10",
-                           "11","12","13","14","15","16","17","18","19","20","21"];
+// "8"/"9" saíram daqui (achado do usuário 2026-08-17) — viraram gatilhos independentes
+// dentro da etapa 7 (Contrato). "14"/"15"/"16" saíram também (achado 2026-08-18) — grupo
+// visual "Logística e Expedição", representado por "13" (ver _FICHA_SUBS/_FICHA_MAE_EXPLICITA
+// mais abaixo). Ver PREDECESSOR_OVERRIDE pro gating de ambos os casos.
+const ETAPAS_PRINCIPAIS = ["1","2","3","4","7","10",
+                           "11","12","13","17","18","19","20","21"];
+// Espelha mod_ciclo.PREDECESSOR_OVERRIDE: "8"/"9" dependem de "7" (em paralelo entre si);
+// "10" continua dependendo especificamente de "9" (não só do contrato assinado); "14"→"13",
+// "15"→"14", "16"→"15" preservam a cadeia sequencial real do grupo "Logística e Expedição";
+// "17"→"16" evita que "17" passe a depender só de "13" (pularia o resto do grupo).
+const PREDECESSOR_OVERRIDE = {
+  "8":"7", "9":"7", "10":"9",
+  "14":"13", "15":"14", "16":"15", "17":"16",
+};
 // Status que contam como "etapa concluída" (espelha STATUS_CONCLUSIVOS no backend).
 const STATUS_CONCLUSIVOS = new Set(["concluido","aprovado","assinado","vigente",
                                     "implantado","realizado","entregue","emitida"]);
 // Bloqueada = etapa principal cuja anterior (na ordem) não está concluída.
 function _etapaBloqueada(codigo) {
+  if (PREDECESSOR_OVERRIDE[codigo]) {
+    return !STATUS_CONCLUSIVOS.has(_cicloData[PREDECESSOR_OVERRIDE[codigo]]?.status);
+  }
   const i = ETAPAS_PRINCIPAIS.indexOf(codigo);
   if (i < 0) {
     // sub-etapa: herda o bloqueio da etapa-mãe (desbloqueia junto com ela)
@@ -16349,6 +16471,8 @@ let _cicloCriadoPorNome = '';   // nome do criador do projeto p/ a tag "com a bo
 let _contratoAssinado = false;
 let _contratoTotalmenteAssinado = false;
 let _projetoCanceladoDefinitivo = false;   // 2026-08-12: trava permanente pós-2ª-assinatura
+let _projetoCancelado = false;   // 2026-08-17: cancelamento leve com desfecho "cancelar" (trava)
+let _projetoEmRevisao = false;   // 2026-08-17: cancelamento leve com desfecho "revisao" (reabre)
 
 // ── Projeto Executivo (PE) — estado e helpers ──────────────────────────────
 let _pePayload = { subfases: {}, documentos: [], revisoes: [] };
@@ -17802,20 +17926,31 @@ async function _fetchCiclo() {
   _contratoAssinado = !!d.contrato_assinado;
   _contratoTotalmenteAssinado = !!d.contrato_totalmente_assinado;
   _projetoCanceladoDefinitivo = !!d.projeto_cancelado_definitivo;
+  _projetoCancelado = !!d.projeto_cancelado;
+  _projetoEmRevisao = !!d.projeto_em_revisao;
   _cicloCriadoPorNome = d.criado_por_nome || '';   // fallback da tag "com a bola" (revisão 2026-07-25)
   _cicloData = {};
   for (const e of (d.ciclo || [])) _cicloData[e.etapa_codigo] = e;
   _renderBannerCancelado();
 }
 
-function _renderBannerCancelado(){
-  const banner = document.getElementById('neg-cancelado-banner');
-  if (!banner) return;
-  banner.classList.toggle('ativo', _projetoCanceladoDefinitivo);
+function _toggleBanner(id, mostrar){
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('ativo', mostrar);
   // Reforço explícito (2026-08-12, achado da Vera): a classe .ativo já resolve via CSS, mas
-  // seta o inline direto também — mesmo padrão defensivo de atualizarUIBloqueio() pro banner
-  // irmão, resiliente a qualquer regra de display conflitante que apareça no futuro.
-  banner.style.display = _projetoCanceladoDefinitivo ? 'flex' : 'none';
+  // seta o inline direto também — resiliente a qualquer regra de display conflitante.
+  el.style.display = mostrar ? 'flex' : 'none';
+}
+
+function _renderBannerCancelado(){
+  _toggleBanner('neg-cancelado-banner', _projetoCanceladoDefinitivo);
+  // Cancelamento leve com desfecho "cancelar" (achado do usuário 2026-08-17): banner irmão,
+  // texto diferente (não é permanente) — só se NÃO for o caso definitivo (banner acima já cobre).
+  _toggleBanner('neg-cancelado-leve-banner', _projetoCancelado && !_projetoCanceladoDefinitivo);
+  // Cancelamento leve com desfecho "revisao": NÃO trava (a negociação segue editável) — banner
+  // só informativo, avisando que este orçamento passou por um cancelamento leve.
+  _toggleBanner('neg-em-revisao-banner', _projetoEmRevisao);
 }
 
 async function carregarCiclo() {
@@ -18006,11 +18141,16 @@ function _tagComABola() {
   let nome = d.responsavel_efetivo_nome || '';
   let sufixoCriador = '';
   if (!nome && _cicloCriadoPorNome) { nome = _cicloCriadoPorNome; sufixoCriador = ' (criador)'; }
+  // Numeração VISUAL (achado 2026-08-18) — mesma lógica do fichário, pra não mostrar um
+  // código cru (ex. "etapa 15") que não bate mais com o número visível no espinhaço.
+  const _maeAtual = _fichaMae(atual.codigo);
+  const _rotAtual = (atual.codigo === _maeAtual) ? _fichaTituloGrupo(_maeAtual)
+                                                 : `${_fichaTituloGrupo(_maeAtual)} · ${atual.nome}`;
   return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão o default da faixa; por fim, o criador do projeto)"
       style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
       <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
       Com a bola: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
-      <span style="color:var(--muted)">· etapa ${esc(atual.codigo)} — ${esc(atual.nome)}</span></span>`;
+      <span style="color:var(--muted)">· etapa ${esc(_fichaNumeroExibicao(atual.codigo))} — ${esc(_rotAtual)}</span></span>`;
 }
 
 function renderCiclo() {
@@ -18054,22 +18194,68 @@ function renderCiclo() {
 // ── Ciclo Fichário — estado e helpers (spec ciclo/2026-08-01) ─────────────────
 let _cicloEtapaAtiva = null;        // etapa selecionada (principal OU sub-etapa)
 let _cicloFichaProjeto = null;      // nome_safe — reseta a seleção ao trocar de projeto
-const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '17': ['17a'] };
+// "13" agrupa 14/15/16 (achado do usuário 2026-08-18: "Logística e Expedição" — Produção,
+// Recebimento do Pedido, Emissão da NFe do cliente, Entrega no cliente viram sub-abas de UMA
+// aba só no espinhaço, mesmo mecanismo já usado pela PE/11).
+const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '13': ['14','15','16'], '17': ['17a'] };
+// Rótulo do GRUPO (aba/cabeçalho) quando o código é cabeça de um _FICHA_SUBS — cada sub-aba
+// individual continua mostrando seu próprio nome (ETAPAS_CICLO), intocado.
+const _FICHA_GRUPO_NOME = { '13': 'Logística e Expedição' };
 
-// Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento).
+// Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento). Cabeça de
+// grupo (_FICHA_SUBS) só é "concluída" quando TODAS as etapas do grupo estiverem — achado
+// 2026-08-18: sem isso, "13" apareceria concluída assim que só a Produção terminasse.
 function _statusFichario(codigo) {
+  if (_FICHA_SUBS[codigo]) {
+    const todas = [codigo, ..._FICHA_SUBS[codigo]];
+    if (todas.every(c => STATUS_CONCLUSIVOS.has((_cicloData[c] || {}).status))) return 'concluida';
+    if (_etapaBloqueada(codigo)) return 'nao_iniciada';
+    return 'andamento';
+  }
   const dados = _cicloData[codigo] || {};
   if (STATUS_CONCLUSIVOS.has(dados.status)) return 'concluida';
   if (_etapaBloqueada(codigo)) return 'nao_iniciada';
   return 'andamento';
 }
-// Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído).
+// Etapas principais com "pendência" associada fora de ETAPAS_PRINCIPAIS (achado da Vera
+// 2026-08-19): "7" (Contrato) já fecha com status concluído na 2ª assinatura, mas AF1/
+// Solicitação de Medição (botões DENTRO do card do Contrato, ver Frente 1) continuam
+// pendentes — sem isso, _fichaEtapaAtual pulava pro próximo principal (Medição, bloqueada) e
+// o usuário perdia de vista que a ação pendente de verdade ainda vive no card do Contrato.
+const _FICHA_PENDENCIAS = { '7': ['8', '9'] };
+// Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído)
+// — ou uma principal já concluída, mas com pendência associada ainda em aberto (_FICHA_PENDENCIAS).
 function _fichaEtapaAtual() {
-  for (const c of ETAPAS_PRINCIPAIS) if (_statusFichario(c) !== 'concluida') return c;
+  for (const c of ETAPAS_PRINCIPAIS) {
+    if (_statusFichario(c) !== 'concluida') return c;
+    const pend = _FICHA_PENDENCIAS[c];
+    if (pend && pend.some(p => !STATUS_CONCLUSIVOS.has((_cicloData[p] || {}).status))) return c;
+  }
   return ETAPAS_PRINCIPAIS[ETAPAS_PRINCIPAIS.length - 1];
 }
-function _fichaMae(codigo) { const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p; }
+// Mãe explícita pra código que não segue mais o prefixo numérico (achado 2026-08-18, mesmo
+// problema resolvido no backend pro predecessor de 8/9/14/15/16): "14"/"15"/"16" não "parseiam"
+// pra "13" como "11a" parseia pra "11" — checado ANTES do fallback por prefixo, que continua
+// intocado pras sub-etapas de verdade (11a-e, 17a).
+const _FICHA_MAE_EXPLICITA = { '14':'13', '15':'13', '16':'13' };
+function _fichaMae(codigo) {
+  if (_FICHA_MAE_EXPLICITA[codigo]) return _FICHA_MAE_EXPLICITA[codigo];
+  const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p;
+}
 function _fichaEtapaDef(codigo) { return ETAPAS_CICLO.find(e => e.codigo === codigo); }
+// Numeração VISUAL sequencial (achado 2026-08-18, "efeito visual mais coerente") — o código
+// interno (etapa_codigo) nunca muda; só o número mostrado na tela vira a posição 1-based da
+// mãe em ETAPAS_PRINCIPAIS, sem buracos (7→10 etc. viravam números "vizinhos" antes disso).
+function _fichaNumeroExibicao(codigo) {
+  const i = ETAPAS_PRINCIPAIS.indexOf(_fichaMae(codigo));
+  return i < 0 ? codigo : String(i + 1);
+}
+// Rótulo de exibição da mãe: nome do grupo (_FICHA_GRUPO_NOME) quando existir, senão o nome
+// da própria etapa.
+function _fichaTituloGrupo(mae) {
+  const d = _fichaEtapaDef(mae);
+  return _FICHA_GRUPO_NOME[mae] || (d ? d.nome : mae);
+}
 
 function _fichaRenderLombada() {
   const box = document.getElementById('ficha-lombada');
@@ -18082,8 +18268,9 @@ function _fichaRenderLombada() {
       ? '<span class="ficha-dot"><i class="ti ti-check"></i></span>'
       : '<span class="ficha-dot"></span>';
     const pe = (c === '11') ? _renderEtapa11Progress() : '';
-    return `<div class="ficha-tab st-${st}${c === ativaMae ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')" title="${esc(e.nome)}">
-      ${dot}<span class="ficha-cod">${c}</span><span class="ficha-nome">${esc(e.nome)}${pe}</span></div>`;
+    const titulo = _fichaTituloGrupo(c);
+    return `<div class="ficha-tab st-${st}${c === ativaMae ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')" title="${esc(titulo)}">
+      ${dot}<span class="ficha-cod">${_fichaNumeroExibicao(c)}</span><span class="ficha-nome">${esc(titulo)}${pe}</span></div>`;
   }).join('');
 }
 
@@ -18128,10 +18315,16 @@ function _fichaRenderConteudo() {
   // entrega fica sempre visível (previsão → entregue), global ou por fase (desmembramento).
   const _maeN = parseInt(mae, 10);
   const faixaEntrega = (_maeN >= 9 && _maeN <= 16) ? '<div id="entrega-faixa"></div>' : '';
+  // Cabeçalho com a numeração VISUAL (achado 2026-08-18) — "9 · Logística e Expedição" na
+  // visão geral do grupo, ou "9 · Logística e Expedição · Recebimento do Pedido" numa sub-aba.
+  const numExib = _fichaNumeroExibicao(codigo);
+  const tituloMae = _fichaTituloGrupo(mae);
+  const headerTxt = (codigo === mae) ? `${numExib} · ${esc(tituloMae)}`
+                                     : `${numExib} · ${esc(tituloMae)} · ${esc(etapa.nome)}`;
   box.innerHTML = `
     <div class="ficha-cab">
       <span class="ficha-badge st-${st}">${rotStatus}</span>
-      <span style="font-weight:800;color:var(--text)">${codigo} · ${esc(etapa.nome)}</span>${aguarda}
+      <span style="font-weight:800;color:var(--text)">${headerTxt}</span>${aguarda}
       <span style="margin-left:auto">${_cronoLabelEtapa(codigo, dados)}</span>
     </div>
     ${subs}
@@ -18876,7 +19069,11 @@ function _renderCardGenerico(etapa, dados, bloqueada) {
       ${btnLabel}</button>`;
   })() : '';
 
-  const btnReabrir = (STATUS_CONCLUSIVOS.has(dados.status) && ETAPAS_PRINCIPAIS.includes(etapa.codigo))
+  // Achado 2026-08-18: "16" (Entrega no cliente) saiu de ETAPAS_PRINCIPAIS (grupo "Logística
+  // e Expedição") mas continua concluindo/reabrindo por conta própria — sem o segundo termo,
+  // o botão sumiria pra ela especificamente (a única das 4 que cai neste card genérico).
+  const btnReabrir = (STATUS_CONCLUSIVOS.has(dados.status) &&
+      (ETAPAS_PRINCIPAIS.includes(etapa.codigo) || !!_FICHA_MAE_EXPLICITA[etapa.codigo]))
     ? `<button onclick="abrirModalReabrir('${etapa.codigo}')"
          style="border:1px solid var(--muted);color:var(--muted);background:none;border-radius:5px;padding:6px 14px;font-size:.8rem;cursor:pointer;margin-top:10px;margin-left:8px">
          <i class="ti ti-lock-open"></i> Reabrir (gerente)</button>`
@@ -19770,29 +19967,40 @@ async function peComplementoRender(){
       </div>`;
   }
   // ── Aprovação do Projeto Executivo (documento assinável — substitui o "PE Assinado") ──
+  // Achado do usuário 2026-08-19: mesmas regras do Contrato/Solicitação de Medição — usa o
+  // renderer de assinatura compartilhado (_renderSecaoAssinaturaUnificada) em vez dos inputs
+  // soltos e sem pré-preenchimento de antes.
   const a2 = ap.ok ? ap.aprovacao : null;
   let apHtml;
   if (!a2) {
     apHtml = `<button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-file-check"></i> Aprovar Projeto Executivo</button>`;
-  } else {
-    const partes = new Set((a2.assinaturas||[]).map(s => s.parte));
-    const assinado = a2.status === 'assinado';
-    const sigBtn = p => partes.has(p)
-      ? `<span style="color:var(--ok)">✓ ${p}</span>`
-      : `<button class="btn-ciclo" style="font-size:var(--fs-xs);padding:2px 8px" onclick="peAprovacaoAssinar('${p}')">Assinar (${p})</button>`;
+  } else if (a2.status === 'assinado') {
     apHtml = `
       <div style="font-size:.82rem;margin-bottom:6px">Aprovação do PE <strong>${esc(a2.num_aprovacao)}</strong>
-        — ${assinado ? '<span style="color:var(--ok)">assinada</span>' : esc(a2.status)}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${a2.tem_pdf ? `<a class="btn-ciclo" style="text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}"><i class="ti ti-printer"></i> Imprimir</a>` : ''}
-        ${!assinado ? `<button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-refresh"></i> Regerar</button>` : ''}
-        ${!assinado ? sigBtn('loja') : '<span style="color:var(--ok);font-size:.82rem">✓ loja</span>'}
-        ${!assinado ? sigBtn('cliente') : '<span style="color:var(--ok);font-size:.82rem">✓ cliente</span>'}
-      </div>
-      ${!assinado ? `<div style="display:flex;gap:8px;margin-top:8px">
-        <input id="pe-ap-nome" placeholder="Nome do signatário" style="flex:1;padding:5px 8px">
-        <input id="pe-ap-cpf" placeholder="CPF" style="width:140px;padding:5px 8px">
-      </div>` : ''}`;
+        — <span style="color:var(--ok)">assinada</span></div>
+      ${a2.tem_pdf ? `<a class="btn-ciclo" style="text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}"><i class="ti ti-printer"></i> Imprimir</a>` : ''}`;
+  } else {
+    _peApClicksignDefaults = ap.clicksign_defaults || {};
+    const cfg = {
+      doc: a2,
+      pdfUrl: `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/pdf?v=${Date.now()}`,
+      chaveImpresso: 'aprovacao-pe:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+      prefixo: 'ap',
+      defaults: ap.assinatura_defaults || {},
+      ep: {
+        clicksignVerificar: 'verificarClickSignPEAgora',
+        clicksignReenviar: 'reenviarConviteClickSignPE',
+        clicksignEnviar: 'enviarAprovacaoPEParaClickSign',
+        assinarPath: 'aprovacao-pe/assinar',
+        onRefresh: 'peComplementoRender',
+      },
+    };
+    _ultimaCfgAssinaturaPE = cfg;
+    apHtml = `
+      <div style="font-size:.82rem;margin-bottom:6px">Aprovação do PE <strong>${esc(a2.num_aprovacao)}</strong>
+        — ${esc(a2.status)}</div>
+      <button class="btn-ciclo" onclick="peAprovacaoGerar()"><i class="ti ti-refresh"></i> Regerar</button>
+      <div id="secao-assinatura-pe">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
   }
   // ── Termo Aditivo (documenta a diferença negociada) ──
   const a = ad.ok ? ad.aditivo : null;
@@ -19911,19 +20119,98 @@ async function peAprovacaoGerar(){
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Aprovar Projeto Executivo'}); }
 }
 
-async function peAprovacaoAssinar(parte){
-  if(!projetoAtivo) return;
-  const nome = (document.getElementById('pe-ap-nome')?.value || '').trim();
-  const cpf  = (document.getElementById('pe-ap-cpf')?.value || '').trim();
-  if(!nome || !cpf){ await avisoPopup('Preencha nome e CPF do signatário.',{titulo:'Assinar aprovação'}); return; }
+// Assinatura Digital da Aprovação do PE — escolha explícita (achado do usuário 2026-08-19),
+// mesmo padrão de Contrato/Solicitação de Medição: substitui o antigo peAprovacaoAssinar (assinava
+// direto por inputs soltos, sem escolha de canal nem pré-preenchimento).
+let _ultimaCfgAssinaturaPE = null;
+let _peApClicksignDefaults = {};
+
+function _abrirModalConfirmarClickSignPE() {
+  const def = _peApClicksignDefaults || {};
+  document.getElementById('modal-clicksign-pe-confirmar')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'modal-clicksign-pe-confirmar';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
+  const campo = (id, label, val, placeholder) => `
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-top:12px">${label}<br>
+      <input id="${id}" type="email" value="${esc(val||'')}" placeholder="${esc(placeholder||'')}"
+        style="width:100%;box-sizing:border-box;padding:8px;margin-top:2px;background:var(--input);
+        border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.85rem"></label>`;
+  ov.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;max-width:480px;width:92%;max-height:88vh;overflow-y:auto">
+      <h4 style="margin:0 0 6px">Aprovação do PE — confirmar destinatários</h4>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 4px">Confira ou corrija os e-mails para onde o documento será encaminhado para assinatura.</p>
+      ${campo('csap-email-loja', 'E-mail da loja (assina como responsável)', def.email_loja, 'obrigatório')}
+      ${campo('csap-email-cliente', 'E-mail do cliente — ' + esc(def.nome_cliente||'—'), def.email_cliente, 'obrigatório')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('modal-clicksign-pe-confirmar').remove()"
+          class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
+        <button data-act="enviar" onclick="_confirmarEnvioClickSignPE()" class="btn-ciclo btn-primary">
+          <i class="ti ti-signature"></i> Confirmar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function enviarAprovacaoPEParaClickSign() {
+  if (!projetoAtivo) return;
+  let d;
   try {
-    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/assinar`,
-      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({parte, nome, cpf})}).then(r=>r.json());
-    if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Assinar aprovação'}); return; }
-    showToast('Assinatura registrada (' + parte + ').');
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe`,
+                          { credentials: 'same-origin' });
+    d = await r.json();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
+  if (!d.ok || !d.aprovacao) { showToast('Erro ao carregar a aprovação do PE.', true); return; }
+  _peApClicksignDefaults = d.clicksign_defaults || {};
+  _abrirModalConfirmarClickSignPE();
+}
+
+async function _confirmarEnvioClickSignPE() {
+  const emailLoja    = (document.getElementById('csap-email-loja')?.value || '').trim();
+  const emailCliente = (document.getElementById('csap-email-cliente')?.value || '').trim();
+  if (!emailLoja || !emailCliente) {
+    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+  }
+  const btn = document.querySelector('#modal-clicksign-pe-confirmar [data-act="enviar"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/enviar`,
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email_loja: emailLoja, email_cliente: emailCliente }) });
+    const d = await r.json();
+    if (!d.ok) {
+      showToast('Erro: ' + d.erro, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+      return;
+    }
+    document.getElementById('modal-clicksign-pe-confirmar')?.remove();
+    showToast('Aprovação do PE enviada para assinatura eletrônica (ClickSign).', false);
     peComplementoRender();
-  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Assinar aprovação'}); }
+  } catch(e) {
+    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+  }
+}
+
+async function verificarClickSignPEAgora() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/verificar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Status verificado: ' + d.status, false);
+    peComplementoRender();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+async function reenviarConviteClickSignPE() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Convite reenviado.', false);
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 async function peAditivoGerar(){
@@ -20441,20 +20728,59 @@ async function devolucaoRegistrar(){
   } catch(e){ await avisoPopup('Erro de rede.', {titulo:'Devolução'}); }
 }
 
+// Cancelamento LEVE (< 2ª assinatura) tem 2 desfechos — pergunta ao gerente qual (2026-08-17,
+// achado do usuário). Resolve 'revisao' | 'cancelar' | null (voltar, sem fazer nada).
+function _escolherDesfechoCancelamento(){
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--warn);font-size:1rem">Cancelar contrato</h4>' +
+      '<p style="margin:0 0 16px;color:var(--fg);font-size:.9rem;white-space:pre-line">' +
+      'Este contrato ainda não tem a 2ª assinatura — o cancelamento é livre. Escolha o desfecho:\n\n' +
+      '• Retornar para orçamento: fica "Em Revisão", a negociação continua aberta pra tentar de novo.\n' +
+      '• Cancelar o orçamento: fica "Cancelado", trava tudo — não dá pra editar nem gerar contrato novo.' +
+      '</p>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
+      '<button data-act="voltar" style="background:none;border:1px solid var(--muted);color:var(--muted);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Voltar</button>' +
+      '<button data-act="cancelar" style="background:none;border:1px solid var(--err);color:var(--err);' +
+      'border-radius:5px;padding:6px 14px;cursor:pointer;font-size:.85rem">Cancelar orçamento</button>' +
+      '<button data-act="revisao" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);' +
+      'border:var(--btn-primary-border);border-radius:5px;padding:7px 16px;font-size:.88rem;font-weight:700;cursor:pointer">Retornar para orçamento</button>' +
+      '</div>');
+    const fin = (v) => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = (e) => { if (e.key === 'Escape') fin(null); };
+    ov.querySelector('[data-act="revisao"]').onclick = () => fin('revisao');
+    ov.querySelector('[data-act="cancelar"]').onclick = () => fin('cancelar');
+    ov.querySelector('[data-act="voltar"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    document.addEventListener('keydown', onKey);
+    setTimeout(() => ov.querySelector('[data-act="revisao"]').focus(), 60);
+  });
+}
+
 async function cancelarContrato(){
   if(!_orcamentoAtivoId) return;
+  // Definitivo (2ª assinatura já dada): sem escolha — sempre estorna e trava pra sempre.
+  // Leve: gerente escolhe entre reabrir ("em_revisao") ou cancelar de vez ("cancelado").
+  let desfecho = 'cancelar';
+  if (!_contratoTotalmenteAssinado) {
+    desfecho = await _escolherDesfechoCancelamento();
+    if (!desfecho) return;   // voltou, sem fazer nada
+  }
   const cred = await pedirCredenciaisGerente({capacidade: null,
     titulo: 'Cancelar contrato',
-    mensagem: 'Exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre (projeto continua editável). Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE. Indisponível após a NF-e.' });
+    mensagem: 'Exige senha de Gerente ou superior. Antes da 2ª assinatura, cancela livre. Depois da 2ª assinatura, estorna TODOS os lançamentos e trava o projeto PARA SEMPRE. Indisponível após a NF-e.' });
   if(!cred) return;
   try {
     const j = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/cancelamento',
       { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ login: cred.login, senha: cred.senha }) }).then(r=>r.json());
+        body: JSON.stringify({ login: cred.login, senha: cred.senha, desfecho }) }).then(r=>r.json());
     if(j.ok){
       showToast(j.definitivo
         ? 'Contrato cancelado — lançamentos estornados. Projeto travado permanentemente.'
-        : 'Contrato cancelado. Projeto continua acessível e editável.');
+        : (j.status === 'em_revisao'
+            ? 'Contrato cancelado. Projeto em revisão — negociação continua aberta.'
+            : 'Orçamento cancelado. Projeto travado.'));
       await carregarCiclo();
     }
     else { await avisoPopup(j.erro||'Erro', {titulo:'Cancelar contrato'}); }
@@ -20670,7 +20996,7 @@ async function producaoConcluida() {
   await _patchEtapa('13', { status: 'concluido', observacoes: txt }, 'Produção concluída!', 'Produção');
 }
 
-// ── Etapa 14 — Entrega no depósito ─────────────────────────────────────────
+// ── Etapa 14 — Recebimento do Pedido (sub-aba de "Logística e Expedição") ──
 function _renderCardEntrega(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
   const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
@@ -20833,12 +21159,12 @@ async function cancelarNfeLoja(ref) {
 
 async function salvarRelatorioEntrega() {
   const txt = document.getElementById('relatorio-etapa-14')?.value || '';
-  await _patchEtapa('14', { observacoes: txt }, 'Relatório salvo.', 'Entrega no depósito');
+  await _patchEtapa('14', { observacoes: txt }, 'Relatório salvo.', 'Recebimento do Pedido');
 }
 
 async function concluirRelatorioEntrega() {
   const txt = document.getElementById('relatorio-etapa-14')?.value || '';
-  await _patchEtapa('14', { status: 'concluido', observacoes: txt }, 'Relatório de Entrega concluído!', 'Entrega no depósito');
+  await _patchEtapa('14', { status: 'concluido', observacoes: txt }, 'Relatório de Entrega concluído!', 'Recebimento do Pedido');
 }
 
 async function peConcluir(codigo) {
@@ -21110,7 +21436,9 @@ function mostrarErroComAcao(mensagem, labelAcao, fnAcao) {
   document.getElementById('erro-modal-overlay')?.remove();
   const ov = document.createElement('div');
   ov.id = 'erro-modal-overlay';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center';
+  // z-index acima de qualquer modal comum (achado do usuário 2026-08-17, mesma classe do fix
+  // do showToast) — abaixo só do toast em si.
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:150000;display:flex;align-items:center;justify-content:center';
   const btnAcao = labelAcao ? `
     <button id="erro-modal-btn-acao"
       style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;
@@ -21125,7 +21453,7 @@ function mostrarErroComAcao(mensagem, labelAcao, fnAcao) {
         ${btnAcao}
         <button onclick="document.getElementById('erro-modal-overlay').remove()"
           style="background:var(--err);color:var(--btn-primary-text);border:none;border-radius:6px;
-          padding:10px 28px;font-size:1rem;cursor:pointer;font-weight:600">Fechar</button>
+          padding:10px 28px;font-size:1rem;cursor:pointer;font-weight:600">OK</button>
       </div>
     </div>
   `;
@@ -21511,58 +21839,361 @@ function renderContratoUI(contrato) {
     ${['assinado','vigente'].includes(status)
       ? `<div>
           <p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>
+          ${_renderBotoesPosAssinaturaContrato()}
         </div>`
       : temArquivo ? _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) : ''
     }
   `;
 }
 
-// Assinatura Digital (2026-08-12): escolha explícita entre o fluxo interno (Imprimir + assinar
-// na tela) e a assinatura eletrônica via ClickSign — substitui o antigo auto-envio silencioso.
-// Uma vez que qualquer assinatura interna começou OU o contrato já foi enviado ao ClickSign, a
-// escolha trava (o backend também recusa trocar de canal a essa altura).
-function _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) {
-  if (contrato.assinatura_canal === 'clicksign') {
+// Aprovação Financeira I (etapa "8") e Solicitação de Medição (etapa "9") — achado do usuário
+// 2026-08-17: deixaram de ser etapas próprias do espinhaço do fichário e viraram gatilhos
+// independentes dentro da etapa 7 (Contrato), liberados só pelo contrato assinado (não uma
+// pela outra). AF1 reaproveita 100% o modal de provisões já existente — sem `#prov-inline-slot`
+// no DOM, `abrirProvisoes` cai sozinha no caminho de overlay (mesmo modal de sempre). Solicitação
+// de Medição (Frente 2) tem fluxo próprio de geração+assinatura, espelhando o do Contrato —
+// ver _renderSecaoSolicitacaoMedicao logo abaixo.
+function _renderBotoesPosAssinaturaContrato() {
+  const st8 = (_cicloData['8'] || {}).status || 'pendente';
+  const st9 = (_cicloData['9'] || {}).status || 'pendente';
+  const concl8 = STATUS_CONCLUSIVOS.has(st8);
+  const concl9 = STATUS_CONCLUSIVOS.has(st9);
+  const ok = '<span style="color:var(--ok);margin-left:6px">&#x2713;</span>';
+  return `
+    <div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px">
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:10px">Próximos passos</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button onclick="abrirProvisoes(_orcamentoAtivoId, '8')" class="btn-ciclo" style="font-size:.82rem">
+          <i class="ti ti-cash"></i> Aprovação Financeira I${concl8 ? ok : ''}
+        </button>
+        <button onclick="_toggleSolicitacaoMedicaoInline()" class="btn-ciclo" style="font-size:.82rem">
+          <i class="ti ti-ruler-measure"></i> Solicitação de Medição${concl9 ? ok : ''}
+        </button>
+      </div>
+      <div id="med-solic-inline" style="display:none;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px"></div>
+    </div>`;
+}
+
+function _toggleSolicitacaoMedicaoInline() {
+  const box = document.getElementById('med-solic-inline');
+  if (!box) return;
+  const abrir = box.style.display === 'none';
+  box.style.display = abrir ? 'block' : 'none';
+  if (abrir) carregarSolicitacaoMedicao();
+}
+
+// ── Solicitação de Medição (Frente 2, achado do usuário 2026-08-17) ──────────────────────────
+// Documento gerado pelo sistema (modelo por loja tipo 'solicitacao_medicao'), assinável interno
+// (loja+cliente, sem testemunhas) OU ClickSign — mesmo desenho do Contrato, ISOLADO em funções
+// próprias (endpoints/estado próprios: /medicao/solicitacao/*) para não mexer no código sensível
+// já testado da assinatura de contrato.
+let _smModalDefaults = null;
+
+async function carregarSolicitacaoMedicao() {
+  const box = document.getElementById('med-solic-inline');
+  if (!box || !projetoAtivo) return;
+  box.innerHTML = '<p style="color:var(--muted);font-size:.85rem;margin:0">Carregando...</p>';
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`,
+                          { credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro ao carregar.</p>'; return; }
+    _smAssinaturaDefaults = d.assinatura_defaults || {};
+    box.innerHTML = _renderSecaoSolicitacaoMedicao(d.solicitacao);
+  } catch(e) {
+    box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro de rede: ' + esc(_detalheErroRede(e)) + '</p>';
+  }
+}
+
+let _smAssinaturaDefaults = {};
+
+function _renderSecaoSolicitacaoMedicao(sol) {
+  if (!sol) {
+    return `
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">
+        Gera o Termo de Responsabilidade e Solicitação de Medição a partir do modelo da loja.
+      </p>
+      <button onclick="gerarSolicitacaoMedicao()" class="btn-ciclo btn-primary" style="font-size:.82rem">
+        <i class="ti ti-file-plus"></i> Gerar documento
+      </button>`;
+  }
+  if (sol.status === 'assinado') {
+    return `<p style="color:var(--ok);margin:0">&#x2713; Solicitação de medição assinada — ambas as partes confirmaram.</p>`;
+  }
+  const pdfUrl = `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/pdf?v=${Date.now()}`;
+  const cfg = {
+    doc: sol, pdfUrl,
+    chaveImpresso: 'medicao:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+    prefixo: 'sm',
+    defaults: _smAssinaturaDefaults || {},
+    ep: {
+      clicksignVerificar: 'verificarClickSignMedicaoAgora',
+      clicksignReenviar: 'reenviarConviteClickSignMedicao',
+      clicksignEnviar: 'enviarSolicitacaoMedicaoParaClickSign',
+      assinarPath: 'medicao/solicitacao/assinar',
+      onRefresh: 'carregarSolicitacaoMedicao',
+    },
+  };
+  _ultimaCfgAssinaturaMedicao = cfg;
+  return `<div id="secao-assinatura-medicao">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
+}
+
+async function gerarSolicitacaoMedicao() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/gerar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Documento gerado!', false);
+    carregarSolicitacaoMedicao();
+    carregarCiclo();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+async function enviarSolicitacaoMedicaoParaClickSign() {
+  if (!projetoAtivo) return;
+  let d;
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`,
+                          { credentials: 'same-origin' });
+    d = await r.json();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
+  if (!d.ok || !d.solicitacao) { showToast('Erro ao carregar a solicitação de medição.', true); return; }
+  _smModalDefaults = d.clicksign_defaults || {};
+  _abrirModalConfirmarClickSignMedicao();
+}
+
+function _abrirModalConfirmarClickSignMedicao() {
+  const def = _smModalDefaults || {};
+  document.getElementById('modal-clicksign-medicao-confirmar')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'modal-clicksign-medicao-confirmar';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
+  const campo = (id, label, val, placeholder) => `
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-top:12px">${label}<br>
+      <input id="${id}" type="email" value="${esc(val||'')}" placeholder="${esc(placeholder||'')}"
+        style="width:100%;box-sizing:border-box;padding:8px;margin-top:2px;background:var(--input);
+        border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.85rem"></label>`;
+  ov.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;max-width:480px;width:92%;max-height:88vh;overflow-y:auto">
+      <h4 style="margin:0 0 6px">Solicitação de Medição — confirmar destinatários</h4>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 4px">Confira ou corrija os e-mails para onde o documento será encaminhado para assinatura.</p>
+      ${campo('csm-email-loja', 'E-mail da loja (assina como responsável)', def.email_loja, 'obrigatório')}
+      ${campo('csm-email-cliente', 'E-mail do cliente — ' + esc(def.nome_cliente||'—'), def.email_cliente, 'obrigatório')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('modal-clicksign-medicao-confirmar').remove()"
+          class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
+        <button data-act="enviar" onclick="_confirmarEnvioClickSignMedicao()" class="btn-ciclo btn-primary">
+          <i class="ti ti-signature"></i> Confirmar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function _confirmarEnvioClickSignMedicao() {
+  const emailLoja    = (document.getElementById('csm-email-loja')?.value || '').trim();
+  const emailCliente = (document.getElementById('csm-email-cliente')?.value || '').trim();
+  if (!emailLoja || !emailCliente) {
+    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+  }
+  const btn = document.querySelector('#modal-clicksign-medicao-confirmar [data-act="enviar"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/enviar`,
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ email_loja: emailLoja, email_cliente: emailCliente }) });
+    const d = await r.json();
+    if (!d.ok) {
+      showToast('Erro: ' + d.erro, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+      return;
+    }
+    document.getElementById('modal-clicksign-medicao-confirmar')?.remove();
+    showToast('Solicitação de medição enviada para assinatura eletrônica (ClickSign).', false);
+    carregarSolicitacaoMedicao();
+  } catch(e) {
+    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+  }
+}
+
+async function verificarClickSignMedicaoAgora() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/verificar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Status verificado: ' + d.status, false);
+    carregarSolicitacaoMedicao();
+    carregarCiclo();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+async function reenviarConviteClickSignMedicao() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Convite reenviado.', false);
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+// Assinatura Digital — seção UNIFICADA (achado do usuário 2026-08-19): Contrato, Solicitação de
+// Medição e Aprovação do PE compartilham a MESMA regra: no canal ClickSign a assinatura é 100%
+// automática (reconciliação via "Verificar agora"/webhook — SEM botão de assinar manual, que
+// só confundiria já que o backend recusa a chamada nesse canal); no canal interno, "Imprimir"
+// deixou de ser um link solto — abre o PDF E libera uma caixa de confirmação única (2
+// checkboxes, nome/CPF pré-preenchidos e editáveis) que antes não existia sem imprimir primeiro.
+// "Assinatura Interna" aqui é só uma confirmação de prosseguimento (não uma assinatura digital
+// de verdade — essa é a ClickSign), por isso vira UMA caixa com os dois lados em vez de dois
+// modais separados como antes.
+const _ASSINATURA_IMPRESSO = {};   // chave por documento — flag de sessão, não reseta sozinho
+
+function _marcarImpresso(chave) { _ASSINATURA_IMPRESSO[chave] = true; }
+
+function _renderSecaoAssinaturaUnificada(cfg) {
+  // cfg: {doc, pdfUrl, chaveImpresso, prefixo, defaults, ep:{clicksignVerificar,
+  //       clicksignReenviar, clicksignEnviar, assinarPath, onRefresh}}
+  const doc = cfg.doc;
+  const jaAssinouTodas = doc.status === 'assinado';
+  if (doc.assinatura_canal === 'clicksign') {
     return `
       <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
         <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
         <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">
-          &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(contrato.clicksign_enviado_em)}.
+          &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(doc.clicksign_enviado_em)}.
         </p>
-        <button onclick="verificarClickSignContratoAgora()" class="btn-ciclo" style="font-size:.82rem">
-          <i class="ti ti-refresh"></i> Verificar agora
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="${cfg.ep.clicksignVerificar}()" class="btn-ciclo" style="font-size:.82rem">
+            <i class="ti ti-refresh"></i> Verificar agora
+          </button>
+          <button onclick="${cfg.ep.clicksignReenviar}()" class="btn-ciclo" style="font-size:.82rem">
+            <i class="ti ti-send"></i> Reenviar convite
+          </button>
+        </div>
         <div style="margin-top:12px">
           <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
-          <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
+          <div style="margin-top:8px">${_renderAssinaturasSomenteLeitura(doc.assinaturas)}</div>
         </div>
       </div>`;
   }
-  const escolha = !jaAssinou ? `
+  const escolha = !jaAssinouTodas ? `
     <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;margin-bottom:14px">
       <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
-      <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">Escolha como este contrato será assinado.</p>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">Escolha como este documento será assinado.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="${pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem">
+        <a href="${cfg.pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem"
+           onclick="_marcarImpresso('${cfg.chaveImpresso}'); setTimeout(_reRenderAssinaturaAtual, 50)">
           <i class="ti ti-printer"></i> Imprimir
         </a>
-        <button onclick="enviarContratoParaClickSign()" class="btn-ciclo btn-primary" style="font-size:.82rem">
+        <button onclick="${cfg.ep.clicksignEnviar}()" class="btn-ciclo btn-primary" style="font-size:.82rem">
           <i class="ti ti-signature"></i> Assinatura ClickSign
         </button>
       </div>
     </div>` : '';
-  return escolha + `
+  if (jaAssinouTodas) return escolha;
+  if (!_ASSINATURA_IMPRESSO[cfg.chaveImpresso]) {
+    return escolha + `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;color:var(--muted);font-size:.85rem">
+        <i class="ti ti-lock"></i> Imprima o documento antes de confirmar a assinatura interna.
+      </div>`;
+  }
+  return escolha + _renderBoxConfirmacaoInterna(cfg);
+}
+
+// Chamado depois de clicar Imprimir — a navegação em nova aba não recarrega esta, só precisa
+// re-render pra revelar a caixa de confirmação (guardamos a última cfg renderizada por seção).
+let _ultimaCfgAssinaturaContrato = null;
+let _ultimaCfgAssinaturaMedicao  = null;
+function _reRenderAssinaturaAtual() {
+  const boxCt = document.getElementById('secao-assinatura-contrato');
+  if (boxCt && _ultimaCfgAssinaturaContrato) boxCt.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaContrato);
+  const boxSm = document.getElementById('secao-assinatura-medicao');
+  if (boxSm && _ultimaCfgAssinaturaMedicao) boxSm.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaMedicao);
+  const boxAp = document.getElementById('secao-assinatura-pe');
+  if (boxAp && typeof _ultimaCfgAssinaturaPE !== 'undefined' && _ultimaCfgAssinaturaPE) boxAp.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaPE);
+}
+
+function _renderAssinaturasSomenteLeitura(lista) {
+  const partes = ['loja', 'cliente'];
+  return partes.map(parte => {
+    const ass = (lista || []).find(a => a.parte === parte);
+    return ass
+      ? `<div style="color:var(--ok);font-size:.85rem">&#x2713; ${parte}: ${esc(ass.nome)} — ${ass.assinado_em.slice(0,10)}</div>`
+      : `<div style="color:var(--muted);font-size:.85rem;margin-top:4px">&#x2B1C; ${parte} — aguardando</div>`;
+  }).join('');
+}
+
+function _renderBoxConfirmacaoInterna(cfg) {
+  const defs = cfg.defaults || {};
+  const assinadas = new Set((cfg.doc.assinaturas || []).map(a => a.parte));
+  const linha = (parte, nomeDef, cpfDef) => assinadas.has(parte)
+    ? `<div style="color:var(--ok);font-size:.85rem;margin-top:6px">&#x2713; ${parte} confirmada</div>`
+    : `<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+         <input type="checkbox" id="conf-${cfg.prefixo}-${parte}" style="flex:0 0 auto">
+         <label for="conf-${cfg.prefixo}-${parte}" style="font-size:.82rem;min-width:52px">${parte}</label>
+         <input id="conf-${cfg.prefixo}-${parte}-nome" placeholder="Nome completo" value="${esc(nomeDef || '')}"
+           style="flex:1;min-width:140px;padding:5px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.82rem">
+         <input id="conf-${cfg.prefixo}-${parte}-cpf" placeholder="CPF" value="${esc(cpfDef || '')}"
+           style="width:140px;padding:5px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.82rem">
+       </div>`;
+  const faltam = !assinadas.has('loja') || !assinadas.has('cliente');
+  return `
     <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
-      <label style="display:flex;gap:10px;align-items:center;cursor:pointer;margin-bottom:14px">
-        <input type="checkbox" id="chk-leu-contrato" onchange="toggleAssinaturas()"
-          ${jaAssinou ? 'checked disabled' : ''}>
-        <span style="font-size:.9rem">Li o contrato e estou de acordo com os termos</span>
-      </label>
-      <div id="secao-assinaturas" style="display:${jaAssinou ? 'block' : 'none'}">
-        <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
-        <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
-      </div>
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Confirmação interna</div>
+      <p style="color:var(--muted);font-size:.8rem;margin:0 0 4px">Confirmação só para prosseguimento interno (o documento já foi impresso) — marque quem assinou fisicamente.</p>
+      ${linha('loja', defs.nome_loja, defs.cpf_loja)}
+      ${linha('cliente', defs.nome_cliente, defs.cpf_cliente)}
+      ${faltam ? `<button onclick="_confirmarBoxInterna('${cfg.prefixo}', '${cfg.ep.assinarPath}', '${cfg.ep.onRefresh}')" class="btn-ciclo btn-primary" style="margin-top:12px;font-size:.82rem">Confirmar</button>` : ''}
     </div>`;
+}
+
+async function _confirmarAssinaturaUnificada(caminhoAssinar, parte, nome, cpf) {
+  if (!nome || !cpf) { showToast(`Informe nome e CPF (${parte}).`, true); return false; }
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/${caminhoAssinar}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parte, nome, cpf }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return false; }
+    return true;
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return false; }
+}
+
+async function _confirmarBoxInterna(prefixo, caminhoAssinar, nomeRefresh) {
+  const partes = ['loja', 'cliente'];
+  let marcouAlguma = false;
+  for (const parte of partes) {
+    const chk = document.getElementById(`conf-${prefixo}-${parte}`);
+    if (!chk || !chk.checked) continue;
+    marcouAlguma = true;
+    const nome = (document.getElementById(`conf-${prefixo}-${parte}-nome`)?.value || '').trim();
+    const cpf  = (document.getElementById(`conf-${prefixo}-${parte}-cpf`)?.value || '').trim();
+    const ok = await _confirmarAssinaturaUnificada(caminhoAssinar, parte, nome, cpf);
+    if (ok) showToast(`✓ Confirmação da ${parte} registrada.`, false);
+  }
+  if (!marcouAlguma) { showToast('Marque ao menos uma confirmação.', true); return; }
+  if (typeof window[nomeRefresh] === 'function') window[nomeRefresh]();
+}
+
+function _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) {
+  const cfg = {
+    doc: contrato, pdfUrl,
+    chaveImpresso: 'contrato:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+    prefixo: 'ct',
+    defaults: contrato.assinatura_defaults || {},
+    ep: {
+      clicksignVerificar: 'verificarClickSignContratoAgora',
+      clicksignReenviar: 'reenviarConviteClickSignContrato',
+      clicksignEnviar: 'enviarContratoParaClickSign',
+      assinarPath: 'contrato/assinar',
+      onRefresh: 'carregarDadosContrato',
+    },
+  };
+  _ultimaCfgAssinaturaContrato = cfg;
+  return `<div id="secao-assinatura-contrato">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
 }
 
 function _tempoDecorrido(iso) {
@@ -21576,15 +22207,91 @@ function _tempoDecorrido(iso) {
   return Math.floor(h / 24) + 'd';
 }
 
+// Achado do usuário 2026-08-17: clicar "Assinatura ClickSign" enviava direto, sem confirmar pra
+// onde ia (e-mail do cliente vinha automático do cadastro, sem chance de revisar/corrigir).
+// Agora abre um modal confirmando/editando os e-mails de loja, cliente e testemunhas antes de
+// enviar de fato — testemunha com e-mail em branco simplesmente não é convocada a assinar.
+let _csModalDefaults = null;
+
 async function enviarContratoParaClickSign() {
+  if (!projetoAtivo) return;
+  let d;
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato`,
+                          { credentials: 'same-origin' });
+    d = await r.json();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
+  if (!d.ok || !d.contrato) { showToast('Erro ao carregar dados do contrato.', true); return; }
+  _csModalDefaults = d.contrato.clicksign_defaults || {};
+  _abrirModalConfirmarClickSign();
+}
+
+function _abrirModalConfirmarClickSign() {
+  const def = _csModalDefaults || {};
+  const t1 = def.testemunha1 || {}, t2 = def.testemunha2 || {};
+  document.getElementById('modal-clicksign-confirmar')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'modal-clicksign-confirmar';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)';
+  const campo = (id, label, val, placeholder) => `
+    <label style="font-size:.8rem;color:var(--muted);display:block;margin-top:12px">${label}<br>
+      <input id="${id}" type="email" value="${esc(val||'')}" placeholder="${esc(placeholder||'')}"
+        style="width:100%;box-sizing:border-box;padding:8px;margin-top:2px;background:var(--input);
+        border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.85rem"></label>`;
+  ov.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:24px;max-width:480px;width:92%;max-height:88vh;overflow-y:auto">
+      <h4 style="margin:0 0 6px">Assinatura Digital — confirmar destinatários</h4>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 4px">Confira ou corrija os e-mails para onde o contrato será encaminhado para assinatura. Testemunha com e-mail em branco não é convocada.</p>
+      ${campo('cs-email-loja', 'E-mail da loja (assina como responsável)', def.email_loja, 'obrigatório')}
+      ${campo('cs-email-cliente', 'E-mail do cliente — ' + esc(def.nome_cliente||'—'), def.email_cliente, 'obrigatório')}
+      <div style="border-top:1px dashed var(--border);margin:16px 0 4px"></div>
+      ${campo('cs-email-test1', 'Testemunha 1 — ' + esc(t1.nome||'(sem cadastro)'), t1.email, 'em branco = não assina')}
+      ${campo('cs-email-test2', 'Testemunha 2 — ' + esc(t2.nome||'(sem cadastro)'), t2.email, 'em branco = não assina')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+        <button onclick="document.getElementById('modal-clicksign-confirmar').remove()"
+          class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
+        <button data-act="enviar" onclick="_confirmarEnvioClickSign()" class="btn-ciclo btn-primary">
+          <i class="ti ti-signature"></i> Confirmar e enviar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+async function _confirmarEnvioClickSign() {
+  const def = _csModalDefaults || {};
+  const t1 = def.testemunha1 || {}, t2 = def.testemunha2 || {};
+  const emailLoja    = (document.getElementById('cs-email-loja')?.value || '').trim();
+  const emailCliente = (document.getElementById('cs-email-cliente')?.value || '').trim();
+  const emailT1      = (document.getElementById('cs-email-test1')?.value || '').trim();
+  const emailT2      = (document.getElementById('cs-email-test2')?.value || '').trim();
+  if (!emailLoja || !emailCliente) {
+    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+  }
+  const btn = document.querySelector('#modal-clicksign-confirmar [data-act="enviar"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
   try {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/enviar`,
-      { method: 'POST', credentials: 'same-origin' });
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          email_loja: emailLoja, email_cliente: emailCliente,
+          testemunhas: [
+            { nome: t1.nome || '', cpf: t1.cpf || '', email: emailT1 },
+            { nome: t2.nome || '', cpf: t2.cpf || '', email: emailT2 },
+          ],
+        }) });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) {
+      showToast('Erro: ' + d.erro, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+      return;
+    }
+    document.getElementById('modal-clicksign-confirmar')?.remove();
     showToast('Contrato enviado para assinatura eletrônica (ClickSign).', false);
     carregarDadosContrato();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) {
+    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
+  }
 }
 
 async function verificarClickSignContratoAgora() {
@@ -21596,6 +22303,16 @@ async function verificarClickSignContratoAgora() {
     showToast('Status verificado: ' + d.status, false);
     carregarDadosContrato();
     carregarCiclo();
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
+async function reenviarConviteClickSignContrato() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Convite reenviado.', false);
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
@@ -21697,27 +22414,6 @@ async function confirmarVoltarOrcamento() {
     fecharCiclo();
     atualizarBotoesAprovacao();
   } catch(e) { if(erroEl) erroEl.textContent = 'Erro de rede: ' + _detalheErroRede(e); }
-}
-
-function toggleAssinaturas() {
-  const chk = document.getElementById('chk-leu-contrato');
-  const sec = document.getElementById('secao-assinaturas');
-  if (sec) sec.style.display = chk?.checked ? 'block' : 'none';
-}
-
-function _renderAssinaturas(lista) {
-  const partes = ['loja', 'cliente'];
-  return partes.map(parte => {
-    const ass = (lista || []).find(a => a.parte === parte);
-    return ass
-      ? `<div style="color:var(--ok);font-size:.85rem">&#x2713; ${parte}: ${ass.nome} — ${ass.assinado_em.slice(0,10)}</div>`
-      : `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-           <span style="color:var(--muted);font-size:.85rem">&#x2B1C; ${parte}</span>
-           <button onclick="abrirModalAssinatura('${parte}')" class="btn-ciclo" style="padding:2px 8px;font-size:.8rem">
-             Assinar como ${parte}
-           </button>
-         </div>`;
-  }).join('');
 }
 
 // ── Aprovação de Orçamento (novo fluxo — contrato) ───────────────────────────
@@ -22122,70 +22818,6 @@ async function coletarSignatarioOverride() {
       ov.remove(); resolve(out);
     };
   });
-}
-
-async function abrirModalAssinatura(parte) {
-  // Gate (Fatia 2): não abre a assinatura sem as datas do acordo definidas (previsão de medição +
-  // expectativa de entrega). O backend também bloqueia a POST; aqui evita abrir a tela à toa.
-  try {
-    const cj = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/contrato',
-                           { credentials:'same-origin' }).then(r=>r.json());
-    const ct = (cj && cj.contrato) || {};
-    if(!ct.data_entrega || !ct.previsao_medicao){
-      showToast('Defina a previsão de medição e a expectativa de entrega (card "Datas do acordo") antes de assinar.', true);
-      return;
-    }
-  } catch(e){ /* se a checagem falhar, o backend ainda bloqueia a assinatura */ }
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-assinatura-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
-  overlay.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:480px">
-      <h4 style="margin:0 0 16px">Assinar como: <strong>${parte}</strong></h4>
-      <label style="font-size:var(--fs-sm)">Nome completo</label>
-      <input id="sig-nome" type="text" placeholder="Nome completo"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="font-size:var(--fs-sm)">CPF</label>
-      <input id="sig-cpf" type="text" placeholder="000.000.000-00"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:16px;font-size:.85rem">
-        <input type="checkbox" id="sig-aceite">
-        Li e aceito os termos do contrato
-      </label>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="fecharModalAssinatura()" class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
-        <button onclick="confirmarAssinatura('${parte}')" class="btn-ciclo">Confirmar Assinatura</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
-
-function fecharModalAssinatura() {
-  const el = document.getElementById('modal-assinatura-overlay');
-  if (el) el.remove();
-}
-
-async function confirmarAssinatura(parte) {
-  const nome   = (document.getElementById('sig-nome')?.value || '').trim();
-  const cpf    = (document.getElementById('sig-cpf')?.value || '').trim();
-  const aceite = document.getElementById('sig-aceite')?.checked;
-  if (!nome || !cpf) { showToast('Nome e CPF são obrigatórios.', true); return; }
-  if (!aceite) { showToast('É necessário aceitar os termos.', true); return; }
-  try {
-    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/assinar`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parte, nome, cpf }),
-    });
-    const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast(`✓ Assinatura da ${parte} registrada.`, false);
-    fecharModalAssinatura();
-    carregarDadosContrato();
-    carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 function abrirModalAdendo() {

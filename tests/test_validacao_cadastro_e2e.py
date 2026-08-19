@@ -160,6 +160,23 @@ def test_terceiro_cpf_invalido_400(http_client_factory, seed):
     st, d = c.post("/api/terceiros", {"nome": "X", "cpf": "111.444.777-00"})
     assert st == 400 and "cpf" in d.get("erro", "").lower()
 
+def test_terceiro_cnpj_invalido_400(http_client_factory, seed):
+    # achado do usuário 2026-08-17: Terceiro (MEI) ganha CNPJ, validado se vier preenchido
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/terceiros", {"nome": "X", "cnpj": "11.222.333/0001-00"})
+    assert st == 400 and "cnpj" in d.get("erro", "").lower()
+
+def test_terceiro_cnpj_valido_201(http_client_factory, seed):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/terceiros", {"nome": "X", "cnpj": "11.222.333/0001-81"})
+    assert st == 201, d
+
+def test_terceiro_sem_cnpj_201(http_client_factory, seed):
+    # não é MEI — CNPJ opcional, sem CNPJ nenhum passa liso
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/terceiros", {"nome": "X", "condicao": "autonomo"})
+    assert st == 201, d
+
 def test_fornecedor_cnpj_cpf_invalido_400(http_client_factory, seed):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/fornecedores", {"nome": "X", "cnpj_cpf": "11.222.333/0001-00"})

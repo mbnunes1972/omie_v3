@@ -145,6 +145,79 @@ def test_resolver_pct_funcao_flat():
     assert mod_folha._resolver_pct_funcao(com, 999.0) == 2.0
 
 
+# ── Redefinição base/pct/valor pra origem=venda (achado do usuário 2026-08-17) ──────────────────
+def test_recalcular_valor_item_sem_override_usa_valor_sistema_exato(app_db):
+    # pct arredondado (33.33) reaplicado sobre base NÃO deve gerar resíduo — sem override, o valor
+    # do sistema (saldo real da provisão, não base×pct) prevalece byte-a-byte.
+    it = app_db.ComissaoFolha(loja_id=1, funcionario_id=1, competencia="2026-07", origem="venda",
+                              base=9000.03, pct=33.33, status="previsto", ref_etapa="x1")
+    mod_folha._recalcular_valor_item(it, 3000.01)
+    assert it.valor == 3000.01   # exato — NÃO 9000.03*33.33/100=2999.99 (resíduo de 2 centavos)
+
+
+def test_recalcular_valor_item_com_override_base_usa_formula(app_db):
+    it = app_db.ComissaoFolha(loja_id=1, funcionario_id=1, competencia="2026-07", origem="venda",
+                              base=10000.0, pct=3.0, base_ajustada=12000.0, status="previsto", ref_etapa="x2")
+    mod_folha._recalcular_valor_item(it, 300.0)
+    assert it.valor == 360.0   # 12000 × 3%
+
+
+def test_recalcular_valor_item_com_override_pct_usa_formula(app_db):
+    it = app_db.ComissaoFolha(loja_id=1, funcionario_id=1, competencia="2026-07", origem="venda",
+                              base=10000.0, pct=3.0, pct_ajustado=5.0, status="previsto", ref_etapa="x3")
+    mod_folha._recalcular_valor_item(it, 300.0)
+    assert it.valor == 500.0   # 10000 × 5%
+
+
+def test_upsert_itens_venda_popula_valor_liquido_e_pct_derivado(seed, app_db):
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome="Consultor de Vendas", salario_fixo=0.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="Vend", funcao_id=fn.id, usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    db.add(app_db.Projeto(nome_safe="PVLiq", loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    db.add(app_db.Orcamento(projeto_id="PVLiq", nome="O", ordem=1, loja_id=loja, valor_liquido=80000.0))
+    db.commit()
+    ot, oid = mc.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mc.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 2400.0,
+                        projeto_id="PVLiq", ref="contrato:PVLiq:com_venda")
+    db.commit()
+    mod_folha.gerar_folha(db, loja, "2026-07", _cfg_pct(0.0)); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PVLiq" % f.id).first()
+    assert item.base == 80000.0            # valor líquido da venda, não o saldo da provisão
+    assert item.pct == 3.0                 # derivado: 2400/80000*100
+    assert item.valor == 2400.0            # sem override, exato — não 80000*3/100 recalculado
+    db.close()
+
+
+def test_upsert_itens_venda_sem_orcamento_nao_quebra(seed, app_db):
+    # regressão: projeto sem Orcamento algum (base=0) não pode estourar divisão por zero no pct
+    db = app_db.get_session()
+    u = db.query(app_db.Usuario).filter_by(login="cons_l1").first()
+    loja = u.loja_id
+    fn = app_db.Funcao(loja_id=loja, nome="Consultor de Vendas", salario_fixo=0.0,
+                       usa_comissao_vendas=1, status="ativo")
+    db.add(fn); db.flush()
+    f = app_db.Funcionario(loja_id=loja, nome="Vend", funcao_id=fn.id, usuario_id=u.id, status="ativo")
+    db.add(f); db.flush()
+    db.add(app_db.Projeto(nome_safe="PVSemOrc", loja_id=loja, criado_por_id=u.id,
+                          status="fechado", status_at=datetime(2026, 7, 10)))
+    db.commit()
+    ot, oid = mc.resolver_owner(db, {"loja_id": loja, "rede_id": None})
+    mc.registrar_evento(db, ot, oid, "fechamento_venda_retencao_com_vendas", 300.0,
+                        projeto_id="PVSemOrc", ref="contrato:PVSemOrc:com_venda")
+    db.commit()
+    mod_folha.gerar_folha(db, loja, "2026-07", _cfg_pct(0.0)); db.commit()
+    item = db.query(app_db.ComissaoFolha).filter_by(ref_etapa="venda:%d:PVSemOrc" % f.id).first()
+    assert item.base == 0.0 and item.pct is None
+    assert item.valor == 300.0   # o pagamento continua exato, independente do snapshot informativo
+    db.close()
+
+
 # ── Base de comissão editável ────────────────────────────────────────────────
 def test_editar_base_recalcula_variavel(seed, app_db):
     db = app_db.get_session()
@@ -193,7 +266,20 @@ def test_pagar_posta_nas_contas_5_3(app_db):
     assert reg.status == "paga"
     mod_folha.pagar(db, "loja", 91, reg)   # idempotente
     assert saldo("5.3.16") == 700.0
-    assert mod_folha.serialize(db, reg)["pagamento"] == "PIX: x@pix"   # usa PIX cadastrado
+    d = mod_folha.serialize(db, reg)
+    assert d["dados_pagamento"] == "PIX: x@pix"      # usa PIX cadastrado
+    assert d["pagamento"] == reg.pago_em.strftime("%d/%m/%Y")   # achado 2026-08-17: agora é a DATA de efetivação
+
+
+def test_serialize_pagamento_vazio_antes_de_pagar(seed, app_db):
+    db = app_db.get_session()
+    loja = db.query(app_db.Usuario).filter_by(login="dir_l2").first().loja_id
+    f = app_db.Funcionario(loja_id=loja, nome="AindaNaoPago", status="ativo"); db.add(f); db.flush()
+    reg = app_db.FolhaPagamento(loja_id=loja, funcionario_id=f.id, competencia="2026-07",
+                                parte_fixa=1000.0, total=1000.0, status="aberta")
+    db.add(reg); db.commit()
+    assert mod_folha.serialize(db, reg)["pagamento"] is None
+    db.close()
     db.close()
 
 

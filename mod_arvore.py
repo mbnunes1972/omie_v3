@@ -38,12 +38,14 @@ def projetos_estruturais(db, ator, loja_id):
     out = []
     for p in projetos:
         por_codigo = status_por_projeto.get(p.nome_safe, {})
+        # etapa_concluida_agregada (achado 2026-08-18): "13" só conta como concluída quando
+        # TODO o grupo "Logística e Expedição" (13-16) está.
         concluidas = sum(
             1 for cod in mod_ciclo.ETAPAS_PRINCIPAIS
-            if por_codigo.get(cod) in mod_ciclo.STATUS_CONCLUSIVOS)
+            if mod_ciclo.etapa_concluida_agregada(cod, por_codigo))
         atual = next(
             (cod for cod in mod_ciclo.ETAPAS_PRINCIPAIS
-             if por_codigo.get(cod) not in mod_ciclo.STATUS_CONCLUSIVOS), None)
+             if not mod_ciclo.etapa_concluida_agregada(cod, por_codigo)), None)
         out.append({
             "nome_safe": p.nome_safe,
             "status": p.status,

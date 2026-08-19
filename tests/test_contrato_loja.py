@@ -60,7 +60,9 @@ def test_loja_dict_para_contrato_mapeia_campos():
         logradouro = "Rua A"; numero = "100"; complemento = ""; bairro = "Centro"
         cidade = "SJC"; estado = "SP"
         testemunha1_nome = "Jaime"; testemunha1_cpf = "123.456.789-00"
+        testemunha1_email = "jaime@teste.com"
         testemunha2_nome = "Felipe"; testemunha2_cpf = "987.654.321-00"
+        testemunha2_email = "felipe@teste.com"
 
     class _FakeDB:
         def get(self, model, pk):
@@ -70,6 +72,7 @@ def test_loja_dict_para_contrato_mapeia_campos():
     assert d["codigo"] == "INS"
     assert d["nome"] == "INSPIRIUM"
     assert d["testemunha1_cpf"] == "123.456.789-00"
+    assert d["testemunha1_email"] == "jaime@teste.com"
     assert d["cidade"] == "SJC"
 
 

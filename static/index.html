@@ -920,15 +920,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="3" onchange="projFaseItemToggle()"> Briefing</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="4" onchange="projFaseItemToggle()"> Orçamento</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="7" onchange="projFaseItemToggle()"> Contrato</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="8"  onchange="projFaseItemToggle()"> Aprovação financeira I</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="9"  onchange="projFaseItemToggle()"> Solicitação de medição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="10" onchange="projFaseItemToggle()"> Medição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="11" onchange="projFaseItemToggle()"> Projeto executivo</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="12" onchange="projFaseItemToggle()"> Conferência e Implantação do Pedido</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="13" onchange="projFaseItemToggle()"> Produção</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="14" onchange="projFaseItemToggle()"> Entrega no depósito</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="15" onchange="projFaseItemToggle()"> Emissão da NFe do cliente</label>
-          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="16" onchange="projFaseItemToggle()"> Entrega no cliente</label>
+          <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="13" onchange="projFaseItemToggle()"> Logística e Expedição</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="17" onchange="projFaseItemToggle()"> Montagem</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="18" onchange="projFaseItemToggle()"> Assistência pós Montagem</label>
           <label class="proj-status-filter-item"><input type="checkbox" class="proj-fase-item" value="19" onchange="projFaseItemToggle()"> Vistoria final</label>
@@ -16419,7 +16414,7 @@ const ETAPAS_CICLO = [
   { codigo: "11e", nome: "Aprovação do PE pelo cliente",       sub: true },
   { codigo: "12",  nome: "Conferência e Implantação do Pedido", sub: false },
   { codigo: "13",  nome: "Produção",                           sub: false },
-  { codigo: "14",  nome: "Entrega no depósito",                sub: false },
+  { codigo: "14",  nome: "Recebimento do Pedido",              sub: false },
   { codigo: "15",  nome: "Emissão da NFe do cliente",          sub: false },
   { codigo: "16",  nome: "Entrega no cliente",                 sub: false, toggleavel: true },
   { codigo: "17",  nome: "Montagem",                           sub: false, toggleavel: true },
@@ -16432,12 +16427,19 @@ const ETAPAS_CICLO = [
 
 // Ordem canônica das etapas PRINCIPAIS (espelha mod_ciclo.py no backend).
 // "8"/"9" saíram daqui (achado do usuário 2026-08-17) — viraram gatilhos independentes
-// dentro da etapa 7 (Contrato). Ver PREDECESSOR_OVERRIDE.
+// dentro da etapa 7 (Contrato). "14"/"15"/"16" saíram também (achado 2026-08-18) — grupo
+// visual "Logística e Expedição", representado por "13" (ver _FICHA_SUBS/_FICHA_MAE_EXPLICITA
+// mais abaixo). Ver PREDECESSOR_OVERRIDE pro gating de ambos os casos.
 const ETAPAS_PRINCIPAIS = ["1","2","3","4","7","10",
-                           "11","12","13","14","15","16","17","18","19","20","21"];
+                           "11","12","13","17","18","19","20","21"];
 // Espelha mod_ciclo.PREDECESSOR_OVERRIDE: "8"/"9" dependem de "7" (em paralelo entre si);
-// "10" continua dependendo especificamente de "9" (não só do contrato assinado).
-const PREDECESSOR_OVERRIDE = {"8":"7", "9":"7", "10":"9"};
+// "10" continua dependendo especificamente de "9" (não só do contrato assinado); "14"→"13",
+// "15"→"14", "16"→"15" preservam a cadeia sequencial real do grupo "Logística e Expedição";
+// "17"→"16" evita que "17" passe a depender só de "13" (pularia o resto do grupo).
+const PREDECESSOR_OVERRIDE = {
+  "8":"7", "9":"7", "10":"9",
+  "14":"13", "15":"14", "16":"15", "17":"16",
+};
 // Status que contam como "etapa concluída" (espelha STATUS_CONCLUSIVOS no backend).
 const STATUS_CONCLUSIVOS = new Set(["concluido","aprovado","assinado","vigente",
                                     "implantado","realizado","entregue","emitida"]);
@@ -18134,11 +18136,16 @@ function _tagComABola() {
   let nome = d.responsavel_efetivo_nome || '';
   let sufixoCriador = '';
   if (!nome && _cicloCriadoPorNome) { nome = _cicloCriadoPorNome; sufixoCriador = ' (criador)'; }
+  // Numeração VISUAL (achado 2026-08-18) — mesma lógica do fichário, pra não mostrar um
+  // código cru (ex. "etapa 15") que não bate mais com o número visível no espinhaço.
+  const _maeAtual = _fichaMae(atual.codigo);
+  const _rotAtual = (atual.codigo === _maeAtual) ? _fichaTituloGrupo(_maeAtual)
+                                                 : `${_fichaTituloGrupo(_maeAtual)} · ${atual.nome}`;
   return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão o default da faixa; por fim, o criador do projeto)"
       style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
       <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
       Com a bola: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
-      <span style="color:var(--muted)">· etapa ${esc(atual.codigo)} — ${esc(atual.nome)}</span></span>`;
+      <span style="color:var(--muted)">· etapa ${esc(_fichaNumeroExibicao(atual.codigo))} — ${esc(_rotAtual)}</span></span>`;
 }
 
 function renderCiclo() {
@@ -18182,10 +18189,24 @@ function renderCiclo() {
 // ── Ciclo Fichário — estado e helpers (spec ciclo/2026-08-01) ─────────────────
 let _cicloEtapaAtiva = null;        // etapa selecionada (principal OU sub-etapa)
 let _cicloFichaProjeto = null;      // nome_safe — reseta a seleção ao trocar de projeto
-const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '17': ['17a'] };
+// "13" agrupa 14/15/16 (achado do usuário 2026-08-18: "Logística e Expedição" — Produção,
+// Recebimento do Pedido, Emissão da NFe do cliente, Entrega no cliente viram sub-abas de UMA
+// aba só no espinhaço, mesmo mecanismo já usado pela PE/11).
+const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '13': ['14','15','16'], '17': ['17a'] };
+// Rótulo do GRUPO (aba/cabeçalho) quando o código é cabeça de um _FICHA_SUBS — cada sub-aba
+// individual continua mostrando seu próprio nome (ETAPAS_CICLO), intocado.
+const _FICHA_GRUPO_NOME = { '13': 'Logística e Expedição' };
 
-// Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento).
+// Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento). Cabeça de
+// grupo (_FICHA_SUBS) só é "concluída" quando TODAS as etapas do grupo estiverem — achado
+// 2026-08-18: sem isso, "13" apareceria concluída assim que só a Produção terminasse.
 function _statusFichario(codigo) {
+  if (_FICHA_SUBS[codigo]) {
+    const todas = [codigo, ..._FICHA_SUBS[codigo]];
+    if (todas.every(c => STATUS_CONCLUSIVOS.has((_cicloData[c] || {}).status))) return 'concluida';
+    if (_etapaBloqueada(codigo)) return 'nao_iniciada';
+    return 'andamento';
+  }
   const dados = _cicloData[codigo] || {};
   if (STATUS_CONCLUSIVOS.has(dados.status)) return 'concluida';
   if (_etapaBloqueada(codigo)) return 'nao_iniciada';
@@ -18196,8 +18217,29 @@ function _fichaEtapaAtual() {
   for (const c of ETAPAS_PRINCIPAIS) if (_statusFichario(c) !== 'concluida') return c;
   return ETAPAS_PRINCIPAIS[ETAPAS_PRINCIPAIS.length - 1];
 }
-function _fichaMae(codigo) { const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p; }
+// Mãe explícita pra código que não segue mais o prefixo numérico (achado 2026-08-18, mesmo
+// problema resolvido no backend pro predecessor de 8/9/14/15/16): "14"/"15"/"16" não "parseiam"
+// pra "13" como "11a" parseia pra "11" — checado ANTES do fallback por prefixo, que continua
+// intocado pras sub-etapas de verdade (11a-e, 17a).
+const _FICHA_MAE_EXPLICITA = { '14':'13', '15':'13', '16':'13' };
+function _fichaMae(codigo) {
+  if (_FICHA_MAE_EXPLICITA[codigo]) return _FICHA_MAE_EXPLICITA[codigo];
+  const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p;
+}
 function _fichaEtapaDef(codigo) { return ETAPAS_CICLO.find(e => e.codigo === codigo); }
+// Numeração VISUAL sequencial (achado 2026-08-18, "efeito visual mais coerente") — o código
+// interno (etapa_codigo) nunca muda; só o número mostrado na tela vira a posição 1-based da
+// mãe em ETAPAS_PRINCIPAIS, sem buracos (7→10 etc. viravam números "vizinhos" antes disso).
+function _fichaNumeroExibicao(codigo) {
+  const i = ETAPAS_PRINCIPAIS.indexOf(_fichaMae(codigo));
+  return i < 0 ? codigo : String(i + 1);
+}
+// Rótulo de exibição da mãe: nome do grupo (_FICHA_GRUPO_NOME) quando existir, senão o nome
+// da própria etapa.
+function _fichaTituloGrupo(mae) {
+  const d = _fichaEtapaDef(mae);
+  return _FICHA_GRUPO_NOME[mae] || (d ? d.nome : mae);
+}
 
 function _fichaRenderLombada() {
   const box = document.getElementById('ficha-lombada');
@@ -18210,8 +18252,9 @@ function _fichaRenderLombada() {
       ? '<span class="ficha-dot"><i class="ti ti-check"></i></span>'
       : '<span class="ficha-dot"></span>';
     const pe = (c === '11') ? _renderEtapa11Progress() : '';
-    return `<div class="ficha-tab st-${st}${c === ativaMae ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')" title="${esc(e.nome)}">
-      ${dot}<span class="ficha-cod">${c}</span><span class="ficha-nome">${esc(e.nome)}${pe}</span></div>`;
+    const titulo = _fichaTituloGrupo(c);
+    return `<div class="ficha-tab st-${st}${c === ativaMae ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')" title="${esc(titulo)}">
+      ${dot}<span class="ficha-cod">${_fichaNumeroExibicao(c)}</span><span class="ficha-nome">${esc(titulo)}${pe}</span></div>`;
   }).join('');
 }
 
@@ -18256,10 +18299,16 @@ function _fichaRenderConteudo() {
   // entrega fica sempre visível (previsão → entregue), global ou por fase (desmembramento).
   const _maeN = parseInt(mae, 10);
   const faixaEntrega = (_maeN >= 9 && _maeN <= 16) ? '<div id="entrega-faixa"></div>' : '';
+  // Cabeçalho com a numeração VISUAL (achado 2026-08-18) — "9 · Logística e Expedição" na
+  // visão geral do grupo, ou "9 · Logística e Expedição · Recebimento do Pedido" numa sub-aba.
+  const numExib = _fichaNumeroExibicao(codigo);
+  const tituloMae = _fichaTituloGrupo(mae);
+  const headerTxt = (codigo === mae) ? `${numExib} · ${esc(tituloMae)}`
+                                     : `${numExib} · ${esc(tituloMae)} · ${esc(etapa.nome)}`;
   box.innerHTML = `
     <div class="ficha-cab">
       <span class="ficha-badge st-${st}">${rotStatus}</span>
-      <span style="font-weight:800;color:var(--text)">${codigo} · ${esc(etapa.nome)}</span>${aguarda}
+      <span style="font-weight:800;color:var(--text)">${headerTxt}</span>${aguarda}
       <span style="margin-left:auto">${_cronoLabelEtapa(codigo, dados)}</span>
     </div>
     ${subs}
@@ -19004,7 +19053,11 @@ function _renderCardGenerico(etapa, dados, bloqueada) {
       ${btnLabel}</button>`;
   })() : '';
 
-  const btnReabrir = (STATUS_CONCLUSIVOS.has(dados.status) && ETAPAS_PRINCIPAIS.includes(etapa.codigo))
+  // Achado 2026-08-18: "16" (Entrega no cliente) saiu de ETAPAS_PRINCIPAIS (grupo "Logística
+  // e Expedição") mas continua concluindo/reabrindo por conta própria — sem o segundo termo,
+  // o botão sumiria pra ela especificamente (a única das 4 que cai neste card genérico).
+  const btnReabrir = (STATUS_CONCLUSIVOS.has(dados.status) &&
+      (ETAPAS_PRINCIPAIS.includes(etapa.codigo) || !!_FICHA_MAE_EXPLICITA[etapa.codigo]))
     ? `<button onclick="abrirModalReabrir('${etapa.codigo}')"
          style="border:1px solid var(--muted);color:var(--muted);background:none;border-radius:5px;padding:6px 14px;font-size:.8rem;cursor:pointer;margin-top:10px;margin-left:8px">
          <i class="ti ti-lock-open"></i> Reabrir (gerente)</button>`
@@ -20837,7 +20890,7 @@ async function producaoConcluida() {
   await _patchEtapa('13', { status: 'concluido', observacoes: txt }, 'Produção concluída!', 'Produção');
 }
 
-// ── Etapa 14 — Entrega no depósito ─────────────────────────────────────────
+// ── Etapa 14 — Recebimento do Pedido (sub-aba de "Logística e Expedição") ──
 function _renderCardEntrega(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
   const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
@@ -21000,12 +21053,12 @@ async function cancelarNfeLoja(ref) {
 
 async function salvarRelatorioEntrega() {
   const txt = document.getElementById('relatorio-etapa-14')?.value || '';
-  await _patchEtapa('14', { observacoes: txt }, 'Relatório salvo.', 'Entrega no depósito');
+  await _patchEtapa('14', { observacoes: txt }, 'Relatório salvo.', 'Recebimento do Pedido');
 }
 
 async function concluirRelatorioEntrega() {
   const txt = document.getElementById('relatorio-etapa-14')?.value || '';
-  await _patchEtapa('14', { status: 'concluido', observacoes: txt }, 'Relatório de Entrega concluído!', 'Entrega no depósito');
+  await _patchEtapa('14', { status: 'concluido', observacoes: txt }, 'Relatório de Entrega concluído!', 'Recebimento do Pedido');
 }
 
 async function peConcluir(codigo) {

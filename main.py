@@ -125,7 +125,7 @@ def _enriquecer_projetos_com_fase_ciclo(projetos):
     try:
         rows = (db.query(CicloEtapa)
                   .filter(CicloEtapa.projeto_nome.in_(nomes),
-                          CicloEtapa.etapa_codigo.in_(mod_ciclo.ETAPAS_PRINCIPAIS))
+                          CicloEtapa.etapa_codigo.in_(mod_ciclo.codigos_relevantes_fase()))
                   .all())
         status_map = {}
         for r in rows:
@@ -135,8 +135,11 @@ def _enriquecer_projetos_com_fase_ciclo(projetos):
             if not ns:
                 continue
             st = status_map.get(ns, {})
+            # etapa_concluida_agregada (achado 2026-08-18): "13" só conta como concluída
+            # quando TODO o grupo "Logística e Expedição" (13-16) está — sem isso, o "atual"
+            # pularia pra "17" assim que só a Produção terminasse.
             atual = next((cod for cod in mod_ciclo.ETAPAS_PRINCIPAIS
-                          if st.get(cod, "pendente") not in mod_ciclo.STATUS_CONCLUSIVOS), None)
+                          if not mod_ciclo.etapa_concluida_agregada(cod, st)), None)
             p['etapa_atual_codigo'] = atual
             p['etapa_atual_nome']   = mod_ciclo.ETAPA_NOME.get(atual) if atual else None
             p['fase_ciclo']         = mod_ciclo.faixa_da_etapa(atual) if atual else "concluido"

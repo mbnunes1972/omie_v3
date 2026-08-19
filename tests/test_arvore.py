@@ -51,8 +51,42 @@ def test_super_ve_projetos_com_agregacao(app_db, seed, com_etapas, ator_super):
     assert p["etapa_atual_codigo"] == "4"
     assert p["etapa_atual_nome"] == "Orçamento"
     # 20 − etapas 5/6 eliminadas + 21 (Conciliação Final, FASE D2) − 8/9 (achado do usuário
-    # 2026-08-17: AF1 e Solicitação de Medição saíram dos principais, viraram gatilhos da 7).
-    assert p["total_etapas"] == 17
+    # 2026-08-17: AF1 e Solicitação de Medição saíram dos principais, viraram gatilhos da 7)
+    # − 14/15/16 (achado 2026-08-18: grupo "Logística e Expedição", representado por "13").
+    assert p["total_etapas"] == 14
+
+
+def test_super_agrega_grupo_logistica_parcialmente_concluido(app_db, seed, ator_super):
+    """Achado do usuário 2026-08-18: "13" (Produção, representante de "Logística e
+    Expedição") não pode contar como concluída nem deixar `atual` pular pra "17" enquanto
+    14/15/16 ainda estiverem pendentes. Projeto próprio (isolado dos outros testes do
+    módulo, que reaproveitam Proj_L1 via a fixture `com_etapas`)."""
+    from database import CicloEtapa, Projeto
+    nome = "Proj_Grupo_Logistica"
+    db = app_db.get_session()
+    try:
+        if db.get(Projeto, nome) is None:
+            db.add(Projeto(nome_safe=nome, loja_id=seed["loja1_id"]))
+        db.query(CicloEtapa).filter_by(projeto_nome=nome).delete()
+        for cod in ("1", "2", "3", "4", "7", "10", "11", "12", "13"):
+            db.add(CicloEtapa(projeto_nome=nome, etapa_codigo=cod, status="concluido"))
+        db.add(CicloEtapa(projeto_nome=nome, etapa_codigo="14", status="pendente"))
+        db.commit()
+    finally:
+        db.close()
+
+    db2 = app_db.get_session()
+    try:
+        out = mod_arvore.projetos_estruturais(db2, ator_super, seed["loja1_id"])
+    finally:
+        db2.close()
+    p = next(x for x in out if x["nome_safe"] == nome)
+    # "13" concluída sozinha NÃO conta — 14 ainda pendente, então "atual" continua em "13"
+    # (o grupo "Logística e Expedição"), não pula pra "17" (Montagem).
+    assert p["etapa_atual_codigo"] == "13"
+    assert p["etapa_atual_nome"] == "Produção"
+    # concluídas: 1,2,3,4,7,10,11,12 = 8 (NÃO inclui "13", que ainda não fechou o grupo)
+    assert p["etapas_concluidas"] == 8
 
 
 def test_projetos_sem_pii(app_db, seed, com_etapas, ator_super):

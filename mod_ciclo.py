@@ -14,9 +14,17 @@ o ETAPAS_CICLO do frontend é alinhado a ela na tarefa de frontend.
 # outra. Continuam existindo como CicloEtapa/código próprio (nada migra) — só não são mais
 # principais. Ver PREDECESSOR_OVERRIDE logo abaixo pra como o gating delas (e do "10", que
 # ainda depende especificamente de "9") é resolvido sem estarem na lista.
+# "14"/"15"/"16" SAÍRAM daqui também (achado do usuário 2026-08-18): "Produção"(13),
+# "Entrega no depósito→Recebimento do Pedido"(14), "Emissão da NFe do cliente"(15) e
+# "Entrega no cliente"(16) viram visualmente UMA etapa só, "Logística e Expedição" — "13" é
+# a representante em ETAPAS_PRINCIPAIS; 14/15/16 continuam com CicloEtapa/código próprio,
+# concluindo em sequência real (ver PREDECESSOR_OVERRIDE/PROXIMA_OVERRIDE) — diferente do
+# caso 8/9 (paralelos), aqui a cadeia 13→14→15→16→17 é sequencial de verdade, só deixou de
+# aparecer como 4 abas separadas no fichário. Ver GRUPOS_ESPINHACO/etapa_concluida_agregada
+# pra quem precisa saber se "o grupo inteiro" já terminou (não só a Produção).
 ETAPAS_PRINCIPAIS = [
     "1", "2", "3", "4", "7", "10",
-    "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    "11", "12", "13", "17", "18", "19", "20",
     "21",   # FASE D2: Conciliação Final — fecha os números e encerra o projeto (status "Concluído")
 ]
 
@@ -32,7 +40,7 @@ ETAPA_NOME = {
     "11": "Projeto executivo",
     "12": "Conferência e Implantação do Pedido",
     "13": "Produção",
-    "14": "Entrega no depósito",
+    "14": "Recebimento do Pedido",
     "15": "Emissão da NFe do cliente",
     "16": "Entrega no cliente",
     "17": "Montagem",
@@ -131,7 +139,7 @@ ETAPAS_OPERACIONAIS = {
            "tipo_doc": "implantacao_pedido_xml", "botao": "Encaminhar Pedidos à Fábrica"},
     "13": {"nome": "Produção",              "exige": "numeros",
            "botao": "Produção Concluída"},
-    "14": {"nome": "Entrega no depósito",   "exige": "relatorio",
+    "14": {"nome": "Recebimento do Pedido", "exige": "relatorio",
            "botao": "Concluir Relatório de Entrega"},
 }
 
@@ -229,7 +237,47 @@ def etapa_pai(codigo):
 # especificamente de "9" (não bastaria só o contrato assinado — a medição precisa da
 # solicitação assinada primeiro), mesmo "9" não sendo mais o predecessor posicional de "10"
 # em ETAPAS_PRINCIPAIS (que agora vai direto de "7" pra "10").
-PREDECESSOR_OVERRIDE = {"8": "7", "9": "7", "10": "9"}
+# "14"→"13", "15"→"14", "16"→"15" (achado 2026-08-18): preservam a dependência sequencial
+# REAL dentro do grupo "Logística e Expedição" — sem elas, "14" (que já é gatilhada de
+# verdade pelo PATCH genérico + ETAPAS_OPERACIONAIS) perderia o gate. "17"→"16" é necessária
+# porque, tirando 14/15/16 de ETAPAS_PRINCIPAIS, o predecessor POSICIONAL de "17" passaria a
+# ser "13" direto — pulando o resto do grupo.
+PREDECESSOR_OVERRIDE = {
+    "8": "7", "9": "7", "10": "9",
+    "14": "13", "15": "14", "16": "15", "17": "16",
+}
+
+# Espelho, na direção contrária, do PREDECESSOR_OVERRIDE acima — só pra 13→14→15→16→17
+# (achado 2026-08-18): a "passagem automática de fase" no chat (etapa_seguinte, usada pelo
+# PATCH genérico pra notificar quem é responsável pela PRÓXIMA etapa ao concluir qualquer
+# uma) precisa continuar funcionando de verdade nessa cadeia — diferente de 8/9 (que viraram
+# paralelas e perderam essa notificação de propósito), aqui é um handoff sequencial real
+# entre equipes (produção → depósito → fiscal → expedição) que vale a pena manter.
+PROXIMA_OVERRIDE = {"13": "14", "14": "15", "15": "16", "16": "17"}
+
+# Grupos do espinhaço (achado do usuário 2026-08-18): "13" representa visualmente todo o
+# grupo "Logística e Expedição" (Produção→Entrega no Cliente) — mas cada código continua
+# com CicloEtapa própria, concluindo em separado. Quem varre ETAPAS_PRINCIPAIS achando "a
+# etapa atual" (ou contando etapas concluídas) precisa saber que "13" só está de fato
+# concluída quando TODO o grupo está — ver etapa_concluida_agregada.
+GRUPOS_ESPINHACO = {"13": ["13", "14", "15", "16"]}
+
+
+def codigos_relevantes_fase():
+    """ETAPAS_PRINCIPAIS + os códigos "escondidos" dentro de grupos do espinhaço — pra quem
+    monta um status_map por projeto (achar "a etapa atual") não perder o status real de
+    "14"/"15"/"16", que não estão mais em ETAPAS_PRINCIPAIS."""
+    extra = [c for grupo in GRUPOS_ESPINHACO.values() for c in grupo if c not in ETAPAS_PRINCIPAIS]
+    return ETAPAS_PRINCIPAIS + extra
+
+
+def etapa_concluida_agregada(codigo, status_por_codigo):
+    """True se `codigo` (ou, sendo cabeça de um grupo do espinhaço, TODO o grupo) está
+    concluído. Sem isso, "13" apareceria concluído assim que só a Produção terminasse — quem
+    varre ETAPAS_PRINCIPAIS achando "a próxima etapa não concluída" (listagem de projetos,
+    árvore administrativa) pularia direto pra "17", ignorando 14/15/16 ainda pendentes."""
+    grupo = GRUPOS_ESPINHACO.get(codigo, [codigo])
+    return all(status_por_codigo.get(c) in STATUS_CONCLUSIVOS for c in grupo)
 
 
 def etapa_anterior(codigo):
@@ -245,6 +293,8 @@ def etapa_anterior(codigo):
 def etapa_seguinte(codigo):
     """Código da etapa principal imediatamente seguinte, ou None (última). Usada na passagem
     oficial automática do chat (decisão 17): concluir uma fase aponta para a próxima."""
+    if codigo in PROXIMA_OVERRIDE:
+        return PROXIMA_OVERRIDE[codigo]
     if codigo not in ETAPAS_PRINCIPAIS:
         return None
     i = ETAPAS_PRINCIPAIS.index(codigo)

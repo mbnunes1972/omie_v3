@@ -18212,9 +18212,20 @@ function _statusFichario(codigo) {
   if (_etapaBloqueada(codigo)) return 'nao_iniciada';
   return 'andamento';
 }
-// Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído).
+// Etapas principais com "pendência" associada fora de ETAPAS_PRINCIPAIS (achado da Vera
+// 2026-08-19): "7" (Contrato) já fecha com status concluído na 2ª assinatura, mas AF1/
+// Solicitação de Medição (botões DENTRO do card do Contrato, ver Frente 1) continuam
+// pendentes — sem isso, _fichaEtapaAtual pulava pro próximo principal (Medição, bloqueada) e
+// o usuário perdia de vista que a ação pendente de verdade ainda vive no card do Contrato.
+const _FICHA_PENDENCIAS = { '7': ['8', '9'] };
+// Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído)
+// — ou uma principal já concluída, mas com pendência associada ainda em aberto (_FICHA_PENDENCIAS).
 function _fichaEtapaAtual() {
-  for (const c of ETAPAS_PRINCIPAIS) if (_statusFichario(c) !== 'concluida') return c;
+  for (const c of ETAPAS_PRINCIPAIS) {
+    if (_statusFichario(c) !== 'concluida') return c;
+    const pend = _FICHA_PENDENCIAS[c];
+    if (pend && pend.some(p => !STATUS_CONCLUSIVOS.has((_cicloData[p] || {}).status))) return c;
+  }
   return ETAPAS_PRINCIPAIS[ETAPAS_PRINCIPAIS.length - 1];
 }
 // Mãe explícita pra código que não segue mais o prefixo numérico (achado 2026-08-18, mesmo

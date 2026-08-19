@@ -21808,11 +21808,14 @@ async function carregarSolicitacaoMedicao() {
                           { credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro ao carregar.</p>'; return; }
+    _smAssinaturaDefaults = d.assinatura_defaults || {};
     box.innerHTML = _renderSecaoSolicitacaoMedicao(d.solicitacao);
   } catch(e) {
     box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro de rede: ' + esc(_detalheErroRede(e)) + '</p>';
   }
 }
+
+let _smAssinaturaDefaults = {};
 
 function _renderSecaoSolicitacaoMedicao(sol) {
   if (!sol) {
@@ -21828,42 +21831,21 @@ function _renderSecaoSolicitacaoMedicao(sol) {
     return `<p style="color:var(--ok);margin:0">&#x2713; Solicitação de medição assinada — ambas as partes confirmaram.</p>`;
   }
   const pdfUrl = `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/pdf?v=${Date.now()}`;
-  const jaAssinou = (sol.assinaturas || []).length > 0;
-  if (sol.assinatura_canal === 'clicksign') {
-    return `
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">
-        &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(sol.clicksign_enviado_em)}.
-      </p>
-      <button onclick="verificarClickSignMedicaoAgora()" class="btn-ciclo" style="font-size:.82rem">
-        <i class="ti ti-refresh"></i> Verificar agora
-      </button>
-      <div style="margin-top:12px">${_renderAssinaturasMedicao(sol.assinaturas)}</div>`;
-  }
-  const escolha = !jaAssinou ? `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <a href="${pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem">
-        <i class="ti ti-printer"></i> Imprimir
-      </a>
-      <button onclick="enviarSolicitacaoMedicaoParaClickSign()" class="btn-ciclo btn-primary" style="font-size:.82rem">
-        <i class="ti ti-signature"></i> Assinatura ClickSign
-      </button>
-    </div>` : '';
-  return escolha + _renderAssinaturasMedicao(sol.assinaturas);
-}
-
-function _renderAssinaturasMedicao(lista) {
-  const partes = ['loja', 'cliente'];
-  return partes.map(parte => {
-    const ass = (lista || []).find(a => a.parte === parte);
-    return ass
-      ? `<div style="color:var(--ok);font-size:.85rem">&#x2713; ${parte}: ${esc(ass.nome)} — ${ass.assinado_em.slice(0,10)}</div>`
-      : `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-           <span style="color:var(--muted);font-size:.85rem">&#x2B1C; ${parte}</span>
-           <button onclick="abrirModalAssinaturaMedicao('${parte}')" class="btn-ciclo" style="padding:2px 8px;font-size:.8rem">
-             Assinar como ${parte}
-           </button>
-         </div>`;
-  }).join('');
+  const cfg = {
+    doc: sol, pdfUrl,
+    chaveImpresso: 'medicao:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+    prefixo: 'sm',
+    defaults: _smAssinaturaDefaults || {},
+    ep: {
+      clicksignVerificar: 'verificarClickSignMedicaoAgora',
+      clicksignReenviar: 'reenviarConviteClickSignMedicao',
+      clicksignEnviar: 'enviarSolicitacaoMedicaoParaClickSign',
+      assinarPath: 'medicao/solicitacao/assinar',
+      onRefresh: 'carregarSolicitacaoMedicao',
+    },
+  };
+  _ultimaCfgAssinaturaMedicao = cfg;
+  return `<div id="secao-assinatura-medicao">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
 }
 
 async function gerarSolicitacaoMedicao() {
@@ -21957,98 +21939,169 @@ async function verificarClickSignMedicaoAgora() {
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
-function abrirModalAssinaturaMedicao(parte) {
-  document.getElementById('modal-assinatura-medicao-overlay')?.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-assinatura-medicao-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
-  overlay.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:480px">
-      <h4 style="margin:0 0 16px">Assinar como: <strong>${esc(parte)}</strong></h4>
-      <label style="font-size:var(--fs-sm)">Nome completo</label>
-      <input id="sigm-nome" type="text" placeholder="Nome completo"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="font-size:var(--fs-sm)">CPF</label>
-      <input id="sigm-cpf" type="text" placeholder="000.000.000-00"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:16px;font-size:.85rem">
-        <input type="checkbox" id="sigm-aceite">
-        Li e aceito os termos do documento
-      </label>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="document.getElementById('modal-assinatura-medicao-overlay').remove()" class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
-        <button onclick="confirmarAssinaturaMedicao('${parte}')" class="btn-ciclo">Confirmar Assinatura</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-}
-
-async function confirmarAssinaturaMedicao(parte) {
-  const nome   = (document.getElementById('sigm-nome')?.value || '').trim();
-  const cpf    = (document.getElementById('sigm-cpf')?.value || '').trim();
-  const aceite = document.getElementById('sigm-aceite')?.checked;
-  if (!nome || !cpf) { showToast('Nome e CPF são obrigatórios.', true); return; }
-  if (!aceite) { showToast('É necessário aceitar os termos.', true); return; }
+async function reenviarConviteClickSignMedicao() {
   try {
-    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/assinar`, {
-      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parte, nome, cpf }),
-    });
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast(`✓ Assinatura da ${parte} registrada.`, false);
-    document.getElementById('modal-assinatura-medicao-overlay')?.remove();
-    carregarSolicitacaoMedicao();
-    carregarCiclo();
+    showToast('Convite reenviado.', false);
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
-// Assinatura Digital (2026-08-12): escolha explícita entre o fluxo interno (Imprimir + assinar
-// na tela) e a assinatura eletrônica via ClickSign — substitui o antigo auto-envio silencioso.
-// Uma vez que qualquer assinatura interna começou OU o contrato já foi enviado ao ClickSign, a
-// escolha trava (o backend também recusa trocar de canal a essa altura).
-function _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) {
-  if (contrato.assinatura_canal === 'clicksign') {
+// Assinatura Digital — seção UNIFICADA (achado do usuário 2026-08-19): Contrato, Solicitação de
+// Medição e Aprovação do PE compartilham a MESMA regra: no canal ClickSign a assinatura é 100%
+// automática (reconciliação via "Verificar agora"/webhook — SEM botão de assinar manual, que
+// só confundiria já que o backend recusa a chamada nesse canal); no canal interno, "Imprimir"
+// deixou de ser um link solto — abre o PDF E libera uma caixa de confirmação única (2
+// checkboxes, nome/CPF pré-preenchidos e editáveis) que antes não existia sem imprimir primeiro.
+// "Assinatura Interna" aqui é só uma confirmação de prosseguimento (não uma assinatura digital
+// de verdade — essa é a ClickSign), por isso vira UMA caixa com os dois lados em vez de dois
+// modais separados como antes.
+const _ASSINATURA_IMPRESSO = {};   // chave por documento — flag de sessão, não reseta sozinho
+
+function _marcarImpresso(chave) { _ASSINATURA_IMPRESSO[chave] = true; }
+
+function _renderSecaoAssinaturaUnificada(cfg) {
+  // cfg: {doc, pdfUrl, chaveImpresso, prefixo, defaults, ep:{clicksignVerificar,
+  //       clicksignReenviar, clicksignEnviar, assinarPath, onRefresh}}
+  const doc = cfg.doc;
+  const jaAssinouTodas = doc.status === 'assinado';
+  if (doc.assinatura_canal === 'clicksign') {
     return `
       <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
         <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
         <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">
-          &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(contrato.clicksign_enviado_em)}.
+          &#x270D; Aguardando assinatura eletrônica (ClickSign) — enviado há ${_tempoDecorrido(doc.clicksign_enviado_em)}.
         </p>
-        <button onclick="verificarClickSignContratoAgora()" class="btn-ciclo" style="font-size:.82rem">
-          <i class="ti ti-refresh"></i> Verificar agora
-        </button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="${cfg.ep.clicksignVerificar}()" class="btn-ciclo" style="font-size:.82rem">
+            <i class="ti ti-refresh"></i> Verificar agora
+          </button>
+          <button onclick="${cfg.ep.clicksignReenviar}()" class="btn-ciclo" style="font-size:.82rem">
+            <i class="ti ti-send"></i> Reenviar convite
+          </button>
+        </div>
         <div style="margin-top:12px">
           <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
-          <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
+          <div style="margin-top:8px">${_renderAssinaturasSomenteLeitura(doc.assinaturas)}</div>
         </div>
       </div>`;
   }
-  const escolha = !jaAssinou ? `
+  const escolha = !jaAssinouTodas ? `
     <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;margin-bottom:14px">
       <div style="font-weight:600;font-size:.85rem;margin-bottom:8px">Assinatura Digital</div>
-      <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">Escolha como este contrato será assinado.</p>
+      <p style="color:var(--muted);font-size:.82rem;margin:0 0 10px">Escolha como este documento será assinado.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <a href="${pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem">
+        <a href="${cfg.pdfUrl}" target="_blank" rel="noopener" class="btn-ciclo" style="text-decoration:none;font-size:.82rem"
+           onclick="_marcarImpresso('${cfg.chaveImpresso}'); setTimeout(_reRenderAssinaturaAtual, 50)">
           <i class="ti ti-printer"></i> Imprimir
         </a>
-        <button onclick="enviarContratoParaClickSign()" class="btn-ciclo btn-primary" style="font-size:.82rem">
+        <button onclick="${cfg.ep.clicksignEnviar}()" class="btn-ciclo btn-primary" style="font-size:.82rem">
           <i class="ti ti-signature"></i> Assinatura ClickSign
         </button>
       </div>
     </div>` : '';
-  return escolha + `
+  if (jaAssinouTodas) return escolha;
+  if (!_ASSINATURA_IMPRESSO[cfg.chaveImpresso]) {
+    return escolha + `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;color:var(--muted);font-size:.85rem">
+        <i class="ti ti-lock"></i> Imprima o documento antes de confirmar a assinatura interna.
+      </div>`;
+  }
+  return escolha + _renderBoxConfirmacaoInterna(cfg);
+}
+
+// Chamado depois de clicar Imprimir — a navegação em nova aba não recarrega esta, só precisa
+// re-render pra revelar a caixa de confirmação (guardamos a última cfg renderizada por seção).
+let _ultimaCfgAssinaturaContrato = null;
+let _ultimaCfgAssinaturaMedicao  = null;
+function _reRenderAssinaturaAtual() {
+  const boxCt = document.getElementById('secao-assinatura-contrato');
+  if (boxCt && _ultimaCfgAssinaturaContrato) boxCt.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaContrato);
+  const boxSm = document.getElementById('secao-assinatura-medicao');
+  if (boxSm && _ultimaCfgAssinaturaMedicao) boxSm.innerHTML = _renderSecaoAssinaturaUnificada(_ultimaCfgAssinaturaMedicao);
+}
+
+function _renderAssinaturasSomenteLeitura(lista) {
+  const partes = ['loja', 'cliente'];
+  return partes.map(parte => {
+    const ass = (lista || []).find(a => a.parte === parte);
+    return ass
+      ? `<div style="color:var(--ok);font-size:.85rem">&#x2713; ${parte}: ${esc(ass.nome)} — ${ass.assinado_em.slice(0,10)}</div>`
+      : `<div style="color:var(--muted);font-size:.85rem;margin-top:4px">&#x2B1C; ${parte} — aguardando</div>`;
+  }).join('');
+}
+
+function _renderBoxConfirmacaoInterna(cfg) {
+  const defs = cfg.defaults || {};
+  const assinadas = new Set((cfg.doc.assinaturas || []).map(a => a.parte));
+  const linha = (parte, nomeDef, cpfDef) => assinadas.has(parte)
+    ? `<div style="color:var(--ok);font-size:.85rem;margin-top:6px">&#x2713; ${parte} confirmada</div>`
+    : `<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+         <input type="checkbox" id="conf-${cfg.prefixo}-${parte}" style="flex:0 0 auto">
+         <label for="conf-${cfg.prefixo}-${parte}" style="font-size:.82rem;min-width:52px">${parte}</label>
+         <input id="conf-${cfg.prefixo}-${parte}-nome" placeholder="Nome completo" value="${esc(nomeDef || '')}"
+           style="flex:1;min-width:140px;padding:5px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.82rem">
+         <input id="conf-${cfg.prefixo}-${parte}-cpf" placeholder="CPF" value="${esc(cpfDef || '')}"
+           style="width:140px;padding:5px 8px;background:var(--input);border:1px solid var(--border);border-radius:4px;color:var(--fg);font-size:.82rem">
+       </div>`;
+  const faltam = !assinadas.has('loja') || !assinadas.has('cliente');
+  return `
     <div style="border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px">
-      <label style="display:flex;gap:10px;align-items:center;cursor:pointer;margin-bottom:14px">
-        <input type="checkbox" id="chk-leu-contrato" onchange="toggleAssinaturas()"
-          ${jaAssinou ? 'checked disabled' : ''}>
-        <span style="font-size:.9rem">Li o contrato e estou de acordo com os termos</span>
-      </label>
-      <div id="secao-assinaturas" style="display:${jaAssinou ? 'block' : 'none'}">
-        <strong style="font-size:.85rem;color:var(--muted)">Assinaturas:</strong>
-        <div style="margin-top:8px">${_renderAssinaturas(contrato.assinaturas)}</div>
-      </div>
+      <div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Confirmação interna</div>
+      <p style="color:var(--muted);font-size:.8rem;margin:0 0 4px">Confirmação só para prosseguimento interno (o documento já foi impresso) — marque quem assinou fisicamente.</p>
+      ${linha('loja', defs.nome_loja, defs.cpf_loja)}
+      ${linha('cliente', defs.nome_cliente, defs.cpf_cliente)}
+      ${faltam ? `<button onclick="_confirmarBoxInterna('${cfg.prefixo}', '${cfg.ep.assinarPath}', '${cfg.ep.onRefresh}')" class="btn-ciclo btn-primary" style="margin-top:12px;font-size:.82rem">Confirmar</button>` : ''}
     </div>`;
+}
+
+async function _confirmarAssinaturaUnificada(caminhoAssinar, parte, nome, cpf) {
+  if (!nome || !cpf) { showToast(`Informe nome e CPF (${parte}).`, true); return false; }
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/${caminhoAssinar}`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parte, nome, cpf }),
+    });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return false; }
+    return true;
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return false; }
+}
+
+async function _confirmarBoxInterna(prefixo, caminhoAssinar, nomeRefresh) {
+  const partes = ['loja', 'cliente'];
+  let marcouAlguma = false;
+  for (const parte of partes) {
+    const chk = document.getElementById(`conf-${prefixo}-${parte}`);
+    if (!chk || !chk.checked) continue;
+    marcouAlguma = true;
+    const nome = (document.getElementById(`conf-${prefixo}-${parte}-nome`)?.value || '').trim();
+    const cpf  = (document.getElementById(`conf-${prefixo}-${parte}-cpf`)?.value || '').trim();
+    const ok = await _confirmarAssinaturaUnificada(caminhoAssinar, parte, nome, cpf);
+    if (ok) showToast(`✓ Confirmação da ${parte} registrada.`, false);
+  }
+  if (!marcouAlguma) { showToast('Marque ao menos uma confirmação.', true); return; }
+  if (typeof window[nomeRefresh] === 'function') window[nomeRefresh]();
+}
+
+function _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) {
+  const cfg = {
+    doc: contrato, pdfUrl,
+    chaveImpresso: 'contrato:' + (projetoAtivo ? projetoAtivo.nome_safe : ''),
+    prefixo: 'ct',
+    defaults: contrato.assinatura_defaults || {},
+    ep: {
+      clicksignVerificar: 'verificarClickSignContratoAgora',
+      clicksignReenviar: 'reenviarConviteClickSignContrato',
+      clicksignEnviar: 'enviarContratoParaClickSign',
+      assinarPath: 'contrato/assinar',
+      onRefresh: 'carregarDadosContrato',
+    },
+  };
+  _ultimaCfgAssinaturaContrato = cfg;
+  return `<div id="secao-assinatura-contrato">${_renderSecaoAssinaturaUnificada(cfg)}</div>`;
 }
 
 function _tempoDecorrido(iso) {
@@ -22161,6 +22214,16 @@ async function verificarClickSignContratoAgora() {
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
+async function reenviarConviteClickSignContrato() {
+  try {
+    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/clicksign/reenviar`,
+      { method: 'POST', credentials: 'same-origin' });
+    const d = await r.json();
+    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    showToast('Convite reenviado.', false);
+  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+
 function mascaraMoedaInput(el) {
   // Remove tudo exceto dígitos e vírgula
   const raw = el.value.replace(/[^0-9,]/g, '');
@@ -22259,27 +22322,6 @@ async function confirmarVoltarOrcamento() {
     fecharCiclo();
     atualizarBotoesAprovacao();
   } catch(e) { if(erroEl) erroEl.textContent = 'Erro de rede: ' + _detalheErroRede(e); }
-}
-
-function toggleAssinaturas() {
-  const chk = document.getElementById('chk-leu-contrato');
-  const sec = document.getElementById('secao-assinaturas');
-  if (sec) sec.style.display = chk?.checked ? 'block' : 'none';
-}
-
-function _renderAssinaturas(lista) {
-  const partes = ['loja', 'cliente'];
-  return partes.map(parte => {
-    const ass = (lista || []).find(a => a.parte === parte);
-    return ass
-      ? `<div style="color:var(--ok);font-size:.85rem">&#x2713; ${parte}: ${ass.nome} — ${ass.assinado_em.slice(0,10)}</div>`
-      : `<div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-           <span style="color:var(--muted);font-size:.85rem">&#x2B1C; ${parte}</span>
-           <button onclick="abrirModalAssinatura('${parte}')" class="btn-ciclo" style="padding:2px 8px;font-size:.8rem">
-             Assinar como ${parte}
-           </button>
-         </div>`;
-  }).join('');
 }
 
 // ── Aprovação de Orçamento (novo fluxo — contrato) ───────────────────────────
@@ -22684,76 +22726,6 @@ async function coletarSignatarioOverride() {
       ov.remove(); resolve(out);
     };
   });
-}
-
-async function abrirModalAssinatura(parte) {
-  // Gate (Fatia 2): não abre a assinatura sem as datas do acordo definidas (previsão de medição +
-  // expectativa de entrega). O backend também bloqueia a POST; aqui evita abrir a tela à toa.
-  let defs = {};
-  try {
-    const cj = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/contrato',
-                           { credentials:'same-origin' }).then(r=>r.json());
-    const ct = (cj && cj.contrato) || {};
-    if(!ct.data_entrega || !ct.previsao_medicao){
-      showToast('Defina a previsão de medição e a expectativa de entrega (card "Datas do acordo") antes de assinar.', true);
-      return;
-    }
-    // Frente 3 (achado do usuário 2026-08-17): pré-preenche com o signatário já confirmado na
-    // aprovação do orçamento, em vez de nascer em branco — editável, não travado.
-    defs = ct.assinatura_defaults || {};
-  } catch(e){ /* se a checagem falhar, o backend ainda bloqueia a assinatura */ }
-  const nomeDefault = parte === 'loja' ? (defs.nome_loja || '') : (defs.nome_cliente || '');
-  const cpfDefault  = parte === 'loja' ? (defs.cpf_loja  || '') : (defs.cpf_cliente  || '');
-  const overlay = document.createElement('div');
-  overlay.id = 'modal-assinatura-overlay';
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
-  overlay.innerHTML = `
-    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:24px;min-width:360px;max-width:480px">
-      <h4 style="margin:0 0 16px">Assinar como: <strong>${parte}</strong></h4>
-      <label style="font-size:var(--fs-sm)">Nome completo</label>
-      <input id="sig-nome" type="text" placeholder="Nome completo" value="${esc(nomeDefault)}"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="font-size:var(--fs-sm)">CPF</label>
-      <input id="sig-cpf" type="text" placeholder="000.000.000-00" value="${esc(cpfDefault)}"
-        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;margin:4px 0 12px;font-size:.85rem">
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:16px;font-size:.85rem">
-        <input type="checkbox" id="sig-aceite">
-        Li e aceito os termos do contrato
-      </label>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="fecharModalAssinatura()" class="btn-ciclo" style="border-color:var(--muted);color:var(--muted)">Cancelar</button>
-        <button onclick="confirmarAssinatura('${parte}')" class="btn-ciclo">Confirmar Assinatura</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
-
-function fecharModalAssinatura() {
-  const el = document.getElementById('modal-assinatura-overlay');
-  if (el) el.remove();
-}
-
-async function confirmarAssinatura(parte) {
-  const nome   = (document.getElementById('sig-nome')?.value || '').trim();
-  const cpf    = (document.getElementById('sig-cpf')?.value || '').trim();
-  const aceite = document.getElementById('sig-aceite')?.checked;
-  if (!nome || !cpf) { showToast('Nome e CPF são obrigatórios.', true); return; }
-  if (!aceite) { showToast('É necessário aceitar os termos.', true); return; }
-  try {
-    const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato/assinar`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parte, nome, cpf }),
-    });
-    const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast(`✓ Assinatura da ${parte} registrada.`, false);
-    fecharModalAssinatura();
-    carregarDadosContrato();
-    carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
 
 function abrirModalAdendo() {

@@ -4994,6 +4994,16 @@ class Handler(BaseHTTPRequestHandler):
                             "email_cliente": _cd_cliente.get("email") or "",
                             "nome_cliente": _cd_cliente.get("nome") or "",
                         }
+                        # Achado do usuário 2026-08-19: pré-preenche a confirmação interna com o
+                        # mesmo signatário já confirmado na aprovação do orçamento (Frente 3) —
+                        # a Solicitação de Medição pertence ao mesmo contrato/cliente, sem
+                        # precisar de coluna própria.
+                        resp["assinatura_defaults"] = {
+                            "nome_loja": usuario.get("nome", ""),
+                            "cpf_loja": "",
+                            "nome_cliente": (contrato.cliente_nome_confirmado if contrato else "") or _cd_cliente.get("nome") or "",
+                            "cpf_cliente": (contrato.cliente_cpf_confirmado if contrato else "") or _cd_cliente.get("cpf") or "",
+                        }
                     self.send_json(resp)
                 finally:
                     db.close()
@@ -8892,6 +8902,44 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "status": aprov.status})
             except Exception as e:
                 db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=500)
+            finally:
+                db.close()
+            return
+
+        # POST /api/projetos/<nome>/aprovacao-pe/clicksign/reenviar — reenvia o convite (achado
+        # do usuário 2026-08-19), espelho de .../contrato/clicksign/reenviar.
+        m_apreenv = re.match(r'^/api/projetos/([^/]+)/aprovacao-pe/clicksign/reenviar$', path)
+        if m_apreenv:
+            nome = unquote(m_apreenv.group(1))
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if _projeto_da_loja(db, nome, loja_id) is None:
+                    self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                aprov = (db.query(AprovacaoPE).filter_by(projeto_nome=nome)
+                           .order_by(AprovacaoPE.id.desc()).first())
+                if not aprov or (aprov.assinatura_canal or "interno") != "clicksign":
+                    self.send_json({"ok": False,
+                        "erro": "Esta Aprovação do PE não está no canal ClickSign."}, code=400); return
+                import mod_clicksign
+                from integracoes.clicksign_client import ClickSignError
+                loja_obj = db.get(Loja, loja_id)
+                cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                if cfg is None:
+                    self.send_json({"ok": False,
+                        "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                mod_clicksign.client_de(cfg).reenviar_notificacao(aprov.clicksign_envelope_id)
+                self.send_json({"ok": True})
+            except ClickSignError as e:
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
+            except Exception as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
             finally:
                 db.close()
@@ -12846,6 +12894,46 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # POST /api/projetos/<nome>/contrato/clicksign/reenviar — reenvia o convite (achado
+            # do usuário 2026-08-19: caso o signatário não receba/não ache o e-mail original).
+            # Notifica TODOS os signatários do envelope (a API da ClickSign não permite mirar só
+            # quem falta assinar).
+            m = _re.match(r'^/api/projetos/([^/]+)/contrato/clicksign/reenviar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    contrato = db.query(Contrato).filter_by(projeto_nome=nome_safe)\
+                                 .order_by(Contrato.id.desc()).first()
+                    if not contrato or (contrato.assinatura_canal or "interno") != "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Este contrato não está no canal ClickSign."}, code=400); return
+                    import mod_clicksign
+                    from integracoes.clicksign_client import ClickSignError
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                    mod_clicksign.client_de(cfg).reenviar_notificacao(contrato.clicksign_envelope_id)
+                    self.send_json({"ok": True})
+                except ClickSignError as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except Exception as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
             # POST /api/projetos/<nome>/contrato — gera PDF do contrato
             m = _re.match(r'^/api/projetos/([^/]+)/contrato$', path)
             if m:
@@ -13306,6 +13394,44 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": True, "status": sol.status})
                 except Exception as e:
                     db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/medicao/solicitacao/clicksign/reenviar — reenvia o
+            # convite (achado do usuário 2026-08-19), espelho de .../contrato/clicksign/reenviar.
+            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao/clicksign/reenviar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    sol = (db.query(SolicitacaoMedicao).filter_by(projeto_nome=nome_safe)
+                             .order_by(SolicitacaoMedicao.id.desc()).first())
+                    if not sol or (sol.assinatura_canal or "interno") != "clicksign":
+                        self.send_json({"ok": False,
+                            "erro": "Esta solicitação de medição não está no canal ClickSign."}, code=400); return
+                    import mod_clicksign
+                    from integracoes.clicksign_client import ClickSignError
+                    loja_obj = db.get(Loja, loja_id)
+                    cfg = mod_clicksign.resolver_config(db, loja_obj) if loja_obj else None
+                    if cfg is None:
+                        self.send_json({"ok": False,
+                            "erro": "Integração ClickSign não configurada para esta loja."}, code=400); return
+                    mod_clicksign.client_de(cfg).reenviar_notificacao(sol.clicksign_envelope_id)
+                    self.send_json({"ok": True})
+                except ClickSignError as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
                 finally:
                     db.close()

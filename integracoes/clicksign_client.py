@@ -170,6 +170,17 @@ class ClickSignClient:
         Retorna o dict bruto da resposta JSON:API (`data` + `included`)."""
         return self._request("GET", "/envelopes/%s?include=signers,documents" % envelope_id)
 
+    def reenviar_notificacao(self, envelope_id, mensagem=None):
+        """POST /envelopes/{id}/notifications — reenvia o convite de assinatura (achado do
+        usuário 2026-08-19: caso o signatário não receba/não ache o e-mail original). DIFERENTE
+        do resto deste cliente, este payload foi confirmado contra a documentação oficial
+        (developers.clicksign.com/reference/api-notificar-envelope), não é um achado por
+        inferência. Notifica TODOS os signatários do envelope de uma vez — a API não permite
+        mirar só quem ainda não assinou."""
+        attrs = {"message": mensagem} if mensagem else {}
+        body = {"data": {"type": "notifications", "attributes": attrs}}
+        return self._request("POST", "/envelopes/%s/notifications" % envelope_id, json_body=body)
+
     def registrar_webhook(self, url, eventos=None):
         """POST /webhooks — registro é por CONTA (não por envelope/documento como na D4Sign),
         chamado uma vez no setup. Retorna o dict bruto — o `secret` do HMAC vem embutido na

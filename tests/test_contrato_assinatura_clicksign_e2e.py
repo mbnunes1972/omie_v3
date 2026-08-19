@@ -36,6 +36,7 @@ class _FakeClickSignClient:
         self.envelope_id = None
         self.signatarios = {}
         self.cancelados = []
+        self.reenvios = []
 
     def criar_envelope(self, nome):
         self._seq += 1
@@ -74,6 +75,10 @@ class _FakeClickSignClient:
 
     def cancelar_envelope(self, envelope_id):
         self.cancelados.append(envelope_id)
+        return {"ok": True}
+
+    def reenviar_notificacao(self, envelope_id, mensagem=None):
+        self.reenvios.append(envelope_id)
         return {"ok": True}
 
 
@@ -350,6 +355,29 @@ def test_reconciliar_via_endpoint_verificar(app_db, seed, monkeypatch, http_clie
     st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/verificar")
     assert st == 200
     assert b["status"] == "assinado_loja"
+
+
+def test_reenviar_convite_via_endpoint(app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-19: precisa dar pra reenviar o convite (cliente não recebeu/
+    não achou o e-mail)."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path)
+    envelope_id = fake.envelope_id
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/reenviar")
+    assert st == 200 and b.get("ok"), b
+    assert fake.reenvios == [envelope_id]
+
+
+def test_reenviar_convite_recusa_fora_do_canal_clicksign(app_db, seed, http_client_factory):
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/reenviar")
+    assert st == 400 and not b.get("ok")
+    assert "ClickSign" in b["erro"]
 
 
 class _FakeClickSignClientRejeitaNome(_FakeClickSignClient):

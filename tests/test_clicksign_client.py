@@ -149,6 +149,24 @@ def test_consultar_envelope(monkeypatch):
     assert dados["data"]["id"] == "env-1"
 
 
+def test_reenviar_notificacao(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"summary": [
+        {"signer_id": "s1", "notified": True}]}})])
+    cli = _client()
+    cli.reenviar_notificacao("env-1")
+    assert chamadas[0]["method"] == "POST"
+    assert chamadas[0]["url"].endswith("/envelopes/env-1/notifications")
+    assert chamadas[0]["json"]["data"]["type"] == "notifications"
+    assert chamadas[0]["json"]["data"]["attributes"] == {}
+
+
+def test_reenviar_notificacao_com_mensagem(monkeypatch):
+    chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {}})])
+    cli = _client()
+    cli.reenviar_notificacao("env-1", mensagem="Por favor, assine o quanto antes.")
+    assert chamadas[0]["json"]["data"]["attributes"]["message"] == "Por favor, assine o quanto antes."
+
+
 def test_registrar_webhook(monkeypatch):
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"attributes": {"secret_hmac_sha256": "abc123"}}})])
     cli = _client()

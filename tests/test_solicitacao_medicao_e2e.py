@@ -33,6 +33,7 @@ class _FakeClickSignClient:
         self._seq = 0
         self.envelope_id = None
         self.signatarios = {}
+        self.reenvios = []
 
     def criar_envelope(self, nome):
         self._seq += 1
@@ -68,6 +69,10 @@ class _FakeClickSignClient:
                         "signed_at": info["signed_at"], "last_seen_ip": info.get("ip", "")}}
                     for sid, info in self.signatarios.items()]
         return {"data": {"id": envelope_id, "attributes": {}}, "included": included}
+
+    def reenviar_notificacao(self, envelope_id, mensagem=None):
+        self.reenvios.append(envelope_id)
+        return {"ok": True}
 
 
 def _instalar_config_clicksign(app_db, loja_id, webhook_secret="whs-teste"):
@@ -321,6 +326,21 @@ def test_reconciliar_via_endpoint_verificar(app_db, seed, monkeypatch, http_clie
     st, d = c.post(f"/api/projetos/{seed['projeto_l1']}/medicao/solicitacao/clicksign/verificar")
     assert st == 200
     assert d["status"] == "assinado_cliente"
+
+
+def test_reenviar_convite_via_endpoint(app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-19: precisa dar pra reenviar o convite."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_solicitacao_anterior(app_db, seed["projeto_l1"])
+    sid = _criar_solicitacao(app_db, seed, tmp_path)
+    fake = _FakeClickSignClient()
+    _enviar_via_fake(app_db, sid, fake, monkeypatch)
+    envelope_id = fake.envelope_id
+    c = _login(http_client_factory, "dir_l1")
+    st, d = c.post(f"/api/projetos/{seed['projeto_l1']}/medicao/solicitacao/clicksign/reenviar")
+    assert st == 200 and d.get("ok"), d
+    assert fake.reenvios == [envelope_id]
 
 
 def test_get_expoe_estado_e_clicksign_defaults(app_db, seed, tmp_path, http_client_factory):

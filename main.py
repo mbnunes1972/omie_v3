@@ -1062,17 +1062,27 @@ def _reconciliar_contrato_clicksign(db, contrato, cfg):
     evento só avisa QUE algo mudou; o que mudou vem sempre de uma consulta fresca a
     `consultar_envelope`). Casa os signatários pelo `signer_id` gravado em
     clicksign_signatarios_json e registra, via _registrar_assinatura_contrato (idempotente), a
-    assinatura de quem já assinou (`signed_at` preenchido) e ainda não está registrada localmente.
-    Chamada pelo webhook E pelo job de polling. Retorna o status final do contrato."""
+    assinatura de quem já assinou e ainda não está registrada localmente.
+    Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox real: o signer NUNCA expõe
+    `signed_at` (o campo simplesmente não existe nessa versão da API, apesar de documentado em
+    outro contexto) — mesmo depois de assinado de verdade (e-mail de confirmação da ClickSign
+    recebido), o signer segue com `signed_at: null` pra sempre; só o `modified` muda. Sem esse
+    campo, o único sinal confiável de conclusão é o ENVELOPE fechar (`status: "closed"` — o
+    envelope foi criado com `auto_close: true`, só fecha quando TODOS os requisitos de todos os
+    signatários são cumpridos). Então: envelope fechado = todo mundo assinou, registra todas as
+    partes de uma vez (não dá pra saber o instante exato de cada uma nem o IP individual sem uma
+    trilha de eventos separada — fora de escopo aqui). Chamada pelo webhook E pelo job de
+    polling. Retorna o status final do contrato."""
     import mod_clicksign
     cli = mod_clicksign.client_de(cfg)
     dados = cli.consultar_envelope(contrato.clicksign_envelope_id)
+    envelope_fechado = (dados.get("data") or {}).get("attributes", {}).get("status") == "closed"
     incluidos = dados.get("included") or []
     signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
     signatarios = json.loads(contrato.clicksign_signatarios_json or "{}")
     for parte, info in signatarios.items():
-        attrs = signers.get(info.get("signer_id"))
-        if not attrs or not attrs.get("signed_at"):
+        attrs = signers.get(info.get("signer_id")) or {}
+        if not (attrs.get("signed_at") or envelope_fechado):
             continue
         _registrar_assinatura_contrato(
             db, contrato, parte, info.get("nome") or "", info.get("cpf") or "",
@@ -1133,17 +1143,19 @@ def _enviar_aprovacao_pe_para_clicksign(db, aprov, cfg, email_loja, nome_loja, e
 
 
 def _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg):
-    """Espelho de _reconciliar_contrato_clicksign, pra Aprovação do PE. Chamada pelo webhook E
-    pelo job de polling. Retorna o status final."""
+    """Espelho de _reconciliar_contrato_clicksign (ver lá o achado do usuário 2026-08-20 sobre
+    `signed_at` nunca vir preenchido — usa `envelope fechado` como sinal de conclusão). Chamada
+    pelo webhook E pelo job de polling. Retorna o status final."""
     import mod_clicksign
     cli = mod_clicksign.client_de(cfg)
     dados = cli.consultar_envelope(aprov.clicksign_envelope_id)
+    envelope_fechado = (dados.get("data") or {}).get("attributes", {}).get("status") == "closed"
     incluidos = dados.get("included") or []
     signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
     signatarios = json.loads(aprov.clicksign_signatarios_json or "{}")
     for parte, info in signatarios.items():
-        attrs = signers.get(info.get("signer_id"))
-        if not attrs or not attrs.get("signed_at"):
+        attrs = signers.get(info.get("signer_id")) or {}
+        if not (attrs.get("signed_at") or envelope_fechado):
             continue
         _registrar_assinatura_aprovacao_pe(
             db, aprov, parte, info.get("nome") or "", info.get("cpf") or "",
@@ -1209,17 +1221,20 @@ def _enviar_solicitacao_medicao_para_clicksign(db, sol, cfg, email_loja, nome_lo
 
 
 def _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg):
-    """Espelho de _reconciliar_contrato_clicksign/_reconciliar_aprovacao_pe_clicksign, pra
-    Solicitação de Medição. Chamada pelo webhook E pelo job de polling."""
+    """Espelho de _reconciliar_contrato_clicksign/_reconciliar_aprovacao_pe_clicksign (ver lá o
+    achado do usuário 2026-08-20 sobre `signed_at` nunca vir preenchido — usa `envelope fechado`
+    como sinal de conclusão), pra Solicitação de Medição. Chamada pelo webhook E pelo job de
+    polling."""
     import mod_clicksign
     cli = mod_clicksign.client_de(cfg)
     dados = cli.consultar_envelope(sol.clicksign_envelope_id)
+    envelope_fechado = (dados.get("data") or {}).get("attributes", {}).get("status") == "closed"
     incluidos = dados.get("included") or []
     signers = {s.get("id"): s.get("attributes", {}) for s in incluidos if s.get("type") == "signers"}
     signatarios = json.loads(sol.clicksign_signatarios_json or "{}")
     for parte, info in signatarios.items():
-        attrs = signers.get(info.get("signer_id"))
-        if not attrs or not attrs.get("signed_at"):
+        attrs = signers.get(info.get("signer_id")) or {}
+        if not (attrs.get("signed_at") or envelope_fechado):
             continue
         _registrar_assinatura_solicitacao_medicao(
             db, sol, parte, info.get("nome") or "", info.get("cpf") or "",

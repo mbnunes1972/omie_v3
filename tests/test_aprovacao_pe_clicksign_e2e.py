@@ -32,6 +32,7 @@ class _FakeClickSignClient:
     def __init__(self):
         self._seq = 0
         self.envelope_id = None
+        self.envelope_status = "running"
         self.signatarios = {}
         self.reenvios = []
 
@@ -63,12 +64,17 @@ class _FakeClickSignClient:
         self.signatarios[signer_id]["signed_at"] = "2026-08-11T10:00:00Z"
         self.signatarios[signer_id]["ip"] = ip
 
+    def fechar_envelope(self):
+        """Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox real: a ClickSign
+        nunca preenche `signed_at` no signer — o único sinal de conclusão é o envelope fechar."""
+        self.envelope_status = "closed"
+
     def consultar_envelope(self, envelope_id):
         included = [{"type": "signers", "id": sid, "attributes": {
                         "email": info["email"], "name": info["nome"],
                         "signed_at": info["signed_at"], "last_seen_ip": info.get("ip", "")}}
                     for sid, info in self.signatarios.items()]
-        return {"data": {"id": envelope_id, "attributes": {}}, "included": included}
+        return {"data": {"id": envelope_id, "attributes": {"status": self.envelope_status}}, "included": included}
 
     def reenviar_notificacao(self, envelope_id, mensagem=None):
         self.reenvios.append(envelope_id)
@@ -229,6 +235,22 @@ def test_reconciliar_via_endpoint_verificar(app_db, seed, monkeypatch, http_clie
     st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/aprovacao-pe/clicksign/verificar")
     assert st == 200
     assert b["status"] == "assinado_cliente"
+
+
+def test_reconciliar_via_envelope_fechado_sem_signed_at(app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox real: a ClickSign nunca
+    preenche `signed_at` no signer — o único sinal confiável de conclusão é o envelope fechar."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_aprovacao_anterior(app_db, seed["projeto_l1"])
+    aid = _criar_aprovacao(app_db, seed, tmp_path)
+    fake = _FakeClickSignClient()
+    _enviar_via_fake(app_db, aid, fake, monkeypatch)
+    fake.fechar_envelope()
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/aprovacao-pe/clicksign/verificar")
+    assert st == 200
+    assert b["status"] == "assinado"
 
 
 def test_reenviar_convite_via_endpoint(app_db, seed, monkeypatch, http_client_factory, tmp_path):

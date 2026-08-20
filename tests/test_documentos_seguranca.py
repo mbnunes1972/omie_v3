@@ -130,6 +130,31 @@ def test_url_fetcher_bloqueia_file_vizinho_ao_template():
         mod_contrato._url_fetcher_local(vizinho)
 
 
+# ── Logo por loja (2026-08-20): segunda base confinada no mesmo fetcher ────────
+
+def test_logo_da_loja_carrega_via_fetcher(monkeypatch, tmp_path):
+    """A logo própria da loja fica FORA de CONTRATO_TEMPLATE_DIR — prova que a segunda
+    base (LOGOS_LOJA_DIR) também é aceita, sem afrouxar a primeira."""
+    monkeypatch.setattr(mod_contrato, "LOGOS_LOJA_DIR", str(tmp_path))
+    pasta = tmp_path / "7"
+    pasta.mkdir()
+    arquivo = pasta / "abc123.png"
+    arquivo.write_bytes(b"conteudo-fake-de-logo")
+    url = Path(str(arquivo)).as_uri()
+    resp = mod_contrato._url_fetcher_local(url)
+    assert resp.read() == b"conteudo-fake-de-logo"
+
+
+def test_url_fetcher_bloqueia_fora_de_ambas_bases(monkeypatch, tmp_path):
+    """Continua bloqueando tudo que não seja CONTRATO_TEMPLATE_DIR nem LOGOS_LOJA_DIR —
+    a segunda base não virou um buraco geral no confinamento."""
+    monkeypatch.setattr(mod_contrato, "LOGOS_LOJA_DIR", str(tmp_path / "logos_loja"))
+    fora = tmp_path / "fora.png"
+    fora.write_bytes(b"x")
+    with pytest.raises(ValueError):
+        mod_contrato._url_fetcher_local(Path(str(fora)).as_uri())
+
+
 # ── Integração: gerar o PDF de verdade não emite requisição ────────────────────
 
 def test_corpo_malicioso_nao_gera_requisicao_ao_render(sonda):

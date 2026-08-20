@@ -5737,6 +5737,42 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/admin/lojas/<id>/logo — serve o arquivo da logo própria da loja (2026-08-20).
+            # Sem sessão: 404 igual a "sem logo" — não vale a pena vazar existência do arquivo pra
+            # quem não está logado (a tag <img> do navegador não manda header custom, só cookie).
+            m = _re.match(r'^/api/admin/lojas/(\d+)/logo$', path)
+            if m:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_response(404); self.end_headers(); return
+                db = get_session()
+                try:
+                    loja = db.get(Loja, int(m.group(1)))
+                    if not loja or not loja.logo_arquivo:
+                        self.send_response(404); self.end_headers(); return
+                    ator = _ator_dict(db, usuario)
+                    if not mod_tenancy.pode_ver_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                        self.send_response(404); self.end_headers(); return
+                    import mod_contrato as _mc
+                    caminho = os.path.join(_mc.LOGOS_LOJA_DIR, str(loja.id), loja.logo_arquivo)
+                    alvo = os.path.realpath(caminho)
+                    base = os.path.realpath(os.path.join(_mc.LOGOS_LOJA_DIR, str(loja.id)))
+                    if os.path.commonpath([base, alvo]) != base or not os.path.isfile(alvo):
+                        self.send_response(404); self.end_headers(); return
+                    ext = os.path.splitext(alvo)[1].lower()
+                    ctype = {".png": "image/png", ".jpg": "image/jpeg",
+                             ".jpeg": "image/jpeg"}.get(ext, "application/octet-stream")
+                    with open(alvo, "rb") as fh:
+                        dados = fh.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Content-Length", len(dados))
+                    self.end_headers()
+                    self.wfile.write(dados)
+                finally:
+                    db.close()
+                return
+
             # GET /api/admin/redes/<id>/integracao-clicksign — default da rede
             m = _re.match(r'^/api/admin/redes/(\d+)/integracao-clicksign$', path)
             if m:
@@ -14006,6 +14042,79 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # POST /api/admin/lojas/<id>/logo — upload da logo própria (2026-08-20). Multipart
+            # (campo 'arquivo'), como os demais uploads do projeto — NUNCA em do_PATCH (o resto
+            # do cadastro da loja é JSON puro, ver /api/admin/lojas/<id>). PNG/JPG até 3 MB
+            # (bem abaixo do teto genérico de upload — é logo, não documento).
+            m = _re.match(r'^/api/admin/lojas/(\d+)/logo$', path)
+            if m:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                import mod_contrato as _mc
+                db = get_session()
+                try:
+                    loja = db.get(Loja, int(m.group(1)))
+                    if not loja:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    ator = _ator_dict(db, usuario)
+                    if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    arquivos, _campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
+                    if "arquivo" not in arquivos:
+                        self.send_json({"ok": False, "erro": "Anexe a imagem da logo."}, code=400); return
+                    fname, dados = arquivos["arquivo"]
+                    ext = os.path.splitext(fname or "")[1].lower()
+                    if ext not in (".png", ".jpg", ".jpeg"):
+                        self.send_json({"ok": False, "erro": "Formato inválido — use PNG ou JPG."}, code=400); return
+                    if len(dados) > 3 * 1024 * 1024:
+                        self.send_json({"ok": False, "erro": "Arquivo maior que 3 MB."}, code=400); return
+                    pasta = os.path.join(_mc.LOGOS_LOJA_DIR, str(loja.id))
+                    os.makedirs(pasta, exist_ok=True)
+                    nome_novo = hashlib.sha256(dados).hexdigest()[:16] + ext
+                    caminho_novo = os.path.join(pasta, nome_novo)
+                    with open(caminho_novo, "wb") as fh:
+                        fh.write(dados)
+                    antigo = loja.logo_arquivo
+                    loja.logo_arquivo = nome_novo
+                    db.commit()
+                    if antigo and antigo != nome_novo:
+                        try:
+                            os.remove(os.path.join(pasta, antigo))
+                        except OSError:
+                            pass
+                    self.send_json({"ok": True, "logo_url": "/api/admin/lojas/%d/logo" % loja.id})
+                finally:
+                    db.close()
+                return
+
+            # POST /api/admin/lojas/<id>/logo/remover — volta pro logo padrão do sistema.
+            m = _re.match(r'^/api/admin/lojas/(\d+)/logo/remover$', path)
+            if m:
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                import mod_contrato as _mc
+                db = get_session()
+                try:
+                    loja = db.get(Loja, int(m.group(1)))
+                    if not loja:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    ator = _ator_dict(db, usuario)
+                    if not mod_tenancy.pode_editar_dados_loja(ator, {"id": loja.id, "rede_id": loja.rede_id}):
+                        self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                    if loja.logo_arquivo:
+                        try:
+                            os.remove(os.path.join(_mc.LOGOS_LOJA_DIR, str(loja.id), loja.logo_arquivo))
+                        except OSError:
+                            pass
+                        loja.logo_arquivo = None
+                        db.commit()
+                    self.send_json({"ok": True})
+                finally:
+                    db.close()
+                return
+
             # POST /api/projetos/<nome>/ciclo/15/emitir-nfe — emite a NF-e da loja
             m = _re.match(r'^/api/projetos/([^/]+)/ciclo/15/emitir-nfe$', path)
             if m:
@@ -17070,6 +17179,8 @@ def _loja_dict(l) -> dict:
         "tipo":        l.tipo or "loja",
         "ativo":       bool(l.ativo),
         "criado_em":   l.criado_em.strftime("%Y-%m-%d") if l.criado_em else "",
+        "logo_arquivo": l.logo_arquivo or "",
+        "logo_url": ("/api/admin/lojas/%d/logo" % l.id) if l.logo_arquivo else None,
     }
 
 
@@ -17654,6 +17765,10 @@ def _loja_dict_para_contrato(db, loja_id):
         "bairro": dona.bairro or "", "cidade": dona.cidade or "", "estado": dona.estado or "",
         "testemunha1_nome": t1n or "", "testemunha1_cpf": t1c or "", "testemunha1_email": t1e or "",
         "testemunha2_nome": t2n or "", "testemunha2_cpf": t2c or "", "testemunha2_email": t2e or "",
+        # Logo (2026-08-20): segue a MESMA herança de nome/CNPJ/endereço — o PDV usa a logo
+        # da mãe (branding é da contratada), por isso logo_loja_id != "id" (PDV) quando é
+        # PDV. mod_contrato._resolver_logo_src usa logo_loja_id pra achar a pasta certa.
+        "logo_arquivo": dona.logo_arquivo or "", "logo_loja_id": dona.id,
     }
 
 

@@ -63,6 +63,7 @@ def test_loja_dict_para_contrato_mapeia_campos():
         testemunha1_email = "jaime@teste.com"
         testemunha2_nome = "Felipe"; testemunha2_cpf = "987.654.321-00"
         testemunha2_email = "felipe@teste.com"
+        logo_arquivo = None
 
     class _FakeDB:
         def get(self, model, pk):

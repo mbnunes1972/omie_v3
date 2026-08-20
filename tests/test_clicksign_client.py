@@ -146,6 +146,47 @@ def test_ativar_envelope_manda_patch_status_running(monkeypatch):
     assert chamadas[0]["json"]["data"]["attributes"]["status"] == "running"
 
 
+def test_cancelar_envelope_cancela_cada_documento(monkeypatch):
+    """Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox: cancelar um envelope
+    ATIVO não é PATCH no envelope (a API rejeita status='canceled' ali — só aceita draft/running)
+    nem DELETE (só funciona em draft). O cancelamento real é por DOCUMENTO
+    (PATCH /envelopes/{id}/documents/{doc_id}, status='canceled') — busca o(s) documento(s) via
+    consultar_envelope e cancela cada um."""
+    envelope_consulta = {"data": {"id": "env-1"}, "included": [
+        {"id": "doc-1", "type": "documents"},
+        {"id": "signer-1", "type": "signers"},
+    ]}
+    chamadas = _capture(monkeypatch, [
+        FakeResp(200, envelope_consulta),
+        FakeResp(200, {"data": {"id": "doc-1", "type": "documents", "attributes": {"status": "canceled"}}}),
+    ])
+    cli = _client()
+    respostas = cli.cancelar_envelope("env-1")
+    assert chamadas[0]["method"] == "GET"
+    assert chamadas[0]["url"].endswith("/envelopes/env-1?include=signers,documents")
+    assert chamadas[1]["method"] == "PATCH"
+    assert chamadas[1]["url"].endswith("/envelopes/env-1/documents/doc-1")
+    assert chamadas[1]["json"]["data"]["attributes"]["status"] == "canceled"
+    assert len(respostas) == 1
+
+
+def test_cancelar_envelope_cancela_todos_os_documentos(monkeypatch):
+    envelope_consulta = {"data": {"id": "env-1"}, "included": [
+        {"id": "doc-1", "type": "documents"},
+        {"id": "doc-2", "type": "documents"},
+    ]}
+    chamadas = _capture(monkeypatch, [
+        FakeResp(200, envelope_consulta),
+        FakeResp(200, {"data": {"id": "doc-1"}}),
+        FakeResp(200, {"data": {"id": "doc-2"}}),
+    ])
+    cli = _client()
+    respostas = cli.cancelar_envelope("env-1")
+    doc_ids_chamados = [c["url"].rsplit("/", 1)[-1] for c in chamadas[1:]]
+    assert doc_ids_chamados == ["doc-1", "doc-2"]
+    assert len(respostas) == 2
+
+
 def test_consultar_envelope(monkeypatch):
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "env-1", "attributes": {"status": "running"}}, "included": []})])
     cli = _client()

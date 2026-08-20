@@ -34,6 +34,7 @@ class _FakeClickSignClient:
     def __init__(self):
         self._seq = 0
         self.envelope_id = None
+        self.envelope_status = "running"
         self.signatarios = {}
         self.cancelados = []
         self.reenvios = []
@@ -66,12 +67,19 @@ class _FakeClickSignClient:
         self.signatarios[signer_id]["signed_at"] = "2026-08-11T10:00:00Z"
         self.signatarios[signer_id]["ip"] = ip
 
+    def fechar_envelope(self):
+        """Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox real: a ClickSign
+        NUNCA preenche `signed_at` no signer (o campo não existe de fato nessa versão da API) —
+        o único sinal de conclusão é o ENVELOPE fechar. Simula esse cenário real sem tocar
+        `signed_at` nenhum, pra travar contra regressão de quem só olhava signed_at."""
+        self.envelope_status = "closed"
+
     def consultar_envelope(self, envelope_id):
         included = [{"type": "signers", "id": sid, "attributes": {
                         "email": info["email"], "name": info["nome"],
                         "signed_at": info["signed_at"], "last_seen_ip": info.get("ip", "")}}
                     for sid, info in self.signatarios.items()]
-        return {"data": {"id": envelope_id, "attributes": {"status": "running"}}, "included": included}
+        return {"data": {"id": envelope_id, "attributes": {"status": self.envelope_status}}, "included": included}
 
     def cancelar_envelope(self, envelope_id):
         self.cancelados.append(envelope_id)
@@ -355,6 +363,31 @@ def test_reconciliar_via_endpoint_verificar(app_db, seed, monkeypatch, http_clie
     st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/verificar")
     assert st == 200
     assert b["status"] == "assinado_loja"
+
+
+def test_reconciliar_via_envelope_fechado_sem_signed_at(app_db, seed, monkeypatch, http_client_factory, tmp_path):
+    """Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox real: a ClickSign nunca
+    preenche `signed_at` no signer — mesmo depois de ambas as partes assinarem de verdade (e-mail
+    de confirmação recebido), o contrato ficava PARA SEMPRE em "para_assinatura". O único sinal
+    confiável é o envelope fechar (auto_close=true só fecha quando todos os requisitos de todos
+    os signatários são cumpridos) — reproduz exatamente esse cenário: nenhum signed_at, só o
+    envelope fechado."""
+    lid = seed["loja1_id"]
+    _instalar_config_clicksign(app_db, lid)
+    _limpar_contrato_anterior(app_db, seed["projeto_l1"])
+    fake = _FakeClickSignClient()
+    cid = _enviar_via_fake(app_db, seed, fake, monkeypatch, tmp_path)
+    fake.fechar_envelope()
+    c = _login(http_client_factory, "dir_l1")
+    st, b = c.post(f"/api/projetos/{seed['projeto_l1']}/contrato/clicksign/verificar")
+    assert st == 200
+    assert b["status"] == "assinado"
+    db = app_db.get_session()
+    try:
+        contrato = db.get(app_db.Contrato, cid)
+        assert {a.parte for a in contrato.assinaturas} == {"loja", "cliente"}
+    finally:
+        db.close()
 
 
 def test_reenviar_convite_via_endpoint(app_db, seed, monkeypatch, http_client_factory, tmp_path):

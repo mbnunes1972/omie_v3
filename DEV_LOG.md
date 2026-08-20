@@ -3277,6 +3277,40 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 199 — dois achados pontuais: box "Último Orçamento" zerava + ClickSign "documentation" com CPF no formato errado
+
+**[1] Lista de Projetos zerava "Último Orçamento" com rascunho comparativo.**
+Achado do usuário 2026-08-19: criar um "Novo Orçamento" só pra comparação (rascunho vazio, sem
+ambientes, `valor_total=0`) fazia o box da lista zerar, mesmo com o orçamento negociado/salvo
+intacto por baixo. Causa: `_enriquecer_projetos_com_status` (`main.py`) escolhia o orçamento
+mais recentemente TOCADO (`updated_at`/`id` desc) — um rascunho recém-criado (nunca editado,
+`updated_at IS NULL`) vence essa ordenação no Postgres (NULLS FIRST em DESC) e vira o
+"representante" do projeto na lista. Fix: prioriza orçamento com `valor_total > 0`, só cai pro
+mais recente puro se nenhum orçamento do projeto ainda tem valor (projeto realmente novo).
+Teste de regressão reproduz o cenário exato. Suíte 2259→**2260**.
+
+**[2] ClickSign "documentation" — a correção de ontem (0e46dfb) estava invertida.**
+Achado do usuário 2026-08-20, testando assinatura digital ao vivo na VPS B: erro
+"documentation não está em um formato válido" mesmo com CPFs de dígito verificador correto
+(cliente + 2 testemunhas da Inspirium, conferidos um a um). A correção da Sessão 198
+(`0e46dfb`) tinha limpado a pontuação do CPF assumindo que a API só aceitava dígitos — a
+documentação oficial (`developers.clicksign.com/reference/api-criar-signatario`, campo
+`documentation`) diz o oposto: **"Informe o CPF do signatário formatado (ex:
+000.000.000-00)"**. `adicionar_signatario` agora normaliza os dígitos (cobre pontuação
+incompleta/inconsistente no cadastro) e **reformata** como `XXX.XXX.XXX-XX` — nunca manda
+dígitos crus. CNPJ (14 dígitos) não tem formato confirmado nesse campo pela doc oficial; em
+vez de arriscar, deixa de mandar `documentation` nesse caso (`has_documentation=False`).
+Suíte 2260→**2260** (testes reescritos, sem mudança de contagem líquida). **Ainda não
+verificado contra o sandbox real** (mesma ressalva histórica do resto do
+`clicksign_client.py` — mas agora o payload bate contra a doc oficial, não é mais achado por
+inferência).
+
+**Deploy:** ambos mergeados direto (Marcelo dirigindo a sessão, exceção do fluxo branch+PR) e
+subidos na VPS A/B (tag `v2026.08.20-homolog`) pra desbloquear o teste em andamento.
+
+**Arquivos:** `main.py`, `tests/test_projetos_parceiro_lista_e2e.py`,
+`integracoes/clicksign_client.py`, `tests/test_clicksign_client.py`.
+
 ## Sessão 198 — ClickSign: reenvio de convite + unifica a assinatura manual (Contrato, Solicitação de Medição, Aprovação do PE)
 
 **Contexto:** três achados do usuário na mesma área (assinatura de documentos), atacados num

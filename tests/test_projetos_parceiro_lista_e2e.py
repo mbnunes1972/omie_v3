@@ -21,6 +21,28 @@ def test_lista_projetos_traz_parceiro_nome(http_client_factory, seed, app_db, pr
     assert all(p.get("parceiro_nome") in (None, "") for p in outros if not p.get("parceiro_id"))
 
 
+def test_lista_projetos_ultimo_orcamento_ignora_rascunho_zerado(http_client_factory, seed, app_db, projetos_dir):
+    """Achado do usuário 2026-08-19: criar um "Novo Orçamento" para efeito comparativo (rascunho
+    vazio, valor_total=0) fazia o box "Último Orçamento" da lista de projetos zerar, mesmo com o
+    orçamento negociado/salvo intacto — a query pegava sempre o mais recente por
+    updated_at/id, não o que realmente tem valor. Deve continuar mostrando o valor salvo até o
+    rascunho novo também ser negociado."""
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    proj = seed["projeto_l1"]
+    db = app_db.get_session()
+    orc_salvo = db.query(app_db.Orcamento).filter_by(projeto_id=proj, ordem=1).first()
+    orc_salvo.valor_total = 50000.0
+    db.commit()
+    # "Novo Orçamento" para comparação — rascunho vazio, sem ambientes, valor_total=0 (default)
+    rascunho = app_db.Orcamento(projeto_id=proj, nome="Orçamento 2", ordem=2, loja_id=orc_salvo.loja_id)
+    db.add(rascunho); db.commit()
+    db.close()
+    st, d = c.get("/projetos")
+    assert st == 200
+    alvo = next(p for p in d["projetos"] if p["nome_safe"] == proj)
+    assert alvo["ultimo_orcamento_valor"] == 50000.0
+
+
 def test_lista_projetos_traz_consultor(http_client_factory, seed, app_db, projetos_dir):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     proj = seed["projeto_l1"]

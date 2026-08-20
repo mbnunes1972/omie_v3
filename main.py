@@ -84,12 +84,17 @@ def _enriquecer_projetos_com_status(projetos):
         cons_map = ({u.id: u.nome for u in db.query(Usuario).filter(Usuario.id.in_(cons_ids)).all()}
                     if cons_ids else {})
 
-        # Pega o orçamento mais recente por projeto (desempate por id desc)
+        # Pega o orçamento com valor salvo (achado do usuário 2026-08-19: um "Novo Orçamento"
+        # criado só para efeito comparativo nasce vazio/valor_total=0 — sem essa priorização,
+        # ele "roubava" o posto de mais recente e zerava o box da lista mesmo com o orçamento
+        # negociado/salvo intacto). Entre os que têm valor > 0, desempate por mais recente;
+        # se nenhum tiver valor ainda (projeto novo, sem negociação), cai pro mais recente puro.
         orc_map = {}
         for nome in nomes:
             orc = (db.query(Orcamento)
                      .filter(Orcamento.projeto_id == nome)
-                     .order_by(Orcamento.updated_at.desc(), Orcamento.id.desc())
+                     .order_by((Orcamento.valor_total > 0).desc(),
+                               Orcamento.updated_at.desc(), Orcamento.id.desc())
                      .first())
             if orc:
                 orc_map[nome] = orc.valor_total

@@ -21789,16 +21789,16 @@ function renderContratoUI(contrato) {
     <div style="border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px">
       <div style="font-size:var(--fs-sm);font-weight:600;margin-bottom:4px">Datas do acordo (cliente)</div>
       <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:8px">Previsão de medição e expectativa de entrega — obrigatórias para finalizar a assinatura. A folga é medida do trecho medição→entrega.</div>
-      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <label style="font-size:var(--fs-xs);color:var(--text-3)">Previsão de medição<br>
           <input type="date" id="ct-previsao-medicao" value="${(contrato.previsao_medicao||'').slice(0,10)}"
             style="height:var(--control-h-sm);padding:0 var(--sp-3);background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)"></label>
         <label style="font-size:var(--fs-xs);color:var(--text-3)">Expectativa de entrega<br>
           <input type="date" id="ct-data-entrega" value="${(contrato.data_entrega||'').slice(0,10)}"
             style="height:var(--control-h-sm);padding:0 var(--sp-3);background:var(--surface);border:1px solid var(--field-border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)"></label>
-        <label style="font-size:var(--fs-xs);display:flex;align-items:center;gap:4px">
+        <label style="font-size:var(--fs-xs);display:flex;align-items:center;gap:4px;align-self:center">
           <input type="checkbox" id="ct-venda-programada" ${contrato.venda_programada ? 'checked' : ''}> Venda programada</label>
-        <button class="btn-ciclo" onclick="salvarDataEntrega()"><i class="ti ti-calendar-check"></i> Validar</button>
+        <button class="btn-ciclo" onclick="salvarDataEntrega()" style="align-self:center"><i class="ti ti-calendar-check"></i> Validar</button>
       </div>
       <div style="margin-top:6px"><span id="ct-entrega-result" style="font-size:var(--fs-xs)"></span></div>
     </div>

@@ -75,29 +75,36 @@ def test_adicionar_signatario_com_cpf(monkeypatch):
     assert chamadas[0]["url"].endswith("/envelopes/env-1/signers")
     attrs = chamadas[0]["json"]["data"]["attributes"]
     assert attrs["email"] == "cliente@teste.com"
-    assert attrs["documentation"] == "11144477735"
+    assert attrs["documentation"] == "111.444.777-35"
     assert attrs["has_documentation"] is True
     assert signer_id == "signer-1"
 
 
-def test_adicionar_signatario_limpa_pontuacao_do_cpf(monkeypatch):
-    """Achado do usuário 2026-08-19: a API da ClickSign devolvia "documentation inválido"
-    quando o CPF ia formatado (o cadastro do Cliente grava com pontuação) — só aceita
-    dígitos."""
+def test_adicionar_signatario_formata_cpf_ja_pontuado(monkeypatch):
+    """Achado do usuário 2026-08-20 (VPS B): a API da ClickSign devolvia "documentation não
+    está em um formato válido" mesmo com CPF de dígito verificador correto — o achado anterior
+    (2026-08-19, "só aceita dígitos") estava invertido. A doc oficial
+    (developers.clicksign.com/reference/api-criar-signatario) descreve o campo como "Informe o
+    CPF do signatário formatado (ex: 000.000.000-00)". Normaliza a partir dos dígitos (cobre
+    CPF salvo com pontuação incompleta) e reformata — nunca manda dígitos crus."""
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-3"}})])
     cli = _client()
     cli.adicionar_signatario("env-1", "cliente@teste.com", "Fulano", cpf="111.444.777-35")
     attrs = chamadas[0]["json"]["data"]["attributes"]
-    assert attrs["documentation"] == "11144477735"
+    assert attrs["documentation"] == "111.444.777-35"
     assert attrs["has_documentation"] is True
 
 
-def test_adicionar_signatario_limpa_pontuacao_do_cnpj(monkeypatch):
+def test_adicionar_signatario_cnpj_nao_manda_documentation(monkeypatch):
+    """A API só documenta CPF (11 dígitos) neste campo — CNPJ (14 dígitos) não tem formato
+    confirmado, então não manda `documentation`/vira `has_documentation=False` em vez de
+    arriscar outro formato não suportado."""
     chamadas = _capture(monkeypatch, [FakeResp(200, {"data": {"id": "signer-4"}})])
     cli = _client()
     cli.adicionar_signatario("env-1", "cliente@teste.com", "Empresa", cpf="12.345.678/0001-90")
     attrs = chamadas[0]["json"]["data"]["attributes"]
-    assert attrs["documentation"] == "12345678000190"
+    assert "documentation" not in attrs
+    assert attrs["has_documentation"] is False
 
 
 def test_adicionar_signatario_sem_cpf(monkeypatch):

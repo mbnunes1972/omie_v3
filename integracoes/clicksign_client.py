@@ -115,14 +115,21 @@ class ClickSignClient:
 
     def adicionar_signatario(self, envelope_id, email, nome, cpf=None):
         """POST /envelopes/{id}/signers — cadastra 1 signatário no envelope. Retorna o signer_id.
-        `documentation` só aceita DÍGITOS (achado do usuário 2026-08-19: a API devolvia
-        "documentation inválido" quando vinha formatado, ex. "111.444.777-35" ou CNPJ com
-        pontuação — o CPF/CNPJ é gravado formatado no cadastro, então limpa aqui antes de
-        enviar, não no chamador)."""
-        doc_digitos = re.sub(r"\D", "", cpf or "")
-        attrs = {"name": nome, "email": email, "has_documentation": bool(doc_digitos)}
-        if doc_digitos:
-            attrs["documentation"] = doc_digitos
+        `documentation` espera o CPF FORMATADO, ex. "000.000.000-00" — confirmado contra a
+        documentação oficial (developers.clicksign.com/reference/api-criar-signatario, campo
+        `documentation`: "Informe o CPF do signatário formatado (ex: 000.000.000-00)"). Acha
+        anterior (2026-08-19) tinha invertido — mandava só dígitos e a API rejeitava com
+        "documentation não está em um formato válido" (achado do usuário testando na VPS B,
+        mesma mensagem, CPF corretos por dígito verificador). Normaliza a partir dos dígitos
+        (cobre CPF salvo com pontuação incompleta/inconsistente no cadastro) e então formata —
+        só reconhece CPF (11 dígitos); a API não documenta suporte a CNPJ neste campo, então
+        outro comprimento vira `has_documentation=False` (sem enviar documentation)."""
+        digitos = re.sub(r"\D", "", cpf or "")
+        doc_formatada = ("%s.%s.%s-%s" % (digitos[0:3], digitos[3:6], digitos[6:9], digitos[9:11])
+                          if len(digitos) == 11 else "")
+        attrs = {"name": nome, "email": email, "has_documentation": bool(doc_formatada)}
+        if doc_formatada:
+            attrs["documentation"] = doc_formatada
         body = {"data": {"type": "signers", "attributes": attrs}}
         return self._id(self._request("POST", "/envelopes/%s/signers" % envelope_id, json_body=body))
 

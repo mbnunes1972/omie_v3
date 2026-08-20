@@ -20192,13 +20192,26 @@ async function _confirmarEnvioClickSignPE() {
   }
 }
 
+// Achado do usuário 2026-08-20: o resultado do "Verificar agora" (ClickSign) saía como toast
+// pequeno no canto — fácil de não perceber justo na confirmação que diz se a assinatura já
+// entrou ou ainda está pendente. Box central (mesmo padrão de avisoPopup), não é erro.
+function _avisarStatusClickSign(status) {
+  const legenda = {
+    para_assinatura: 'Ainda aguardando assinatura de ambas as partes.',
+    assinado_loja:   'A loja já assinou — falta a assinatura do cliente.',
+    assinado_cliente:'O cliente já assinou — falta a assinatura da loja.',
+    assinado:        'Assinado por todas as partes!',
+  }[status] || '';
+  avisoPopup(`Status: ${status}${legenda ? '\n\n' + legenda : ''}`, {titulo: 'Verificação ClickSign'});
+}
+
 async function verificarClickSignPEAgora() {
   try {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/verificar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast('Status verificado: ' + d.status, false);
+    _avisarStatusClickSign(d.status);
     peComplementoRender();
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
 }
@@ -22029,7 +22042,7 @@ async function verificarClickSignMedicaoAgora() {
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast('Status verificado: ' + d.status, false);
+    _avisarStatusClickSign(d.status);
     carregarSolicitacaoMedicao();
     carregarCiclo();
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
@@ -22306,7 +22319,7 @@ async function verificarClickSignContratoAgora() {
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
-    showToast('Status verificado: ' + d.status, false);
+    _avisarStatusClickSign(d.status);
     carregarDadosContrato();
     carregarCiclo();
   } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }

@@ -5812,6 +5812,16 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/documentos/modelos/padroes-disponiveis — tipos com modelo padrão
+            # Orizon pronto (modelos_documentos_padrao/<tipo>.md) — evita hardcode no JS.
+            if path == "/api/documentos/modelos/padroes-disponiveis":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                import mod_documentos as _mdoc
+                self.send_json({"ok": True, "tipos": _mdoc.tipos_com_padrao()})
+                return
+
             self.send_response(404)
             self.end_headers()
 
@@ -6173,7 +6183,43 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # ── Modelos de documento por loja (Task 8) ──────────────────────────────
-        # Os 3 POST exigem sessão + capacidade 'gerir_documentos' (só master por padrão).
+        # Os POST exigem sessão + capacidade 'gerir_documentos' (só master por padrão).
+
+        # POST /api/documentos/modelos/usar-padrao — carrega o modelo padrão Orizon
+        # (modelos_documentos_padrao/<tipo>.md) já analisado, no MESMO shape de resposta
+        # de /importar (corpo_md/origem_nome/tipo/staging/origem_sha256/analise), pra o
+        # frontend reusar o wizard de marcador (_docmRenderWizard) sem bifurcação nenhuma.
+        # staging fica None — não há arquivo de origem do lojista pra trilhar/arquivar.
+        if path == "/api/documentos/modelos/usar-padrao":
+            usuario = get_usuario_sessao(self)
+            if not usuario:
+                self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+            import mod_documentos as _mdoc
+            import mod_marcadores as _mmarc
+            db = get_session()
+            try:
+                ator = _ator_dict(db, usuario)
+                loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                if _err:
+                    self.send_json({"ok": False, "erro": _err}, code=403); return
+                if not perfis.pode(ator.get("nivel"), "gerir_documentos"):
+                    self.send_json({"ok": False, "erro": "Sem permissão para gerir documentos"}, code=403); return
+                req = json.loads(body) if body else {}
+                tipo = (req.get("tipo") or "").strip()
+                try:
+                    corpo_md = _mdoc.carregar_modelo_padrao(tipo)
+                except ValueError as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=400); return
+                loja_dict = _loja_dict_para_contrato(db, loja_id)
+                analise = _mmarc.analisar_corpo(corpo_md, loja_dict)
+                self.send_json({
+                    "ok": True, "corpo_md": corpo_md, "origem_nome": "Modelo padrão Orizon",
+                    "tipo": tipo, "staging": None, "origem_sha256": None, "analise": analise,
+                })
+            finally:
+                db.close()
+            return
+
         if path == "/api/documentos/modelos/importar":
             usuario = get_usuario_sessao(self)
             if not usuario:
@@ -6306,7 +6352,15 @@ class Handler(BaseHTTPRequestHandler):
                                                 "ambientes_txt": "- Cozinha\n- Suíte Master"}
                         ctx["_corpo_md_aprovacao"] = corpo_md
                         pdf_path = _mc.gerar_pdf_aprovacao_pe(ctx, os.path.join(outdir, "preview.pdf"))
-                    elif tipo_prev.startswith("doc_"):
+                    elif tipo_prev not in ("contrato", "proposta"):
+                        # corpo-só sem geração dedicada ainda (termo_vistoria,
+                        # termo_responsabilidade, solicitacao_medicao, checklist_eletros,
+                        # autorizacao_foto_video, carta_agradecimento) + customizados (doc_*):
+                        # mesmo shell/cabeçalho do aditivo/aprovação, sem ctx especial — achado
+                        # 2026-08-20 ao testar o botão "Usar modelo padrão Orizon": esses tipos
+                        # caíam sem querer no branch de contrato/proposta abaixo (capa de
+                        # identificação do cliente/endereço/ambientes, que não faz sentido pra
+                        # um termo corpo-só) porque nunca havia corpo_md pra exercitar o preview.
                         pdf_path = _mc.gerar_pdf_documento_generico(
                             ctx, corpo_md, os.path.join(outdir, "preview.pdf"))
                     else:

@@ -528,3 +528,90 @@ def test_falha_de_io_ao_promover_nao_derruba_conexao_nem_duplica_versao(
         assert m.origem_path is None
     finally:
         db.close()
+
+
+# ── GET /api/documentos/modelos/padroes-disponiveis ─────────────────────────────
+
+def test_padroes_disponiveis_sem_sessao_401(http_client_factory):
+    c = http_client_factory()
+    status, body = c.get("/api/documentos/modelos/padroes-disponiveis")
+    assert status == 401, body
+
+
+def test_padroes_disponiveis_lista_so_tipos_com_arquivo(http_client_factory):
+    """Bate contra os arquivos REAIS de modelos_documentos_padrao/ — trava a promessa de
+    que a tela nunca hardcoda essa lista (achado real: 'contrato'/'proposta' ainda não
+    foram replicados pra lá, só têm o fallback contrato_template/)."""
+    c = _login(http_client_factory, "dir_l1")
+    status, body = c.get("/api/documentos/modelos/padroes-disponiveis")
+    assert status == 200, body
+    assert body["ok"] is True
+    assert "termo_vistoria" in body["tipos"]
+    assert "termo_responsabilidade" in body["tipos"]
+    assert "contrato" not in body["tipos"]
+    assert "proposta" not in body["tipos"]
+
+
+# ── POST /api/documentos/modelos/usar-padrao ─────────────────────────────────────
+
+def test_usar_padrao_sem_capacidade_403(http_client_factory):
+    c = _login(http_client_factory, "cons_l1")   # operador: sem gerir_documentos
+    status, body = c.post("/api/documentos/modelos/usar-padrao", {"tipo": "termo_vistoria"})
+    assert status == 403, body
+
+
+def test_usar_padrao_tipo_sem_modelo_400(http_client_factory):
+    c = _login(http_client_factory, "dir_l1")
+    status, body = c.post("/api/documentos/modelos/usar-padrao", {"tipo": "contrato"})
+    assert status == 400, body
+    assert "não há modelo padrão" in body["erro"]
+
+
+def test_usar_padrao_devolve_analise_com_marcadores_conhecidos(http_client_factory):
+    """O modelo padrão nunca pode usar marcador fora do CATALOGO — se usasse, sairia
+    literal ('[MARCADOR]') no PDF de toda loja que o ativasse sem perceber."""
+    c = _login(http_client_factory, "dir_l1")
+    status, body = c.post("/api/documentos/modelos/usar-padrao", {"tipo": "termo_vistoria"})
+    assert status == 200, body
+    assert body["ok"] is True
+    assert body["tipo"] == "termo_vistoria"
+    assert body["staging"] is None
+    assert body["origem_sha256"] is None
+    assert body["corpo_md"].strip()
+    assert body["analise"]["desconhecidos"] == []
+    assert body["analise"]["bloqueia_ativacao"] is False
+
+
+def test_usar_padrao_seguido_de_ativar_cria_versao_sem_origem(app_db, seed, http_client_factory):
+    c = _login(http_client_factory, "dir_l1")
+    status, padrao = c.post("/api/documentos/modelos/usar-padrao", {"tipo": "termo_responsabilidade"})
+    assert status == 200, padrao
+
+    status, body = c.post("/api/documentos/modelos", {
+        "tipo": "termo_responsabilidade", "corpo_md": padrao["corpo_md"],
+        "origem_nome": padrao["origem_nome"], "staging": padrao["staging"],
+        "origem_sha256": padrao["origem_sha256"], "cravados_aprovados": [],
+    })
+    assert status == 200, body
+    assert body["ok"] is True
+
+    db = app_db.get_session()
+    try:
+        m = db.get(app_db.DocumentoModelo, body["modelo"]["id"])
+        assert m.ativo == 1
+        assert m.origem_path is None
+        assert m.origem_nome == "Modelo padrão Orizon"
+    finally:
+        db.close()
+
+
+def test_modelos_padrao_arquivos_tem_forma_de_tipo_valida():
+    """Todo .md em modelos_documentos_padrao/ (exceto README) precisa nomear um tipo que
+    o backend reconheça — senão o arquivo existe mas nunca aparece em nenhuma tela."""
+    import mod_documentos
+    for nome in os.listdir(mod_documentos.MODELOS_PADRAO_DIR):
+        if not nome.endswith(".md") or nome == "README.md":
+            continue
+        tipo = nome[:-3]
+        assert mod_documentos.tipo_forma_valida(tipo), (
+            "%s não corresponde a um tipo válido de mod_documentos.TIPOS" % nome)

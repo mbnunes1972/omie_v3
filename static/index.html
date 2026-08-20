@@ -3468,6 +3468,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
     <div id="docm-historico" style="margin-bottom:18px"></div>
 
+    <div id="docm-padrao-bloco" style="display:none;border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
+      <strong style="font-size:13px;color:var(--text)">Usar modelo padrão Orizon</strong>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;margin-bottom:10px">
+        Ponto de partida pronto, com os dados da sua loja já mapeados por marcador — revise antes de ativar.
+      </div>
+      <button class="btn btn-ghost btn-sm" id="docm-padrao-btn" onclick="docmUsarPadrao()">Carregar modelo padrão</button>
+      <div id="docm-padrao-status" style="font-size:11px;margin-top:8px;min-height:14px"></div>
+    </div>
+
     <div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:14px">
       <strong style="font-size:13px;color:var(--text)">Importar novo modelo</strong>
       <div style="font-size:11px;color:var(--muted);margin-top:4px;margin-bottom:10px">
@@ -5434,6 +5443,7 @@ let _docCatalogo = null;
 let _docPodeGerir = false;
 let _docUsuariosNome = null;   // cache best-effort id->nome (pode falhar sem gerir_usuarios)
 let _docmCtx = null;           // contexto do modal aberto: {tipo, corpo_md, origem_nome, staging, origem_sha256, analise}
+let _docPadroesDisponiveis = [];  // tipos com modelo padrão Orizon pronto (modelos_documentos_padrao/<tipo>.md)
 
 async function _docCarregarUsuariosNomeCache(){
   if(_docUsuariosNome) return _docUsuariosNome;
@@ -5448,15 +5458,17 @@ async function _docCarregarUsuariosNomeCache(){
 async function cfgDocumentosRender(){
   const box = document.getElementById('cfg-panel-documentos'); if(!box) return;
   box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
-  const [d, cat] = await Promise.all([
+  const [d, cat, padroes] = await Promise.all([
     fetch('/api/documentos/modelos',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
     fetch('/api/documentos/marcadores',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
+    fetch('/api/documentos/modelos/padroes-disponiveis',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({})),
     _docCarregarUsuariosNomeCache()
   ]);
   if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Erro ao carregar modelos.')+'</em>'; return; }
   _docModelos = d.modelos || [];
   _docPodeGerir = !!d.pode_gerir;
   if(cat && cat.ok) _docCatalogo = cat.catalogo || {};
+  _docPadroesDisponiveis = (padroes && padroes.ok) ? (padroes.tipos || []) : [];
   box.innerHTML =
      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;max-width:640px">Modelos dos documentos de processo.'
     + (_docPodeGerir ? '' : ' <strong style="color:var(--text)">Somente leitura</strong> — sem a capacidade de gerir documentos, os cards abaixo não abrem.')
@@ -5517,6 +5529,9 @@ function abrirModalDocModelo(tipo){
   document.getElementById('docm-importar-btn').disabled = true;
   const status = document.getElementById('docm-importar-status');
   status.textContent = ''; status.style.color = 'var(--muted)';
+  document.getElementById('docm-padrao-bloco').style.display = _docPadroesDisponiveis.includes(tipo) ? 'block' : 'none';
+  document.getElementById('docm-padrao-status').textContent = '';
+  document.getElementById('docm-padrao-btn').disabled = false;
   document.getElementById('docm-wizard').style.display = 'none';
   document.getElementById('docm-wizard').innerHTML = '';
   _docmRenderVigenteHistorico(tipo);
@@ -5583,6 +5598,38 @@ async function docmImportar(){
     _docmRenderWizard();
   }catch(e){
     status.textContent = 'Erro de rede ao importar.';
+    status.style.color = 'var(--err)';
+    btn.disabled = false;
+  }
+}
+
+async function docmUsarPadrao(){
+  if(!_docmCtx) return;
+  const btn = document.getElementById('docm-padrao-btn');
+  const status = document.getElementById('docm-padrao-status');
+  btn.disabled = true;
+  status.textContent = 'Carregando modelo padrão…';
+  status.style.color = 'var(--muted)';
+  try{
+    const r = await fetch('/api/documentos/modelos/usar-padrao', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({tipo:_docmCtx.tipo})});
+    const d = await r.json().catch(()=>({}));
+    if(!d.ok){
+      status.textContent = d.erro || 'Falha ao carregar modelo padrão.';
+      status.style.color = 'var(--err)';
+      btn.disabled = false;
+      return;
+    }
+    status.textContent = '';
+    btn.disabled = false;
+    _docmCtx.corpo_md = d.corpo_md;
+    _docmCtx.origem_nome = d.origem_nome;
+    _docmCtx.staging = d.staging;
+    _docmCtx.origem_sha256 = d.origem_sha256;
+    _docmCtx.analise = d.analise;
+    _docmRenderWizard();
+  }catch(e){
+    status.textContent = 'Erro de rede ao carregar modelo padrão.';
     status.style.color = 'var(--err)';
     btn.disabled = false;
   }

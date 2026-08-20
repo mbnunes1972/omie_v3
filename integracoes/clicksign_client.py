@@ -163,14 +163,34 @@ class ClickSignClient:
         return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
 
     def cancelar_envelope(self, envelope_id):
-        """PATCH /envelopes/{id} — status='canceled' invalida o envelope (achado do usuário
-        2026-08-17: cancelar/revisar um contrato já enviado pra assinatura não pode deixar o
-        convite pendente no ar). MESMO CAVEAT do resto deste cliente (ver docstring do módulo):
-        o valor exato do status pra cancelar não foi confirmado contra o sandbox real — ajustar
-        assim que testado. Chamador trata fail-soft (best-effort)."""
-        body = {"data": {"id": envelope_id, "type": "envelopes",
-                          "attributes": {"status": "canceled"}}}
-        return self._request("PATCH", "/envelopes/%s" % envelope_id, json_body=body)
+        """Cancela um envelope ATIVO (achado do usuário 2026-08-17: cancelar/revisar um
+        contrato já enviado pra assinatura não pode deixar o convite pendente no ar).
+
+        Achado do usuário 2026-08-20, confirmado ao vivo contra o sandbox: a implementação
+        original (`PATCH /envelopes/{id}` com `status: "canceled"`) está ERRADA — a API rejeita
+        com "status deve estar em: draft, running" (confirmado tanto pelo erro real quanto pelo
+        schema oficial de `api-editar-envelope`, cujo enum de `status` só aceita
+        `draft`/`running` — não existe cancelamento de ENVELOPE via API para quem já está
+        `running`; `DELETE /envelopes/{id}` também não serve, só funciona em `draft`
+        — developers.clicksign.com/reference/api-excluir-envelope).
+
+        O cancelamento de verdade é no nível do DOCUMENTO: `PATCH
+        /envelopes/{id}/documents/{document_id}` com `status: "canceled"`
+        (developers.clicksign.com/reference/editar-documento — "Só é possível alterar status de
+        documentos `running`"). Testado ao vivo contra o sandbox real (2026-08-20): 200 OK.
+        Como o document_id não é persistido (só existe no momento do envio), busca via
+        `consultar_envelope` e cancela cada documento encontrado. Retorna a lista de respostas
+        (uma por documento)."""
+        dados = self.consultar_envelope(envelope_id)
+        documentos = [item for item in (dados.get("included") or []) if item.get("type") == "documents"]
+        respostas = []
+        for doc in documentos:
+            doc_id = doc.get("id")
+            body = {"data": {"id": doc_id, "type": "documents",
+                              "attributes": {"status": "canceled"}}}
+            respostas.append(self._request(
+                "PATCH", "/envelopes/%s/documents/%s" % (envelope_id, doc_id), json_body=body))
+        return respostas
 
     def consultar_envelope(self, envelope_id):
         """GET /envelopes/{id}?include=signers,documents — status do envelope + signatários.

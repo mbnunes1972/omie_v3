@@ -17,6 +17,9 @@ orizon.db
 # modelos de documento subidos pela loja (dado de cliente, como o orizon.db)
 documentos_loja/
 
+# logo própria de cada loja (dado de cliente, mesmo esquema de documentos_loja/)
+logos_loja/
+
 # segredos fiscais — NUNCA versionar (chave Fernet decripta os tokens Focus)
 config/fiscal.key
 *.key

@@ -25,6 +25,7 @@ from datetime import datetime
 _THIS_DIR            = os.path.dirname(os.path.abspath(__file__))
 CONTRATOS_DIR        = os.path.join(_THIS_DIR, "CONTRATOS")
 CONTRATO_TEMPLATE_DIR = os.path.join(_THIS_DIR, "contrato_template")
+LOGOS_LOJA_DIR        = os.path.join(_THIS_DIR, "logos_loja")
 
 # WeasyPrint não garante thread-safety pra chamadas concorrentes (cache de fontes/Cairo
 # compartilhado no processo) — servidor virou multi-thread (2026-08-08) e dois PDFs (contrato,
@@ -691,14 +692,37 @@ def _montar_mapping(ctx, pag):
     }
 
 
-def _html_cabecalho():
+def _resolver_logo_src(loja):
+    """src do <img> do cabeçalho: logo própria da loja (2026-08-20) se existir e o arquivo
+    estiver de fato em disco, senão o padrão do sistema (logo_dalmobile.png).
+
+    A logo própria fica fora de CONTRATO_TEMPLATE_DIR (LOGOS_LOJA_DIR) — por isso vira URI
+    file:// ABSOLUTA (Path.as_uri()), não um caminho relativo: um relativo só resolveria
+    contra base_url=CONTRATO_TEMPLATE_DIR, que não é onde ela mora. _url_fetcher_local
+    confina as duas bases separadamente (ver docstring lá)."""
+    from pathlib import Path
+    loja = loja or {}
+    nome = (loja.get("logo_arquivo") or "").strip()
+    if nome:
+        loja_id = loja.get("logo_loja_id") or loja.get("id") or ""
+        caminho = os.path.join(LOGOS_LOJA_DIR, str(loja_id), nome)
+        if os.path.isfile(caminho):
+            return Path(caminho).as_uri()
+    return "logo_dalmobile.png"
+
+
+def _html_cabecalho(loja=None):
     """Cabeçalho padrão dos documentos — logo + identificador da rede à esquerda, número e
     data à direita. Compartilhado entre a capa do contrato/proposta e os documentos de
-    corpo-só (aditivo, aprovação do PE, customizados — spec 2026-07-22): um lugar só."""
-    return """
+    corpo-só (aditivo, aprovação do PE, customizados — spec 2026-07-22): um lugar só.
+
+    `loja`: dict de _loja_dict_para_contrato (ou None) — decide entre a logo própria da
+    loja e a padrão do sistema (ver _resolver_logo_src)."""
+    logo_src = _resolver_logo_src(loja)
+    return f"""
 <div id="cabecalho">
   <div class="cab-esq">
-    <img class="logo" src="logo_dalmobile.png">
+    <img class="logo" src="{logo_src}">
     <div class="cab-rede">[REDE_IDENTIFICADOR]</div>
   </div>
   <div class="cab-dir">[NUM_CONTRATO]<br>[DATA_CONTRATO]</div>
@@ -716,7 +740,7 @@ def _html_capa(ctx):
     amb = _html_ambientes_linhas(ctx.get("_ambientes") or [])
     parc = _html_parcelas_linhas(ctx.get("_pag") or {})
     return f"""
-{_html_cabecalho()}
+{_html_cabecalho(ctx.get("loja"))}
 
 <div class="consultor">Consultor: [CONSULTOR_NOME] &nbsp;&nbsp;&nbsp; Telefone: [CONSULTOR_TELEFONE]</div>
 
@@ -931,18 +955,21 @@ def _url_fetcher_local(url):
     O corpo do contrato hoje vem do modelo que a LOJA subiu (entrada de usuário). O
     escape em _html_corpo já impede HTML embutido de virar tag; este fetcher é a segunda
     camada: mesmo que algum caminho futuro deixe escapar um <img>/@import, o renderizador
-    não busca nada fora de CONTRATO_TEMPLATE_DIR. Fecha SSRF (alcançar serviço interno) e
-    LFI (url(file:///etc/passwd)) na origem, no único ponto por onde o WeasyPrint busca
+    não busca nada fora das bases confinadas abaixo. Fecha SSRF (alcançar serviço interno)
+    e LFI (url(file:///etc/passwd)) na origem, no único ponto por onde o WeasyPrint busca
     recurso.
 
-    O template legítimo só referencia dois assets, ambos relativos e resolvidos contra
-    base_url=CONTRATO_TEMPLATE_DIR: contrato.css (<link> em contrato.html) e
-    logo_dalmobile.png (<img> montado em _html_capa). Os dois continuam carregando —
+    O template legítimo referencia três assets, todos file:// resolvidos contra uma das
+    bases confinadas: contrato.css e logo_dalmobile.png (ambos relativos, contra
+    base_url=CONTRATO_TEMPLATE_DIR) e, quando a loja tem logo própria (2026-08-20), o
+    arquivo em LOGOS_LOJA_DIR/<loja_id>/ — esse vem como URI file:// ABSOLUTA (montada em
+    _resolver_logo_src via Path.as_uri()) porque fica fora de CONTRATO_TEMPLATE_DIR, então
+    não resolveria contra o base_url. Os três continuam carregando —
     tests/test_documentos_seguranca.py trava isso, senão a "correção" quebraria o
     contrato de produção para fechar o furo.
 
-    Tudo que não for file:// sob o diretório do template é recusado: http(s):// (rede),
-    file:// fora dali (disco), e esquemas exóticos. WeasyPrint trata a exceção como
+    Tudo que não for file:// sob UMA DAS bases confinadas é recusado: http(s):// (rede),
+    file:// fora delas (disco), e esquemas exóticos. WeasyPrint trata a exceção como
     "asset indisponível", loga aviso e segue — o PDF sai, sem o recurso bloqueado.
     """
     from urllib.parse import urlparse, unquote
@@ -954,9 +981,11 @@ def _url_fetcher_local(url):
         raise ValueError("recurso externo bloqueado no documento: %s" % url)
     try:
         alvo = os.path.realpath(url2pathname(unquote(partes.path)))
-        base = os.path.realpath(CONTRATO_TEMPLATE_DIR)
         # commonpath levanta ValueError p/ drives diferentes (Windows) — é caso a recusar.
-        dentro = os.path.commonpath([base, alvo]) == base
+        dentro = any(
+            os.path.commonpath([os.path.realpath(base), alvo]) == os.path.realpath(base)
+            for base in (CONTRATO_TEMPLATE_DIR, LOGOS_LOJA_DIR)
+        )
     except (ValueError, OSError):
         raise ValueError("recurso local bloqueado no documento: %s" % url)
     if not dentro:
@@ -1035,7 +1064,7 @@ def _montar_html_corpo_documento(ctx, corpo_md):
     corpo = _html_corpo(corpo_md or "")
     # Cabeçalho aos moldes do contrato também nos corpo-só (spec 2026-07-22) — o número
     # vem de ctx['num_contrato'] (no aditivo, o nº TA) e a data de ctx['data_contrato'].
-    html_doc = (shell.replace("<!--CAPA-->", _html_cabecalho())
+    html_doc = (shell.replace("<!--CAPA-->", _html_cabecalho(ctx.get("loja")))
                      .replace("<!--CORPO-->", corpo))
     html_doc = _substituir_marcadores_html(html_doc, mapping)
     return html_doc.replace("[TEXTO_COMPLEMENTAR]", "")

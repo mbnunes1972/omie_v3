@@ -15948,6 +15948,18 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-cnpj','CNPJ',loja.cnpj)}
       ${f('loja-tel','Telefone',loja.telefone)}
       ${f('loja-email','E-mail',loja.email)}
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Endereço</div>
+    <div class="grid2" style="gap:14px;margin-bottom:14px">
+      ${f('loja-cep','CEP',loja.cep)}
+      ${f('loja-logradouro','Logradouro',loja.logradouro)}
+      ${f('loja-numero','Número',loja.numero)}
+      ${f('loja-complemento','Complemento',loja.complemento)}
+      ${f('loja-bairro','Bairro',loja.bairro)}
+      ${f('loja-cidade','Cidade',loja.cidade)}
+      ${f('loja-estado','UF',loja.estado)}
+    </div>
+    <div class="grid2" style="gap:14px;margin-bottom:14px">
       ${f('loja-t1n','Testemunha 1 — nome',loja.testemunha1_nome)}
       ${f('loja-t1c','Testemunha 1 — CPF',loja.testemunha1_cpf)}
       ${f('loja-t1e','Testemunha 1 — e-mail (assinatura digital)',loja.testemunha1_email)}
@@ -15960,9 +15972,36 @@ async function adminLojaCarregarDados(lid){
       ${f('loja-pct-merc','% Mercadoria (NF-e produto)',loja.pct_mercadoria!=null?loja.pct_mercadoria:65)}
       ${f('loja-pct-serv','% Serviço (NFS-e)',loja.pct_servico!=null?loja.pct_servico:35)}
     </div>
+    <div style="margin-bottom:14px">
+      <label class="field-label">Logo da empresa</label>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+        <img id="loja-logo-preview" src="${loja.logo_url||''}" style="height:40px;${loja.logo_url?'':'display:none'};background:var(--switch-thumb);border:1px solid var(--border);border-radius:6px;padding:4px">
+        <input type="file" id="loja-logo-arquivo" accept=".png,.jpg,.jpeg" onchange="adminLojaLogoSelecionado(${lid})">
+        <button class="btn btn-ghost btn-sm" id="loja-logo-remover-btn" style="${loja.logo_url?'':'display:none'}" onclick="adminLojaLogoRemover(${lid})">Remover (usar padrão)</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">PNG ou JPG, até 3 MB. Aparece no topo de todos os documentos gerados (contrato, proposta, termos).</div>
+    </div>
     <button class="btn btn-primary btn-sm" onclick="adminLojaSalvar(${lid})">Salvar dados da loja</button>
     <div id="clicksign-card-loja" style="margin-top:18px"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>`;
   adminClickSignCarregar('loja', lid);
+}
+
+async function adminLojaLogoSelecionado(lid){
+  const f = document.getElementById('loja-logo-arquivo').files[0];
+  if(!f) return;
+  const fd = new FormData();
+  fd.append('arquivo', f, f.name);
+  const d = await uploadFormData('/api/admin/lojas/'+lid+'/logo', fd);
+  if(!d.ok){ showToast(d.erro || 'Falha ao enviar o logo.', true); return; }
+  showToast('Logo atualizado.', false);
+  adminLojaCarregarDados(lid);
+}
+
+async function adminLojaLogoRemover(lid){
+  const r = await fetch('/api/admin/lojas/'+lid+'/logo/remover', {method:'POST', credentials:'same-origin'});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok){ showToast(d.erro || 'Falha ao remover.', true); return; }
+  adminLojaCarregarDados(lid);
 }
 
 async function adminLojaSalvar(lid){
@@ -15975,6 +16014,9 @@ async function adminLojaSalvar(lid){
   const payload = {
     nome: v('loja-nome'), codigo: v('loja-codigo'), cnpj: v('loja-cnpj'),
     telefone: v('loja-tel'), email: v('loja-email'),
+    cep: v('loja-cep'), logradouro: v('loja-logradouro'), numero: v('loja-numero'),
+    complemento: v('loja-complemento'), bairro: v('loja-bairro'),
+    cidade: v('loja-cidade'), estado: v('loja-estado'),
     testemunha1_nome: v('loja-t1n'), testemunha1_cpf: v('loja-t1c'), testemunha1_email: v('loja-t1e'),
     testemunha2_nome: v('loja-t2n'), testemunha2_cpf: v('loja-t2c'), testemunha2_email: v('loja-t2e'),
     pct_mercadoria: nMerc, pct_servico: nServ,

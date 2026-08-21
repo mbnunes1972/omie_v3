@@ -541,6 +541,10 @@ class Loja(Base):
     # documento; razão contábil e tenancy são PRÓPRIOS (owner_id = pdv.id).
     loja_mae_id = Column(Integer, ForeignKey("lojas.id"), nullable=True)
     tipo        = Column(String(12), nullable=False, default="loja")   # loja | ponto_venda
+    # Logo própria da loja (2026-08-20): só o NOME do arquivo em logos_loja/<id>/ — mesmo
+    # esquema de nome de mod_documentos.guardar_staging (sha256[:16] + extensão). NULL/"" =
+    # sem logo própria, cai no logo_dalmobile.png padrão (mod_contrato._resolver_logo_src).
+    logo_arquivo = Column(String(80), nullable=True)
 
 
 class ParceiroLoja(Base):
@@ -2363,6 +2367,8 @@ def _migrar_colunas_pg():
         # orçamento, reaproveitado na confirmação de assinatura manual.
         "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_nome_confirmado TEXT",
         "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_cpf_confirmado TEXT",
+        # Logo por loja (2026-08-20): nome do arquivo em logos_loja/<id>/, NULL = padrão do sistema.
+        "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS logo_arquivo VARCHAR(80)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

@@ -98,11 +98,36 @@ def criar_tipo(db, loja_id, nome, etapa_ciclo, usuario_id):
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 DOCS_LOJA_DIR = os.path.join(_THIS_DIR, "documentos_loja")
+MODELOS_PADRAO_DIR = os.path.join(_THIS_DIR, "modelos_documentos_padrao")
 
 # Tentativas de reservar número de versão. N uploads simultâneos da mesma loja podem
 # exigir até N-1 retries (cada perdedor recua e relê o MAX). 8 cobre com folga o pior
 # caso realista — é um lojista trocando o modelo, não tráfego de máquina.
 _MAX_TENTATIVAS_VERSAO = 8
+
+
+def modelo_padrao_disponivel(tipo):
+    """Caminho do .md padrão Orizon para `tipo`, ou None se não existir (customizado
+    doc_* nunca tem — é sempre específico da loja que o criou)."""
+    if tipo not in TIPOS:
+        return None
+    p = os.path.join(MODELOS_PADRAO_DIR, "%s.md" % tipo)
+    return p if os.path.isfile(p) else None
+
+
+def tipos_com_padrao():
+    """Tipos nativos que têm modelo padrão Orizon pronto hoje (sem consultar banco)."""
+    return [t for t in TIPOS if modelo_padrao_disponivel(t)]
+
+
+def carregar_modelo_padrao(tipo):
+    """Corpo (markdown) do modelo padrão Orizon para `tipo`. Levanta ValueError se
+    não houver modelo padrão para esse tipo."""
+    p = modelo_padrao_disponivel(tipo)
+    if not p:
+        raise ValueError("não há modelo padrão Orizon para %r" % tipo)
+    with open(p, encoding="utf-8") as fh:
+        return fh.read()
 
 
 def _validar(tipo, corpo_md):

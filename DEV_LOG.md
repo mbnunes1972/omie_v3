@@ -3277,6 +3277,86 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 200 — 8 achados do usuário em produção/homolog: alinhamento visual, 3 correções ClickSign confirmadas contra o sandbox real, modelo padrão de documento, logo por loja + fix de race condition pós-deploy
+
+**Contexto:** sequência de PRs pontuais (#10–#17) mergeados entre 2026-08-20 e 2026-08-23, sem
+sessão própria no DEV_LOG até agora — cada um nasceu de um achado isolado do usuário testando ao
+vivo (VPS A/B), não de uma frente planejada. Registrando em bloco pra não perder o rastro.
+
+**[1] Alinhamento vertical do card "Datas do acordo" (#10 + #11, achado v1→v2).** No card da
+etapa 5/Contrato, o checkbox "Venda programada" e o botão "Validar" ficavam desalinhados dos
+campos de data. Primeira tentativa (`align-items:center` na linha) subiu demais; fix definitivo
+foi estrutural — espaçador invisível do mesmo tamanho da legenda acima do checkbox/botão, mesma
+altura dos campos de data, todos alinhados por baixo (`flex-end`). Puramente visual,
+`static/index.html`.
+
+**[2] ClickSign `cancelar_envelope` era por documento, não por envelope (#12).** Achado testando
+na VPS B (resetar envelope pra reenviar sem testemunhas). `PATCH /envelopes/{id}` com
+`status:"canceled"` **rejeitado** pelo sandbox real (enum só aceita draft/running); `DELETE
+/envelopes/{id}` só funciona em draft. O cancelamento de verdade é por **documento** — `PATCH
+/envelopes/{id}/documents/{document_id}` com `status:"canceled"` — confirmado 200 OK ao vivo.
+`cancelar_envelope` (`integracoes/clicksign_client.py`) agora busca o(s) documento(s) via
+`consultar_envelope` (document_id não é persistido) e cancela cada um.
+
+**[3] "Verificar agora" vira box central (#13).** O resultado saía como toast pequeno, fácil de
+perder na hora que mais importa (saber se a assinatura entrou). Trocado pelo `avisoPopup` (box
+central) já existente no app, com legenda por status — aplicado nos 3 fluxos (Contrato, Medição,
+PE).
+
+**[4] Reconciliação ClickSign: envelope fechado é o sinal, não `signed_at` (#14).** Achado ao vivo
+no projeto "Teste_Marcelo": mesmo com as duas partes assinando de verdade (e-mail de confirmação
+recebido), o contrato ficava preso em "para_assinatura" pra sempre. Causa confirmada contra o
+sandbox real: `signed_at` do signatário **nunca vem preenchido** pela API, mesmo com envelope
+`closed`. Esse campo já estava marcado como "não verificado" desde o desenho original — agora
+sabe-se que está simplesmente errado. As 3 rotinas de reconciliação (Contrato, PE, Medição) em
+`main.py` passam a usar o envelope **fechar** (`status:"closed"`, criado com `auto_close:true`)
+como sinal de conclusão, registrando todas as partes de uma vez; `signed_at` vira só fallback.
+
+**[5] Botão "Usar modelo padrão Orizon" em Config → Documentos (#15).** Elimina a necessidade de
+aplicar um modelo correto via SSH manual (caso real: fix do contrato da Inspirium na própria
+sessão). Por tipo com modelo padrão pronto (`modelos_documentos_padrao/<tipo>.md`), carrega o
+corpo já analisado no mesmo wizard de marcador da importação de `.docx` (`GET
+/api/documentos/modelos/padroes-disponiveis` + `POST .../usar-padrao`). De quebra, corrigido bug
+pré-existente no preview ("Ver PDF de exemplo") pros tipos corpo-só nativos sem geração dedicada
+(termo_vistoria, termo_responsabilidade, solicitacao_medicao, checklist_eletros,
+autorizacao_foto_video, carta_agradecimento) — caíam no branch de contrato/proposta (capa de
+cliente) por engano, agora usam `gerar_pdf_documento_generico` como os customizados `doc_*` já
+usavam.
+
+**[6] Logo própria por loja nos documentos gerados (#16).** `Loja.logo_arquivo` (coluna nova) +
+`logos_loja/<id>/` (diretório confinado, gitignored, mesmo padrão de `documentos_loja/`). Upload
+via `POST /api/admin/lojas/<id>/logo` (multipart, PNG/JPG até 3 MB). `_url_fetcher_local` (defesa
+SSRF/LFI do WeasyPrint) passa a aceitar **duas** bases confinadas em vez de uma
+(`CONTRATO_TEMPLATE_DIR` + `LOGOS_LOJA_DIR`), sem afrouxar o que já era bloqueado (teste positivo
++ negativo em `test_documentos_seguranca.py`). PDV herda a logo da loja mãe — mesma regra que
+nome/CNPJ/endereço já seguiam. De quebra: Admin → Dados da empresa ganhou os campos de endereço,
+que o backend já aceitava mas a tela nunca mostrava.
+
+**[7] Race de import do shim `mod_chat_externo` (#17).** `AttributeError: module
+'mod_chat_externo' has no attribute 'varrer_triagem_vencida'` visto nos logs da VPS A logo após
+um deploy — intermitente, nunca reproduzível num teste single-thread. Causa: `mod_chat.py`/
+`mod_chat_externo.py` são shims (empacotamento 2026-07-31) que fazem `sys.modules[__name__] =
+<módulo real>` durante a própria execução; como só eram importados preguiçosamente dentro dos
+handlers, duas requisições concorrentes (`ThreadingHTTPServer`, uma thread por request) podiam
+disputar a primeira importação logo após um restart — a thread perdedora do lock de import ficava
+com a referência antiga (shim vazio). Fix: importa os dois shims no carregamento do `main.py`
+(thread única, antes do servidor subir). Bug pré-existente na packaging de 2026-07-31, só
+descoberto agora investigando um log estranho pós-deploy — não é regressão desta leva de PRs.
+
+**Verificação:** cada PR rodou a suíte cheia isolado (2261→2282 passed ao longo da sequência) +
+Playwright ao vivo nos fluxos tocados; #12 e #14 confirmados contra o **sandbox real** do
+ClickSign (não por inferência). Deploy: #10–#16 subiram em VPS A/B ao longo de 20–21/08 (tags
+`v2026.08.20` a `v2026.08.21a-homolog`); #17 mergeado 23/08 (suíte 2282 passed — 1ª rodada local
+teve falso-negativo por queda de conexão SSL do Postgres, confirmado infra ao rodar de novo do
+zero, limpo), ainda **não deployado**.
+
+**Arquivos:** `static/index.html`, `integracoes/clicksign_client.py`, `main.py`, `database.py`,
+`modelos_documentos_padrao/termo_vistoria.md`,
+`modelos_documentos_padrao/termo_responsabilidade.md`, `tests/test_clicksign_client.py`,
+`tests/test_contrato_assinatura_clicksign_e2e.py`, `tests/test_solicitacao_medicao_e2e.py`,
+`tests/test_aprovacao_pe_clicksign_e2e.py`, `tests/test_documentos_seguranca.py`,
+`tests/test_chat_externo.py`.
+
 ## Sessão 199 — dois achados pontuais: box "Último Orçamento" zerava + ClickSign "documentation" com CPF no formato errado
 
 **[1] Lista de Projetos zerava "Último Orçamento" com rascunho comparativo.**

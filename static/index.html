@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Orizon Manager</title>
+<title>OrizonOne</title>
 <link rel="icon" type="image/svg+xml" href="glifo-favicon.svg">
 <!-- Design system v1.4 (fonte única em design-system/) — importado ANTES de qualquer outro CSS -->
 <link rel="stylesheet" href="design-system/orizon-tokens.css">
@@ -51,12 +51,17 @@
   --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:100vh;display:flex;overflow:hidden}
-.sidebar{width:250px;min-width:250px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;overflow-y:auto}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+/* Frame fixo de topo (2026-08-23): cobre a tela inteira, acima da sidebar — ver .topframe mais
+   abaixo (marca+loja/pendências+responsabilidades/usuário). .app-body é só o wrapper de layout
+   pra sidebar+conteúdo virarem uma linha flex embaixo do frame (body já não pode ser essa linha,
+   virou coluna pra caber o frame em cima). */
+.app-body{flex:1;display:flex;min-height:0;overflow:hidden}
+.sidebar{width:250px;min-width:250px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow-y:auto}
 /* v1.5: a sidebar é ESCURA nos dois temas (design system §7). Reescopa os tokens theme-following
    para os --sidebar-* DENTRO da .sidebar → todo filho (classes e styles inline: nav, creds, rodapé)
    resolve para a paleta escura da sidebar em ambos os temas, sem tocar cada propriedade. */
-.sidebar{
+.sidebar, .topframe{
   --surface:       var(--sidebar-bg);
   --surface-2:     var(--sidebar-item-active);
   --card:          var(--sidebar-item-active);
@@ -69,19 +74,30 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
   --accent-soft:   var(--sidebar-item-active);
   --accent-tint:   var(--sidebar-item-active);
 }
-/* Sair (hover --err): no claro o --err é vinho escuro, ilegível sobre o carvão da sidebar.
+/* Sair (hover --err): no claro o --err é vinho escuro, ilegível sobre o carvão da sidebar/frame.
    Só no claro (padrão = sem atributo → :not([data-theme=dark])) reaponta --err p/ o rosa claro
    --err-line, legível no escuro. No tema escuro, --err já é rosa-vinho claro (legível) — não mexe. */
-:root:not([data-theme="dark"]) .sidebar{ --err: var(--err-line); }
-/* Marca — lockup horizontal (REGRAS_MARCA §5): glifo + wordmark. A sidebar é escura nos dois temas,
-   então o glifo mono-branco (via currentColor) e o wordmark valem nos dois. Glifo a 40px → peso fino
-   válido (§4). Geometria oficial de design-system/marca/glifo-mono-branco.svg — não redesenhada. */
-.sb-logo{padding:20px;border-bottom:1px solid var(--sidebar-border);display:flex;align-items:center;gap:12px}
-.sb-glifo{width:40px;height:40px;flex-shrink:0;color:var(--sidebar-text-active)}
-.sb-glifo svg{display:block;width:100%;height:100%}
-.sb-wordmark{display:flex;flex-direction:column;line-height:1.05;font-family:var(--font-display)}
-.sb-wordmark .wm-orizon{font-weight:700;font-size:16px;letter-spacing:.02em;color:var(--sidebar-text-active)}
-.sb-wordmark .wm-manager{font-weight:600;font-size:9.5px;letter-spacing:.42em;text-transform:uppercase;color:var(--sidebar-accent);margin-top:2px}
+:root:not([data-theme="dark"]) .sidebar, :root:not([data-theme="dark"]) .topframe{ --err: var(--err-line); }
+/* Frame fixo de topo (2026-08-23): cobre a tela inteira, acima da sidebar. Marca+loja (esquerda),
+   Pendências/Responsabilidades (meio, ligados na Fase 6), usuário+tema+Sair (direita) — migrados
+   de dentro da sidebar (canto inferior esquerdo antigo). Mesma paleta escura da sidebar nos dois
+   temas (REGRAS_MARCA §5 — glifo mono-branco via currentColor vale nos dois). */
+.topframe{height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  gap:16px;padding:0 20px;background:var(--sidebar-bg);border-bottom:1px solid var(--sidebar-border);
+  position:relative;z-index:50}
+.tf-marca{display:flex;align-items:center;gap:10px;min-width:0}
+.tf-glifo{width:30px;height:30px;flex-shrink:0;color:var(--sidebar-text-active)}
+.tf-glifo svg{display:block;width:100%;height:100%}
+.tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
+.tf-wordmark .wm-linha{display:flex;align-items:baseline;gap:1px}
+.tf-wordmark .wm-orizon{font-weight:700;font-size:15px;letter-spacing:.01em;color:var(--sidebar-text-active)}
+.tf-wordmark .wm-manager{font-weight:700;font-size:15px;letter-spacing:.01em;color:var(--sidebar-accent)}
+.tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.tf-central{display:flex;align-items:center;gap:10px;flex:1;justify-content:center;min-width:0}
+.tf-conta{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.tf-conta #sb-user-btn{margin-top:0}
+.tf-tema{display:flex;gap:4px;background:transparent;border-radius:8px;padding:3px}
 .sb-creds{padding:16px 20px;border-bottom:1px solid var(--border)}
 .sb-creds-title{font-size:9px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;font-family:var(--font-sans);margin-bottom:10px}
 .sb-creds label{font-size:9px;color:var(--muted);letter-spacing:.5px;display:block;margin-bottom:4px;margin-top:8px}
@@ -152,11 +168,11 @@ select{
 select:focus{border-color:var(--accent)}
 /* Opções do popup nativo: fundo/cor por token — senão o Chrome renderiza branco-no-branco (texto some) */
 select option{background:var(--surface-2);color:var(--text)}
-/* Sidebar é escura nos DOIS temas → o popup nativo precisa renderizar em esquema escuro (color-scheme),
-   e as opções em fundo OPACO escuro + texto branco. Sem isto, herdam --surface-2 (=item-active
-   translúcido) + --text branco → branco-sobre-branco, só visível no hover. */
-.sidebar{ color-scheme:dark; }
-.sidebar select option{ background:var(--sidebar-bg); color:var(--sidebar-text-active); }
+/* Sidebar/frame de topo são escuros nos DOIS temas → o popup nativo precisa renderizar em esquema
+   escuro (color-scheme), e as opções em fundo OPACO escuro + texto branco. Sem isto, herdam
+   --surface-2 (=item-active translúcido) + --text branco → branco-sobre-branco, só visível no hover. */
+.sidebar, .topframe{ color-scheme:dark; }
+.sidebar select option, .topframe select option{ background:var(--sidebar-bg); color:var(--sidebar-text-active); }
 /* Textarea: MESMO padrão dos campos — nunca branco fixo. Inline específico ainda vence. */
 textarea{
   width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);
@@ -573,22 +589,58 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 </head>
 <body>
 
-<aside class="sidebar">
-  <!-- Marca v1.0 — lockup horizontal (glifo da bússola + wordmark). Glifo inline com currentColor
-       (mono-branco, REGRAS_MARCA §4/§5/§7); fonte da verdade em design-system/marca/. -->
-  <div class="sb-logo" role="img" aria-label="Orizon Manager">
-    <span class="sb-glifo" aria-hidden="true">
+<!-- Frame fixo de topo (2026-08-23): marca+loja / Pendências+Responsabilidades (Fase 6) / usuário —
+     substitui o que antes vivia no topo e no rodapé da sidebar. -->
+<header class="topframe" id="topframe">
+  <div class="tf-marca" role="img" aria-label="OrizonOne">
+    <span class="tf-glifo" aria-hidden="true">
       <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
         <circle cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="3"/>
         <polygon points="60,27 65.5,60 60,68 54.5,60" fill="currentColor"/>
         <polygon points="60,93 64.5,62 60,54 55.5,62" fill="none" stroke="currentColor" stroke-width="1.75"/>
       </svg>
     </span>
-    <span class="sb-wordmark">
-      <span class="wm-orizon">Orizon</span>
-      <span class="wm-manager">Manager</span>
+    <span class="tf-wordmark">
+      <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
+      <span id="tf-loja-nome" class="tf-loja-nome"></span>
     </span>
   </div>
+  <div class="tf-central" id="tf-central">
+    <!-- Pendências / Responsabilidades — Fase 6 -->
+  </div>
+  <div class="tf-conta">
+    <div id="sb-user-btn" onclick="abrirModalPerfil()"
+         style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;
+                cursor:pointer;transition:.15s;border:1px solid var(--border)"
+         onmouseover="this.style.borderColor='var(--accent)'"
+         onmouseout="this.style.borderColor='var(--border)'">
+      <div id="sb-user-avatar"
+           style="width:30px;height:30px;border-radius:50%;background:var(--accent);
+                  display:flex;align-items:center;justify-content:center;
+                  font-family:var(--font-sans);font-weight:700;font-size:12px;
+                  color:var(--btn-primary-text);flex-shrink:0;overflow:hidden">
+        <span id="sb-user-inicial">?</span>
+        <img id="sb-user-foto" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%">
+      </div>
+      <div style="min-width:0">
+        <div id="sb-user-nome" style="font-family:var(--font-sans);font-size:11px;font-weight:700;
+                                       color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px">—</div>
+        <div id="sb-user-nivel" style="font-size:9px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">—</div>
+      </div>
+    </div>
+    <div class="tf-tema">
+      <button id="tema-claro"  onclick="setTema('claro')"  title="Tema claro"  style="border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;padding:5px 6px;border-radius:6px;cursor:pointer;transition:all .15s">&#x2600; Claro</button>
+      <button id="tema-escuro" onclick="setTema('escuro')" title="Tema escuro" style="border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;padding:5px 6px;border-radius:6px;cursor:pointer;transition:all .15s">&#x1F319; Escuro</button>
+    </div>
+    <button onclick="mpLogout()" title="Sair do sistema"
+            style="padding:8px 12px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:var(--font-sans);font-size:11px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap"
+            onmouseover="this.style.borderColor='var(--err)';this.style.color='var(--err)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'"><i class="ti ti-logout"></i> Sair</button>
+    <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
+  </div>
+</header>
+<div class="app-body">
+<aside class="sidebar">
   <!-- Navegação -->
   <nav class="sb-nav">
     <div class="sb-secao">
@@ -672,39 +724,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
   </div>
 
-  <!-- Espaçador + Config -->
   <div style="flex:1"></div>
-  <div style="padding:12px 14px;border-top:1px solid var(--border)">
-    <!-- Botão de perfil do usuário -->
-    <div id="sb-user-btn" onclick="abrirModalPerfil()"
-         style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;
-                cursor:pointer;margin-top:4px;transition:.15s;border:1px solid var(--border)"
-         onmouseover="this.style.borderColor='var(--accent)'"
-         onmouseout="this.style.borderColor='var(--border)'">
-      <div id="sb-user-avatar"
-           style="width:30px;height:30px;border-radius:50%;background:var(--accent);
-                  display:flex;align-items:center;justify-content:center;
-                  font-family:var(--font-sans);font-weight:700;font-size:12px;
-                  color:var(--btn-primary-text);flex-shrink:0;overflow:hidden">
-        <span id="sb-user-inicial">?</span>
-        <img id="sb-user-foto" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:50%">
-      </div>
-      <div style="flex:1;min-width:0">
-        <div id="sb-user-nome" style="font-family:var(--font-sans);font-size:11px;font-weight:700;
-                                       color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
-        <div id="sb-user-nivel" style="font-size:9px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase">—</div>
-      </div>
-    </div>
-    <button onclick="mpLogout()" title="Sair do sistema"
-            style="width:100%;margin-top:8px;padding:8px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:var(--font-sans);font-size:11px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px"
-            onmouseover="this.style.borderColor='var(--err)';this.style.color='var(--err)'"
-            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'"><i class="ti ti-logout"></i> Sair</button>
-    <div style="display:flex;gap:4px;margin-top:8px;background:transparent;border-radius:8px;padding:3px">
-      <button id="tema-claro"  onclick="setTema('claro')"  title="Tema claro"  style="flex:1;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;padding:5px 6px;border-radius:6px;cursor:pointer;transition:all .15s">&#x2600; Claro</button>
-      <button id="tema-escuro" onclick="setTema('escuro')" title="Tema escuro" style="flex:1;border:none;background:transparent;color:var(--muted);font-size:11px;font-weight:500;padding:5px 6px;border-radius:6px;cursor:pointer;transition:all .15s">&#x1F319; Escuro</button>
-    </div>
-    <div id="seletor-loja-wrap" style="display:none;align-items:center;margin:8px 0"></div>
-  </div>
 </aside>
 
 <!-- MODAL PERFIL ─────────────────────────────────────────────── -->
@@ -3232,6 +3252,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   </div>
 
 </main>
+</div><!-- /app-body -->
 
 <!-- Modal: Novo Orçamento (EP-07) -->
 <div id="modal-novo-orc" class="modal-overlay" style="display:none"
@@ -4084,9 +4105,16 @@ function _atualizarUIUsuario(){
 
 function _renderSeletorLoja(){
   const lojas = (_usuarioAtual && _usuarioAtual.lojas) || [];
+  const nomeEl = document.getElementById('tf-loja-nome');   // frame de topo (2026-08-23)
   let host = document.getElementById('seletor-loja-wrap');
   if (!host) return;                       // host fixo no HTML (ver Step 4)
-  if (lojas.length <= 1){ host.style.display = 'none'; return; }
+  if (lojas.length <= 1){
+    host.style.display = 'none';
+    // Loja única: nome fixo abaixo do wordmark (o seletor só aparece com 2+ lojas).
+    if (nomeEl) nomeEl.textContent = lojas[0] ? lojas[0].nome : '';
+    return;
+  }
+  if (nomeEl) nomeEl.textContent = '';     // 2+ lojas: o seletor abaixo já mostra qual está ativa
   host.style.display = 'flex';
   host.innerHTML = '<label class="field-label" style="margin:0 6px 0 0">Loja</label>' +
     '<select id="seletor-loja" style="background:var(--surface);border:1px solid var(--border);'

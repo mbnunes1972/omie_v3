@@ -242,6 +242,7 @@ input:-webkit-autofill,input:-webkit-autofill:hover,input:-webkit-autofill:focus
 /* Selo de atraso GERAL (Fatia 4 §6): qualquer etapa aberta vencida ilumina o projeto na lista */
 .proj-atraso-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--err-soft);color:var(--err)}
 .proj-fase-exec-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--warn-soft);color:var(--warn)}
+.proj-fase-transf-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.3px;white-space:nowrap;background:var(--warn-soft);color:var(--warn)}
 .proj-status-dd{position:absolute;top:100%;left:0;z-index:300;background:var(--card);border:1px solid var(--border2);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.4);min-width:140px;overflow:hidden;display:none}
 .proj-status-dd.open{display:block}
 .proj-status-dd-item{padding:8px 14px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px}
@@ -6805,7 +6806,9 @@ function renderProjResultados(lista){
                 </div>`).join('')}
             </div>
           </td>
-          <td>${p.fase_ciclo === 'execucao_projeto'
+          <td>${p.em_transferencia
+              ? `<span class="proj-fase-transf-badge" title="Responsabilidade transferida — aguardando aceite ('Receber Projeto')">Em transferência</span>`
+              : p.fase_ciclo === 'execucao_projeto'
               ? `<span class="proj-fase-exec-badge" title="Fase crítica — Medição/Projeto Executivo">${esc(p.etapa_atual_nome||'Execução')}</span>`
               : `<span style="color:var(--muted);font-size:12px">${esc(p.etapa_atual_nome || (p.fase_ciclo==='concluido' ? 'Concluído' : '—'))}</span>`}</td>
           <td>${fmtData(p.atualizado_em||p.criado_em||'')}</td>
@@ -18042,8 +18045,21 @@ function _renderBannerCancelado(){
   _toggleBanner('neg-em-revisao-banner', _projetoEmRevisao);
 }
 
+// Concluir/Transferir (2026-08-23): carregarCiclo() é o ÚNICO ponto por onde TODOS os fluxos
+// de conclusão de etapa passam pra recarregar a tela (contrato, aprovação financeira, medição,
+// PE, operacionais, genéricas — 30+ call sites). Em vez de plugar a pergunta "deseja
+// transferir?" em cada um deles (frágil, fácil esquecer um), comparamos o status ANTES/DEPOIS
+// do fetch aqui: qualquer etapa que virou conclusiva entre uma chamada e a próxima é uma
+// conclusão de verdade (usuário clicou algo que concluiu a etapa), nunca um efeito colateral
+// silencioso — esses passam por carregarCicloSilencioso(), que não participa deste diff.
+let _cicloSnapshotProjeto = null;    // nome_safe do projeto do snapshot anterior
+let _cicloSnapshotStatus  = null;    // {etapa_codigo: status} antes do fetch mais recente
+
 async function carregarCiclo() {
   try {
+    const mesmoProjeto = _cicloSnapshotProjeto === (projetoAtivo && projetoAtivo.nome_safe);
+    const statusAntes = mesmoProjeto ? _cicloSnapshotStatus : null;
+    if (!mesmoProjeto) _cicloTransferState = null;   // projeto trocou — descarta prompt órfão
     await _fetchCiclo();
     await _carregarMedicao();
     if (projetoAtivo) await peCarregar(projetoAtivo.nome_safe);
@@ -18052,6 +18068,11 @@ async function carregarCiclo() {
     await cronoFuncionariosGarantir();   // funcionários p/ o dropdown de responsável (v12)
     renderCiclo();   // já dispara _fichaEfeitos(_cicloEtapaAtiva), que carrega a Etapa 21 se ativa
     atualizarBotoesAprovacao();
+    if (statusAntes) _cicloDetectarConclusoes(statusAntes);
+    _cicloRenderTransferPrompt();   // reflete _cicloTransferState mesmo sem transição nova agora
+    _cicloSnapshotProjeto = projetoAtivo && projetoAtivo.nome_safe;
+    _cicloSnapshotStatus = {};
+    for (const cod in _cicloData) _cicloSnapshotStatus[cod] = _cicloData[cod].status;
   } catch(e) { console.error('Erro ao carregar ciclo:', e); }
 }
 
@@ -18225,21 +18246,148 @@ function _tagComABola() {
     return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--ok)"><i class="ti ti-flag-check"></i> Ciclo concluído</span>`;
   }
   const d = _cicloData[atual.codigo] || {};
-  // Revisão 2026-07-25: sem responsável formal (funcionário), a bola é do CRIADOR do projeto —
-  // nunca "não atribuído" quando há criador.
-  let nome = d.responsavel_efetivo_nome || '';
-  let sufixoCriador = '';
-  if (!nome && _cicloCriadoPorNome) { nome = _cicloCriadoPorNome; sufixoCriador = ' (criador)'; }
   // Numeração VISUAL (achado 2026-08-18) — mesma lógica do fichário, pra não mostrar um
   // código cru (ex. "etapa 15") que não bate mais com o número visível no espinhaço.
   const _maeAtual = _fichaMae(atual.codigo);
   const _rotAtual = (atual.codigo === _maeAtual) ? _fichaTituloGrupo(_maeAtual)
                                                  : `${_fichaTituloGrupo(_maeAtual)} · ${atual.nome}`;
+  // Transferência pendente (2026-08-23): aguardando "Receber Projeto" — mostra o destino, não
+  // o responsável antigo (que já concluiu a parte dele e passou a bola adiante).
+  if (d.transferencia_status === 'pendente') {
+    return `<span title="Transferência solicitada — aguardando o destino aceitar em 'Receber Projeto'"
+        style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--warn);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
+        <i class="ti ti-transfer" style="color:var(--warn)"></i>
+        Em transferência para: <strong>${esc(d.transferencia_destino_nome || '—')}</strong>
+        <span style="color:var(--muted)">· etapa ${esc(_fichaNumeroExibicao(atual.codigo))} — ${esc(_rotAtual)}</span></span>`;
+  }
+  // Revisão 2026-07-25: sem responsável formal (funcionário), a bola é do CRIADOR do projeto —
+  // nunca "não atribuído" quando há criador.
+  let nome = d.responsavel_efetivo_nome || '';
+  let sufixoCriador = '';
+  if (!nome && _cicloCriadoPorNome) { nome = _cicloCriadoPorNome; sufixoCriador = ' (criador)'; }
   return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão o default da faixa; por fim, o criador do projeto)"
       style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
       <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
       Responsável: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
       <span style="color:var(--muted)">· etapa ${esc(_fichaNumeroExibicao(atual.codigo))} — ${esc(_rotAtual)}</span></span>`;
+}
+
+// ── Concluir/Transferir responsabilidade (2026-08-23) ────────────────────────
+// "Concluir" preserva 100% do que cada etapa já exige hoje (senha financeira, parecer de
+// medição, PDF do contrato etc. — nenhum desses gates muda). A pergunta "deseja transferir?"
+// entra DEPOIS, só quando a conclusão específica já foi bem-sucedida — ver carregarCiclo().
+let _cicloTransferState = null;   // null | {concluidaCod, concluidaNome, alvoCod, alvoNome, modo:'perguntar'|'buscar'}
+
+function _cicloDetectarConclusoes(statusAntes) {
+  for (const cod in _cicloData) {
+    const antes = statusAntes[cod];
+    const agora = _cicloData[cod] && _cicloData[cod].status;
+    if (antes && agora && !STATUS_CONCLUSIVOS.has(antes) && STATUS_CONCLUSIVOS.has(agora)) {
+      _aposConcluirEtapa(cod);
+      return;   // uma por vez — evita empilhar pergunta se mais de uma mudar junto
+    }
+  }
+}
+
+function _aposConcluirEtapa(codigoConcluido) {
+  const def = ETAPAS_CICLO.find(et => et.codigo === codigoConcluido);
+  // Mesma lógica da tag "Responsável" (_tagComABola): primeira etapa não-conclusiva na ordem.
+  const alvo = ETAPAS_CICLO.find(et => !STATUS_CONCLUSIVOS.has((_cicloData[et.codigo] || {}).status));
+  if (!alvo) { _cicloTransferState = null; return; }   // ciclo inteiro concluído — nada a perguntar
+  _cicloTransferState = {
+    concluidaCod: codigoConcluido,
+    concluidaNome: def ? def.nome : codigoConcluido,
+    alvoCod: alvo.codigo,
+    alvoNome: alvo.nome,
+    modo: 'perguntar',
+  };
+}
+
+function _cicloRenderTransferPrompt() {
+  const box = document.getElementById('ciclo-transfer-prompt');
+  if (!box) return;
+  const st = _cicloTransferState;
+  if (!st) { box.innerHTML = ''; return; }
+  const estilo = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;'
+    + 'padding:10px 12px;background:var(--surface-2);border:1px solid var(--accent);border-radius:8px;font-size:12px';
+  if (st.modo === 'perguntar') {
+    box.innerHTML = `<div style="${estilo}">
+      <i class="ti ti-flag-check" style="color:var(--accent)"></i>
+      <span>"<strong>${esc(st.concluidaNome)}</strong>" concluída. Deseja transferir a responsabilidade
+      da próxima etapa (<strong>${esc(st.alvoNome)}</strong>)?</span>
+      <span style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="_cicloTransferResponder(false)">Não</button>
+        <button class="btn btn-primary btn-sm" onclick="_cicloTransferResponder(true)">Sim, transferir</button>
+      </span></div>`;
+  } else if (st.modo === 'buscar') {
+    box.innerHTML = `<div style="${estilo}"><i class="ti ti-users-group" style="color:var(--accent)"></i>
+      <span>Carregando funcionários e terceiros…</span></div>`;
+    mapaProfissionaisGarantir().then(itens => {
+      if (!_cicloTransferState || _cicloTransferState.modo !== 'buscar') return;   // usuário desistiu
+      // _selBuscavelHtml insere o id BRUTO (sem aspas) no onclick — precisa ser numérico.
+      // Codifica terceiro como negativo (funcionário e terceiro nunca colidem em sinal).
+      const opts = itens.map(p => ({
+        id: p.tipo === 't' ? -p.id : p.id,
+        label: p.nome + (p.funcao_nome ? ' — ' + p.funcao_nome : ''),
+      }));
+      box.innerHTML = `<div style="${estilo}">
+        <i class="ti ti-users-group" style="color:var(--accent)"></i>
+        <span>Transferir "<strong>${esc(st.alvoNome)}</strong>" para:</span>
+        <div style="min-width:260px">${_selBuscavelHtml('ciclo-transf-dest', opts, {placeholder: 'Nome ou função…'})}</div>
+        <span style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="_cicloTransferCancelar()">Cancelar</button>
+          <button class="btn btn-primary btn-sm" onclick="_cicloTransferConfirmar()">Transferir Responsabilidade</button>
+        </span></div>`;
+    });
+  }
+}
+
+async function _cicloTransferResponder(transferir) {
+  const st = _cicloTransferState;
+  if (!st) return;
+  if (!transferir) {
+    const d = await (await fetch(
+      `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${st.concluidaCod}/pos-conclusao`,
+      { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({etapa_alvo_codigo: st.alvoCod, transferir: false}) }
+    )).json().catch(() => ({}));
+    _cicloTransferState = null;
+    _cicloRenderTransferPrompt();
+    if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+    showToast('Fase concluída — responsável mantido.', false);
+    return;
+  }
+  st.modo = 'buscar';
+  _cicloRenderTransferPrompt();
+}
+
+function _cicloTransferCancelar() {
+  if (!_cicloTransferState) return;
+  _cicloTransferState.modo = 'perguntar';
+  _cicloRenderTransferPrompt();
+}
+
+async function _cicloTransferConfirmar() {
+  const st = _cicloTransferState;
+  if (!st) return;
+  const raw = document.getElementById('ciclo-transf-dest');
+  const n = raw ? parseInt(raw.value, 10) : NaN;
+  if (!n) { showToast('Escolha um destino.', true); return; }
+  const payload = {etapa_alvo_codigo: st.alvoCod, transferir: true};
+  if (n < 0) payload.terceiro_id = -n; else payload.funcionario_id = n;
+  const d = await (await fetch(
+    `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${st.concluidaCod}/pos-conclusao`,
+    { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload) }
+  )).json().catch(() => ({}));
+  if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+  _cicloTransferState = null;
+  _cicloRenderTransferPrompt();
+  showToast(d.automatica
+    ? `Transferido para ${d.destino_nome} (sem login — aceite automático).`
+    : `Transferência enviada para ${d.destino_nome} — aguardando aceite.`, false);
+  await carregarCicloSilencioso();
+  renderCiclo();   // repinta a tag "Responsável" e o estado "em transferência"
 }
 
 function renderCiclo() {
@@ -18258,6 +18406,7 @@ function renderCiclo() {
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos — o projeto pode ser retido a qualquer momento"><i class="ti ti-building-community"></i>Retenção</button>` : ''}
     </div>
+    <div id="ciclo-transfer-prompt"></div>
   `;
   // ── FICHÁRIO (spec ciclo/2026-08-01): lombada com as 19 etapas principais + tela cheia ──
   if (projetoAtivo && _cicloFichaProjeto !== projetoAtivo.nome_safe) {

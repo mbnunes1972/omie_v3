@@ -98,6 +98,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
 .tf-conta{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .tf-conta #sb-user-btn{margin-top:0}
 .tf-tema{display:flex;gap:4px;background:transparent;border-radius:8px;padding:3px}
+/* Pendências (Fase 6): número vermelho — reaproveita --err (mesmo tom de alerta do resto do app). */
+.tf-badge-count{display:inline-block;background:var(--err);color:var(--btn-primary-text);border-radius:999px;
+  font-size:10px;font-weight:700;padding:1px 6px;margin-left:4px;line-height:1.4}
 .sb-creds{padding:16px 20px;border-bottom:1px solid var(--border)}
 .sb-creds-title{font-size:9px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;font-family:var(--font-sans);margin-bottom:10px}
 .sb-creds label{font-size:9px;color:var(--muted);letter-spacing:.5px;display:block;margin-bottom:4px;margin-top:8px}
@@ -606,7 +609,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </span>
   </div>
   <div class="tf-central" id="tf-central">
-    <!-- Pendências / Responsabilidades — Fase 6 -->
+    <div style="position:relative">
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();tfTogglePendencias()" id="tf-pend-btn">
+        <i class="ti ti-bell"></i> Pendências
+        <span id="tf-pend-badge" class="tf-badge-count" style="display:none">0</span>
+      </button>
+      <div class="proj-status-dd" id="tf-pend-dd" style="min-width:320px;max-width:380px;right:auto;left:0"></div>
+    </div>
+    <div style="position:relative">
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();tfToggleResponsabilidades()" id="tf-resp-btn">
+        <i class="ti ti-clipboard-list"></i> Responsabilidades
+      </button>
+      <div class="proj-status-dd" id="tf-resp-dd" style="min-width:320px;max-width:380px;right:auto;left:0"></div>
+    </div>
   </div>
   <div class="tf-conta">
     <div id="sb-user-btn" onclick="abrirModalPerfil()"
@@ -4101,7 +4116,119 @@ function _atualizarUIUsuario(){
   if(mpIni)   mpIni.textContent   = inicial;
   _renderSeletorLoja();
   if(typeof ocPollBadge === 'function') ocPollBadge();   // badge de não-lidos do Orizon Chat
+  if(typeof _meFramePoll === 'function') _meFramePoll(); // Pendências do frame de topo (Fase 6)
 }
+
+// ── Frame de topo: Pendências / Responsabilidades (2026-08-23, Fase 6) ──────
+let _tfPendencias = [];
+let _tfResponsabilidades = [];
+
+async function _meFramePoll(){
+  if(!_usuarioAtual) return;
+  try {
+    const d = await (await fetch('/api/me/ciclo/pendencias', {credentials:'same-origin'})).json();
+    _tfPendencias = (d && d.ok && d.itens) || [];
+  } catch(e) { _tfPendencias = []; }
+  const badge = document.getElementById('tf-pend-badge');
+  if (badge) {
+    if (_tfPendencias.length) { badge.textContent = _tfPendencias.length > 99 ? '99+' : _tfPendencias.length; badge.style.display = ''; }
+    else badge.style.display = 'none';
+  }
+  const dd = document.getElementById('tf-pend-dd');
+  if (dd && dd.classList.contains('open')) _tfRenderPendenciasDropdown();
+}
+setInterval(_meFramePoll, 45000);   // mesma cadência do badge de chat não lido
+
+function _tfFecharDropdowns(){
+  document.getElementById('tf-pend-dd')?.classList.remove('open');
+  document.getElementById('tf-resp-dd')?.classList.remove('open');
+}
+
+function tfTogglePendencias(){
+  const dd = document.getElementById('tf-pend-dd');
+  if (!dd) return;
+  const abrindo = !dd.classList.contains('open');
+  _tfFecharDropdowns();
+  if (abrindo) { dd.classList.add('open'); _tfRenderPendenciasDropdown(); }
+}
+
+function _tfRenderPendenciasDropdown(){
+  const dd = document.getElementById('tf-pend-dd');
+  if (!dd) return;
+  if (!_tfPendencias.length) {
+    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Nenhuma pendência.</div>';
+    return;
+  }
+  dd.innerHTML = _tfPendencias.map((it, i) => `
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="font-weight:700;color:var(--text)">${esc(it.projeto_nome)}</div>
+      <div style="color:var(--muted);margin:2px 0 8px">Etapa ${esc(it.etapa_codigo)} — ${esc(it.etapa_nome)}
+        · transferido por ${esc(it.transferido_por_nome || '—')}</div>
+      <div id="tf-pend-confirmar-${i}"></div>
+      <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();_tfPendenciaReceberAbrir(${i})">Receber Projeto</button>
+    </div>
+  `).join('');
+}
+
+function _tfPendenciaReceberAbrir(i){
+  const box = document.getElementById('tf-pend-confirmar-'+i);
+  const it = _tfPendencias[i];
+  if (!box || !it) return;
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+    <span style="color:var(--text)">Confirmar recebimento?</span>
+    <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();_tfPendenciaConfirmar(${i})">Confirmar</button>
+  </div>`;
+}
+
+async function _tfPendenciaConfirmar(i){
+  const it = _tfPendencias[i];
+  if (!it) return;
+  const d = await (await fetch(
+    `/api/projetos/${encodeURIComponent(it.projeto_nome)}/ciclo/${encodeURIComponent(it.etapa_codigo)}/transferencia/aceitar`,
+    { method: 'POST', credentials: 'same-origin' }
+  )).json().catch(() => ({}));
+  if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+  showToast('Projeto recebido — você é o novo responsável.', false);
+  await _meFramePoll();
+  _tfRenderPendenciasDropdown();
+  // Ficha aberta na tela é justo esse projeto/etapa? Atualiza na hora (tag "Responsável" etc).
+  if (projetoAtivo && projetoAtivo.nome_safe === it.projeto_nome && typeof _cicloAberto !== 'undefined' && _cicloAberto) {
+    carregarCiclo();
+  }
+}
+
+function tfToggleResponsabilidades(){
+  const dd = document.getElementById('tf-resp-dd');
+  if (!dd) return;
+  const abrindo = !dd.classList.contains('open');
+  _tfFecharDropdowns();
+  if (abrindo) { dd.classList.add('open'); _tfCarregarResponsabilidades(); }
+}
+
+async function _tfCarregarResponsabilidades(){
+  const dd = document.getElementById('tf-resp-dd');
+  if (!dd) return;
+  dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Carregando…</div>';
+  try {
+    const d = await (await fetch('/api/me/ciclo/responsabilidades', {credentials:'same-origin'})).json();
+    _tfResponsabilidades = (d && d.ok && d.itens) || [];
+  } catch(e) { _tfResponsabilidades = []; }
+  if (!dd.classList.contains('open')) return;   // usuário fechou enquanto carregava
+  if (!_tfResponsabilidades.length) {
+    // Sem nenhuma etapa com responsável explícito no momento — expressão genérica em vez de vazio.
+    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Sem atribuição definida no momento.</div>';
+    return;
+  }
+  dd.innerHTML = _tfResponsabilidades.map(it => `
+    <div class="proj-status-dd-item" style="display:block" onclick="_tfFecharDropdowns();abrirProjeto('${esc(it.projeto_nome)}')">
+      <div style="font-weight:700;color:var(--text)">${esc(it.projeto_nome)}</div>
+      <div style="color:var(--muted);font-size:11px">Etapa ${esc(it.etapa_codigo)} — ${esc(it.etapa_nome)}</div>
+    </div>
+  `).join('');
+}
+
+// Fechar ao clicar fora: reaproveita o listener global já existente (fecha qualquer
+// .proj-status-dd.open, ver mais abaixo no arquivo) — os triggers acima cortam a propagação.
 
 function _renderSeletorLoja(){
   const lojas = (_usuarioAtual && _usuarioAtual.lojas) || [];

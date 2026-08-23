@@ -767,6 +767,15 @@ class CicloEtapa(Base):
     # medidor/PE terceirizados). Exatamente um dos dois responsáveis fica preenchido.
     responsavel_terceiro_id     = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
     observacoes    = Column(Text,     nullable=True)
+    # Transferência de responsabilidade (2026-08-23): ciclo de vida 'nenhuma' → 'pendente'
+    # (destino tem login, aguarda aceite via "Receber Projeto") ou direto 'nenhuma' de novo
+    # (destino sem login — aceite automático, ninguém pra confirmar). Exatamente um dos dois
+    # campos de destino fica preenchido, igual ao par responsavel_funcionario_id/_terceiro_id.
+    transferencia_status                    = Column(Text, nullable=False, default="nenhuma")
+    transferencia_destino_funcionario_id    = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    transferencia_destino_terceiro_id       = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
+    transferencia_solicitada_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    transferencia_solicitada_em             = Column(DateTime, nullable=True)
 
     __table_args__ = (UniqueConstraint("projeto_nome", "etapa_codigo", name="uq_ciclo_etapa"),)
 
@@ -1629,7 +1638,9 @@ class ConversaMensagem(Base):
     corpo_cifrado    = Column(Text,     nullable=True)
     # Evento inline na timeline (spec chat 2026-07-31): mensagem de SISTEMA que o render mostra
     # como faixa, não balão — triagem_vinculo | membro_entrou | membro_saiu | fase_transicao |
-    # documento_registrado | documento_encaminhado. NULL = mensagem comum.
+    # documento_registrado | documento_encaminhado | etapa_concluida | transferencia_pendente |
+    # transferencia_aceita (os 3 últimos: Concluir/Transferir do Ciclo, 2026-08-23). NULL =
+    # mensagem comum.
     evento           = Column(String(24), nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
 
@@ -2369,6 +2380,19 @@ def _migrar_colunas_pg():
         "ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cliente_cpf_confirmado TEXT",
         # Logo por loja (2026-08-20): nome do arquivo em logos_loja/<id>/, NULL = padrão do sistema.
         "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS logo_arquivo VARCHAR(80)",
+        # Transferência de responsabilidade da etapa (2026-08-23): "Concluir" pergunta se
+        # transfere; pendente até quem recebeu clicar "Receber Projeto" (ou aceite automático
+        # se o destino não tem login). Índices parciais — sem eles a agregação cross-projeto de
+        # "Pendências"/"Responsabilidades" (GET /api/me/ciclo/...) faz full scan da tabela toda.
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS transferencia_status VARCHAR(10) DEFAULT 'nenhuma'",
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS transferencia_destino_funcionario_id INTEGER",
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS transferencia_destino_terceiro_id INTEGER",
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS transferencia_solicitada_por_usuario_id INTEGER",
+        "ALTER TABLE ciclo_etapas ADD COLUMN IF NOT EXISTS transferencia_solicitada_em TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_transf_dest_func ON ciclo_etapas (transferencia_destino_funcionario_id) WHERE transferencia_status = 'pendente'",
+        "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_transf_dest_terc ON ciclo_etapas (transferencia_destino_terceiro_id) WHERE transferencia_status = 'pendente'",
+        "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_funcionario ON ciclo_etapas (responsavel_funcionario_id)",
+        "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_terceiro ON ciclo_etapas (responsavel_terceiro_id)",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

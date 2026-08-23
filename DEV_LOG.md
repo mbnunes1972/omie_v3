@@ -3277,6 +3277,99 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 201 — Responsável + Concluir/Transferir de fase + Frame fixo de topo (Pendências/Responsabilidades)
+
+**Contexto:** o usuário achou um caso real (projeto "Teste_0820", tag "com a bola" apontando pra
+Juliana Kaercher com o projeto ainda em Contrato, antes da Solicitação de Medição) e pediu uma
+reformulação maior: renomear a tag, dar um fluxo EXPLÍCITO de transferência de responsabilidade
+por fase (com aceite de quem recebe) e um novo frame fixo no topo da tela pra abrigar isso — hoje
+os dados de usuário viviam perdidos no canto inferior esquerdo da sidebar. Planejado em
+`EnterPlanMode` (plano salvo/aprovado antes de codificar, 2 decisões fechadas com o usuário via
+`AskUserQuestion`: frame cobre a tela inteira acima da sidebar; "Concluir" preserva 100% dos
+gates de cada fase, a pergunta de transferência entra só depois do sucesso). Executado em 8 fases,
+cada uma branch+PR própria com suíte verde, sem parar pra confirmar entre elas (autorização do
+usuário). Spec técnica completa:
+`docs/superpowers/specs/ciclo/2026-08-23-responsavel-transferencia-frame-topo-design.md`.
+
+**[1] Vocabulário.** "Com a bola" → "Responsável" na tag do Ciclo (`_tagComABola`) — só o texto
+visível, zero risco.
+
+**[2] Schema + backend do fluxo de transferência.** `CicloEtapa` ganha `transferencia_status`
+('nenhuma'|'pendente') + destino (funcionário OU terceiro) + quem/quando solicitou, com índices
+parciais (a agregação cross-projeto das Pendências/Responsabilidades faria full scan sem eles).
+`POST .../ciclo/<codigo>/pos-conclusao` — só aceito depois que a etapa JÁ foi concluída pelo
+fluxo específico dela (400 senão, gate garantido no servidor); decide o destino da
+responsabilidade da etapa SEGUINTE (código calculado no frontend, mesma lógica que já alimenta a
+tag "Responsável" — backend só valida, não recomputa). Sem transferir → só avisa no chat.
+Transferindo pra quem tem login → fica `pendente` até "Receber Projeto". Transferindo pra quem
+NÃO tem login (terceiro sem conta) → efetiva na hora, aceite automático (ninguém pra confirmar).
+`POST .../ciclo/<codigo>/transferencia/aceitar` ("Receber Projeto") — só o destino gravado pode
+chamar (403 pra qualquer outro). 3 eventos novos de chat como faixa inline
+(`etapa_concluida`/`transferencia_pendente`/`transferencia_aceita`) — deliberadamente NÃO
+reaproveitam `natureza="transferencia"` (mecanismo do responsável do ATENDIMENTO, conceito
+diferente, documentado no código).
+
+**[3] Botão "Concluir" pergunta "deseja transferir?" — desvio do plano original, pra melhor.** O
+plano prévio previa plugar a pergunta em ~10 funções `_renderCard*` (Contrato, Aprovação
+Financeira, Medição, PE, etc.), uma a uma. Implementado diferente: `carregarCiclo()` é o ÚNICO
+ponto por onde TODOS os fluxos de conclusão já passam pra recarregar a tela (30+ call sites) —
+em vez de tocar em cada um, comparamos o status de cada etapa ANTES/DEPOIS do fetch ali; qualquer
+etapa que virou conclusiva é uma conclusão de verdade. Mesmo comportamento aprovado (nenhum gate
+muda), um ponto de risco em vez de dez, cobre qualquer fluxo futuro de graça.
+`carregarCicloSilencioso()` (refresh em background, ex.: auto-conclusão da etapa 4 ao salvar
+orçamento) deliberadamente NÃO participa do diff — só ação visível no fichário dispara a
+pergunta. Prompt inline (não modal) reaproveita o seletor buscável já existente
+(`_selBuscavelHtml` + `mapaProfissionaisGarantir()`) pra escolher o destino, com busca por nome
+OU função de graça; terceiro codificado como id negativo no seletor (`_selBuscavelHtml` só aceita
+número sem aspas no onclick). Tag "Responsável" e coluna "Fase do Ciclo" mostram "Em
+transferência" quando pendente.
+
+**[4] Endpoints de agregação — Pendências e Responsabilidades.** `GET /api/me/ciclo/pendencias`
+(transferências pendentes onde sou o destino) e `GET /api/me/ciclo/responsabilidades` (etapas
+onde sou responsável hoje, em qualquer projeto que eu acesse) — restritos às lojas do usuário.
+Responsabilidades cobre só overrides explícitos (inclusive aceites), não recalcula a cadeia
+inteira de fallback do Mapa de Atribuições (caro, fora do pedido desta rodada — documentado no
+docstring do endpoint). Isolamento por loja testado inclusive contra anomalia de dado
+(funcionário de uma loja aparecendo numa etapa de projeto de outra).
+
+**[5] Frame fixo de topo.** `<header class="topframe">` cobrindo a tela inteira, acima da
+sidebar — `body` vira flex-column, novo `.app-body` é a linha sidebar+conteúdo que `body` era
+antes. "Orizon Manager" → "OrizonOne" (wordmark + `<title>`); nome da loja abaixo do wordmark
+(loja única) ou o seletor de sempre (2+ lojas). Usuário/tema/Sair migram pro canto direito do
+frame com os MESMOS IDs — nenhum JS que os popula precisou mudar. `.sidebar`/`.topframe`
+compartilham o remapeamento de tokens pra paleta escura (ambos escuros nos dois temas) e o
+`color-scheme:dark` dos selects nativos.
+
+**[6] Painéis Pendências/Responsabilidades ligados + "Receber Projeto".** Contador vermelho
+(poll 45s, mesma cadência do badge de chat não lido) + dropdown com aceite inline (sem navegar);
+se o projeto pendente é o aberto na tela, a ficha recarrega na hora. Responsabilidades é só
+leitura, cada linha abre o projeto. **Achado ao vivo durante a implementação:** o app já tem um
+listener global que fecha QUALQUER `.proj-status-dd.open` a cada clique no documento — os
+botões/toggles novos precisaram de `event.stopPropagation()` pra não se autofechar no mesmo
+clique (mesmo padrão já usado em `projStatusClick`). Um listener de fechar-ao-clicar-fora escrito
+à parte foi removido por ser redundante com esse global. Item "função sem atribuição" (pedido
+separado) dobrado aqui: lista vazia de Responsabilidades mostra "Sem atribuição definida no
+momento" em vez de ficar em branco.
+
+**[7/8] Fechamento.** Confirmado que `mod_ciclo.py` e o espelho de topologia no frontend
+(`ETAPAS_CICLO`/`ETAPAS_PRINCIPAIS`/`PREDECESSOR_OVERRIDE`/`STATUS_CONCLUSIVOS`) não foram
+tocados em nenhuma das 8 fases — a feature inteira entrou como estado ORTOGONAL à topologia do
+ciclo, nunca mudando ordem/gate de etapa (risco #1 do plano, verificado por `git log`/`git diff`
+vazios nesses arquivos/trechos). Suíte 2282 → 2293 passed ao longo da sequência.
+
+**Verificação:** cada fase rodou a suíte completa antes do merge. Fases de frontend verificadas
+ao vivo via Playwright contra o localhost, incluindo um teste ponta a ponta com dado real
+inserido direto no Postgres simulando uma transferência pendente (badge → dropdown → Receber →
+Confirmar → responsável efetivado → badge some → aparece em Responsabilidades — dado de teste
+removido depois). **Não testado ao vivo** (só por pytest): o fluxo de conclusão de uma etapa
+gated pesada (Aprovação Financeira com senha, Medição com parecer+arquivo) disparando o prompt
+de ponta a ponta — o mecanismo central foi validado simulando a transição de status no cliente,
+não completando o upload+senha reais.
+
+**Arquivos:** `database.py`, `main.py`, `chat/core.py`, `static/index.html`,
+`tests/test_ciclo_transferencia.py` (novo),
+`docs/superpowers/specs/ciclo/2026-08-23-responsavel-transferencia-frame-topo-design.md` (novo).
+
 ## Sessão 200 — 8 achados do usuário em produção/homolog: alinhamento visual, 3 correções ClickSign confirmadas contra o sandbox real, modelo padrão de documento, logo por loja + fix de race condition pós-deploy
 
 **Contexto:** sequência de PRs pontuais (#10–#17) mergeados entre 2026-08-20 e 2026-08-23, sem

@@ -15,6 +15,29 @@ def _login(f, who):
 
 # ── config-gating ────────────────────────────────────────────────────────────
 
+# ── Race de import do shim (achado real 2026-08-21) ────────────────────────────
+
+def test_main_importa_mod_chat_externo_no_carregamento_do_modulo():
+    """Guarda de regressão do AttributeError real em produção:
+    'mod_chat_externo' has no attribute 'varrer_triagem_vencida'.
+
+    mod_chat.py/mod_chat_externo.py são shims que fazem `sys.modules[__name__] = _core`
+    (troca o PRÓPRIO objeto de módulo pelo de chat/ durante a execução — ver o docstring
+    deles). Só é seguro sob concorrência (ThreadingHTTPServer, uma thread por request) se
+    essa troca já tiver acontecido ANTES de qualquer request chegar: um `import
+    mod_chat_externo` disparado ao mesmo tempo por duas threads, na primeiríssima vez
+    (ex.: logo após um deploy/restart), pode fazer a thread perdedora do lock de import
+    capturar o shim ANTIGO (vazio) em vez do módulo real — comprovado em produção.
+
+    main.py precisa importar os dois, no nível do módulo (thread única, antes do
+    ThreadingHTTPServer subir), pra fechar essa janela. Este teste trava que ninguém
+    remova esse import "porque parecia redundante" sem entender o motivo."""
+    import main
+    import sys
+    assert hasattr(sys.modules["mod_chat_externo"], "varrer_triagem_vencida")
+    assert hasattr(sys.modules["mod_chat"], "listar_inbox")
+
+
 def test_meio_configurado_por_env(monkeypatch):
     import mod_chat_externo as ext
     monkeypatch.delenv("ORIZON_SMTP_HOST", raising=False)

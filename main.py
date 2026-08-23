@@ -32,6 +32,18 @@ import mod_assistencias
 import mod_cadastro
 import mod_folha
 import mod_escopo
+# mod_chat/mod_chat_externo são shims de compatibilidade (empacotamento 2026-07-31) que
+# substituem sys.modules[__name__] pelo módulo real de chat/ durante a própria execução —
+# ver o docstring deles. Importados aqui, no carregamento do módulo (thread única, antes do
+# ThreadingHTTPServer subir), porque em todo outro lugar do arquivo o import é PREGUIÇOSO
+# (dentro do handler da request). Se duas threads de requisição disparassem a PRIMEIRA
+# importação de 'mod_chat_externo' ao mesmo tempo (ex.: logo após um deploy/restart), a
+# thread perdedora do lock de import podia capturar a referência ANTIGA (o shim vazio, antes
+# da substituição) e ficar sem os atributos — comprovado em produção via
+# AttributeError: module 'mod_chat_externo' has no attribute 'varrer_triagem_vencida'.
+# Importar aqui, síncrono e single-thread, fecha essa janela: quando o servidor começa a
+# aceitar conexão, sys.modules já está resolvido e os imports preguiçosos viram lookup puro.
+import mod_chat, mod_chat_externo
 from urllib.parse import urlparse, unquote
 
 from storage import (

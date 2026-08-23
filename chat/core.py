@@ -1779,6 +1779,42 @@ def mensagem_passagem_fase(db, conversa, autor_usuario_id, etapa_concluida_nome,
                            transferido_para_funcionario_id=transferido_para_funcionario_id)
 
 
+# ── Concluir/Transferir etapa do Ciclo (2026-08-23) ──────────────────────────
+# Deliberadamente NÃO reaproveita natureza="transferencia"/transferido_para_funcionario_id
+# (mecanismo do responsável do ATENDIMENTO — Conversa.responsavel_usuario_id, ver
+# transferir_responsavel acima — e do gate de bloqueador). Aqui é responsável da ETAPA do
+# Ciclo (CicloEtapa.responsavel_funcionario_id/_terceiro_id), com handshake de aceite próprio
+# (transferencia_status). Eventos inline (evento=..., como documento_registrado/fase_transicao).
+
+def mensagem_etapa_concluida(db, conversa, autor_usuario_id, etapa_codigo, etapa_nome,
+                             responsavel_nome):
+    """Fase concluída sem transferir — responsável permanece o mesmo."""
+    corpo = "Fase \"%s\" concluída. %s permanece responsável." % (
+        etapa_nome, responsavel_nome or "O responsável atual")
+    return enviar_mensagem(db, conversa, autor_usuario_id, corpo,
+                           etapa_codigo=etapa_codigo, evento="etapa_concluida")
+
+
+def mensagem_transferencia_pendente(db, conversa, autor_usuario_id, etapa_codigo, etapa_nome,
+                                    destino_nome):
+    """Transferência solicitada — aguardando o destino aceitar em 'Receber Projeto'."""
+    corpo = "Responsabilidade da fase \"%s\" transferida para %s — aguardando aceite." % (
+        etapa_nome, destino_nome)
+    return enviar_mensagem(db, conversa, autor_usuario_id, corpo,
+                           etapa_codigo=etapa_codigo, evento="transferencia_pendente")
+
+
+def mensagem_transferencia_aceita(db, conversa, autor_usuario_id, etapa_codigo, etapa_nome,
+                                  novo_responsavel_nome, automatica=False):
+    """Transferência efetivada — aceite manual (Receber Projeto) ou automático (destino sem
+    login, ninguém pra confirmar)."""
+    corpo = "%s é o novo responsável pela fase \"%s\"%s." % (
+        novo_responsavel_nome, etapa_nome,
+        " (sem login — aceite automático)" if automatica else "")
+    return enviar_mensagem(db, conversa, autor_usuario_id, corpo,
+                           etapa_codigo=etapa_codigo, evento="transferencia_aceita")
+
+
 # ── Bloqueador como gate real (Fatia 3, spec seção 3) ────────────────────────
 
 def bloqueadores_ativos(db, projeto_nome):

@@ -145,8 +145,10 @@ def _enriquecer_projetos_com_fase_ciclo(projetos):
                           CicloEtapa.etapa_codigo.in_(mod_ciclo.codigos_relevantes_fase()))
                   .all())
         status_map = {}
+        transf_map = {}
         for r in rows:
             status_map.setdefault(r.projeto_nome, {})[r.etapa_codigo] = r.status
+            transf_map.setdefault(r.projeto_nome, {})[r.etapa_codigo] = r.transferencia_status
         for p in projetos:
             ns = p.get('nome_safe')
             if not ns:
@@ -160,6 +162,10 @@ def _enriquecer_projetos_com_fase_ciclo(projetos):
             p['etapa_atual_codigo'] = atual
             p['etapa_atual_nome']   = mod_ciclo.ETAPA_NOME.get(atual) if atual else None
             p['fase_ciclo']         = mod_ciclo.faixa_da_etapa(atual) if atual else "concluido"
+            # Transferência de responsabilidade (2026-08-23): a etapa atual pode estar com
+            # aceite pendente — a lista mostra "Em transferência" no lugar do nome da etapa
+            # (o nome real segue disponível em etapa_atual_nome pro tooltip do frontend).
+            p['em_transferencia'] = bool(atual and transf_map.get(ns, {}).get(atual) == 'pendente')
     finally:
         db.close()
 
@@ -4852,6 +4858,33 @@ class Handler(BaseHTTPRequestHandler):
                     _efet_ids = {i for i in _efet_by_cod.values() if i}
                     _efet_map = {f.id: f.nome for f in db.query(Funcionario).filter(Funcionario.id.in_(_efet_ids)).all()} \
                         if _efet_ids else {}
+                    # Transferência de responsabilidade (2026-08-23): nome do destino (funcionário
+                    # OU terceiro) + se o usuário logado é ele (habilita "Receber Projeto" na tela).
+                    _tdf_ids = {e.transferencia_destino_funcionario_id for e in etapas_sorted
+                                if e.transferencia_destino_funcionario_id}
+                    _tdt_ids = {e.transferencia_destino_terceiro_id for e in etapas_sorted
+                                if e.transferencia_destino_terceiro_id}
+                    _tdf_map = {f.id: f.nome for f in db.query(Funcionario).filter(Funcionario.id.in_(_tdf_ids)).all()} \
+                        if _tdf_ids else {}
+                    _tdt_map = {t.id: t.nome for t in db.query(Terceiro).filter(Terceiro.id.in_(_tdt_ids)).all()} \
+                        if _tdt_ids else {}
+                    _meu_fid = _funcionario_do_usuario(db, usuario["id"])
+                    _meu_terc = db.query(Terceiro).filter_by(usuario_id=usuario["id"]).first()
+                    _meu_tid = _meu_terc.id if _meu_terc else None
+                    def _transf_campos(e):
+                        if e.transferencia_status != "pendente":
+                            return {"transferencia_status": e.transferencia_status,
+                                    "transferencia_destino_nome": None,
+                                    "transferencia_pode_aceitar": False}
+                        nome = (_tdf_map.get(e.transferencia_destino_funcionario_id)
+                                or _tdt_map.get(e.transferencia_destino_terceiro_id) or "")
+                        pode = bool((e.transferencia_destino_funcionario_id
+                                     and e.transferencia_destino_funcionario_id == _meu_fid)
+                                    or (e.transferencia_destino_terceiro_id
+                                        and e.transferencia_destino_terceiro_id == _meu_tid))
+                        return {"transferencia_status": "pendente",
+                                "transferencia_destino_nome": nome,
+                                "transferencia_pode_aceitar": pode}
                     resultado = [{
                         "etapa_codigo":  e.etapa_codigo,
                         "status":        e.status,
@@ -4871,6 +4904,7 @@ class Handler(BaseHTTPRequestHandler):
                         "responsavel_efetivo_id":   _efet_by_cod.get(e.etapa_codigo),
                         "responsavel_efetivo_nome": _efet_map.get(_efet_by_cod.get(e.etapa_codigo), ""),
                         "observacoes":   e.observacoes or "",
+                        **_transf_campos(e),
                     } for e in etapas_sorted]
                     assinado = _contrato_assinado(nome_safe, db)
                     total_assinado = _contrato_totalmente_assinado(nome_safe, db)
@@ -12561,6 +12595,210 @@ class Handler(BaseHTTPRequestHandler):
                         etapa.responsavel_funcionario_id = func.id
                     db.commit()
                     self.send_json({"ok": True, "responsavel_funcionario_id": etapa.responsavel_funcionario_id})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/ciclo/<codigo>/pos-conclusao — "Concluir" pergunta se
+            # transfere (2026-08-23). SÓ chamado DEPOIS que a etapa `codigo` já foi concluída
+            # pelo fluxo específico dela (senha financeira, parecer de medição, PDF do
+            # contrato etc. — nenhum desses gates muda); aqui só decide o que acontece com a
+            # RESPONSABILIDADE da etapa seguinte (etapa_alvo_codigo, calculada no frontend —
+            # mesma lógica que já alimenta a tag "Responsável"). Body:
+            # {etapa_alvo_codigo, transferir, funcionario_id|terceiro_id (só se transferir)}.
+            m = _re.match(r'^/api/projetos/([^/]+)/ciclo/([^/]+)/pos-conclusao$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                etapa_cod = unquote(m.group(2))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    req = json.loads(body or b'{}')
+                    etapa_alvo_cod = (req.get("etapa_alvo_codigo") or "").strip()
+                    transferir = bool(req.get("transferir"))
+                    etapa_concluida = db.query(CicloEtapa).filter_by(
+                        projeto_nome=nome_safe, etapa_codigo=etapa_cod).first()
+                    if etapa_concluida is None or etapa_concluida.status not in mod_ciclo.STATUS_CONCLUSIVOS:
+                        self.send_json({"ok": False,
+                            "erro": "Esta etapa ainda não foi concluída."}, code=400); return
+                    if not etapa_alvo_cod or etapa_alvo_cod not in mod_ciclo.ETAPA_NOME:
+                        self.send_json({"ok": False, "erro": "Etapa alvo inválida."}, code=400); return
+                    etapa_alvo = db.query(CicloEtapa).filter_by(
+                        projeto_nome=nome_safe, etapa_codigo=etapa_alvo_cod).first()
+                    if etapa_alvo is None:
+                        etapa_alvo = CicloEtapa(projeto_nome=nome_safe, etapa_codigo=etapa_alvo_cod)
+                        db.add(etapa_alvo)
+                    elif etapa_alvo.status in mod_ciclo.STATUS_CONCLUSIVOS:
+                        self.send_json({"ok": False,
+                            "erro": "A etapa seguinte já está concluída."}, code=400); return
+
+                    import mod_chat as _mchat
+                    _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                    conv = _mchat.get_or_create_conversa_projeto(
+                        db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
+                    etapa_concluida_nome = mod_ciclo.ETAPA_NOME.get(etapa_cod, etapa_cod)
+                    etapa_alvo_nome = mod_ciclo.ETAPA_NOME.get(etapa_alvo_cod, etapa_alvo_cod)
+
+                    if not transferir:
+                        resp_nome = ""
+                        if etapa_concluida.responsavel_id:
+                            _ru = db.get(Usuario, etapa_concluida.responsavel_id)
+                            resp_nome = _ru.nome if _ru else ""
+                        try:
+                            _mchat.mensagem_etapa_concluida(db, conv, usuario.get("id"),
+                                etapa_cod, etapa_concluida_nome, resp_nome)
+                        except Exception as _e:
+                            logging.getLogger(__name__).warning(
+                                "mensagem_etapa_concluida falhou (%s/%s): %s", nome_safe, etapa_cod, _e)
+                        db.commit()
+                        self.send_json({"ok": True, "transferencia_status": "nenhuma"})
+                        return
+
+                    fio_id  = req.get("funcionario_id")
+                    terc_id = req.get("terceiro_id")
+                    if bool(fio_id) == bool(terc_id):
+                        self.send_json({"ok": False,
+                            "erro": "Escolha exatamente um funcionário ou terceiro de destino."}, code=400)
+                        return
+                    destino_nome = None
+                    destino_usuario_id = None
+                    if fio_id:
+                        func = db.get(Funcionario, int(fio_id))
+                        if func is None or func.loja_id != loja_id or func.status != "ativo":
+                            self.send_json({"ok": False, "erro": "Funcionário não encontrado"}, code=404); return
+                        etapa_alvo.transferencia_destino_funcionario_id = func.id
+                        etapa_alvo.transferencia_destino_terceiro_id = None
+                        destino_nome = func.nome
+                        # Funcionário↔Usuario: mesmo par de campos que _funcionario_do_usuario usa
+                        # na direção inversa (Funcionario.usuario_id, senão Usuario.funcionario_id).
+                        destino_usuario_id = func.usuario_id or (
+                            db.query(Usuario).filter_by(funcionario_id=func.id).first().id
+                            if db.query(Usuario).filter_by(funcionario_id=func.id).first() else None)
+                    else:
+                        terc = db.get(Terceiro, int(terc_id))
+                        if terc is None or terc.loja_id != loja_id or terc.status != "ativo":
+                            self.send_json({"ok": False, "erro": "Terceiro não encontrado"}, code=404); return
+                        etapa_alvo.transferencia_destino_terceiro_id = terc.id
+                        etapa_alvo.transferencia_destino_funcionario_id = None
+                        destino_nome = terc.nome
+                        destino_usuario_id = terc.usuario_id
+
+                    etapa_alvo.transferencia_solicitada_por_usuario_id = usuario.get("id")
+                    etapa_alvo.transferencia_solicitada_em = datetime.utcnow()
+
+                    if destino_usuario_id:
+                        # Destino tem login: fica PENDENTE até aceitar em "Receber Projeto".
+                        etapa_alvo.transferencia_status = "pendente"
+                        try:
+                            _mchat.mensagem_transferencia_pendente(db, conv, usuario.get("id"),
+                                etapa_alvo_cod, etapa_alvo_nome, destino_nome)
+                        except Exception as _e:
+                            logging.getLogger(__name__).warning(
+                                "mensagem_transferencia_pendente falhou (%s/%s): %s",
+                                nome_safe, etapa_alvo_cod, _e)
+                        db.commit()
+                        self.send_json({"ok": True, "transferencia_status": "pendente",
+                                        "destino_nome": destino_nome})
+                    else:
+                        # Destino sem conta de login: ninguém pra clicar "Receber Projeto" —
+                        # efetiva na hora (aceite automático), avisado no chat como tal.
+                        if fio_id:
+                            etapa_alvo.responsavel_funcionario_id = int(fio_id)
+                            etapa_alvo.responsavel_terceiro_id = None
+                        else:
+                            etapa_alvo.responsavel_terceiro_id = int(terc_id)
+                            etapa_alvo.responsavel_funcionario_id = None
+                        etapa_alvo.transferencia_status = "nenhuma"
+                        etapa_alvo.transferencia_destino_funcionario_id = None
+                        etapa_alvo.transferencia_destino_terceiro_id = None
+                        try:
+                            _mchat.mensagem_transferencia_aceita(db, conv, usuario.get("id"),
+                                etapa_alvo_cod, etapa_alvo_nome, destino_nome, automatica=True)
+                        except Exception as _e:
+                            logging.getLogger(__name__).warning(
+                                "mensagem_transferencia_aceita (automática) falhou (%s/%s): %s",
+                                nome_safe, etapa_alvo_cod, _e)
+                        db.commit()
+                        self.send_json({"ok": True, "transferencia_status": "aceita",
+                                        "destino_nome": destino_nome, "automatica": True})
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/ciclo/<codigo>/transferencia/aceitar — "Receber Projeto"
+            # (2026-08-23): só quem é o destino gravado pode aceitar. Efetiva o responsável da
+            # etapa e limpa o estado de transferência.
+            m = _re.match(r'^/api/projetos/([^/]+)/ciclo/([^/]+)/transferencia/aceitar$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                etapa_cod = unquote(m.group(2))
+                usuario   = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    etapa = db.query(CicloEtapa).filter_by(
+                        projeto_nome=nome_safe, etapa_codigo=etapa_cod).first()
+                    if etapa is None or etapa.transferencia_status != "pendente":
+                        self.send_json({"ok": False,
+                            "erro": "Não há transferência pendente para esta etapa."}, code=400); return
+                    meu_fid = _funcionario_do_usuario(db, usuario["id"])
+                    meu_tid = db.query(Terceiro).filter_by(usuario_id=usuario["id"]).first()
+                    meu_tid = meu_tid.id if meu_tid else None
+                    eh_destino = ((etapa.transferencia_destino_funcionario_id
+                                   and etapa.transferencia_destino_funcionario_id == meu_fid)
+                                  or (etapa.transferencia_destino_terceiro_id
+                                      and etapa.transferencia_destino_terceiro_id == meu_tid))
+                    if not eh_destino:
+                        self.send_json({"ok": False,
+                            "erro": "Só quem recebeu a transferência pode aceitá-la."}, code=403); return
+                    if etapa.transferencia_destino_funcionario_id:
+                        etapa.responsavel_funcionario_id = etapa.transferencia_destino_funcionario_id
+                        etapa.responsavel_terceiro_id = None
+                        novo_nome_row = db.get(Funcionario, etapa.responsavel_funcionario_id)
+                    else:
+                        etapa.responsavel_terceiro_id = etapa.transferencia_destino_terceiro_id
+                        etapa.responsavel_funcionario_id = None
+                        novo_nome_row = db.get(Terceiro, etapa.responsavel_terceiro_id)
+                    novo_nome = novo_nome_row.nome if novo_nome_row else ""
+                    etapa.transferencia_status = "nenhuma"
+                    etapa.transferencia_destino_funcionario_id = None
+                    etapa.transferencia_destino_terceiro_id = None
+                    try:
+                        import mod_chat as _mchat
+                        _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+                        conv = _mchat.get_or_create_conversa_projeto(
+                            db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
+                        if meu_fid:
+                            _mchat._adicionar_responsavel_ao_grupo(db, conv, meu_fid)
+                        _mchat.mensagem_transferencia_aceita(db, conv, usuario.get("id"),
+                            etapa_cod, mod_ciclo.ETAPA_NOME.get(etapa_cod, etapa_cod), novo_nome)
+                    except Exception as _e:
+                        logging.getLogger(__name__).warning(
+                            "aviso de aceite de transferência falhou (%s/%s): %s", nome_safe, etapa_cod, _e)
+                    db.commit()
+                    self.send_json({"ok": True, "responsavel_funcionario_id": etapa.responsavel_funcionario_id,
+                                    "responsavel_terceiro_id": etapa.responsavel_terceiro_id})
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)

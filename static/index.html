@@ -18238,7 +18238,7 @@ function _tagComABola() {
   return `<span title="Responsável efetivo da etapa atual (transferência do chat ou edição na tela mandam; senão o default da faixa; por fim, o criador do projeto)"
       style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--text)">
       <i class="ti ti-user-check" style="color:${nome ? 'var(--accent)' : 'var(--warn)'}"></i>
-      Com a bola: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
+      Responsável: <strong>${nome ? esc(nome) + sufixoCriador : 'não atribuído'}</strong>
       <span style="color:var(--muted)">· etapa ${esc(_fichaNumeroExibicao(atual.codigo))} — ${esc(_rotAtual)}</span></span>`;
 }
 

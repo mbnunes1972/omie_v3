@@ -84,8 +84,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    temas (REGRAS_MARCA §5 — glifo mono-branco via currentColor vale nos dois). */
 .topframe{height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
   gap:16px;padding:0 20px;background:var(--sidebar-bg);border-bottom:1px solid var(--sidebar-border);
-  position:relative;z-index:50}
-.tf-marca{display:flex;align-items:center;gap:10px;min-width:0}
+  position:relative;z-index:50;overflow-x:auto}
+/* Achado da Vera (2026-08-23): abaixo de ~1280px o texto dos botões centrais vazava por cima da
+   marca/conta (e depois, numa 1ª tentativa com `flex:1 0 auto` nesta mesma correção, a marca
+   sumia inteira — `flex-shrink:1` num item cujo conteúdo, o wordmark, não tem ellipsis/como
+   encolher de verdade colapsa pra 0 em vez de estabilizar). Fix definitivo: NENHUMA das 3 seções
+   encolhe (`flex-shrink:0` nas três — cada uma sempre no tamanho natural do conteúdo);
+   `overflow-x:auto` no frame é a rede de segurança se a janela for realmente estreita demais pra
+   caber tudo (aparece scroll horizontal em vez de sobrepor ou sumir texto). */
+.tf-marca{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .tf-glifo{width:30px;height:30px;flex-shrink:0;color:var(--sidebar-text-active)}
 .tf-glifo svg{display:block;width:100%;height:100%}
 .tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
@@ -94,7 +101,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
 .tf-wordmark .wm-manager{font-weight:700;font-size:15px;letter-spacing:.01em;color:var(--sidebar-accent)}
 .tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
-.tf-central{display:flex;align-items:center;gap:10px;flex:1;justify-content:center;min-width:0}
+.tf-central{display:flex;align-items:center;gap:10px;flex-shrink:0;justify-content:center}
 .tf-conta{display:flex;align-items:center;gap:10px;flex-shrink:0}
 .tf-conta #sb-user-btn{margin-top:0}
 .tf-tema{display:flex;gap:4px;background:transparent;border-radius:8px;padding:3px}
@@ -4245,7 +4252,11 @@ function _renderSeletorLoja(){
   host.style.display = 'flex';
   host.innerHTML = '<label class="field-label" style="margin:0 6px 0 0">Loja</label>' +
     '<select id="seletor-loja" style="background:var(--surface);border:1px solid var(--border);'
-    + 'border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px"></select>';
+    // max-width (2026-08-23, achado da Vera): sem isto o nome legal da loja (ex. "INSPIRIUM
+    // MOVEIS PLANEJADOS E DECORACAO LTDA") deixava o <select> largo o bastante pra estourar o
+    // frame de topo em telas menores.
+    + 'border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px;max-width:220px;'
+    + 'text-overflow:ellipsis"></select>';
   const sel = document.getElementById('seletor-loja');
   sel.innerHTML = lojas.map(l => `<option value="${l.id}">${esc(l.nome)}</option>`).join('');
   if (_lojaAtiva) sel.value = String(_lojaAtiva);
@@ -18164,6 +18175,18 @@ function fecharCiclo() {
   document.getElementById('ciclo-panel').classList.remove('ativo');
 }
 
+// Concluir/Transferir (2026-08-23): rastreio de conclusão vive AQUI, no fetch — não em
+// carregarCiclo() — porque abrir um projeto passa primeiro por carregarCicloSilencioso() (ver
+// abrirProjeto()), então o PRIMEIRO fetch da sessão pra qualquer projeto é sempre silencioso.
+// Se o snapshot só fosse atualizado dentro de carregarCiclo(), a primeiríssima conclusão de
+// etapa de cada projeto (tipicamente o Briefing, concluído pelo modal que abre na hora de criar
+// o projeto) nunca teria uma baseline pra comparar — achado da Vera (2026-08-23). Toda chamada a
+// _fetchCiclo(), silenciosa ou não, mantém a baseline; só carregarCiclo() (fluxos visíveis) AGE
+// sobre a transição encontrada (_cicloUltimaConclusao), abrindo o prompt.
+let _cicloSnapshotProjeto  = null;   // nome_safe do projeto do snapshot anterior
+let _cicloSnapshotStatus   = null;   // {etapa_codigo: status} antes do fetch mais recente
+let _cicloUltimaConclusao  = null;   // etapa_codigo que virou conclusiva NESTE fetch, ou null
+
 async function _fetchCiclo() {
   if (!projetoAtivo) return;
   const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo`,
@@ -18176,9 +18199,29 @@ async function _fetchCiclo() {
   _projetoCancelado = !!d.projeto_cancelado;
   _projetoEmRevisao = !!d.projeto_em_revisao;
   _cicloCriadoPorNome = d.criado_por_nome || '';   // fallback da tag "com a bola" (revisão 2026-07-25)
+  const mesmoProjeto = _cicloSnapshotProjeto === projetoAtivo.nome_safe;
+  const statusAntes = mesmoProjeto ? _cicloSnapshotStatus : null;
+  if (!mesmoProjeto) _cicloTransferState = null;   // projeto trocou — descarta prompt órfão
   _cicloData = {};
   for (const e of (d.ciclo || [])) _cicloData[e.etapa_codigo] = e;
   _renderBannerCancelado();
+  _cicloUltimaConclusao = null;
+  if (statusAntes) {
+    for (const cod in _cicloData) {
+      // Etapa sem linha no banco ainda (nunca tocada) não aparece em statusAntes — equivale a
+      // 'pendente' (o default do backend), não a "não avaliar". Sem isto, uma etapa que NASCE
+      // já concluída (linha criada e concluída no mesmo POST — o caso do Briefing) nunca seria
+      // detectada, porque `antes` seria undefined (achado da Vera, 2026-08-23).
+      const antes = statusAntes[cod] || 'pendente', agora = _cicloData[cod].status;
+      if (agora && !STATUS_CONCLUSIVOS.has(antes) && STATUS_CONCLUSIVOS.has(agora)) {
+        _cicloUltimaConclusao = cod;
+        break;   // uma por vez — evita empilhar pergunta se mais de uma mudar junto
+      }
+    }
+  }
+  _cicloSnapshotProjeto = projetoAtivo.nome_safe;
+  _cicloSnapshotStatus = {};
+  for (const cod in _cicloData) _cicloSnapshotStatus[cod] = _cicloData[cod].status;
 }
 
 function _toggleBanner(id, mostrar){
@@ -18200,21 +18243,12 @@ function _renderBannerCancelado(){
   _toggleBanner('neg-em-revisao-banner', _projetoEmRevisao);
 }
 
-// Concluir/Transferir (2026-08-23): carregarCiclo() é o ÚNICO ponto por onde TODOS os fluxos
-// de conclusão de etapa passam pra recarregar a tela (contrato, aprovação financeira, medição,
-// PE, operacionais, genéricas — 30+ call sites). Em vez de plugar a pergunta "deseja
-// transferir?" em cada um deles (frágil, fácil esquecer um), comparamos o status ANTES/DEPOIS
-// do fetch aqui: qualquer etapa que virou conclusiva entre uma chamada e a próxima é uma
-// conclusão de verdade (usuário clicou algo que concluiu a etapa), nunca um efeito colateral
-// silencioso — esses passam por carregarCicloSilencioso(), que não participa deste diff.
-let _cicloSnapshotProjeto = null;    // nome_safe do projeto do snapshot anterior
-let _cicloSnapshotStatus  = null;    // {etapa_codigo: status} antes do fetch mais recente
-
+// carregarCiclo() é o ponto por onde os fluxos VISÍVEIS de conclusão de etapa passam pra
+// recarregar a tela (contrato, aprovação financeira, medição, PE, operacionais, genéricas —
+// 30+ call sites, incl. o Briefing). _fetchCiclo() já rastreou se alguma etapa virou conclusiva
+// neste fetch (_cicloUltimaConclusao) — aqui só ATUAMOS sobre isso, abrindo o prompt.
 async function carregarCiclo() {
   try {
-    const mesmoProjeto = _cicloSnapshotProjeto === (projetoAtivo && projetoAtivo.nome_safe);
-    const statusAntes = mesmoProjeto ? _cicloSnapshotStatus : null;
-    if (!mesmoProjeto) _cicloTransferState = null;   // projeto trocou — descarta prompt órfão
     await _fetchCiclo();
     await _carregarMedicao();
     if (projetoAtivo) await peCarregar(projetoAtivo.nome_safe);
@@ -18223,11 +18257,8 @@ async function carregarCiclo() {
     await cronoFuncionariosGarantir();   // funcionários p/ o dropdown de responsável (v12)
     renderCiclo();   // já dispara _fichaEfeitos(_cicloEtapaAtiva), que carrega a Etapa 21 se ativa
     atualizarBotoesAprovacao();
-    if (statusAntes) _cicloDetectarConclusoes(statusAntes);
+    if (_cicloUltimaConclusao) _aposConcluirEtapa(_cicloUltimaConclusao);
     _cicloRenderTransferPrompt();   // reflete _cicloTransferState mesmo sem transição nova agora
-    _cicloSnapshotProjeto = projetoAtivo && projetoAtivo.nome_safe;
-    _cicloSnapshotStatus = {};
-    for (const cod in _cicloData) _cicloSnapshotStatus[cod] = _cicloData[cod].status;
   } catch(e) { console.error('Erro ao carregar ciclo:', e); }
 }
 
@@ -18432,17 +18463,6 @@ function _tagComABola() {
 // medição, PDF do contrato etc. — nenhum desses gates muda). A pergunta "deseja transferir?"
 // entra DEPOIS, só quando a conclusão específica já foi bem-sucedida — ver carregarCiclo().
 let _cicloTransferState = null;   // null | {concluidaCod, concluidaNome, alvoCod, alvoNome, modo:'perguntar'|'buscar'}
-
-function _cicloDetectarConclusoes(statusAntes) {
-  for (const cod in _cicloData) {
-    const antes = statusAntes[cod];
-    const agora = _cicloData[cod] && _cicloData[cod].status;
-    if (antes && agora && !STATUS_CONCLUSIVOS.has(antes) && STATUS_CONCLUSIVOS.has(agora)) {
-      _aposConcluirEtapa(cod);
-      return;   // uma por vez — evita empilhar pergunta se mais de uma mudar junto
-    }
-  }
-}
 
 function _aposConcluirEtapa(codigoConcluido) {
   const def = ETAPAS_CICLO.find(et => et.codigo === codigoConcluido);
@@ -23536,12 +23556,14 @@ async function bfSalvar() {
       const eraProjeto = !!_bfProjetoNome;
       bfFechar();
       if (eraProjeto) {
-        // Achado da Vera (2026-08-12): carregarCicloSilencioso só atualiza _cicloData (pros
-        // botões) — o card da etapa 3 (fichário aberto) continuava mostrando "Briefing
-        // pendente" até navegar pra fora e voltar. Precisa do await (senão renderCiclo lê
-        // _cicloData velho) + o renderCiclo explícito pra repintar o card já aberto.
-        if (typeof carregarCicloSilencioso === 'function') await carregarCicloSilencioso();
-        if (typeof renderCiclo === 'function') renderCiclo();
+        // Achado da Vera (2026-08-12): o card da etapa 3 (fichário aberto) continuava
+        // mostrando "Briefing pendente" até navegar pra fora e voltar — precisava recarregar
+        // e repintar. Achado da Vera (2026-08-23): carregarCicloSilencioso() não passa pelo
+        // diff de conclusão (carregarCiclo(), ver seu comentário) de propósito — mas concluir
+        // o Briefing É uma ação visível que devia disparar "deseja transferir?"/o aviso no
+        // chat igual a qualquer outra conclusão de etapa. Troca pro carregarCiclo() normal —
+        // já inclui o fetch+renderCiclo(), resolve os dois achados com uma função só.
+        if (typeof carregarCiclo === 'function') await carregarCiclo();
         goPage(2);
       } else if (typeof cliHomeCarregar === 'function') {
         cliHomeCarregar();

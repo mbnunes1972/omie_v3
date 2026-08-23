@@ -1133,15 +1133,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos no banco -->
-    <div id="neg-orc-bar" style="display:none;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:6px;
+    <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos no banco.
+         Achado do usuário (2026-08-23): tabs de orçamento e os 3 botões (Ambientes/Novo Ambiente/
+         Novo Orçamento) ficavam espalhados ponta a ponta (neg-orc-tabs tinha flex:1, empurrando os
+         botões pro extremo direito) — agrupados e centralizados agora. -->
+    <div id="neg-orc-bar" style="display:none;align-items:center;justify-content:center;margin-bottom:14px;flex-wrap:wrap;gap:6px;
                                   padding:8px 12px;background:var(--surface);border:1px solid var(--border);
                                   border-radius:8px">
       <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
                    margin-right:4px;white-space:nowrap">Orçamento:</span>
-      <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap;flex:1"></span>
+      <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
       <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
-              style="font-size:11px;padding:4px 10px">Ambientes</button>
+              style="font-size:11px;padding:4px 10px;margin-left:10px">Ambientes</button>
       <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
               style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Ambiente</button>
       <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()"

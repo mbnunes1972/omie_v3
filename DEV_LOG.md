@@ -3277,6 +3277,44 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 202 — QA da Vera na frente da Sessão 201: 2 achados reais, corrigidos e reverificados antes de promover
+
+**Contexto:** antes de promover a frente de Responsável/Transferência/Frame (Sessão 201) pra VPS
+B/produção, o usuário pediu pra chamar a Vera pra testar contra a VPS A. Ela rodou a suíte (2293
+passed) e testou ao vivo — achou 2 problemas reais, os dois corrigidos na hora e reverificados.
+
+**[1] Concluir o Briefing nunca disparava "deseja transferir?" nem a mensagem no chat.**
+`bfSalvar()` usava `carregarCicloSilencioso()` (que por desenho não participa do diff de
+conclusão da Sessão 201) em vez de `carregarCiclo()`. Trocar isso sozinho não bastava: a
+baseline usada pelo diff só era atualizada dentro de `carregarCiclo()`, então a
+**primeiríssima** conclusão de etapa de qualquer projeto (tipicamente o Briefing, concluído
+pelo modal que abre na hora de criar o projeto) nunca tinha "antes" pra comparar —
+`abrirProjeto()` só passa por `carregarCicloSilencioso()` ao abrir. Fix real: o rastreio de
+baseline saiu de `carregarCiclo()` e entrou em `_fetchCiclo()` (o ponto único por onde passa
+TODO fetch de ciclo, silencioso ou não) — agora até a chamada silenciosa de abrir o projeto
+estabelece a baseline, sem mostrar prompt, e a próxima conclusão de verdade já tem "antes" pra
+comparar. Camada extra do mesmo achado: uma etapa sem linha em `ciclo_etapas` ainda (nunca
+tocada) não aparece no snapshot "antes" — `antes` vinha `undefined` e a checagem pulava a
+transição; corrigido tratando ausência de linha como `'pendente'` implícito (o default real do
+backend), não como "não avaliar". Verificado ao vivo (Playwright): criar projeto → abrir pelo
+fluxo normal → preencher e salvar o Briefing → prompt aparece certo → "Não" posta a mensagem de
+sistema no chat.
+
+**[2] Frame de topo sobrepondo texto abaixo de ~1280px.** `.tf-central` tinha `flex:1`
+(flex-basis:0%) sem proteção de encolhimento — o algoritmo de flex encolhia os botões
+Pendências/Responsabilidades além do que o texto `white-space:nowrap` deles precisa, e sem
+`overflow:hidden` o texto vazava visualmente por cima da marca/conta. Fix definitivo: nenhuma
+das 3 seções do frame encolhe mais (`flex-shrink:0` nas três), `overflow-x:auto` no frame como
+rede de segurança (scroll horizontal em vez de sobrepor/sumir texto), e o `<select>` de loja
+(2+ lojas) ganhou `max-width` — sozinho já estourava o frame com o nome legal completo da loja.
+Verificado nos casos que a Vera reportou quebrados (1024px, 1150px) e nos que já funcionavam
+(1280px, 1440px).
+
+**Deploy:** VPS A e B atualizadas (tag `v2026.08.23d-homolog`, commit `fc8aea6`), grafo MCP
+reingerido. Produção não foi tocada.
+
+**Arquivos:** `static/index.html` (único arquivo — os dois achados eram só frontend).
+
 ## Sessão 201 — Responsável + Concluir/Transferir de fase + Frame fixo de topo (Pendências/Responsabilidades)
 
 **Contexto:** o usuário achou um caso real (projeto "Teste_0820", tag "com a bola" apontando pra

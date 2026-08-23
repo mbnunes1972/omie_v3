@@ -82,18 +82,23 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    Pendências/Responsabilidades (meio, ligados na Fase 6), usuário+tema+Sair (direita) — migrados
    de dentro da sidebar (canto inferior esquerdo antigo). Mesma paleta escura da sidebar nos dois
    temas (REGRAS_MARCA §5 — glifo mono-branco via currentColor vale nos dois). */
-.topframe{height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
-  gap:16px;padding:0 20px;background:var(--sidebar-bg);border-bottom:1px solid var(--sidebar-border);
-  position:relative;z-index:50;overflow-x:auto}
+.topframe{height:64px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+  gap:16px;padding:0 24px;background:var(--sidebar-bg);border-bottom:1px solid var(--sidebar-border);
+  position:relative;z-index:50}
 /* Achado da Vera (2026-08-23): abaixo de ~1280px o texto dos botões centrais vazava por cima da
    marca/conta (e depois, numa 1ª tentativa com `flex:1 0 auto` nesta mesma correção, a marca
    sumia inteira — `flex-shrink:1` num item cujo conteúdo, o wordmark, não tem ellipsis/como
    encolher de verdade colapsa pra 0 em vez de estabilizar). Fix definitivo: NENHUMA das 3 seções
-   encolhe (`flex-shrink:0` nas três — cada uma sempre no tamanho natural do conteúdo);
-   `overflow-x:auto` no frame é a rede de segurança se a janela for realmente estreita demais pra
-   caber tudo (aparece scroll horizontal em vez de sobrepor ou sumir texto). */
+   encolhe (`flex-shrink:0` nas três — cada uma sempre no tamanho natural do conteúdo). Achado do
+   usuário (2026-08-23, revisão): a rede de segurança original (`overflow-x:auto` aqui) tem um
+   efeito colateral do CSS — definir overflow só num eixo faz o OUTRO computar pra `auto`
+   também (spec), então overflow-y virava auto e cortava os dropdowns de Pendências/
+   Responsabilidades (que se estendem pra baixo do frame) por baixo, "sumindo" na tela. Removido
+   — sem ele, o pior caso extremo (janela bem mais estreita que 1024px) é um corte de alguns
+   pixels na ponta direita, bem menos grave que esconder um dropdown inteiro. Altura 56→64px
+   (achado do usuário: frame parecia estreito demais). */
 .tf-marca{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.tf-glifo{width:30px;height:30px;flex-shrink:0;color:var(--sidebar-text-active)}
+.tf-glifo{width:34px;height:34px;flex-shrink:0;color:var(--sidebar-text-active)}
 .tf-glifo svg{display:block;width:100%;height:100%}
 .tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
 .tf-wordmark .wm-linha{display:flex;align-items:baseline;gap:1px}
@@ -4163,7 +4168,7 @@ function _tfRenderPendenciasDropdown(){
   const dd = document.getElementById('tf-pend-dd');
   if (!dd) return;
   if (!_tfPendencias.length) {
-    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Nenhuma pendência.</div>';
+    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Não há pendências neste momento.</div>';
     return;
   }
   dd.innerHTML = _tfPendencias.map((it, i) => `
@@ -4222,8 +4227,9 @@ async function _tfCarregarResponsabilidades(){
   } catch(e) { _tfResponsabilidades = []; }
   if (!dd.classList.contains('open')) return;   // usuário fechou enquanto carregava
   if (!_tfResponsabilidades.length) {
-    // Sem nenhuma etapa com responsável explícito no momento — expressão genérica em vez de vazio.
-    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Sem atribuição definida no momento.</div>';
+    // Sem nenhuma etapa com responsável explícito no momento — expressão genérica em vez de vazio
+    // (achado do usuário 2026-08-23: texto revisado pra "sem tarefas em andamento").
+    dd.innerHTML = '<div style="padding:14px;font-size:12px;color:var(--muted)">Sem tarefas em andamento.</div>';
     return;
   }
   dd.innerHTML = _tfResponsabilidades.map(it => `

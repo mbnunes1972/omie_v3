@@ -4932,6 +4932,108 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # GET /api/me/ciclo/pendencias — Concluir/Transferir (2026-08-23), Fase 4: etapas com
+            # transferência PENDENTE cujo destino sou eu (funcionário OU terceiro), nas lojas que
+            # posso acessar. Alimenta o contador vermelho + a lista "Receber Projeto" do frame.
+            if path == "/api/me/ciclo/pendencias":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    meu_fid = _funcionario_do_usuario(db, usuario["id"])
+                    meu_terc = db.query(Terceiro).filter_by(usuario_id=usuario["id"]).first()
+                    meu_tid = meu_terc.id if meu_terc else None
+                    itens = []
+                    if meu_fid or meu_tid:
+                        q = db.query(CicloEtapa).filter(CicloEtapa.transferencia_status == "pendente")
+                        if meu_fid and meu_tid:
+                            q = q.filter((CicloEtapa.transferencia_destino_funcionario_id == meu_fid)
+                                        | (CicloEtapa.transferencia_destino_terceiro_id == meu_tid))
+                        elif meu_fid:
+                            q = q.filter(CicloEtapa.transferencia_destino_funcionario_id == meu_fid)
+                        else:
+                            q = q.filter(CicloEtapa.transferencia_destino_terceiro_id == meu_tid)
+                        pendentes = q.all()
+                        nomes_proj = {p.nome_safe: p for p in
+                                     db.query(Projeto).filter(
+                                         Projeto.nome_safe.in_({e.projeto_nome for e in pendentes}),
+                                         Projeto.loja_id.in_(ator["lojas_ids"] or [-1])).all()} \
+                            if pendentes else {}
+                        sol_ids = {e.transferencia_solicitada_por_usuario_id for e in pendentes
+                                  if e.transferencia_solicitada_por_usuario_id}
+                        sol_map = {u.id: u.nome for u in
+                                  db.query(Usuario).filter(Usuario.id.in_(sol_ids)).all()} if sol_ids else {}
+                        for e in pendentes:
+                            if e.projeto_nome not in nomes_proj:
+                                continue   # fora do escopo de lojas do usuário — não vaza
+                            itens.append({
+                                "projeto_nome": e.projeto_nome,
+                                "loja_id": nomes_proj[e.projeto_nome].loja_id,
+                                "etapa_codigo": e.etapa_codigo,
+                                "etapa_nome": mod_ciclo.ETAPA_NOME.get(e.etapa_codigo, e.etapa_codigo),
+                                "transferido_por_nome": sol_map.get(e.transferencia_solicitada_por_usuario_id, ""),
+                                "transferido_em": e.transferencia_solicitada_em.isoformat()
+                                    if e.transferencia_solicitada_em else None,
+                            })
+                    self.send_json({"ok": True, "itens": itens})
+                except Exception as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # GET /api/me/ciclo/responsabilidades — etapas onde EU sou o responsável hoje (override
+            # explícito, inclusive transferências já aceitas), em qualquer projeto que eu acesse.
+            # Limitação de escopo deliberada: NÃO recalcula a cadeia de fallback do responsável
+            # EFETIVO (Mapa de Atribuições → faixa → criador) — só overrides diretos na etapa;
+            # recalcular o efetivo cross-projeto exigiria rodar essa resolução pra toda etapa de
+            # todo projeto aberto (caro, fora do pedido original desta rodada).
+            if path == "/api/me/ciclo/responsabilidades":
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    meu_fid = _funcionario_do_usuario(db, usuario["id"])
+                    meu_terc = db.query(Terceiro).filter_by(usuario_id=usuario["id"]).first()
+                    meu_tid = meu_terc.id if meu_terc else None
+                    itens = []
+                    if meu_fid or meu_tid:
+                        q = db.query(CicloEtapa).filter(
+                            ~CicloEtapa.status.in_(mod_ciclo.STATUS_CONCLUSIVOS))
+                        if meu_fid and meu_tid:
+                            q = q.filter((CicloEtapa.responsavel_funcionario_id == meu_fid)
+                                        | (CicloEtapa.responsavel_terceiro_id == meu_tid))
+                        elif meu_fid:
+                            q = q.filter(CicloEtapa.responsavel_funcionario_id == meu_fid)
+                        else:
+                            q = q.filter(CicloEtapa.responsavel_terceiro_id == meu_tid)
+                        minhas = q.all()
+                        nomes_proj = {p.nome_safe: p for p in
+                                     db.query(Projeto).filter(
+                                         Projeto.nome_safe.in_({e.projeto_nome for e in minhas}),
+                                         Projeto.loja_id.in_(ator["lojas_ids"] or [-1])).all()} \
+                            if minhas else {}
+                        for e in minhas:
+                            if e.projeto_nome not in nomes_proj:
+                                continue
+                            itens.append({
+                                "projeto_nome": e.projeto_nome,
+                                "loja_id": nomes_proj[e.projeto_nome].loja_id,
+                                "etapa_codigo": e.etapa_codigo,
+                                "etapa_nome": mod_ciclo.ETAPA_NOME.get(e.etapa_codigo, e.etapa_codigo),
+                                "status": e.status,
+                            })
+                    self.send_json({"ok": True, "itens": itens})
+                except Exception as e:
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
             # GET /api/projetos/<nome>/atribuicoes — Mapa de Atribuições (Regras §4). Abrir/editar só
             # Gerência+ e Supervisor de Montagem.
             m = _re.match(r'^/api/projetos/([^/]+)/atribuicoes$', path)

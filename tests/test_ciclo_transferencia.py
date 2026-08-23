@@ -198,3 +198,61 @@ def test_aceitar_sem_transferencia_pendente_devolve_400(http_client_factory, see
     c = _login(http_client_factory, "dir_l1")
     st, body = c.post("/api/projetos/Proj_L1/ciclo/20/transferencia/aceitar")
     assert st == 400, body
+
+
+# ── Fase 4: /api/me/ciclo/pendencias e /responsabilidades ───────────────────
+
+def test_pendencias_so_aparecem_para_o_destino_certo_e_somem_apos_aceite(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    u_dest = _mk_usuario_login(db, app_db, seed["loja1_id"], "Fulano Pendente", "pend_dest1")
+    f_dest = _mk_func(db, app_db, seed["loja1_id"], "Fulano Pendente", usuario_id=u_dest.id)
+    e20 = _mk_etapa(db, app_db, "Proj_L1", "20", status="pendente")
+    e20.transferencia_status = "pendente"
+    e20.transferencia_destino_funcionario_id = f_dest.id
+    db.commit(); db.close()
+
+    c_dest = _login(http_client_factory, "pend_dest1")
+    st, body = c_dest.get("/api/me/ciclo/pendencias")
+    assert st == 200 and body["ok"], body
+    assert any(i["projeto_nome"] == "Proj_L1" and i["etapa_codigo"] == "20" for i in body["itens"])
+
+    c_outro = _login(http_client_factory, "dir_l1")
+    st, body = c_outro.get("/api/me/ciclo/pendencias")
+    assert st == 200
+    assert not any(i["projeto_nome"] == "Proj_L1" and i["etapa_codigo"] == "20" for i in body["itens"])
+
+    st, body = c_dest.post("/api/projetos/Proj_L1/ciclo/20/transferencia/aceitar")
+    assert st == 200 and body["ok"], body
+    st, body = c_dest.get("/api/me/ciclo/pendencias")
+    assert not any(i["projeto_nome"] == "Proj_L1" and i["etapa_codigo"] == "20" for i in body["itens"])
+
+
+def test_responsabilidades_refletem_overrides_e_transferencias_aceitas(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    u = _mk_usuario_login(db, app_db, seed["loja1_id"], "Fulano Responsável", "resp_dest1")
+    f = _mk_func(db, app_db, seed["loja1_id"], "Fulano Responsável", usuario_id=u.id)
+    e = _mk_etapa(db, app_db, "Proj_L1", "19", status="em_andamento")
+    e.responsavel_funcionario_id = f.id
+    db.commit(); db.close()
+
+    c = _login(http_client_factory, "resp_dest1")
+    st, body = c.get("/api/me/ciclo/responsabilidades")
+    assert st == 200 and body["ok"], body
+    assert any(i["projeto_nome"] == "Proj_L1" and i["etapa_codigo"] == "19" for i in body["itens"])
+
+
+def test_responsabilidades_isolam_por_loja_mesmo_com_funcionario_id_batendo(http_client_factory, seed, app_db):
+    # Anomalia proposital: funcionário da loja 1 aparece como responsavel_funcionario_id numa
+    # etapa de um projeto da loja 2 (não deveria acontecer via UI, mas o endpoint tem que ser
+    # defensivo). O filtro por ator["lojas_ids"] é a fronteira de segurança real aqui.
+    db = app_db.get_session()
+    u = _mk_usuario_login(db, app_db, seed["loja1_id"], "Fulano Cross", "cross_dest1")
+    f = _mk_func(db, app_db, seed["loja1_id"], "Fulano Cross", usuario_id=u.id)
+    e = _mk_etapa(db, app_db, "Proj_L2", "19", status="em_andamento")   # projeto da LOJA 2
+    e.responsavel_funcionario_id = f.id
+    db.commit(); db.close()
+
+    c = _login(http_client_factory, "cross_dest1")
+    st, body = c.get("/api/me/ciclo/responsabilidades")
+    assert st == 200
+    assert not any(i["projeto_nome"] == "Proj_L2" for i in body["itens"])

@@ -98,14 +98,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    — sem ele, o pior caso extremo (janela bem mais estreita que 1024px) é um corte de alguns
    pixels na ponta direita, bem menos grave que esconder um dropdown inteiro. Altura 56→64px
    (achado do usuário: frame parecia estreito demais). */
-.tf-marca{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.tf-glifo{width:34px;height:34px;flex-shrink:0;color:var(--sidebar-text-active)}
+.tf-marca{display:flex;align-items:center;flex-shrink:0}
+/* Achado do usuário (2026-08-23): "OrizonOne" isolado/maior à esquerda; o nome da loja alinhado
+   à esquerda com os itens de módulo da sidebar abaixo (Projetos, Agenda...), não recuado atrás
+   do glifo — por isso a loja saiu de dentro do .tf-wordmark e virou linha própria no .tf-marca-col,
+   que começa na mesma borda esquerda que o glifo (~alinhada ao padding da sidebar). */
+.tf-marca-col{display:flex;flex-direction:column;gap:3px}
+.tf-marca-top{display:flex;align-items:center;gap:10px}
+.tf-glifo{width:38px;height:38px;flex-shrink:0;color:var(--sidebar-text-active)}
 .tf-glifo svg{display:block;width:100%;height:100%}
 .tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
 .tf-wordmark .wm-linha{display:flex;align-items:baseline;gap:1px}
-.tf-wordmark .wm-orizon{font-weight:700;font-size:15px;letter-spacing:.01em;color:var(--sidebar-text-active)}
-.tf-wordmark .wm-manager{font-weight:700;font-size:15px;letter-spacing:.01em;color:var(--sidebar-accent)}
-.tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;margin-top:1px;
+.tf-wordmark .wm-orizon{font-weight:700;font-size:17px;letter-spacing:.01em;color:var(--sidebar-text-active)}
+.tf-wordmark .wm-manager{font-weight:700;font-size:17px;letter-spacing:.01em;color:var(--sidebar-accent)}
+.tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
 .tf-central{display:flex;align-items:center;gap:10px;flex-shrink:0;justify-content:center}
 .tf-conta{display:flex;align-items:center;gap:10px;flex-shrink:0}
@@ -614,18 +620,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
      substitui o que antes vivia no topo e no rodapé da sidebar. -->
 <header class="topframe" id="topframe">
   <div class="tf-marca" role="img" aria-label="OrizonOne">
-    <span class="tf-glifo" aria-hidden="true">
-      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="3"/>
-        <polygon points="60,27 65.5,60 60,68 54.5,60" fill="currentColor"/>
-        <polygon points="60,93 64.5,62 60,54 55.5,62" fill="none" stroke="currentColor" stroke-width="1.75"/>
-      </svg>
-    </span>
-    <span class="tf-wordmark">
-      <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
+    <div class="tf-marca-col">
+      <div class="tf-marca-top">
+        <span class="tf-glifo" aria-hidden="true">
+          <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="3"/>
+            <polygon points="60,27 65.5,60 60,68 54.5,60" fill="currentColor"/>
+            <polygon points="60,93 64.5,62 60,54 55.5,62" fill="none" stroke="currentColor" stroke-width="1.75"/>
+          </svg>
+        </span>
+        <span class="tf-wordmark">
+          <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
+        </span>
+      </div>
       <span id="tf-loja-nome" class="tf-loja-nome"></span>
-      <div id="seletor-loja-wrap" style="display:none;align-items:center;margin-top:2px"></div>
-    </span>
+      <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
+    </div>
   </div>
   <div class="tf-central" id="tf-central">
     <div style="position:relative">

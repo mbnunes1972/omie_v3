@@ -13,7 +13,9 @@ Entrada (por projeto, montada pelo endpoint):
                 "card_prazo_entrega", "card_data_entrega"}]}   # [] = não desmembrado
 
 Saída (marco): {"data": date, "setor", "etapa", "titulo", "projeto", "cliente",
-                "fase": ordem|None, "valor": float|None, "realizado": bool, "retida": bool}
+                "fase": ordem|None, "valor": float|None, "realizado": bool, "retida": bool,
+                "responsavel": str}   # nome do funcionário (override explícito da etapa; "" se
+                                      # não atribuído — não é o "responsável efetivo" do /ciclo)
 """
 from datetime import date, datetime
 
@@ -85,7 +87,8 @@ def marcos_do_projeto(p):
             continue
         out.append({**base, "data": data, "setor": SETOR_POR_ETAPA[cod], "etapa": cod,
                     "titulo": nome_etapa(cod), "fase": None, "valor": val_proj,
-                    "realizado": conc is not None, "retida": False})
+                    "realizado": conc is not None, "retida": False,
+                    "responsavel": e.get("responsavel") or ""})
     # Entrega no cliente (16) — por FASE (mesma regra da faixa de entrega, Sessão 136):
     # card da expedição > previsão da fase > previsto da 16 > data de entrega do projeto.
     e16 = et.get("16") or {}
@@ -102,7 +105,8 @@ def marcos_do_projeto(p):
         out.append({**base, "data": data, "setor": "expedicao", "etapa": "16",
                     "titulo": mod_ciclo.ETAPA_NOME["16"], "fase": f.get("ordem"),
                     "valor": f.get("val_liq"), "realizado": entregue is not None,
-                    "retida": f.get("status") == "retido"})
+                    "retida": f.get("status") == "retido",
+                    "responsavel": f.get("responsavel") or ""})
     return out
 
 
@@ -370,6 +374,9 @@ def marcos_assistencia(casos, de=None, ate=None):
         out.append({"projeto": c.get("projeto_nome"), "cliente": None, "data": data,
                     "setor": "assistencia", "etapa": None, "titulo": c.get("titulo") or "Assistência",
                     "fase": None, "valor": c.get("valor"), "realizado": conc is not None,
-                    "retida": False})
+                    "retida": False,
+                    # Sem responsável único aqui — equipe é por CASO (AssistenciaExecutor, pode
+                    # ser mais de uma pessoa), não um funcionário só. Fora de escopo desta coluna.
+                    "responsavel": ""})
     out.sort(key=lambda m: (m["data"], m["projeto"] or ""))
     return out

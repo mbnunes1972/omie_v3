@@ -3277,6 +3277,73 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 206 — Agenda da Loja: bug de data, tabela adaptativa em colunas, coluna Responsável, botão Minha Agenda
+
+Pedido do usuário (print da Agenda): melhorar a distribuição da tabela de detalhe em colunas, mais
+um bug reportado ao vivo e um pedido antigo sem registro no histórico do projeto.
+
+**Bug achado e corrigido: título da tabela mostrava a data ERRADA.** Clicar no dia 3 abria "eventos
+de 02/08/2026". Causa: `_fmtDataBR` fazia `new Date("2026-08-03")`, que o navegador interpreta como
+meia-noite UTC — em fuso negativo (Brasil), formata pro dia anterior. Já existia um helper seguro no
+próprio código (`_dataBRCompleta`, faz split de string em vez de `new Date`) — só trocar a chamada,
+sem editar a função compartilhada (outros lugares que a usam ficam intocados).
+
+**Comportamento adaptativo (achado do usuário ao testar):** a tabela hoje só mostrava eventos de UM
+dia — não era de fato um "histórico". Definido junto com o usuário: clicar no **número do dia** (ou
+no "+N projeto(s)") mostra todos os eventos daquele dia (como já era); clicar num **evento
+específico** agora busca o **histórico completo** daquele projeto (`/api/agenda?projeto=X`, sem
+`de`/`ate` — `mod_agenda.marcos()` já aceita período opcional) e mostra em pilha, **mais
+recente/futuro no topo, mais antigo embaixo**, destacando a linha do dia clicado. Token
+`_agHistGen` descarta a resposta se o usuário trocar de seleção enquanto o fetch está em voo.
+
+**Colunas (pedido original — "ajuste pra caber na tela"):** Data | Status | Evento | Fase |
+Responsável | Projeto | Cliente, uma por coluna (antes Evento/Fase e Projeto/Cliente vinham
+concatenados na mesma célula). O `.table-wrap`/`.tbl` compartilhado usa `overflow:hidden` (corta em
+vez de rolar) e padding generoso demais pra 7 colunas — wrapper e padding PRÓPRIOS só pra esta
+tabela (`.ag-det-wrap`/`.ag-det-tbl`, com `overflow-x:auto` de segurança), sem tocar a classe
+compartilhada usada por outras telas.
+
+**Coluna Responsável — backend novo:** `CicloEtapa.responsavel_funcionario_id` (override explícito
+da etapa) resolvido em lote (1 query, não N+1) em `_agenda_dados_projetos()` e repassado por
+`mod_agenda.marcos_do_projeto()`. **Decisão consciente:** usa só o override explícito, não o
+"responsável efetivo" completo que o `/ciclo` calcula (transferência de chat > Mapa de Atribuições >
+default por faixa > criador) — aquele resolvedor é por-projeto com várias queries auxiliares;
+replicar pra cada projeto do mês inteiro sairia caro. Sem override, célula "—" (mais honesto que
+adivinhar). Assistências não ganharam Responsável (equipe é por CASO, pode ser mais de uma pessoa —
+fora de escopo desta coluna).
+
+**Botão "Minha Agenda":** pedido antigo do usuário, sem nenhum registro no histórico do projeto
+(git/DEV_LOG) — não foi possível explicar o que aconteceu antes, só implementar agora. `meus=1` no
+`/api/agenda` força escopo pessoal (criei OU estou atribuído) pra QUALQUER nível, inclusive
+gerência/master (que por padrão veem tudo) — é **união** (OR), não os dois filtros de
+posse+atribuição que o código já tinha encadeados em sequência (que seria AND e esvaziaria a lista
+pra quem não tem as duas coisas ao mesmo tempo). `_agenda_dados_projetos(..., meus=False)` novo
+parâmetro; comportamento default (sem o botão) **inalterado**.
+
+**Testes novos (TDD):** `test_marco_inclui_responsavel`, `test_marco_entrega_por_fase_inclui_responsavel`
+(mod_agenda puro), `test_endpoint_agenda_meus_filtra_por_posse_ou_atribuicao`,
+`test_endpoint_agenda_responsavel_resolve_nome` (endpoint). Achado ao escrever o teste do `meus`:
+`app_db` é `scope="module"` em test_agenda.py — a assistência avulsa criada por um teste anterior
+no mesmo arquivo sobrevive pros testes seguintes (comportamento correto do produto, "avulso sem
+posse entra sempre" — só ajustei a asserção do teste pra checar o PROJETO específico, não a lista
+inteira). Suíte 2293→**2297 passed**.
+
+**Verificação:** `node --check` limpo, Playwright — clique no dia 3 mostra "03/08/2026" (corrigido),
+clique num evento mostra o histórico completo (testado com projeto real: eventos de 2027, nov/2026,
+set/2026 no topo, 03/08/2026 destacado em negrito embaixo), clique no número "24" mostra os 5
+eventos do dia em colunas, "Minha Agenda" filtra corretamente (esvazia pra usuário sem posse/
+atribuição no mês testado). 1280px claro/escuro conferidos, sem scroll horizontal.
+
+**Análise entregue ao usuário, SEM código (pedido explícito — "vou deixar uma pergunta"):**
+arrastar-para-reagendar no calendário. ~14 dos ~16 tipos de evento têm data simples numa tabela só
+(`CicloEtapa.data_prevista_conclusao`, endpoint de reagendar já existe e já audita); Entrega no
+cliente (16) tem cadeia de até 5 fontes por fase, Assistências vem de outro modelo
+(`AssistenciaCaso`) — os dois precisariam de tratamento próprio. "Operador reagenda sozinho, gerente
+é avisado" é MUDANÇA DE QUEM PODE FAZER O QUÊ (hoje reagendar exige senha de gerente) — decisão de
+política, não risco técnico; não implementado, fica pra quando o usuário decidir.
+
+**Arquivos:** `main.py`, `mod_agenda.py`, `static/index.html`, `tests/test_agenda.py`.
+
 ## Sessão 205 — Resumo da negociação: preenche o vazio pós-assinatura e o card da Etapa 4
 
 Pedido novo do usuário (dois prints): (1) na Negociação, quando o contrato é assinado

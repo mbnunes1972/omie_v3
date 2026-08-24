@@ -413,8 +413,51 @@ body{overflow:hidden}
 /* Box de Parâmetros de negociação (2026-08-23): movido da sidebar pro cabeçalho da page-02, ao
    lado do box de identidade (Projeto/Cliente/Negociação) — "dois cards padronizados lado a
    lado" (pedido do usuário). Mantém o tom escuro que já tinha na sidebar (--sidebar-*, acima). */
-.neg-params-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;min-width:220px}
+/* Bug pré-existente (2026-08-24, achado ao implementar o bloco 3 do brief): .neg-params-box nunca
+   teve background próprio, diferente do irmão .neg-hdr-box (que tem `background:var(--card)`) —
+   no tema claro isso deixava o texto (remapeado pra paleta clara-sobre-escuro da zona
+   sempre-escura) quase ilegível sobre o fundo claro da página, que aparecia por trás do card sem
+   preenchimento. Ficou pouco visível enquanto o card só tinha os campos; o bloco 3 (faixa
+   Bruto→Desconto→À Vista) tornou o problema óbvio o bastante pra corrigir junto.
+   `background:var(--surface)`, não `var(--card)`: dentro da zona sempre-escura --card reaponta
+   pra --sidebar-item-active, um tint translúcido de 14% (feito pra realce de item ativo sobre um
+   fundo JÁ escuro, não um fundo sólido próprio) — teria deixado o card claro-rosado, não escuro.
+   --surface reaponta pro --sidebar-bg opaco, o MESMO padrão que .sidebar já usa
+   (`.sidebar{background:var(--surface)}`, linha ~60) pra se pintar de escuro nos dois temas. */
+.neg-params-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;min-width:220px;background:var(--surface)}
 .neg-hdr-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;background:var(--card);min-width:220px}
+/* Bloco 2 do brief docs/design/brief-negociacao-layout.md (Proposta B): "Total do Contrato" é o
+   único número herói da tela — todo o resto fica <=15px (bloco 5). #neg-total-final migra pra cá
+   com os mesmos handlers/id; era o gêmeo duplicado de #neg-parcelado (que sai de cena, oculto). */
+.neg-hero      { border-top:1px solid var(--border); margin-top:var(--sp-3);
+                 padding-top:var(--sp-3); }
+.neg-hero-lbl  { font-size:var(--fs-xs); color:var(--muted); text-transform:uppercase; letter-spacing:.03em }
+/* .neg-hero-value: linha "R$ + input" — o valor de #neg-total-final nunca inclui "R$" (fmt() só
+   devolve o número, achado ao migrar de .total-line .value .cur, que dava o prefixo como irmão
+   separado); preservado aqui do mesmo jeito, só maior/coerente com o tamanho herói. */
+.neg-hero-value{ display:flex; align-items:baseline; gap:4px; margin-top:2px }
+.neg-hero-cur  { font-size:var(--fs-sm); font-weight:500; color:var(--text-2); flex-shrink:0 }
+.neg-hero input{ font-family:var(--font-display); font-weight:700;
+                 font-size:var(--fs-h1); font-variant-numeric:tabular-nums;
+                 background:transparent; border:0;
+                 border-bottom:1px dashed var(--field-border);
+                 color:var(--text); padding:0 0 2px; flex:1; min-width:0; display:block; }
+.neg-hero-cond { font-size:var(--fs-xs); color:var(--text-2);
+                 margin-top:var(--sp-2); }
+/* Bloco 3 do brief (Proposta B): a faixa Bruto→Desconto→À vista sai da faixa solta e entra
+   dentro do card de parâmetros (#sb-params), como uma linha de "condições" separada por filete —
+   #sb-params + .neg-cond-chain viram UM card só (.neg-params-box), não dois blocos com gap. */
+.neg-cond-chain     { display:grid; grid-template-columns:repeat(3,1fr);
+                      border-top:1px solid var(--border); margin-top:var(--sp-3); }
+.neg-cond-seg       { padding:var(--sp-3) var(--sp-4); position:relative; }
+.neg-cond-seg + .neg-cond-seg { border-left:1px solid var(--border); }
+.neg-cond-seg + .neg-cond-seg::before {
+    /* fundo do chip = var(--surface): agora que .neg-params-box tem background:var(--surface)
+       próprio (fix do bug de contraste acima), o chip precisa bater com ESSE fundo — os dois
+       resolvem pro mesmo --sidebar-bg dentro da zona sempre-escura, então casam nos dois temas. */
+    content:"→"; position:absolute; left:0; top:50%;
+    transform:translate(-50%,-50%); background:var(--surface);
+    padding:2px 6px; color:var(--text-3); font-size:var(--fs-xs); }
 /* Cards teal/amber para contrato */
 .contrato-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
 .card-teal{background:var(--teal-bg);border:1px solid var(--teal-brd);border-radius:10px;padding:16px}
@@ -441,17 +484,43 @@ body{overflow:hidden}
 /* Painel modalidade */
 .mod-panel{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:18px;margin-bottom:14px}
 .mod-panel-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px}
-.mod-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.mod-grid label{display:block;font-size:var(--fs-sm);color:var(--muted);margin-bottom:4px}
-.mod-grid input,.mod-grid select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body);outline:none}
-.mod-grid input:focus{border-color:var(--accent)}
+/* .mod-grid (rótulo em cima) foi APOSENTADO no bloco 7 (2026-08-24): era o formato dos campos
+   das modalidades financiadas, o único lugar do sistema que o usava. Os cinco painéis passaram
+   a usar .field-float (rótulo flutuante), que o À Vista já usava — dois formatos pro mesmo
+   frame viraram um. Se voltar a precisar de rótulo-em-cima, recuperar do git (commit anterior). */
+/* Bloco 7 (2026-08-24): campos da modalidade dentro do card de condições (#sb-params) —
+   um grid só, 4 colunas, pras cinco modalidades. */
+.neg-cond-campos{border-top:1px solid var(--border);margin-top:var(--sp-3);padding-top:var(--sp-3)}
+.neg-cond-grid{display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3);align-items:start}
+.neg-cond-grid .field-float .input{width:100%}
+/* Achado da revisão do bloco 7 (2026-08-24): a coluna de 4 é estreita demais em telas ~1280px
+   pro rótulo "Valor da liquidação" (o único com .calc-flag) não colidir com a badge "calculado"
+   — os dois são absolutamente posicionados na mesma linha (label à esquerda, flag à direita).
+   Reserva espaço fixo pro rótulo em TODOS os campos do grid (uniforme, sem precisar de :has()) —
+   inofensivo pros campos sem badge, e o texto trunca com reticências em vez de sobrepor. */
+.neg-cond-grid .field-float label{max-width:calc(100% - 64px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.neg-cond-pct{color:var(--accent);font-size:var(--fs-xs);margin-left:4px}
+/* .neg-cond-hint ("Financiado: R$ ...", verde, sob o campo de entrada): OCULTO a pedido do
+   usuário (2026-08-24) — o percentual da entrada no rótulo (.neg-cond-pct) já diz o mesmo, e a
+   linha verde só desalinhava a altura das colunas. Os quatro divs seguem no DOM porque
+   ayEntradaChange/ccEntradaChange/vpEntradaChange/tfEntradaChange escrevem neles SEM guarda
+   (hint.textContent logo depois do getElementById) — removê-los quebraria as quatro. */
+.neg-cond-hint{display:none}
+.neg-cond-aviso{grid-column:1/-1;font-size:var(--fs-xs);padding:7px 12px;border-radius:6px}
+.neg-cond-aviso.warn{color:var(--warn);background:var(--warn-soft);border-left:3px solid var(--warn)}
+.neg-cond-aviso.err{color:var(--err);background:var(--err-soft);border-left:3px solid var(--err)}
+/* Cabeçalho da tabela de ambientes: botões de ambiente à esquerda, ações da tela à direita */
+.neg-tbl-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;
+             padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.action-row.action-row-inline{margin-top:0;padding-bottom:0;gap:8px}
 /* Plano de pagamento */
 .plano-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:12px 0}
 .plano-hdr{padding:8px 14px;background:var(--surface);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
 .plano-tbl{width:100%;border-collapse:collapse}
 .plano-tbl th{padding:7px 12px;font-size:9px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border);text-align:left;letter-spacing:1px}
 .plano-tbl td{border-bottom:1px solid var(--border)}
-/* Total do Contrato: migrado p/ .total-line.emphasis (v1.7 · components.css) */
+/* Total do Contrato: migrado de .total-line.emphasis (v1.7) pro .neg-hero (bloco 2 do brief
+   docs/design/brief-negociacao-layout.md, Proposta B) — ver definição de .neg-hero acima. */
 /* Botões de ação */
 .action-row{display:flex;gap:10px;margin-top:16px;padding-bottom:40px;flex-wrap:wrap}
 .btn-ok{background:var(--teal-bg);color:var(--ok);border:1px solid var(--teal-brd)}
@@ -1024,111 +1093,287 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
           </span>
         </div>
+        <!-- Seletor de Orçamento (brief docs/design/brief-negociacao-layout.md, bloco 1): migrado
+             de #neg-orc-bar (faixa própria) pra dentro do quadro de identidade, logo abaixo de
+             Projeto/Cliente. #neg-orc-tabs preserva o id/conteúdo (renderOrcamentosBar() continua
+             escrevendo nele do mesmo jeito) — só mudou de lugar no DOM. #btn-novo-orc vira um ＋
+             compacto ao lado, mesmo onclick de sempre. -->
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Orçamento:</span>
+          <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+          <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()" title="Novo Orçamento"
+                  style="padding:2px 9px;font-size:13px;line-height:1;font-weight:700">&#xFF0B;</button>
+        </div>
+        <!-- Bloco 2 do brief (Proposta B): Total do Contrato é o número herói da tela, dentro do
+             quadro de identidade. #neg-total-final migra do rodapé (.total-line.emphasis) pra cá
+             com o MESMO id e os MESMOS handlers (negTotalIniciarEdicao/negTotalConfirmar) — os 12
+             trechos de JS que escrevem nele (negTotalConfirmar, atualizarTF, _aplicarPreviewNaTela,
+             negMostrarParcelado etc.) continuam funcionando sem alteração.
+             #neg-hero-cond é um hook pra resumo de condições (ex.: "À vista · entrada Pix") — sem
+             wiring novo neste bloco (bloco 2 é só layout; a única lógica nova do brief é a linha
+             de conferência do bloco 6), fica oculto até algo popular. -->
+        <div class="neg-hero">
+          <span class="neg-hero-lbl">Total do Contrato <span style="opacity:.7">&#x270E;</span></span>
+          <div class="neg-hero-value">
+            <span class="neg-hero-cur">R$</span>
+            <input id="neg-total-final" type="text" value="—" readonly
+                   title="Clique para editar"
+                   onclick="negTotalIniciarEdicao(this)"
+                   onblur="negTotalConfirmar(this.value)"
+                   onkeydown="if(event.key==='Enter')this.blur()">
+          </div>
+          <div id="neg-hero-cond" class="neg-hero-cond" style="display:none"></div>
+        </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
           <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
         </div>
       </div>
-      <!-- Coluna Parâmetros + Orçamento (2026-08-24, achado do usuário): a barra de Orçamento
-           saiu de baixo da tabela e migrou pra cá — logo abaixo do Desconto, ao lado (não dentro)
-           do box de identidade. -->
-      <div style="display:flex;flex-direction:column;gap:10px;flex:1;min-width:280px">
-        <!-- Painel de parâmetros de negociação (2026-08-23/24): migrado da barra lateral pra cá,
-             ao lado do box de identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/
-             neg-parcelas/etc.), só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já
-             tinha na sidebar. Sem título "Parâmetros" (achado do usuário: confundia com o botão/
-             modal de Parâmetros ao lado). Desconto/Modalidade/Parcelas em LINHA (não empilhados)
-             pra aproveitar a largura do frame; Forma da entrada/Forma das parcelas (quando a
-             modalidade não é à vista) abrem na MESMA linha, à direita de Modalidade/Parcelas.
-             Larguras das colunas (2026-08-24, achado do usuário): alargadas pra caber o texto
-             inteiro das opções mais longas ("Cartão de Crédito", "Parcelamento Loja" etc.) sem
-             cortar — Modalidade/Parcelas/Forma das parcelas podem exibir essas opções. -->
-        <div class="sb-params neg-params-box" id="sb-params" style="display:none">
-          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-            <div style="width:88px;flex-shrink:0">
-              <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-                <span>Desconto (%)</span>
-              </label>
-              <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-                <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
-                       onfocus="this._prev=this.value"
-                       oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
-                       onkeydown="negDescontoKeydown(event,this)"
-                       onblur="salvarDescontoAutomatico()"
-                       class="sb-input-sm" style="width:60px;text-align:right">
-                <span style="color:var(--muted);font-size:12px">%</span>
-              </div>
-              <button id="neg-desc-confirmar" onclick="negConfirmarDesconto()"
-                      style="display:none;padding:3px 7px;background:var(--err);color:var(--btn-primary-text);border:none;
-                             border-radius:5px;font-family:var(--font-sans);font-weight:700;
-                             font-size:9px;cursor:pointer;letter-spacing:.3px;transition:.15s;white-space:nowrap"
-                      title="Solicitar autorização para este desconto">
-                ✓ OK
-              </button>
-              <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
-            </div>
-
-            <div style="width:170px;flex-shrink:0">
-              <label class="sb-label">Modalidade</label>
-              <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
-                <option value="a_vista">1x</option>
-              </select>
-            </div>
-
-            <div style="width:170px;flex-shrink:0">
-              <label class="sb-label">Parcelas</label>
-              <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
-                <option value="1">1x</option>
-              </select>
-            </div>
-
-            <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
-              <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
-              <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
-            </div>
-
-            <div id="neg-forma-parcela-wrap" style="width:170px;flex-shrink:0">
-              <label class="sb-label">Forma das parcelas</label>
-              <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
-            </div>
-          </div>
-
-          <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
-          <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:8px">
+      <!-- Painel de parâmetros de negociação (2026-08-23/24): migrado da barra lateral pra cá,
+           ao lado do box de identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/
+           neg-parcelas/etc.), só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já
+           tinha na sidebar. Sem título "Parâmetros" (achado do usuário: confundia com o botão/
+           modal de Parâmetros ao lado). Desconto/Modalidade/Parcelas em LINHA (não empilhados)
+           pra aproveitar a largura do frame; Forma da entrada/Forma das parcelas (quando a
+           modalidade não é à vista) abrem na MESMA linha, à direita de Modalidade/Parcelas.
+           Larguras das colunas (2026-08-24, achado do usuário): alargadas pra caber o texto
+           inteiro das opções mais longas ("Cartão de Crédito", "Parcelamento Loja" etc.) sem
+           cortar — Modalidade/Parcelas/Forma das parcelas podem exibir essas opções.
+           Bloco 3 do brief (Proposta B): #sb-params deixou de ficar numa coluna própria (a
+           coluna só existia pra empilhar com a extinta #neg-orc-bar) — agora é flex:1 direto,
+           sibling de .neg-hdr-box, e ganhou a faixa .neg-cond-chain (Bruto→Desconto→À vista)
+           como PARTE do mesmo card, não dois blocos com gap. -->
+      <div class="sb-params neg-params-box" id="sb-params" style="display:none;flex:1;min-width:280px">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div style="width:88px;flex-shrink:0">
             <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-              <span>Taxa Juros (%/mes)</span>
-              <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
+              <span>Desconto (%)</span>
             </label>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
-              <input type="text" id="tf-taxa-input" value="••••"
-                     readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
-                     onfocus="if(!this.readOnly) this._prev=this.value"
-                     oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
-                     onkeydown="tfTaxaKeydown(event,this)">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+              <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
+                     onfocus="this._prev=this.value"
+                     oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
+                     onkeydown="negDescontoKeydown(event,this)"
+                     onblur="salvarDescontoAutomatico()"
+                     class="sb-input-sm" style="width:60px;text-align:right">
               <span style="color:var(--muted);font-size:12px">%</span>
             </div>
+            <button id="neg-desc-confirmar" onclick="negConfirmarDesconto()"
+                    style="display:none;padding:3px 7px;background:var(--err);color:var(--btn-primary-text);border:none;
+                           border-radius:5px;font-family:var(--font-sans);font-weight:700;
+                           font-size:9px;cursor:pointer;letter-spacing:.3px;transition:.15s;white-space:nowrap"
+                    title="Solicitar autorização para este desconto">
+              ✓ OK
+            </button>
+            <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
+          </div>
+
+          <div style="width:170px;flex-shrink:0">
+            <label class="sb-label">Modalidade</label>
+            <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
+              <option value="a_vista">1x</option>
+            </select>
+          </div>
+
+          <div style="width:170px;flex-shrink:0">
+            <label class="sb-label">Parcelas</label>
+            <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
+              <option value="1">1x</option>
+            </select>
+          </div>
+
+          <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
+            <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
+            <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
+          </div>
+
+          <div id="neg-forma-parcela-wrap" style="width:170px;flex-shrink:0">
+            <label class="sb-label" id="neg-forma-parcela-lbl">Forma das parcelas</label>
+            <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
         </div>
 
-        <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos
-             no banco. Achado do usuário (2026-08-23): tabs + botões (Ambientes/Novo Ambiente/Novo
-             Orçamento) ficavam espalhados ponta a ponta — agrupados e centralizados. Achado do
-             usuário (2026-08-24): saiu de baixo da tabela pra cá, logo abaixo do Desconto/
-             Modalidade/Parcelas, ao lado do box de identidade. -->
-        <div id="neg-orc-bar" style="display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;
-                                      padding:8px 12px;background:var(--surface);border:1px solid var(--border);
-                                      border-radius:8px">
-          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
-                       margin-right:4px;white-space:nowrap">Orçamento:</span>
-          <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
-          <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
-                  style="font-size:11px;padding:4px 10px;margin-left:10px">Ambientes</button>
-          <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
-                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Ambiente</button>
-          <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()"
-                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Orçamento</button>
+        <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
+        <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:8px">
+          <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Taxa Juros (%/mes)</span>
+            <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+            <input type="text" id="tf-taxa-input" value="••••"
+                   readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
+                   onfocus="if(!this.readOnly) this._prev=this.value"
+                   oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
+                   onkeydown="tfTaxaKeydown(event,this)">
+            <span style="color:var(--muted);font-size:12px">%</span>
+          </div>
+        </div>
+
+        <!-- Bloco 3 do brief: faixa Bruto→Desconto→À vista, agora DENTRO do card de parâmetros,
+             separada por filete (.neg-cond-chain). Migrada da faixa solta que ficava logo acima
+             da tabela de ambientes — mesmos ids/estilo de valor (bloco 5, escala de números,
+             ainda não aplicado nesta etapa). -->
+        <!-- Bloco 7 (achado do usuário 2026-08-24): os CAMPOS da modalidade migraram pra cá, no
+             vazio que sobrava entre a linha de parâmetros e a faixa Bruto→Desconto→À vista.
+             Antes viviam nos .mod-panel abaixo da tabela em DOIS formatos diferentes pro mesmo
+             frame — À Vista com rótulo flutuante (.field-float) e as financiadas com rótulo em
+             cima (.mod-grid). Agora é UM grid de 4 colunas, mesmo componente pras cinco.
+             Os ids #painel-avista/#painel-aymore/#painel-cartao/#painel-vp/#painel-tf VIAJARAM
+             JUNTO com os campos: é o display deles que o JS liga/desliga e lê como "modalidade
+             ativa" (_atualizarPaineisAbertos, _lerCondicaoPagamentoAtual, negConfirmarDesconto).
+             Só mudou de 'block' pra 'grid' — por isso todo mundo passa pelo _negModExibir().
+             O que ficou embaixo da tabela é o PLANO de pagamento, em wrappers novos #plano-*.
+             Redundância eliminada: "Forma da entrada"/"Forma da liquidação" do À Vista eram um
+             SEGUNDO par de selects, além de #neg-forma-entrada/#neg-forma-parcela da linha de
+             cima (que o à vista escondia). Agora o à vista usa os de cima — com as formas de à
+             vista, e "Forma das parcelas" virando "Forma da liquidação" — e #av-entrada-forma/
+             #av-liq-forma viram espelhos OCULTOS, só pra não quebrar o snapshot
+             (_NEG_CAMPOS_POR_MODALIDADE) nem a leitura de avistaRecalcular(). -->
+        <div class="neg-cond-campos">
+          <!-- À Vista: entrada + liquidação (as formas vêm da linha de parâmetros acima) -->
+          <div class="neg-cond-grid" id="painel-avista" style="display:none">
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="av-entrada-data" oninput="avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada</label>
+              <input class="input" type="text" id="av-entrada-valor" inputmode="numeric"
+                     placeholder="R$ 0,00" oninput="mascaraMoedaInput(this); avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Data da liquidação</label>
+              <input class="input" type="date" id="av-liq-data" oninput="avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Valor da liquidação</label>
+              <span class="calc-flag">calculado</span>
+              <input class="input readonly" type="text" id="av-liq-valor" readonly>
+            </div>
+          </div>
+          <!-- Espelhos ocultos das formas do à vista — ver comentário do bloco 7 acima.
+               Escritos por _avSincronizarFormas() a partir de #neg-forma-entrada/#neg-forma-parcela. -->
+          <span id="av-formas-espelho" style="display:none">
+            <select id="av-entrada-forma" onchange="avistaRecalcular()"></select>
+            <select id="av-liq-forma" onchange="avistaRecalcular()"></select>
+          </span>
+
+          <!-- Aymoré -->
+          <div class="neg-cond-grid" id="painel-aymore" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="ay-data-contrato" oninput="ayAtualizarCarencia()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="ay-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="ay-entrada" value="0" min="0" step="100" oninput="ayEntradaChange()">
+              <div id="ay-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="ay-entrada-data" oninput="ayAtualizarCarencia()">
+            </div>
+            <div class="field-float">
+              <label>Carência (dias)</label>
+              <input class="input" type="number" id="ay-carencia" value="30" min="15" max="120" step="5" oninput="ayCarenciaChange()">
+            </div>
+            <!-- Data 1a Parcela é calculada (data do contrato + carência); mantida oculta -->
+            <input type="hidden" id="ay-data-primeira">
+            <span id="ay-carencia-badge" style="display:none"></span>
+            <div id="ay-aviso" class="neg-cond-aviso warn" style="display:none"></div>
+          </div>
+
+          <!-- Cartão de Crédito -->
+          <div class="neg-cond-grid" id="painel-cartao" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="cc-data-contrato" oninput="atualizarCartao()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="cc-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="cc-entrada" value="0" min="0" step="100" oninput="atualizarCartao()">
+              <div id="cc-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="cc-entrada-data" oninput="atualizarCartao()">
+            </div>
+            <div class="field-float">
+              <label>Bandeira</label>
+              <select class="input" id="cc-bandeira" onchange="atualizarCartao()">
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Venda Programada (3 campos: a 4ª coluna fica vazia de propósito, pra as
+               modalidades alinharem coluna a coluna) -->
+          <div class="neg-cond-grid" id="painel-vp" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="vp-data-contrato" oninput="vpDataContratoChange()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="vp-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="vp-entrada" value="0" min="0" step="100" oninput="vpEntradaChange()">
+              <div id="vp-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="vp-entrada-data" oninput="vpDataContratoChange()">
+            </div>
+            <!-- Prazo limite (395 dias): informativo, mantido oculto -->
+            <div id="vp-data-limite" style="display:none">—</div>
+            <div id="vp-aviso" class="neg-cond-aviso err" style="display:none"></div>
+          </div>
+
+          <!-- Parcelamento Loja (Total Flex) — a Taxa de Juros fica em #sb-tf-extras, acima -->
+          <div class="neg-cond-grid" id="painel-tf" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="tf-data-contrato" oninput="tfDataContratoChange()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="tf-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="tf-entrada" value="0" min="0" step="100" oninput="tfEntradaChange()">
+              <div id="tf-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="tf-entrada-data" oninput="tfEntradaChange()">
+            </div>
+            <div class="field-float">
+              <label>Prazo (meses) · 1 a 12</label>
+              <input class="input" type="number" id="tf-prazo" value="12" min="1" max="12" step="1" oninput="tfPrazoChange()">
+            </div>
+            <!-- Prazo limite (máximo 12 meses): informativo, mantido oculto -->
+            <div id="tf-data-limite" style="display:none">—</div>
+            <div id="tf-aviso" class="neg-cond-aviso err" style="display:none"></div>
+          </div>
+        </div>
+        <div class="neg-cond-chain">
+          <div class="neg-cond-seg">
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor Bruto</div>
+            <div style="font-size:19px;font-weight:500;color:var(--text)" id="neg-subtotal">R$ 0,00</div>
+          </div>
+          <div class="neg-cond-seg">
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Desconto</div>
+            <div style="font-size:19px;font-weight:500;color:var(--err)" id="neg-desc-val">- R$ 0,00</div>
+          </div>
+          <div class="neg-cond-seg">
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor à Vista</div>
+            <div style="font-size:19px;font-weight:500;color:var(--accent)" id="neg-avista">R$ 0,00</div>
+          </div>
         </div>
       </div>
+      <!-- #neg-orc-bar (brief bloco 1): deixou de existir como faixa visível — tabs foram pro
+           quadro de identidade, Ambientes/Novo Ambiente foram pro cabeçalho da tabela, Novo
+           Orçamento virou o ＋ ao lado das tabs. O id sobrevive vazio/oculto porque
+           renderOrcamentosBar() (~linha 7415) ainda faz getElementById('neg-orc-bar') pra
+           ligar/desligar (guardado com `if(bar)`, então nem quebraria sem isto — mas o brief
+           pede o id preservado por segurança). -->
+      <span id="neg-orc-bar" style="display:none"></span>
     </div>
 
     <!-- Chat Fatia 1 (spec 2026-07-25): Conversa do projeto — histórico interno + nova mensagem -->
@@ -1167,37 +1412,49 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Linha Bruto → Desconto → à Vista → Contrato Parcelado -->
-    <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:center;margin-bottom:16px">
-      <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:8px;padding:12px 14px">
-        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor Bruto</div>
-        <div style="font-size:19px;font-weight:500;color:var(--text)" id="neg-subtotal">R$ 0,00</div>
-      </div>
-      <div style="text-align:center;color:var(--muted);font-size:16px">&#x2192;</div>
-      <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:8px;padding:12px 14px">
-        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Desconto</div>
-        <div style="font-size:19px;font-weight:500;color:var(--err)" id="neg-desc-val">- R$ 0,00</div>
-      </div>
-      <div style="text-align:center;color:var(--muted);font-size:16px">&#x2192;</div>
-      <div style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:8px;padding:12px 14px">
-        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor à Vista</div>
-        <div style="font-size:19px;font-weight:500;color:var(--accent)" id="neg-avista">R$ 0,00</div>
-      </div>
-      <div id="neg-parcelado-sep" style="text-align:center;color:var(--muted);font-size:16px;display:none">&#x2192;</div>
-      <div id="neg-parcelado-cell" style="background:var(--surface-2);box-shadow:var(--shadow);border-radius:8px;padding:12px 14px;display:none">
-        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor Total do Contrato <span style="text-transform:none;letter-spacing:0;opacity:.7">&#x270E;</span></div>
+    <!-- #neg-parcelado-sep/#neg-parcelado-cell/#neg-parcelado (bloco 2 do brief): saíram da faixa
+         visível — eram o card duplicado do Total do Contrato. Ficam vivos e ocultos (o wrapper
+         com display:none esconde tudo, mesmo quando negMostrarParcelado() reseta o display dos
+         filhos) só pra não quebrar negMostrarParcelado()/negValorTotalIniciarEdicao()/
+         negValorTotalConfirmar(), que continuam escrevendo neles sem guarda. -->
+    <div style="display:none">
+      <div id="neg-parcelado-sep">&#x2192;</div>
+      <div id="neg-parcelado-cell">
         <input id="neg-parcelado" type="text" value="R$ 0,00" readonly
                title="Clique para editar — recalcula o desconto pelo valor"
                onclick="negValorTotalIniciarEdicao(this)"
                onblur="negValorTotalConfirmar(this.value)"
-               onkeydown="if(event.key==='Enter'){this.blur();}else if(event.key==='Escape'){this._esc=true;this.blur();}"
-               style="font-size:19px;font-weight:500;color:var(--text);background:transparent;border:none;border-radius:6px;width:100%;padding:0;outline:none;cursor:pointer;font-family:inherit">
+               onkeydown="if(event.key==='Enter'){this.blur();}else if(event.key==='Escape'){this._esc=true;this.blur();}">
       </div>
     </div>
     <span id="neg-desc-pct-lbl" style="display:none">0</span>
 
     <!-- Tabela de ambientes -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      <!-- Cabeçalho da tabela (brief bloco 1 + bloco 7 de 2026-08-24): Ambientes/Novo Ambiente
+           saíram da extinta faixa #neg-orc-bar e vieram pra cá — agora à ESQUERDA, dividindo a
+           faixa com as ações da tela (Salvar/Aprovar/Imprimir), que subiram do rodapé pra
+           direita daqui. A .action-row continua sendo .action-row dentro de #page-02: é assim
+           que atualizarBotoesAprovacao() a encontra e pendura o "Assinar Contrato". -->
+      <div class="neg-tbl-hdr">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
+                  style="font-size:11px;padding:4px 10px">Ambientes</button>
+          <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
+                  style="font-size:11px;padding:4px 10px">Novo Ambiente</button>
+        </div>
+        <!-- Ações — Aprovar é a de maior peso (fecha o negócio): primário único.
+             Salvar/Imprimir: secundários. Os ids #btn-salvar-orcamento/#btn-aprovar-orcamento
+             substituem os seletores .btn-ok/.btn-amber que o JS usava e que a mudança de
+             hierarquia (commit 481ade8) tinha deixado sem dono. -->
+        <div class="action-row action-row-inline">
+          <button id="btn-salvar-orcamento" class="btn btn-ghost btn-sm" onclick="salvarOrcamento()">&#x1F4BE; Salvar</button>
+          <button id="btn-aprovar-orcamento" class="btn btn-primary btn-sm" onclick="abrirAprovacaoComDados()" title="Aprovar orçamento e iniciar contrato">&#x2713; Aprovar</button>
+          <a id="btn-imprimir-orcamento" class="btn btn-ghost btn-sm" target="_blank" rel="noopener"
+             style="text-decoration:none" href="#"
+             onclick="this.href='/api/orcamentos/'+_orcamentoAtivoId+'/proposta/pdf'">&#x1F5A8; Imprimir</a>
+        </div>
+      </div>
       <table class="cli-table">
         <thead><tr>
           <th style="width:40px;text-align:center;padding:10px 8px">
@@ -1223,32 +1480,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </table>
     </div>
 
-    <!-- Painel Aymoré -->
-    <div class="mod-panel" id="painel-aymore" style="display:none">
-      <div class="mod-panel-title">&#x1F3E6; Aymore — Parametros</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="ay-data-contrato" oninput="ayAtualizarCarencia()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="ay-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="ay-entrada" value="0" min="0" step="100" oninput="ayEntradaChange()">
-          <div id="ay-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="ay-entrada-data" oninput="ayAtualizarCarencia()">
-        </div>
-        <div>
-          <label>Carência (dias)</label>
-          <input type="number" id="ay-carencia" value="30" min="15" max="120" step="5" oninput="ayCarenciaChange()">
-        </div>
-      </div>
-      <!-- Data 1a Parcela é calculada (data do contrato + carência); mantida oculta -->
-      <input type="hidden" id="ay-data-primeira">
-      <span id="ay-carencia-badge" style="display:none"></span>
-      <div id="ay-aviso" style="display:none;font-size:10px;color:var(--warn);margin-bottom:10px;padding:7px 12px;background:var(--warn-soft);border-radius:6px;border-left:3px solid var(--warn)"></div>
+    <!-- Planos de pagamento (bloco 7, 2026-08-24): o que sobrou dos antigos .mod-panel depois
+         que os CAMPOS subiram pro card de condições. Wrappers novos #plano-* — o display deles
+         acompanha o #painel-* correspondente via _negModExibir(); sem isso o resumo da
+         modalidade anterior ficaria na tela (antes ele sumia junto com o .mod-panel pai).
+         #painel-cartao-titulo continua sendo o elemento cujo textContent cartaoMostrarPainel()
+         reescreve com a descrição da modalidade. -->
+    <div class="mod-panel" id="plano-aymore" style="display:none">
+      <div class="mod-panel-title">Aymoré</div>
       <div id="ay-resumo" style="display:none">
         <!-- faixa central removida: "à vista (Loja Recebe)" já está nos cards abaixo e o
              "Contrato Parcelado" foi para a faixa superior. Ids preservados (ocultos). -->
@@ -1273,31 +1512,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Cartão -->
-    <div class="mod-panel" id="painel-cartao" style="display:none">
-      <div class="mod-panel-title" id="painel-cartao-titulo">&#x1F4B3; Cartao de Credito</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="cc-data-contrato" oninput="atualizarCartao()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="cc-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="cc-entrada" value="0" min="0" step="100" oninput="atualizarCartao()">
-          <div id="cc-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="cc-entrada-data" oninput="atualizarCartao()">
-        </div>
-        <div>
-          <label>Bandeira</label>
-          <select id="cc-bandeira" onchange="atualizarCartao()">
-            <option value="Visa">Visa</option>
-            <option value="Mastercard">Mastercard</option>
-          </select>
-        </div>
-      </div>
+    <div class="mod-panel" id="plano-cartao" style="display:none">
+      <div class="mod-panel-title" id="painel-cartao-titulo">Cartao de Credito</div>
       <div id="cc-resumo" style="display:none">
         <span id="cc-c-avista" style="display:none"></span><span id="cc-c-avista-sub" style="display:none"></span>
         <span id="cc-c-parcelado" style="display:none"></span><span id="cc-c-parcelado-sub" style="display:none"></span>
@@ -1320,27 +1536,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Venda Programada -->
-    <div class="mod-panel" id="painel-vp" style="display:none">
-      <div class="mod-panel-title">&#x1F4C5; Venda Programada</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(3,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="vp-data-contrato" oninput="vpDataContratoChange()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="vp-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="vp-entrada" value="0" min="0" step="100" oninput="vpEntradaChange()">
-          <div id="vp-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="vp-entrada-data" oninput="vpDataContratoChange()">
-        </div>
-      </div>
-      <!-- Prazo limite (395 dias): informativo, mantido oculto -->
-      <div id="vp-data-limite" style="display:none">—</div>
-      <div id="vp-aviso" style="display:none;font-size:10px;color:var(--err);margin-bottom:10px;padding:7px 12px;background:var(--err-soft);border-radius:6px;border-left:3px solid var(--err)"></div>
+    <div class="mod-panel" id="plano-vp" style="display:none">
+      <div class="mod-panel-title">Venda Programada</div>
       <div id="vp-resumo" style="display:none">
         <span id="vp-c-avista" style="display:none"></span><span id="vp-c-avista-sub" style="display:none"></span>
         <span id="vp-c-parcelado" style="display:none"></span><span id="vp-c-parcelado-sub" style="display:none"></span>
@@ -1367,31 +1564,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Total Flex -->
-    <div class="mod-panel" id="painel-tf" style="display:none">
-      <div class="mod-panel-title">&#x26A1; Parcelamento Loja</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="tf-data-contrato" oninput="tfDataContratoChange()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="tf-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="tf-entrada" value="0" min="0" step="100" oninput="tfEntradaChange()">
-          <div id="tf-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="tf-entrada-data" oninput="tfEntradaChange()">
-        </div>
-        <div>
-          <label>Prazo (meses) <span style="font-size:9px;color:var(--muted)">1 a 12</span></label>
-          <input type="number" id="tf-prazo" value="12" min="1" max="12" step="1" oninput="tfPrazoChange()">
-        </div>
-      </div>
-      <!-- Prazo limite (máximo 12 meses): informativo, mantido oculto -->
-      <div id="tf-data-limite" style="display:none">—</div>
-      <div id="tf-aviso" style="display:none;font-size:10px;color:var(--err);margin-bottom:10px;padding:7px 12px;background:var(--err-soft);border-radius:6px;border-left:3px solid var(--err)"></div>
+    <div class="mod-panel" id="plano-tf" style="display:none">
+      <div class="mod-panel-title">Parcelamento Loja</div>
       <div id="tf-resumo" style="display:none">
         <span id="tf-c-avista" style="display:none"></span><span id="tf-c-avista-sub" style="display:none"></span>
         <span id="tf-c-total" style="display:none"></span><span id="tf-c-total-sub" style="display:none"></span>
@@ -1428,64 +1602,45 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel À Vista -->
-    <div class="mod-panel" id="painel-avista" style="display:none">
-      <div class="mod-panel-title">&#x1F4B5; A Vista</div>
-      <!-- v1.7 · rótulo flutuante (styleguide 04c): 2 linhas — Entrada / Liquidação -->
-      <div class="stack" style="max-width:720px">
-        <div class="row">
-          <div class="field-float" style="flex:1">
-            <label>Data da entrada</label>
-            <input class="input" type="date" id="av-entrada-data" oninput="avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Valor da entrada</label>
-            <input class="input" type="text" id="av-entrada-valor" inputmode="numeric"
-                   placeholder="R$ 0,00" oninput="mascaraMoedaInput(this); avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Forma da entrada</label>
-            <select class="input" id="av-entrada-forma" onchange="avistaRecalcular()"></select>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field-float" style="flex:1">
-            <label>Data da liquidação</label>
-            <input class="input" type="date" id="av-liq-data" oninput="avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Valor da liquidação</label>
-            <span class="calc-flag">calculado</span>
-            <input class="input readonly" type="text" id="av-liq-valor" readonly>
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Forma da liquidação</label>
-            <select class="input" id="av-liq-forma" onchange="avistaRecalcular()"></select>
-          </div>
+    <!-- #plano-avista (2026-08-24, achado da revisão do bloco 7): as outras 4 modalidades têm um
+         #plano-* que sobrevive fora do #sb-params e por isso continua visível (travado) depois da
+         assinatura — o À Vista não tinha nenhum, porque toda a informação dele sempre viveu só nos
+         CAMPOS (#painel-avista), que agora ficam dentro do #sb-params e somem junto no lock
+         (_sbParamsAtualizar). Sem isso, um contrato À Vista assinado não deixava vestígio nenhum
+         de data/forma de entrada e liquidação na tela — só o Total do Contrato. Mesma mecânica dos
+         irmãos: _negPlanoResumo('avista','av',mostrar) liga/desliga #av-resumo e #plano-avista
+         juntos; chave 'avista' + prefixo 'av' batem com o padrão pref+'-resumo'/'plano-'+chave. -->
+    <div class="mod-panel" id="plano-avista" style="display:none">
+      <div class="mod-panel-title">À Vista</div>
+      <div id="av-resumo" style="display:none">
+        <div class="plano-wrap">
+          <div class="plano-hdr">Plano de Pagamento</div>
+          <table class="plano-tbl">
+            <thead><tr><th>Tipo</th><th>Data</th><th>Forma</th><th style="text-align:right">Valor</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Entrada</td>
+                <td id="av-r-entrada-data">—</td>
+                <td id="av-r-entrada-forma">—</td>
+                <td style="text-align:right" id="av-r-entrada-valor">—</td>
+              </tr>
+              <tr>
+                <td>Liquidação</td>
+                <td id="av-r-liq-data">—</td>
+                <td id="av-r-liq-forma">—</td>
+                <td style="text-align:right" id="av-r-liq-valor">—</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- Resumo e total — Linha de Total v1.7 (styleguide 07c · tamanho único) -->
+    <!-- Bloco 2 do brief: #neg-total-final saiu daqui (.total-line.emphasis) e migrou pro
+         .neg-hero dentro de .neg-hdr-box, no topo — mesmo id/handlers. #neg-resumo-parcelas fica,
+         só perdeu o vizinho. -->
     <div style="margin-bottom:14px">
-      <div class="total-line emphasis">
-        <span class="label">Total do Contrato</span>
-        <span class="value"><span class="cur">R$</span><input id="neg-total-final" type="text" value="—" readonly
-                 title="Clique para editar"
-                 onclick="negTotalIniciarEdicao(this)"
-                 onblur="negTotalConfirmar(this.value)"
-                 onkeydown="if(event.key==='Enter')this.blur()"></span>
-      </div>
       <div id="neg-resumo-parcelas" style="display:none;text-align:right;font-family:var(--font-sans);font-weight:700;font-size:15px;color:var(--muted);margin-top:8px;padding-right:2px"></div>
-    </div>
-
-    <!-- Ações — Aprovar é a de maior peso (fecha o negócio): primário único. Salvar/Imprimir: secundários. -->
-    <div class="action-row">
-      <button class="btn btn-ghost" onclick="salvarOrcamento()">&#x1F4BE; Salvar</button>
-      <button class="btn btn-primary" onclick="abrirAprovacaoComDados()" title="Aprovar orçamento e iniciar contrato">&#x2713; Aprovar</button>
-      <a id="btn-imprimir-orcamento" class="btn btn-ghost" target="_blank" rel="noopener"
-         style="text-decoration:none" href="#"
-         onclick="this.href='/api/orcamentos/'+_orcamentoAtivoId+'/proposta/pdf'">&#x1F5A8; Imprimir</a>
     </div>
 
     <!-- Ciclo do Projeto (EP-08) -->
@@ -8378,6 +8533,45 @@ const _FORMAS_ENTRADA = [['pix','Pix'],['ted','TED'],['boleto','Boleto']];
 const _FORMAS_AVISTA  = [['pix','Pix'],['ted','TED'],['boleto','Boleto'],['cheque','Cheque'],['dinheiro','Dinheiro']];
 const _FORMAS_PARC_VPTF = [['boleto','Boleto'],['cheque','Cheque']];
 
+// Bloco 7 (2026-08-24): cada modalidade tem DOIS elementos agora — os CAMPOS (#painel-*, no
+// card de condições) e o PLANO (#plano-*, abaixo da tabela). O id #painel-* é o mesmo de antes
+// de propósito: é o display dele que o resto do JS lê como "modalidade ativa"
+// (_atualizarPaineisAbertos, _lerCondicaoPagamentoAtual, negConfirmarDesconto). Mudou só o valor
+// visível — 'grid', não 'block', porque #painel-* virou o grid de 4 colunas.
+function _negModExibir(chave, mostrar) {
+  const campos = document.getElementById('painel-' + chave);
+  if (campos) campos.style.display = mostrar ? 'grid' : 'none';
+  // Só ESCONDE o plano aqui: quem o mostra é _negPlanoResumo(), quando há plano de verdade —
+  // senão o card abaixo da tabela apareceria vazio, só com o título, enquanto não há ambiente
+  // ou data de contrato (antes isso não acontecia porque os campos moravam dentro dele).
+  const plano = document.getElementById('plano-' + chave);
+  if (plano && !mostrar) plano.style.display = 'none';
+}
+
+// Bloco 7: resumo e wrapper do plano andam juntos — ver comentário acima.
+function _negPlanoResumo(chave, pref, mostrar) {
+  const r = document.getElementById(pref + '-resumo');
+  if (r) r.style.display = mostrar ? 'block' : 'none';
+  const p = document.getElementById('plano-' + chave);
+  if (p) p.style.display = mostrar ? 'block' : 'none';
+}
+
+// Bloco 7: o à vista deixou de ter selects próprios de forma — usa #neg-forma-entrada e
+// #neg-forma-parcela (a "parcela" do à vista é a liquidação). #av-entrada-forma/#av-liq-forma
+// sobrevivem OCULTOS como espelho, porque _NEG_CAMPOS_POR_MODALIDADE os salva no snapshot e
+// avistaRecalcular() lê deles pra montar window._planoPagamento.
+function _avSincronizarFormas() {
+  const avE = document.getElementById('av-entrada-forma');
+  const avL = document.getElementById('av-liq-forma');
+  const opts = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  if (avE && !avE.options.length) avE.innerHTML = opts;
+  if (avL && !avL.options.length) avL.innerHTML = opts;
+  const selE = document.getElementById('neg-forma-entrada');
+  const selP = document.getElementById('neg-forma-parcela');
+  if (avE && selE && selE.value) avE.value = selE.value;
+  if (avL && selP && selP.value) avL.value = selP.value;
+}
+
 function _preencherSelectFormas(sel, opcoes, valorAtual) {
   sel.innerHTML = opcoes.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
   if (opcoes.find(([v]) => v === valorAtual)) sel.value = valorAtual;
@@ -8390,6 +8584,12 @@ function onFormaChange() {
   const selP = document.getElementById('neg-forma-parcela');
   if (selE) _formaEntrada = selE.value;
   if (selP && !selP.disabled) _formaParcela = selP.value;
+  // Bloco 7: no à vista estes dois selects SÃO a forma da entrada e a da liquidação — reflete
+  // nos espelhos ocultos e remonta o plano (avistaRecalcular não é chamado por agendarCalculo).
+  if (document.getElementById('painel-avista')?.style.display !== 'none') {
+    _avSincronizarFormas();
+    if (typeof avistaRecalcular === 'function') avistaRecalcular();
+  }
   agendarCalculo();
 }
 
@@ -8401,15 +8601,25 @@ function atualizarFormasPagamento(codigo) {
   const selP  = document.getElementById('neg-forma-parcela');
   if (!selE || !selP) return;
 
+  const lblP = document.getElementById('neg-forma-parcela-lbl');
+  colE.style.display = ''; wrapP.style.display = '';
+
   if (codigo === 'a_vista') {
-    // À vista usa o painel-avista (entrada + liquidação); oculta estas colunas (2026-08-24:
-    // colE agora é o wrapper — junto com wrapP — pra sumir a coluna inteira na linha de
-    // parâmetros, não só o label/select internos, que ficaram lado a lado de Modalidade/Parcelas).
-    colE.style.display = 'none';
-    wrapP.style.display = 'none';
+    // Bloco 7 (2026-08-24): as colunas de forma NÃO somem mais no à vista — elas passaram a ser
+    // as formas dele (antes duplicadas dentro do #painel-avista). "Forma das parcelas" vira
+    // "Forma da liquidação", e as duas listas usam _FORMAS_AVISTA (inclui cheque/dinheiro).
+    if (lblP) lblP.textContent = 'Forma da liquidação';
+    selP.disabled = false;
+    _formaEntrada = _preencherSelectFormas(selE, _FORMAS_AVISTA, _formaEntrada);
+    _formaParcela = _preencherSelectFormas(selP, _FORMAS_AVISTA, _formaParcela);
+    _avSincronizarFormas();
+    // atualizarFormasPagamento roda DEPOIS de avistaMostrarPainel (ver onPagamentoChange), então
+    // é aqui que o plano sai com a forma certa — não no mostrarPainel.
+    if (document.getElementById('painel-avista')?.style.display !== 'none'
+        && typeof avistaRecalcular === 'function') avistaRecalcular();
     return;
   }
-  colE.style.display = ''; wrapP.style.display = '';
+  if (lblP) lblP.textContent = 'Forma das parcelas';
 
   // Entrada: sempre Pix/TED/Boleto
   _formaEntrada = _preencherSelectFormas(selE, _FORMAS_ENTRADA, _formaEntrada);
@@ -8710,7 +8920,7 @@ function _ayDiffDias(d1str, d2str) {
 }
 
 function ayMostrarPainel(mostrar) {
-  document.getElementById('painel-aymore').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('aymore', mostrar);
   if (mostrar) {
     const hoje = new Date().toISOString().split('T')[0];
     const dc = document.getElementById('ay-data-contrato');
@@ -8808,8 +9018,7 @@ async function atualizarAymore() {
   const carencia = parseInt(document.getElementById('ay-carencia').value) || 30;
   const dc       = document.getElementById('ay-data-contrato').value;
   if (!dc || !valorAvista) {
-    const resumo = document.getElementById('ay-resumo');
-    if (resumo) resumo.style.display = 'none';
+    _negPlanoResumo('aymore', 'ay', false);
     return;
   }
   let d;
@@ -8824,7 +9033,7 @@ async function atualizarAymore() {
   } catch(e) { console.error('[AYMORE]', e); return; }
   if (!d.ok) { console.warn('[AYMORE]', d.erro); return; }
 
-  document.getElementById('ay-resumo').style.display = 'block';
+  _negPlanoResumo('aymore', 'ay', true);
   document.getElementById('ay-r-liberado').textContent    = 'R$ '+fmt(d.valor_liberado);
   document.getElementById('ay-r-total-cliente').textContent = 'R$ '+fmt(d.total_cliente);
   document.getElementById('ay-r-retencao').textContent    = d.taxa_retencao_pct.toLocaleString('pt-BR',{minimumFractionDigits:4})+'%';
@@ -8875,7 +9084,7 @@ async function atualizarAymore() {
 let _ccTimer = null;
 
 function cartaoMostrarPainel(mostrar) {
-  document.getElementById('painel-cartao').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('cartao', mostrar);
   if (mostrar) {
     const sel = document.getElementById('neg-pagamento');
     const desc = sel.selectedOptions[0]?.text || 'Cartão de Crédito';
@@ -8908,7 +9117,7 @@ async function atualizarCartao() {
   const bandeira = document.getElementById('cc-bandeira').value;
   const dc       = document.getElementById('cc-data-contrato').value;
   if (!dc || !valorAvista) {
-    document.getElementById('cc-resumo').style.display = 'none';
+    _negPlanoResumo('cartao', 'cc', false);
     return;
   }
   let d;
@@ -8923,7 +9132,7 @@ async function atualizarCartao() {
   } catch(e) { console.error('[CARTAO]', e); return; }
   if (!d.ok) return;
 
-  document.getElementById('cc-resumo').style.display = 'block';
+  _negPlanoResumo('cartao', 'cc', true);
   document.getElementById('cc-r-liberado').textContent    = 'R$ '+fmt(d.valor_liberado);
   document.getElementById('cc-r-total-cliente').textContent = 'R$ '+fmt(d.total_cliente);
   document.getElementById('cc-r-retencao').textContent    = d.taxa_retencao_pct.toLocaleString('pt-BR',{minimumFractionDigits:4})+'%';
@@ -8988,7 +9197,7 @@ let _vpTimer = null;
 let _vpDatas  = [];   // datas editadas pelo usuário (strings ISO por parcela)
 
 function vpMostrarPainel(mostrar) {
-  document.getElementById('painel-vp').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('vp', mostrar);
   if (mostrar) {
     const hoje = new Date().toISOString().split('T')[0];
     const dc = document.getElementById('vp-data-contrato');
@@ -9047,7 +9256,7 @@ async function atualizarVP() {
   const n        = parseInt(document.getElementById('neg-parcelas').value) || 1;
   const dc       = document.getElementById('vp-data-contrato').value;
   if (!dc || !valorAvista) {
-    document.getElementById('vp-resumo').style.display = 'none';
+    _negPlanoResumo('vp', 'vp', false);
     return;
   }
   let d;
@@ -9074,7 +9283,7 @@ async function atualizarVP() {
       .map(p => p.data_iso);
   }
 
-  document.getElementById('vp-resumo').style.display = 'block';
+  _negPlanoResumo('vp', 'vp', true);
 
   // Cards
   document.getElementById('vp-r-avista').textContent  = 'R$ ' + fmt(d.valor_liberado);
@@ -9201,15 +9410,15 @@ function atualizarUIBloqueio() {
   }
 
   // Botao de aprovacao
-  const btnAprovar = document.querySelector('#page-02 .btn-amber');
+  const btnAprovar = document.getElementById('btn-aprovar-orcamento');
   if (btnAprovar) {
     btnAprovar.disabled = bloqueado;
     btnAprovar.style.opacity = bloqueado ? '0.45' : '';
     btnAprovar.style.cursor  = bloqueado ? 'not-allowed' : '';
     if (bloqueado) {
-      btnAprovar.innerHTML = '&#x1F512; Or&ccedil;amento Aprovado';
+      btnAprovar.innerHTML = '&#x1F512; Aprovado';
     } else {
-      btnAprovar.innerHTML = '&#x2713; Aprovar Or&ccedil;amento';
+      btnAprovar.innerHTML = '&#x2713; Aprovar';
     }
   }
 
@@ -9451,7 +9660,7 @@ function tfFecharAviso() {
 }
 
 function tfMostrarPainel(mostrar) {
-  document.getElementById('painel-tf').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('tf', mostrar);
   const extras = document.getElementById('sb-tf-extras');
   if (extras) extras.style.display = mostrar ? 'block' : 'none';
   if (mostrar) {
@@ -9470,15 +9679,9 @@ function tfMostrarPainel(mostrar) {
 }
 
 function avistaMostrarPainel(mostrar) {
-  const p = document.getElementById('painel-avista');
-  if (p) p.style.display = mostrar ? 'block' : 'none';
+  _negModExibir('avista', mostrar);
   if (mostrar) {
-    const selE = document.getElementById('av-entrada-forma');
-    const selL = document.getElementById('av-liq-forma');
-    if (selE && !selE.options.length)
-      selE.innerHTML = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-    if (selL && !selL.options.length)
-      selL.innerHTML = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+    _avSincronizarFormas();   // opções + valores vindos da linha de parâmetros (bloco 7)
     const dE = document.getElementById('av-entrada-data');
     if (dE && !dE.value) dE.value = new Date().toISOString().split('T')[0];
     avistaRecalcular();
@@ -9507,6 +9710,18 @@ function avistaRecalcular() {
   const entradaForma = document.getElementById('av-entrada-forma')?.value || 'pix';
   const liqForma     = document.getElementById('av-liq-forma')?.value || 'pix';
 
+  // #plano-avista (achado da revisão do bloco 7): mesmo resumo read-only que as outras 4
+  // modalidades já têm — é o que sobra visível depois da assinatura (ver comentário no HTML).
+  const _formaLbl = c => (_FORMAS_AVISTA.find(([v]) => v === c) || [, c])[1] || '—';
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setTxt('av-r-entrada-data',  _dataBRCompleta(entradaData));
+  setTxt('av-r-entrada-forma', _formaLbl(entradaForma));
+  setTxt('av-r-entrada-valor', 'R$ ' + fmt(entrada));
+  setTxt('av-r-liq-data',      _dataBRCompleta(liqData));
+  setTxt('av-r-liq-forma',     _formaLbl(liqForma));
+  setTxt('av-r-liq-valor',     'R$ ' + fmt(saldo));
+  _negPlanoResumo('avista', 'av', total > 0);
+
   window._planoPagamento = {
     tipo: 'avista', nome_forma: 'A Vista',
     entrada_valor: entrada,
@@ -9515,6 +9730,13 @@ function avistaRecalcular() {
     total_cliente: total, texto_cartao: '',
     parcelas: saldo > 0 ? [{ num: 1, data: liqData, valor: saldo, forma: liqForma }] : [],
   };
+  // Achado da revisão do bloco 7 (2026-08-24, bug PRÉ-EXISTENTE — reproduzido também no código
+  // anterior ao bloco 7): faltava aqui o agendarSalvarPagamento() que as outras 4 modalidades
+  // sempre chamam ao final do próprio atualizar*() — sem ele, trocar PARA à vista nunca disparava
+  // o auto-save que aciona negPreview()/_aplicarPreviewNaTela (o motor, fonte única de
+  // #neg-total-final e da coluna "Com financiamento"). Resultado: ao vir de outra modalidade, a
+  // tela ficava com o Total/tabela da modalidade ANTERIOR até um Salvar manual + reabertura.
+  if (typeof agendarSalvarPagamento === 'function') agendarSalvarPagamento();
 }
 
 function tfDataContratoChange() {
@@ -9582,12 +9804,12 @@ async function atualizarTF() {
   }
 
   if (!dc || !valorAvista) {
-    document.getElementById('tf-resumo').style.display = 'none';
+    _negPlanoResumo('tf', 'tf', false);
     return;
   }
   const financiado = Math.max(0, valorAvista - entrada);
   if (financiado <= 0) {
-    document.getElementById('tf-resumo').style.display = 'none';
+    _negPlanoResumo('tf', 'tf', false);
     return;
   }
 
@@ -9666,7 +9888,7 @@ async function atualizarTF() {
   const ultima = parc[parc.length - 1];
   const n_parc = parc.length;
 
-  document.getElementById('tf-resumo').style.display = 'block';
+  _negPlanoResumo('tf', 'tf', true);
 
   // Cards resumo
   document.getElementById('tf-r-avista').textContent    = 'R$ ' + fmt(valorAvista);
@@ -9920,12 +10142,18 @@ function negTotalConfirmar(valStr){
   const el = document.getElementById('neg-total-final');
   el._editando = false;
   el.setAttribute('readonly','');
-  el.style.background   = 'transparent';
-  el.style.border       = 'none';
-  el.style.borderRadius = '0';
-  el.style.padding      = '0';
-  el.style.cursor       = 'pointer';
-  el.style.color        = '';   // v1.7: cor governada por .total-line .value (--text), sem verde residual
+  // Bloco 2 do brief (Proposta B): #neg-total-final saiu de .total-line pro .neg-hero — os
+  // valores fixos que negTotalIniciarEdicao usa pra "acender" o modo edição (borda, fundo,
+  // padding) agora precisam ser REMOVIDOS (não reescritos com outro valor fixo) pra devolver o
+  // controle ao CSS de .neg-hero input (border-bottom tracejado, padding 0 0 2px) — um valor
+  // fixo tipo `border:'none'` sobrescreveria o border-bottom tracejado do herói pra sempre
+  // depois do primeiro clique de edição.
+  el.style.removeProperty('background');
+  el.style.removeProperty('border');
+  el.style.removeProperty('border-radius');
+  el.style.removeProperty('padding');
+  el.style.removeProperty('cursor');
+  el.style.color        = '';   // cor governada por .neg-hero input (--text), sem verde residual
 
   // Parse: aceita tanto ponto quanto vírgula como decimal
   // Remove pontos de milhar e troca vírgula por ponto
@@ -18401,8 +18629,8 @@ function atualizarBotoesAprovacao() {
     _aplicarLockNegociacaoPosAssinatura();
     const actionRow = document.querySelector('#page-02 .action-row');
     if (actionRow) {
-      const bs = actionRow.querySelector('.btn-ok');    if (bs) bs.style.display = 'none';
-      const ba = actionRow.querySelector('.btn-amber');  if (ba) ba.style.display = 'none';
+      const bs = document.getElementById('btn-salvar-orcamento');  if (bs) bs.style.display = 'none';
+      const ba = document.getElementById('btn-aprovar-orcamento'); if (ba) ba.style.display = 'none';
       // Rever Orçamento some assim que qualquer parte assina (sem desfazer pós-assinatura)
       const br = actionRow.querySelector('#btn-rever-orcamento'); if (br) br.remove();
       const assinarExistente = actionRow.querySelector('#btn-assinar-contrato');
@@ -18426,8 +18654,8 @@ function atualizarBotoesAprovacao() {
   aplicarBloqueioNegociacao(aprovado);
   const actionRow = document.querySelector('#page-02 .action-row');
   if (!actionRow) return;
-  const btnSalvar  = actionRow.querySelector('.btn-ok');
-  const btnAprovar = actionRow.querySelector('.btn-amber');
+  const btnSalvar  = document.getElementById('btn-salvar-orcamento');
+  const btnAprovar = document.getElementById('btn-aprovar-orcamento');
   if (aprovado) {
     if (btnSalvar)  { btnSalvar.style.display  = 'none'; }
     if (btnAprovar) { btnAprovar.style.display = 'none'; }

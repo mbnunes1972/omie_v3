@@ -3277,6 +3277,55 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 204 — Brief da Negociação: fecha blocos 4-6 (grid do topo, escala dos números, badge de modalidade + conferência) e deploy A/B
+
+Branch `feat/neg-blocos-4-6`, seguindo direto da Sessão 203 (PR #34 já mergeado). Fecha os 3 blocos
+que faltavam do brief `docs/design/brief-negociacao-layout.md` — nenhuma definição travada, só
+sequência (o bloco 7/adendo tinha puxado a atenção antes).
+
+**Bloco 4 (grid do topo):** `.neg-top` — grid 2 colunas (340px identidade + 1fr condições) no
+lugar do flex solto; `.neg-hdr-box` virou flex-column sem `min-width`, e `.neg-hdr-actions{
+margin-top:auto}` gruda os botões Parâmetros/Etapas do Projeto no rodapé do card, mesmo quando o
+irmão é mais alto. `.neg-params-row` — grid 88px+4×1fr no lugar dos five `width` fixos em px
+(88/170/170/120/170) da linha Desconto/Modalidade/Parcelas/Forma da entrada/Forma das parcelas.
+
+**Bloco 5 (escala dos números):** tabela do brief aplicada 1:1 — `#neg-subtotal`/`#neg-desc-val`/
+`#neg-avista` 19px→`var(--fs-h3)` (15px), `#neg-total` 18px→`var(--fs-body)` (14px),
+`#neg-total-avista` 14px→`var(--fs-sm)` (13px), todos com `font-variant-numeric:tabular-nums`.
+Achado ao conferir: as células de valor por ambiente **já** herdavam 13px de `.cli-table td` (o
+mesmo valor de `var(--fs-sm)`) — só faltava tabular-nums, adicionado escopado a `#neg-tbody` (não
+mexe nas outras telas que usam `.cli-table`). `#neg-total-final` (herói) já estava em
+`var(--fs-h1)` desde o bloco 2 — nada a fazer lá.
+
+**Bloco 6 (badge de modalidade + linha de conferência), adaptado ao bloco 7:** o texto original
+mandava mexer no `.mod-panel-title` de `#painel-avista`/`#painel-aymore`/`#painel-cartao` — esses
+ids viraram só os CAMPOS no bloco 7 (sem título nenhum, `.neg-cond-grid`). O título fixo "Plano de
+pagamento" + badge com a modalidade ativa (`.neg-mod-badge`, pill com `--accent`/`--accent-tint`)
+foi pros 5 `#plano-*` (onde o `.mod-panel-title` sobreviveu), incluindo VP/TF/À Vista — não citados
+no texto original (escrito antes do bloco 7 existir), mas o mesmo padrão claramente cabia nos
+cinco. `#painel-cartao-titulo` migrou pro badge, como **sibling** do rótulo fixo (nunca filho —
+regra preservada do brief, `cartaoMostrarPainel()` continua reescrevendo o `textContent` dele sem
+mudança). A **linha de conferência** (único código de fato novo do bloco 6) também mudou de
+endereço: pedida no fim do extinto `#painel-avista`-container-de-resumo, foi pro fim do
+`#plano-avista` (criado na Sessão 203, achado #3) — mesma lógica exata do brief (Entrada + 
+Liquidação comparado ao `#neg-total-final` **exibido**, não ao valor interno — pra flagrar de
+verdade um total editado manualmente sem a entrada/liquidação acompanhar), variante `.err` se não
+bater, nova variante `.ok` (verde, não existia) se bater — testada ao vivo nos dois estados
+(forçando um total divergente via console).
+
+**Verificação:** `node --check` limpo, `git grep` de hex literal sem resíduo, suíte **2293 passed**
+(sem mudança de código Python). Playwright nos 3 breakpoints do aceite (1280/1600/1920) × 2 temas —
+6 combinações conferidas visualmente; critério de aceite 1 (faixas do topo na mesma borda direita
+da tabela) confirmado nas seis. **Brief fechado — blocos 1-7 todos implementados.**
+
+**Commit → PR #35 → merge → deploy:** seguindo o mesmo pipeline da Sessão 203 (autorizado pelo
+usuário a não esperar review antes do merge, e a promover até VPS B sem pausar pra OK
+intermediário — chegou explicitamente até aqui, não até produção). Tag `v2026.08.24b-homolog`
+(`v2026.08.24-homolog` já tinha sido usada pela Sessão 203 nesse mesmo dia). `deploy_ab.sh` rodado
+em `167.88.33.121`: A segue `main`, B fixa nessa tag. **Produção intocada.**
+
+**Arquivos:** `static/index.html`, `docs/design/brief-negociacao-layout.md`.
+
 ## Sessão 203 — Brief da Negociação: blocos 4-7 (adendo) revisados, 3 achados corrigidos
 
 Branch `feat/neg-layout-proposta-b`, spec `docs/design/brief-negociacao-layout.md` (reorganização

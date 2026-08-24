@@ -3277,6 +3277,31 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 208 — Agenda: fix "arrastar não funciona" num mouse de verdade (user-select)
+
+Achado do usuário ao usar de verdade (não a suíte, não o teste automatizado): "tentei arrastar
+medição e não consegui". A Sessão 207 tinha testado o arraste só com `page.dragTo()` do Playwright
+(eventos sintéticos via CDP) — passou limpo. Causa raiz: as linhas arrastáveis não tinham
+`user-select:none`. Num mouse de verdade, mousedown+move sobre TEXTO dispara a **seleção de texto
+nativa** do navegador antes do `onMove` do JS decidir se é clique ou arraste — o gesto customizado
+nunca chegava a engajar. Eventos sintéticos (`dispatchEvent`/CDP) não disparam esse comportamento
+do jeito que um mouse real dispara, por isso o teste da Sessão 207 não pegou.
+
+**Fix:** `.ag-drag-linha` ganha `user-select:none`/`-webkit-user-select:none`/
+`-webkit-user-drag:none`, e `agendaDragStart()` chama `ev.preventDefault()` logo no mousedown
+(padrão universal de bibliotecas de drag-and-drop pra esse exato problema). `preventDefault()` no
+mousedown não afeta o `click` normal (mousedown+mouseup sem movimento) — confirmado que abrir o
+histórico ao clicar continua funcionando.
+
+**Verificação:** suíte **2297 passed** (zero mudança Python). Playwright: reconfirmado o arraste
+(`dragTo`) depois do fix — ainda funciona; clique simples reconfirmado (abre histórico); nenhuma
+seleção de texto sobrando na página (`window.getSelection()` vazio) depois do teste. **Lição pro
+processo:** teste automatizado com eventos sintéticos não é garantia suficiente pra interações de
+mouse "manuais" (não-nativas) — vale desconfiar e, quando possível, pedir confirmação de uso real
+antes de dar uma feature de interação por fechada.
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 207 — Agenda da Loja: item 5 — arrastar-para-reagendar (escopo reduzido)
 
 Continuação da Sessão 206 (análise de risco entregue antes, sem código). O usuário decidiu: (1)

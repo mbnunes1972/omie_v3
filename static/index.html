@@ -512,7 +512,13 @@ body{overflow:hidden}
 /* Arrastar-para-reagendar (2026-08-24, item 5 do brief de análise): arraste "manual" via
    mouse events (não o drag nativo do navegador) — precisa sobreviver a um re-render de
    #agenda-ui no meio do gesto (troca de mês na borda), o que o drag nativo não tolera bem. */
-.ag-drag-linha{cursor:grab}
+/* user-select:none é o que faz o arrastar funcionar de verdade num mouse real (achado do
+   usuário, 2026-08-24): sem isso, mousedown+move sobre texto dispara a SELEÇÃO DE TEXTO nativa
+   do navegador em vez do arraste customizado — só não aparecia no teste automatizado porque
+   eventos sintéticos (dispatchEvent/CDP) não disparam esse comportamento nativo do jeito que o
+   mouse de verdade dispara. -webkit-user-drag:none evita o navegador tentar seu PRÓPRIO drag
+   nativo de texto por cima do meu (ex.: Safari/Chrome arrastando o texto selecionado como "chip"). */
+.ag-drag-linha{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .ag-drag-ghost{position:fixed;z-index:9999;pointer-events:none;background:var(--card);
   border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;
   color:var(--text);box-shadow:var(--shadow-md);white-space:nowrap}
@@ -5138,6 +5144,10 @@ let _agDrag = null;
 function agendaDragStart(ev, idx){
   const e = _agEntradas[idx];
   if(!e || !e.etapa || e.etapa==='16' || !_podeAutorizarFront()) return;
+  // Achado do usuário (2026-08-24, num mouse de verdade): sem isso, o mousedown deixa o
+  // navegador iniciar a SELEÇÃO DE TEXTO nativa antes do meu onMove decidir se é clique ou
+  // arraste — o teste automatizado (eventos sintéticos) não reproduzia o problema.
+  ev.preventDefault();
   const startX=ev.clientX, startY=ev.clientY;
   let iniciado=false;
   const onMove=(mv)=>{

@@ -1394,6 +1394,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
         </div>
       </div>
+      <!-- Achado do usuário (2026-08-24, print da tela travada): pós-assinatura #sb-params some
+           inteiro (_sbParamsAtualizar) e deixa um vazio grande na coluna 1fr do grid — nada
+           sobre modalidade/forma/data/valor de entrada sobrava visível ali. #neg-resumo-travado
+           ocupa a MESMA vaga: o CSS Grid ignora itens display:none no auto-placement, então
+           quando #sb-params some este vira o "2º item" visível e cai sozinho na coluna 1fr —
+           nunca os dois aparecem ao mesmo tempo (mutuamente exclusivos em _sbParamsAtualizar()).
+           Populado por _negResumoTravadoAtualizar() a partir de window._planoPagamento, que já é
+           montado pelo atualizar*()/recalcular() da modalidade ativa mesmo com os campos ocultos
+           (é a mesma fonte que já alimenta o #plano-* abaixo da tabela). -->
+      <div class="neg-params-box" id="neg-resumo-travado" style="display:none;flex:1;min-width:280px">
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Resumo da negociação</div>
+        <div id="neg-resumo-travado-corpo" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;font-size:var(--fs-sm)"></div>
+      </div>
       <!-- #neg-orc-bar (brief bloco 1): deixou de existir como faixa visível — tabs foram pro
            quadro de identidade, Ambientes/Novo Ambiente foram pro cabeçalho da tabela, Novo
            Orçamento virou o ＋ ao lado das tabs. O id sobrevive vazio/oculto porque
@@ -9114,6 +9127,12 @@ async function atualizarAymore() {
   _atualizarImpostos('ay', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
   _ep07DistribuirFinanciado(d.total_cliente, valorAvista);
+  // Achado do usuário (2026-08-24): window._planoPagamento só fica pronto DEPOIS deste fetch
+  // assíncrono — se o projeto já carrega travado (pós-assinatura), _sbParamsAtualizar() já tinha
+  // rodado antes disso resolver, e o #neg-resumo-travado ficava com o valor default (à vista/
+  // zerado) em vez do Aymoré de verdade. Reexecuta aqui, no ponto em que os dados ficam prontos —
+  // é um no-op barato quando não está travado (só troca display, sem repopular).
+  if (typeof _sbParamsAtualizar === 'function') _sbParamsAtualizar();
 }
 
 // ---- Painel Cartão de Crédito ------------------------------------------------
@@ -9225,6 +9244,7 @@ async function atualizarCartao() {
   };
   _atualizarImpostos('cc', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
+  if (typeof _sbParamsAtualizar === 'function') _sbParamsAtualizar();   // ver comentário em atualizarAymore
 }
 
 
@@ -9376,6 +9396,7 @@ async function atualizarVP() {
   };
   _atualizarImpostos('vp', d.total_cliente);
   atualizarResumoParcelas(entrada, d.n_parcelas, d.valor_parcela, d.total_cliente);
+  if (typeof _sbParamsAtualizar === 'function') _sbParamsAtualizar();   // ver comentário em atualizarAymore
 }
 
 function vpRenderTabela(d) {
@@ -10007,6 +10028,7 @@ async function atualizarTF() {
   };
   atualizarResumoParcelas(entrada, n_parc, ultima.valor_efetivo, totalCliente);
   _ep07DistribuirFinanciado(totalCliente, valorAvista);
+  if (typeof _sbParamsAtualizar === 'function') _sbParamsAtualizar();   // ver comentário em atualizarAymore
 }
 
 function tfRenderTabela(d, valorAvista, entrada) {
@@ -18614,8 +18636,42 @@ function _sbParamsAtualizar(){
   if (!sb) return;
   const p2 = document.getElementById('page-02');
   const ativa = !!(p2 && p2.classList.contains('active'));
-  sb.style.display = (ativa && !(typeof _negSaveTravado === 'function' && _negSaveTravado()))
-    ? 'block' : 'none';
+  const travada = typeof _negSaveTravado === 'function' && _negSaveTravado();
+  sb.style.display = (ativa && !travada) ? 'block' : 'none';
+  // Achado do usuário (2026-08-24): #neg-resumo-travado ocupa a vaga do #sb-params quando este
+  // some pós-assinatura — mutuamente exclusivos, nunca os dois visíveis (ver comentário no HTML).
+  const rt = document.getElementById('neg-resumo-travado');
+  if (rt) {
+    const mostrar = ativa && travada;
+    rt.style.display = mostrar ? 'block' : 'none';
+    if (mostrar) _negResumoTravadoAtualizar();
+  }
+}
+
+// Achado do usuário (2026-08-24): resumo read-only da negociação — usado tanto no vazio deixado
+// pelo #sb-params pós-assinatura (Negociação) quanto no card da Etapa 4 (Orçamento) do modal
+// Etapas do Projeto. `p` tem o formato de window._planoPagamento (é literalmente o que o backend
+// grava em Orcamento.forma_pagamento, via _capturarPagamento() em salvarValorNegociado()) — não
+// recalcula nada, só formata o que a modalidade ativa já montou.
+function _negResumoLinhasHtml(p){
+  if (!p) return '<div style="color:var(--muted)">Sem dados de pagamento salvos.</div>';
+  const formaLbl = c => (_FORMAS_AVISTA.find(([v]) => v === c) || [, c])[1] || '—';
+  const linha = (lbl, val) => '<div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;'
+    + 'letter-spacing:.5px;margin-bottom:2px">' + lbl + '</div><div style="font-weight:600;'
+    + 'font-variant-numeric:tabular-nums">' + val + '</div></div>';
+  const parc = Array.isArray(p.parcelas) ? p.parcelas : [];
+  const parcTxt = !parc.length ? '—'
+    : parc.length === 1 ? ('1x R$ ' + fmt(parc[0].valor) + (p.tipo === 'avista' ? ' (liquidação)' : ''))
+    : (parc.length + 'x R$ ' + fmt(parc[parc.length - 1].valor));
+  return linha('Modalidade',        esc(p.nome_forma || '—'))
+       + linha('Forma da entrada',  formaLbl(p.entrada_forma))
+       + linha('Data da entrada',   _dataBRCompleta(p.entrada_data))
+       + linha('Valor da entrada',  'R$ ' + fmt(p.entrada_valor || 0))
+       + linha('Parcelamento',      parcTxt);
+}
+function _negResumoTravadoAtualizar(){
+  const corpo = document.getElementById('neg-resumo-travado-corpo');
+  if (corpo) corpo.innerHTML = _negResumoLinhasHtml(window._planoPagamento);
 }
 
 function aplicarBloqueioNegociacao(travar) {
@@ -19782,13 +19838,33 @@ function _renderCardGenerico(etapa, dados, bloqueada) {
     if (!_orcamentos || !_orcamentos.length) {
       return `<p style="color:var(--muted);font-size:.85rem">Nenhum orçamento ainda. Crie um orçamento na tela de negociação.</p>`;
     }
-    const linhas = _orcamentos.map(o => `
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-        <span style="flex:1">${esc(o.nome || ('Orçamento ' + o.id))}</span>
-        <button class="btn btn-ghost btn-sm" onclick="fecharCiclo();ativarOrcamento(${o.id})">Abrir</button>
-        <a class="btn btn-ghost btn-sm" style="text-decoration:none" target="_blank" rel="noopener"
-           href="/api/orcamentos/${o.id}/proposta/pdf">&#x1F5A8; Imprimir</a>
-      </div>`).join('');
+    // Achado do usuário (2026-08-24): o card só listava nome+botões, deixando um vazio grande
+    // pra cada orçamento — sem valor nem forma de pagamento em negociação. Reusa
+    // _negResumoLinhasHtml (mesmo helper do resumo pós-assinatura da Negociação);
+    // o.forma_pagamento já vem do backend no MESMO formato de window._planoPagamento (é o que
+    // salvarValorNegociado()/_capturarPagamento() gravam) — sem endpoint novo.
+    const linhas = _orcamentos.map(o => {
+      let plano = null;
+      try { plano = o.forma_pagamento ? JSON.parse(o.forma_pagamento) : null; } catch(e) { plano = null; }
+      const resumoHtml = (o.valor_total > 0) ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);
+             display:grid;grid-template-columns:repeat(2,1fr);gap:12px 20px;font-size:var(--fs-sm)">
+          <div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px;
+               margin-bottom:2px">Total do Contrato</div><div style="font-weight:700;
+               font-variant-numeric:tabular-nums;color:var(--ok)">R$ ${fmt(o.valor_total)}</div></div>
+          ${_negResumoLinhasHtml(plano)}
+        </div>` : '';
+      return `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="flex:1;font-weight:600">${esc(o.nome || ('Orçamento ' + o.id))}</span>
+          <button class="btn btn-ghost btn-sm" onclick="fecharCiclo();ativarOrcamento(${o.id})">Abrir</button>
+          <a class="btn btn-ghost btn-sm" style="text-decoration:none" target="_blank" rel="noopener"
+             href="/api/orcamentos/${o.id}/proposta/pdf">&#x1F5A8; Imprimir</a>
+        </div>
+        ${resumoHtml}
+      </div>`;
+    }).join('');
     return `<div>${linhas}</div>`;
   }
 

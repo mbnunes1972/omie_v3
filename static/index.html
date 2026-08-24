@@ -425,7 +425,21 @@ body{overflow:hidden}
    --surface reaponta pro --sidebar-bg opaco, o MESMO padrão que .sidebar já usa
    (`.sidebar{background:var(--surface)}`, linha ~60) pra se pintar de escuro nos dois temas. */
 .neg-params-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;min-width:220px;background:var(--surface)}
-.neg-hdr-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;background:var(--card);min-width:220px}
+/* Bloco 4 do brief (2026-08-24): .neg-hdr-box perde o min-width (o grid .neg-top já define a
+   coluna em 340px fixos) e vira flex-column, pra .neg-hdr-actions poder grudar no rodapé via
+   margin-top:auto — os dois cards (identidade/condições) terminam na mesma altura E a mesma
+   borda direita, mesmo quando um tem menos conteúdo que o outro (ex.: à vista sem TF-extras). */
+.neg-hdr-box{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;background:var(--card);display:flex;flex-direction:column}
+.neg-hdr-box .neg-hdr-actions{margin-top:auto;padding-top:var(--sp-4)}
+.neg-top{display:grid;grid-template-columns:340px 1fr;gap:var(--sp-3);align-items:stretch;margin-bottom:16px}
+/* Linha Desconto/Modalidade/Parcelas/Forma da entrada/Forma das parcelas: 1ª coluna fixa (88px,
+   o campo curto de %), as outras 4 dividem o resto igualmente — troca os five `width` fixos em
+   px (88/170/170/120/170) que não acompanhavam a largura real do frame. */
+.neg-params-row{display:grid;grid-template-columns:88px repeat(4,minmax(0,1fr));gap:var(--sp-3);align-items:start}
+/* Bloco 5 do brief: células de valor por ambiente já herdam 13px de .cli-table td (mesmo token
+   de var(--fs-sm)) — só falta tabular-nums, escopado a esta tabela pra não mexer nas outras
+   telas que usam .cli-table. */
+#neg-tbody td{font-variant-numeric:tabular-nums}
 /* Bloco 2 do brief docs/design/brief-negociacao-layout.md (Proposta B): "Total do Contrato" é o
    único número herói da tela — todo o resto fica <=15px (bloco 5). #neg-total-final migra pra cá
    com os mesmos handlers/id; era o gêmeo duplicado de #neg-parcelado (que sai de cena, oculto). */
@@ -483,7 +497,11 @@ body{overflow:hidden}
 .neg-locked { opacity: .6; cursor: not-allowed; }
 /* Painel modalidade */
 .mod-panel{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:18px;margin-bottom:14px}
-.mod-panel-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px}
+/* Bloco 6 do brief (2026-08-24): título fixo "Plano de pagamento" + badge com a modalidade ativa
+   — antes cada #plano-* tinha o nome da modalidade como título (emoji+texto), um por modalidade.
+   Virou flex row pra caber os dois; padding/border/margin do título original migram pra cá. */
+.mod-panel-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.neg-mod-badge{font-size:var(--fs-xs);letter-spacing:normal;text-transform:none;color:var(--accent);background:var(--accent-tint);padding:2px 9px;border-radius:999px;font-weight:600}
 /* .mod-grid (rótulo em cima) foi APOSENTADO no bloco 7 (2026-08-24): era o formato dos campos
    das modalidades financiadas, o único lugar do sistema que o usava. Os cinco painéis passaram
    a usar .field-float (rótulo flutuante), que o À Vista já usava — dois formatos pro mesmo
@@ -509,6 +527,8 @@ body{overflow:hidden}
 .neg-cond-aviso{grid-column:1/-1;font-size:var(--fs-xs);padding:7px 12px;border-radius:6px}
 .neg-cond-aviso.warn{color:var(--warn);background:var(--warn-soft);border-left:3px solid var(--warn)}
 .neg-cond-aviso.err{color:var(--err);background:var(--err-soft);border-left:3px solid var(--err)}
+/* Bloco 6: variante "ok" — só a linha de conferência do À Vista usa (confere com o Total). */
+.neg-cond-aviso.ok{color:var(--ok);background:var(--ok-soft);border-left:3px solid var(--ok)}
 /* Cabeçalho da tabela de ambientes: botões de ambiente à esquerda, ações da tela à direita */
 .neg-tbl-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;
              padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -1078,7 +1098,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
          projetos) e Orizon Chat saiu (módulo próprio já cobre isso) — Parâmetros e Etapas do
          Projeto, os 2 botões que sobraram, foram pro box de identidade abaixo. Provisões saiu
          pro modal de Etapas do Projeto (só é útil depois do contrato assinado, ver renderCiclo()). -->
-    <div style="display:flex;align-items:stretch;gap:14px;flex-wrap:wrap;margin-bottom:16px">
+    <!-- Bloco 4 do brief (2026-08-24): grid de 2 colunas (340px + 1fr) substitui o flex solto —
+         as faixas do topo passam a terminar na mesma borda direita da tabela de ambientes
+         abaixo (critério de aceite 1). -->
+    <div class="neg-top">
       <!-- Box de identidade (2026-08-23/24, achado do usuário): "Negociação" em cima, Projeto/
            Cliente empilhados embaixo, Parâmetros/Etapas do Projeto juntos aqui embaixo. -->
       <div class="neg-hdr-box">
@@ -1124,7 +1147,9 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
           <div id="neg-hero-cond" class="neg-hero-cond" style="display:none"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <!-- Bloco 4: class neg-hdr-actions grudada no rodapé do card (margin-top:auto) —
+             sem o margin-top:10px fixo de antes, que não acompanhava a altura do irmão. -->
+        <div class="neg-hdr-actions" style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
           <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
         </div>
@@ -1144,8 +1169,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
            sibling de .neg-hdr-box, e ganhou a faixa .neg-cond-chain (Bruto→Desconto→À vista)
            como PARTE do mesmo card, não dois blocos com gap. -->
       <div class="sb-params neg-params-box" id="sb-params" style="display:none;flex:1;min-width:280px">
-        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-          <div style="width:88px;flex-shrink:0">
+        <!-- Bloco 4 do brief: grid de 5 colunas (88px + 4×1fr) no lugar dos `width` fixos em px
+             que não acompanhavam a largura real do card. -->
+        <div class="neg-params-row">
+          <div>
             <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
               <span>Desconto (%)</span>
             </label>
@@ -1168,26 +1195,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
           </div>
 
-          <div style="width:170px;flex-shrink:0">
+          <div>
             <label class="sb-label">Modalidade</label>
             <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
               <option value="a_vista">1x</option>
             </select>
           </div>
 
-          <div style="width:170px;flex-shrink:0">
+          <div>
             <label class="sb-label">Parcelas</label>
             <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
               <option value="1">1x</option>
             </select>
           </div>
 
-          <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
+          <div id="neg-forma-entrada-col">
             <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
             <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
 
-          <div id="neg-forma-parcela-wrap" style="width:170px;flex-shrink:0">
+          <div id="neg-forma-parcela-wrap">
             <label class="sb-label" id="neg-forma-parcela-lbl">Forma das parcelas</label>
             <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
@@ -1355,15 +1382,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div class="neg-cond-chain">
           <div class="neg-cond-seg">
             <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor Bruto</div>
-            <div style="font-size:19px;font-weight:500;color:var(--text)" id="neg-subtotal">R$ 0,00</div>
+            <div style="font-size:var(--fs-h3);font-variant-numeric:tabular-nums;font-weight:500;color:var(--text)" id="neg-subtotal">R$ 0,00</div>
           </div>
           <div class="neg-cond-seg">
             <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Desconto</div>
-            <div style="font-size:19px;font-weight:500;color:var(--err)" id="neg-desc-val">- R$ 0,00</div>
+            <div style="font-size:var(--fs-h3);font-variant-numeric:tabular-nums;font-weight:500;color:var(--err)" id="neg-desc-val">- R$ 0,00</div>
           </div>
           <div class="neg-cond-seg">
             <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor à Vista</div>
-            <div style="font-size:19px;font-weight:500;color:var(--accent)" id="neg-avista">R$ 0,00</div>
+            <div style="font-size:var(--fs-h3);font-variant-numeric:tabular-nums;font-weight:500;color:var(--accent)" id="neg-avista">R$ 0,00</div>
           </div>
         </div>
       </div>
@@ -1473,8 +1500,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <tfoot>
           <tr style="border-top:2px solid var(--border2)">
             <td colspan="3" style="padding:12px 14px;font-family:var(--font-sans);font-weight:700;font-size:13px">Total</td>
-            <td id="neg-total-avista" style="padding:12px 14px;text-align:right;font-family:var(--font-sans);font-weight:700;font-size:14px;color:var(--muted);white-space:nowrap">—</td>
-            <td id="neg-total" style="padding:12px 14px;text-align:right;font-family:var(--font-display);font-weight:900;font-size:18px;color:var(--ok);white-space:nowrap">—</td>
+            <td id="neg-total-avista" style="padding:12px 14px;text-align:right;font-family:var(--font-sans);font-weight:700;font-size:var(--fs-sm);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap">—</td>
+            <td id="neg-total" style="padding:12px 14px;text-align:right;font-family:var(--font-display);font-weight:900;font-size:var(--fs-body);font-variant-numeric:tabular-nums;color:var(--ok);white-space:nowrap">—</td>
           </tr>
         </tfoot>
       </table>
@@ -1487,7 +1514,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
          #painel-cartao-titulo continua sendo o elemento cujo textContent cartaoMostrarPainel()
          reescreve com a descrição da modalidade. -->
     <div class="mod-panel" id="plano-aymore" style="display:none">
-      <div class="mod-panel-title">Aymoré</div>
+      <div class="mod-panel-title">Plano de pagamento <span class="neg-mod-badge">Aymoré</span></div>
       <div id="ay-resumo" style="display:none">
         <!-- faixa central removida: "à vista (Loja Recebe)" já está nos cards abaixo e o
              "Contrato Parcelado" foi para a faixa superior. Ids preservados (ocultos). -->
@@ -1513,7 +1540,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <div class="mod-panel" id="plano-cartao" style="display:none">
-      <div class="mod-panel-title" id="painel-cartao-titulo">Cartao de Credito</div>
+      <!-- Bloco 6: #painel-cartao-titulo migra pro badge (sibling do rótulo fixo "Plano de
+           pagamento", nunca filho) — cartaoMostrarPainel() continua reescrevendo o textContent
+           dele com a descrição da modalidade selecionada, só que agora ele É o badge. -->
+      <div class="mod-panel-title">Plano de pagamento <span class="neg-mod-badge" id="painel-cartao-titulo">Cartao de Credito</span></div>
       <div id="cc-resumo" style="display:none">
         <span id="cc-c-avista" style="display:none"></span><span id="cc-c-avista-sub" style="display:none"></span>
         <span id="cc-c-parcelado" style="display:none"></span><span id="cc-c-parcelado-sub" style="display:none"></span>
@@ -1537,7 +1567,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <div class="mod-panel" id="plano-vp" style="display:none">
-      <div class="mod-panel-title">Venda Programada</div>
+      <div class="mod-panel-title">Plano de pagamento <span class="neg-mod-badge">Venda Programada</span></div>
       <div id="vp-resumo" style="display:none">
         <span id="vp-c-avista" style="display:none"></span><span id="vp-c-avista-sub" style="display:none"></span>
         <span id="vp-c-parcelado" style="display:none"></span><span id="vp-c-parcelado-sub" style="display:none"></span>
@@ -1565,7 +1595,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
 
     <div class="mod-panel" id="plano-tf" style="display:none">
-      <div class="mod-panel-title">Parcelamento Loja</div>
+      <div class="mod-panel-title">Plano de pagamento <span class="neg-mod-badge">Parcelamento Loja</span></div>
       <div id="tf-resumo" style="display:none">
         <span id="tf-c-avista" style="display:none"></span><span id="tf-c-avista-sub" style="display:none"></span>
         <span id="tf-c-total" style="display:none"></span><span id="tf-c-total-sub" style="display:none"></span>
@@ -1611,7 +1641,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
          irmãos: _negPlanoResumo('avista','av',mostrar) liga/desliga #av-resumo e #plano-avista
          juntos; chave 'avista' + prefixo 'av' batem com o padrão pref+'-resumo'/'plano-'+chave. -->
     <div class="mod-panel" id="plano-avista" style="display:none">
-      <div class="mod-panel-title">À Vista</div>
+      <div class="mod-panel-title">Plano de pagamento <span class="neg-mod-badge">À Vista</span></div>
       <div id="av-resumo" style="display:none">
         <div class="plano-wrap">
           <div class="plano-hdr">Plano de Pagamento</div>
@@ -1633,6 +1663,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             </tbody>
           </table>
         </div>
+        <!-- Bloco 6 do brief: linha de conferência (o único código de fato novo do bloco 6) —
+             o brief original pedia isso no fim do #painel-avista; a estrutura mudou no bloco 7
+             (#painel-avista virou só os CAMPOS, #plano-avista é o resumo), então a conferência
+             foi pra cá, junto do resumo que ela confere. Populada por avistaRecalcular(); não
+             recalcula nada novo, só compara valores já existentes. -->
+        <div id="av-conferencia" class="neg-cond-aviso" style="margin-top:10px"></div>
       </div>
     </div>
 
@@ -9721,6 +9757,29 @@ function avistaRecalcular() {
   setTxt('av-r-liq-forma',     _formaLbl(liqForma));
   setTxt('av-r-liq-valor',     'R$ ' + fmt(saldo));
   _negPlanoResumo('avista', 'av', total > 0);
+
+  // Bloco 6 do brief: linha de conferência — Entrada + Liquidação confere com o Total do
+  // Contrato EXIBIDO (não com `total`/`_ayGetValorVenda()` direto: o objetivo é flagrar
+  // divergência de verdade, ex. total editado manualmente sem a entrada/liquidação terem
+  // acompanhado). Leitura, sem alterar nenhum valor.
+  const elConf = document.getElementById('av-conferencia');
+  if (elConf) {
+    if (total > 0) {
+      const totalContrato = parseFloat(
+        (document.getElementById('neg-total-final')?.value || '0')
+          .replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')
+      ) || 0;
+      const confere = Math.abs((entrada + saldo) - totalContrato) < 0.01;
+      elConf.className = 'neg-cond-aviso ' + (confere ? 'ok' : 'err');
+      elConf.innerHTML = 'Entrada R$ ' + fmt(entrada) + ' + Liquidação R$ ' + fmt(saldo)
+        + ' = R$ ' + fmt(entrada + saldo) + ' '
+        + (confere ? '&#x2713; confere com o Total do Contrato'
+                   : '&#x2717; NÃO confere com o Total do Contrato (R$ ' + fmt(totalContrato) + ')');
+      elConf.style.display = '';
+    } else {
+      elConf.style.display = 'none';
+    }
+  }
 
   window._planoPagamento = {
     tipo: 'avista', nome_forma: 'A Vista',

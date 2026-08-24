@@ -130,14 +130,44 @@ Quatro `getElementById` sem guarda dependem do DOM atual:
 
 A linha de conferência do item 6 é o único código de fato novo — leitura e comparação, não altera valor nenhum.
 
+---
+
+## Blocos 4-6 — fechamento (2026-08-24)
+
+Implementados depois do bloco 7 (adendo), sobre a estrutura já reorganizada — dois ajustes de
+adaptação em relação ao texto original:
+
+- **Bloco 4:** `.neg-top` (grid 340px+1fr) e `.neg-params-row` (grid 88px+4×1fr) exatamente como
+  especificado. `.neg-hdr-box` virou flex-column com `.neg-hdr-actions{margin-top:auto}` — os
+  botões Parâmetros/Etapas do Projeto grudam no rodapé do card mesmo quando o irmão (`#sb-params`)
+  é mais alto.
+- **Bloco 5:** tabela de tamanhos aplicada 1:1 — `#neg-subtotal`/`#neg-desc-val`/`#neg-avista` →
+  `var(--fs-h3)`, `#neg-total` → `var(--fs-body)`, `#neg-total-avista` → `var(--fs-sm)`, todos com
+  `font-variant-numeric:tabular-nums`. As células de valor por ambiente já herdavam 13px de
+  `.cli-table td` (mesmo valor de `var(--fs-sm)`) — só ganharam tabular-nums, escopado a
+  `#neg-tbody` pra não mexer nas outras telas que usam `.cli-table`. `#neg-total-final` (herói) já
+  estava em `var(--fs-h1)` desde o bloco 2.
+- **Bloco 6 (adaptado ao bloco 7):** o texto original mandava mexer no `.mod-panel-title` de
+  `#painel-avista`/`#painel-aymore`/`#painel-cartao` — esses ids viraram só os CAMPOS no bloco 7
+  (sem título nenhum). O título "Plano de pagamento" + badge da modalidade ativa foi pros 5
+  `#plano-*` (onde o `.mod-panel-title` de fato sobreviveu), incluindo VP/TF/À Vista (não citados
+  no texto original, mas o mesmo padrão claramente se aplicava aos cinco). `#painel-cartao-titulo`
+  migrou pro badge (sibling do rótulo fixo, nunca filho — regra preservada). A **linha de
+  conferência** também mudou de endereço: o brief pedia no fim do `#painel-avista` (que não existe
+  mais como container de resumo), foi para o fim do `#plano-avista` — mesma lógica exata (Entrada +
+  Liquidação vs. `#neg-total-final` exibido, variante `err` se não bater), só que ao lado do resumo
+  que ela confere, não misturada aos campos de input.
+
 ## Aceite
 
-1. As faixas do topo terminam na mesma borda direita.
-2. Existe exatamente **um** campo editável de Total do Contrato na tela.
-3. Nenhum número da tela passa de 15px, exceto o herói (24px).
-4. Botões de ambiente estão no cabeçalho da tabela; `＋` de orçamento junto das abas.
-5. `git grep -nE "#[0-9a-fA-F]{3,8}" static/index.html` não retorna nada novo.
-6. `python3 -m pytest -q` verde; Ctrl+F5 em 1280 / 1600 / 1920px, tema claro e escuro.
+1. ✅ As faixas do topo terminam na mesma borda direita.
+2. ✅ Existe exatamente **um** campo editável de Total do Contrato na tela.
+3. ✅ Nenhum número da tela passa de 15px, exceto o herói (24px).
+4. ✅ Botões de ambiente estão no cabeçalho da tabela; `＋` de orçamento junto das abas.
+5. ✅ `git grep -nE "#[0-9a-fA-F]{3,8}" static/index.html` não retorna nada novo.
+6. ✅ `python3 -m pytest -q` verde; Ctrl+F5 em 1280 / 1600 / 1920px, tema claro e escuro (Playwright, os dois temas, os três breakpoints).
+
+**Brief fechado (2026-08-24) — blocos 1-7 todos implementados, revisados e verificados.**
 
 ---
 

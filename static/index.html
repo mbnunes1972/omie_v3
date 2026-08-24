@@ -83,7 +83,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    Pendências/Responsabilidades (meio, ligados na Fase 6), usuário+tema+Sair (direita) — migrados
    de dentro da sidebar (canto inferior esquerdo antigo). Mesma paleta escura da sidebar nos dois
    temas (REGRAS_MARCA §5 — glifo mono-branco via currentColor vale nos dois). */
-.topframe{height:64px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
+.topframe{height:68px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;
   gap:16px;padding:0 24px;background:var(--sidebar-bg);border-bottom:1px solid var(--sidebar-border);
   position:relative;z-index:50}
 /* Achado da Vera (2026-08-23): abaixo de ~1280px o texto dos botões centrais vazava por cima da
@@ -98,21 +98,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    — sem ele, o pior caso extremo (janela bem mais estreita que 1024px) é um corte de alguns
    pixels na ponta direita, bem menos grave que esconder um dropdown inteiro. Altura 56→64px
    (achado do usuário: frame parecia estreito demais). */
-.tf-marca{display:flex;align-items:center;flex-shrink:0}
-/* Achado do usuário (2026-08-24, revisão): o alinhamento é com o TEXTO "Projetos" da sidebar
-   (que só começa depois do ícone: sb-nav 12px + nav-item 10px + ícone 16px + gap 10px = 48px da
-   borda esquerda da tela), não com o glifo do OrizonOne. .tf-marca-loja carrega esse recuo extra
-   (48 − os 24px de padding do .topframe = 24px de margin-left) — só a linha da loja, não a linha
-   glifo+wordmark, que fica livre pra crescer sem empurrar a loja. */
-.tf-marca-col{display:flex;flex-direction:column;gap:4px}
-.tf-marca-top{display:flex;align-items:center;gap:10px}
-.tf-marca-loja{margin-left:24px}
+/* Achado do usuário (2026-08-24, revisão final): OrizonOne e Loja voltam pra MESMA LINHA (não
+   mais empilhados) — glifo, wordmark e o bloco da loja lado a lado, um só row. As tentativas
+   anteriores de empilhar (loja embaixo do wordmark, alinhada com "Projetos" da sidebar) foram
+   revertidas: sem 2ª linha, não há mais overflow vertical (glifo não corta) nem alinhamento
+   cross-row pra manter. Altura 88→68px (só precisa caber uma linha agora; glifo 42px + folga). */
+.tf-marca{display:flex;align-items:center;gap:14px;flex-shrink:0}
 .tf-glifo{width:42px;height:42px;flex-shrink:0;color:var(--sidebar-text-active)}
 .tf-glifo svg{display:block;width:100%;height:100%}
 .tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
 .tf-wordmark .wm-linha{display:flex;align-items:baseline;gap:1px}
 .tf-wordmark .wm-orizon{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--sidebar-text-active)}
 .tf-wordmark .wm-manager{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--sidebar-accent)}
+.tf-marca-loja{display:flex;align-items:center}
 .tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
 .tf-central{display:flex;align-items:center;gap:10px;flex-shrink:0;justify-content:center}
@@ -622,23 +620,19 @@ input[type="date"]::-webkit-calendar-picker-indicator {
      substitui o que antes vivia no topo e no rodapé da sidebar. -->
 <header class="topframe" id="topframe">
   <div class="tf-marca" role="img" aria-label="OrizonOne">
-    <div class="tf-marca-col">
-      <div class="tf-marca-top">
-        <span class="tf-glifo" aria-hidden="true">
-          <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="3"/>
-            <polygon points="60,27 65.5,60 60,68 54.5,60" fill="currentColor"/>
-            <polygon points="60,93 64.5,62 60,54 55.5,62" fill="none" stroke="currentColor" stroke-width="1.75"/>
-          </svg>
-        </span>
-        <span class="tf-wordmark">
-          <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
-        </span>
-      </div>
-      <div class="tf-marca-loja">
-        <span id="tf-loja-nome" class="tf-loja-nome"></span>
-        <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
-      </div>
+    <span class="tf-glifo" aria-hidden="true">
+      <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="60" cy="60" r="40" fill="none" stroke="currentColor" stroke-width="3"/>
+        <polygon points="60,27 65.5,60 60,68 54.5,60" fill="currentColor"/>
+        <polygon points="60,93 64.5,62 60,54 55.5,62" fill="none" stroke="currentColor" stroke-width="1.75"/>
+      </svg>
+    </span>
+    <span class="tf-wordmark">
+      <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
+    </span>
+    <div class="tf-marca-loja">
+      <span id="tf-loja-nome" class="tf-loja-nome"></span>
+      <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
     </div>
   </div>
   <div class="tf-central" id="tf-central">
@@ -1030,83 +1024,109 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
           </span>
         </div>
-        <div class="page-sub" id="neg-orc-nome-hdr" style="margin-top:8px;margin-bottom:0">Valores finais apresentados ao cliente</div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
           <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
         </div>
       </div>
-      <!-- Painel de parâmetros de negociação (2026-08-23/24): migrado da barra lateral pra cá,
-           ao lado do box de identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/
-           neg-parcelas/etc.), só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já
-           tinha na sidebar. Sem título "Parâmetros" (achado do usuário: confundia com o botão/
-           modal de Parâmetros ao lado). Desconto/Modalidade/Parcelas em LINHA (não empilhados)
-           pra aproveitar a largura do frame; Forma da entrada/Forma das parcelas (quando a
-           modalidade não é à vista) abrem na MESMA linha, à direita de Modalidade/Parcelas. -->
-      <div class="sb-params neg-params-box" id="sb-params" style="display:none">
-        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-          <div style="width:88px;flex-shrink:0">
+      <!-- Coluna Parâmetros + Orçamento (2026-08-24, achado do usuário): a barra de Orçamento
+           saiu de baixo da tabela e migrou pra cá — logo abaixo do Desconto, ao lado (não dentro)
+           do box de identidade. -->
+      <div style="display:flex;flex-direction:column;gap:10px;flex:1;min-width:280px">
+        <!-- Painel de parâmetros de negociação (2026-08-23/24): migrado da barra lateral pra cá,
+             ao lado do box de identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/
+             neg-parcelas/etc.), só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já
+             tinha na sidebar. Sem título "Parâmetros" (achado do usuário: confundia com o botão/
+             modal de Parâmetros ao lado). Desconto/Modalidade/Parcelas em LINHA (não empilhados)
+             pra aproveitar a largura do frame; Forma da entrada/Forma das parcelas (quando a
+             modalidade não é à vista) abrem na MESMA linha, à direita de Modalidade/Parcelas.
+             Larguras das colunas (2026-08-24, achado do usuário): alargadas pra caber o texto
+             inteiro das opções mais longas ("Cartão de Crédito", "Parcelamento Loja" etc.) sem
+             cortar — Modalidade/Parcelas/Forma das parcelas podem exibir essas opções. -->
+        <div class="sb-params neg-params-box" id="sb-params" style="display:none">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+            <div style="width:88px;flex-shrink:0">
+              <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+                <span>Desconto (%)</span>
+              </label>
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+                <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
+                       onfocus="this._prev=this.value"
+                       oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
+                       onkeydown="negDescontoKeydown(event,this)"
+                       onblur="salvarDescontoAutomatico()"
+                       class="sb-input-sm" style="width:60px;text-align:right">
+                <span style="color:var(--muted);font-size:12px">%</span>
+              </div>
+              <button id="neg-desc-confirmar" onclick="negConfirmarDesconto()"
+                      style="display:none;padding:3px 7px;background:var(--err);color:var(--btn-primary-text);border:none;
+                             border-radius:5px;font-family:var(--font-sans);font-weight:700;
+                             font-size:9px;cursor:pointer;letter-spacing:.3px;transition:.15s;white-space:nowrap"
+                      title="Solicitar autorização para este desconto">
+                ✓ OK
+              </button>
+              <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
+            </div>
+
+            <div style="width:170px;flex-shrink:0">
+              <label class="sb-label">Modalidade</label>
+              <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
+                <option value="a_vista">1x</option>
+              </select>
+            </div>
+
+            <div style="width:170px;flex-shrink:0">
+              <label class="sb-label">Parcelas</label>
+              <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
+                <option value="1">1x</option>
+              </select>
+            </div>
+
+            <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
+              <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
+              <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
+            </div>
+
+            <div id="neg-forma-parcela-wrap" style="width:170px;flex-shrink:0">
+              <label class="sb-label">Forma das parcelas</label>
+              <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
+            </div>
+          </div>
+
+          <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
+          <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:8px">
             <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-              <span>Desconto (%)</span>
+              <span>Taxa Juros (%/mes)</span>
+              <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
             </label>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-              <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
-                     onfocus="this._prev=this.value"
-                     oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
-                     onkeydown="negDescontoKeydown(event,this)"
-                     onblur="salvarDescontoAutomatico()"
-                     class="sb-input-sm" style="width:60px;text-align:right">
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+              <input type="text" id="tf-taxa-input" value="••••"
+                     readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
+                     onfocus="if(!this.readOnly) this._prev=this.value"
+                     oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
+                     onkeydown="tfTaxaKeydown(event,this)">
               <span style="color:var(--muted);font-size:12px">%</span>
             </div>
-            <button id="neg-desc-confirmar" onclick="negConfirmarDesconto()"
-                    style="display:none;padding:3px 7px;background:var(--err);color:var(--btn-primary-text);border:none;
-                           border-radius:5px;font-family:var(--font-sans);font-weight:700;
-                           font-size:9px;cursor:pointer;letter-spacing:.3px;transition:.15s;white-space:nowrap"
-                    title="Solicitar autorização para este desconto">
-              ✓ OK
-            </button>
-            <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
-          </div>
-
-          <div style="width:112px;flex-shrink:0">
-            <label class="sb-label">Modalidade</label>
-            <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
-              <option value="a_vista">1x</option>
-            </select>
-          </div>
-
-          <div style="width:80px;flex-shrink:0">
-            <label class="sb-label">Parcelas</label>
-            <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
-              <option value="1">1x</option>
-            </select>
-          </div>
-
-          <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
-            <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
-            <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
-          </div>
-
-          <div id="neg-forma-parcela-wrap" style="width:120px;flex-shrink:0">
-            <label class="sb-label">Forma das parcelas</label>
-            <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
         </div>
 
-        <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
-        <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:8px">
-          <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-            <span>Taxa Juros (%/mes)</span>
-            <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
-          </label>
-          <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
-            <input type="text" id="tf-taxa-input" value="••••"
-                   readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
-                   onfocus="if(!this.readOnly) this._prev=this.value"
-                   oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
-                   onkeydown="tfTaxaKeydown(event,this)">
-            <span style="color:var(--muted);font-size:12px">%</span>
-          </div>
+        <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos
+             no banco. Achado do usuário (2026-08-23): tabs + botões (Ambientes/Novo Ambiente/Novo
+             Orçamento) ficavam espalhados ponta a ponta — agrupados e centralizados. Achado do
+             usuário (2026-08-24): saiu de baixo da tabela pra cá, logo abaixo do Desconto/
+             Modalidade/Parcelas, ao lado do box de identidade. -->
+        <div id="neg-orc-bar" style="display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;
+                                      padding:8px 12px;background:var(--surface);border:1px solid var(--border);
+                                      border-radius:8px">
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
+                       margin-right:4px;white-space:nowrap">Orçamento:</span>
+          <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+          <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
+                  style="font-size:11px;padding:4px 10px;margin-left:10px">Ambientes</button>
+          <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
+                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Ambiente</button>
+          <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()"
+                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Orçamento</button>
         </div>
       </div>
     </div>
@@ -1145,24 +1165,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         </div>
         <div id="recon-proj-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
       </div>
-    </div>
-
-    <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos no banco.
-         Achado do usuário (2026-08-23): tabs de orçamento e os 3 botões (Ambientes/Novo Ambiente/
-         Novo Orçamento) ficavam espalhados ponta a ponta (neg-orc-tabs tinha flex:1, empurrando os
-         botões pro extremo direito) — agrupados e centralizados agora. -->
-    <div id="neg-orc-bar" style="display:none;align-items:center;justify-content:center;margin-bottom:14px;flex-wrap:wrap;gap:6px;
-                                  padding:8px 12px;background:var(--surface);border:1px solid var(--border);
-                                  border-radius:8px">
-      <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
-                   margin-right:4px;white-space:nowrap">Orçamento:</span>
-      <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
-      <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
-              style="font-size:11px;padding:4px 10px;margin-left:10px">Ambientes</button>
-      <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
-              style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Ambiente</button>
-      <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()"
-              style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Orçamento</button>
     </div>
 
     <!-- Linha Bruto → Desconto → à Vista → Contrato Parcelado -->

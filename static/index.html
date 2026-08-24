@@ -99,18 +99,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-sans);height:
    pixels na ponta direita, bem menos grave que esconder um dropdown inteiro. Altura 56→64px
    (achado do usuário: frame parecia estreito demais). */
 .tf-marca{display:flex;align-items:center;flex-shrink:0}
-/* Achado do usuário (2026-08-23): "OrizonOne" isolado/maior à esquerda; o nome da loja alinhado
-   à esquerda com os itens de módulo da sidebar abaixo (Projetos, Agenda...), não recuado atrás
-   do glifo — por isso a loja saiu de dentro do .tf-wordmark e virou linha própria no .tf-marca-col,
-   que começa na mesma borda esquerda que o glifo (~alinhada ao padding da sidebar). */
-.tf-marca-col{display:flex;flex-direction:column;gap:3px}
+/* Achado do usuário (2026-08-24, revisão): o alinhamento é com o TEXTO "Projetos" da sidebar
+   (que só começa depois do ícone: sb-nav 12px + nav-item 10px + ícone 16px + gap 10px = 48px da
+   borda esquerda da tela), não com o glifo do OrizonOne. .tf-marca-loja carrega esse recuo extra
+   (48 − os 24px de padding do .topframe = 24px de margin-left) — só a linha da loja, não a linha
+   glifo+wordmark, que fica livre pra crescer sem empurrar a loja. */
+.tf-marca-col{display:flex;flex-direction:column;gap:4px}
 .tf-marca-top{display:flex;align-items:center;gap:10px}
-.tf-glifo{width:38px;height:38px;flex-shrink:0;color:var(--sidebar-text-active)}
+.tf-marca-loja{margin-left:24px}
+.tf-glifo{width:42px;height:42px;flex-shrink:0;color:var(--sidebar-text-active)}
 .tf-glifo svg{display:block;width:100%;height:100%}
 .tf-wordmark{display:flex;flex-direction:column;line-height:1.15;font-family:var(--font-display)}
 .tf-wordmark .wm-linha{display:flex;align-items:baseline;gap:1px}
-.tf-wordmark .wm-orizon{font-weight:700;font-size:17px;letter-spacing:.01em;color:var(--sidebar-text-active)}
-.tf-wordmark .wm-manager{font-weight:700;font-size:17px;letter-spacing:.01em;color:var(--sidebar-accent)}
+.tf-wordmark .wm-orizon{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--sidebar-text-active)}
+.tf-wordmark .wm-manager{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--sidebar-accent)}
 .tf-loja-nome{font-size:9.5px;color:var(--sidebar-text);letter-spacing:.3px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
 .tf-central{display:flex;align-items:center;gap:10px;flex-shrink:0;justify-content:center}
@@ -633,8 +635,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <span class="wm-linha"><span class="wm-orizon">Orizon</span><span class="wm-manager">One</span></span>
         </span>
       </div>
-      <span id="tf-loja-nome" class="tf-loja-nome"></span>
-      <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
+      <div class="tf-marca-loja">
+        <span id="tf-loja-nome" class="tf-loja-nome"></span>
+        <div id="seletor-loja-wrap" style="display:none;align-items:center"></div>
+      </div>
     </div>
   </div>
   <div class="tf-central" id="tf-central">
@@ -1007,41 +1011,53 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:16px;flex-wrap:wrap">
-      <div style="display:flex;align-items:stretch;gap:14px;flex-wrap:wrap">
-        <!-- Box de identidade (2026-08-23, achado do usuário): "Negociação" em cima, Projeto/
-             Cliente empilhados embaixo — área padronizada, pareada com o box de Parâmetros ao lado. -->
-        <div class="neg-hdr-box">
-          <div class="page-title" style="margin:0">Negociação</div>
-          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
-            <span style="display:flex;align-items:baseline;gap:5px">
-              <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Projeto:</span>
-              <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">—</span>
-            </span>
-            <span style="display:flex;align-items:baseline;gap:5px">
-              <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Cliente:</span>
-              <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
-            </span>
-          </div>
-          <div class="page-sub" id="neg-orc-nome-hdr" style="margin-top:8px;margin-bottom:0">Valores finais apresentados ao cliente</div>
+    <!-- Achado do usuário (2026-08-24): Status saiu daqui (só na coluna Status da lista de
+         projetos) e Orizon Chat saiu (módulo próprio já cobre isso) — Parâmetros e Etapas do
+         Projeto, os 2 botões que sobraram, foram pro box de identidade abaixo. Provisões saiu
+         pro modal de Etapas do Projeto (só é útil depois do contrato assinado, ver renderCiclo()). -->
+    <div style="display:flex;align-items:stretch;gap:14px;flex-wrap:wrap;margin-bottom:16px">
+      <!-- Box de identidade (2026-08-23/24, achado do usuário): "Negociação" em cima, Projeto/
+           Cliente empilhados embaixo, Parâmetros/Etapas do Projeto juntos aqui embaixo. -->
+      <div class="neg-hdr-box">
+        <div class="page-title" style="margin:0">Negociação</div>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Projeto:</span>
+            <span id="proj-ctx-nome" style="font-family:var(--font-sans);font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px">—</span>
+          </span>
+          <span style="display:flex;align-items:baseline;gap:5px">
+            <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Cliente:</span>
+            <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
+          </span>
         </div>
-        <!-- Painel "Parâmetros" (2026-08-23): migrado da barra lateral pra cá, ao lado do box de
-             identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/neg-parcelas/etc.),
-             só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já tinha na sidebar. -->
-        <div class="sb-params neg-params-box" id="sb-params" style="display:none">
-          <div class="sb-param-title">Parâmetros</div>
-
-          <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-            <span>Desconto (%)</span>
-          </label>
-          <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
-            <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
-                   onfocus="this._prev=this.value"
-                   oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
-                   onkeydown="negDescontoKeydown(event,this)"
-                   onblur="salvarDescontoAutomatico()"
-                   class="sb-input-sm" style="width:60px;text-align:right">
-            <span style="color:var(--muted);font-size:12px">%</span>
+        <div class="page-sub" id="neg-orc-nome-hdr" style="margin-top:8px;margin-bottom:0">Valores finais apresentados ao cliente</div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
+          <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
+        </div>
+      </div>
+      <!-- Painel de parâmetros de negociação (2026-08-23/24): migrado da barra lateral pra cá,
+           ao lado do box de identidade — mesmos IDs de sempre (neg-desconto/neg-pagamento/
+           neg-parcelas/etc.), só mudou de lugar no DOM. .neg-params-box dá o tom escuro que já
+           tinha na sidebar. Sem título "Parâmetros" (achado do usuário: confundia com o botão/
+           modal de Parâmetros ao lado). Desconto/Modalidade/Parcelas em LINHA (não empilhados)
+           pra aproveitar a largura do frame; Forma da entrada/Forma das parcelas (quando a
+           modalidade não é à vista) abrem na MESMA linha, à direita de Modalidade/Parcelas. -->
+      <div class="sb-params neg-params-box" id="sb-params" style="display:none">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div style="width:88px;flex-shrink:0">
+            <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+              <span>Desconto (%)</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+              <input type="number" id="neg-desconto" min="0" max="100" step="0.5" value="0"
+                     onfocus="this._prev=this.value"
+                     oninput="negValidarLimiteDesconto(this.value); agendarSalvarDesconto()"
+                     onkeydown="negDescontoKeydown(event,this)"
+                     onblur="salvarDescontoAutomatico()"
+                     class="sb-input-sm" style="width:60px;text-align:right">
+              <span style="color:var(--muted);font-size:12px">%</span>
+            </div>
             <button id="neg-desc-confirmar" onclick="negConfirmarDesconto()"
                     style="display:none;padding:3px 7px;background:var(--err);color:var(--btn-primary-text);border:none;
                            border-radius:5px;font-family:var(--font-sans);font-weight:700;
@@ -1049,61 +1065,49 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                     title="Solicitar autorização para este desconto">
               ✓ OK
             </button>
+            <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-top:4px"></div>
           </div>
-          <div id="neg-limite-hint" style="display:none;font-size:10px;color:var(--err);margin-bottom:8px"></div>
 
-          <label class="sb-label">Modalidade</label>
-          <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select">
-            <option value="a_vista">1x</option>
-          </select>
+          <div style="width:112px;flex-shrink:0">
+            <label class="sb-label">Modalidade</label>
+            <select id="neg-pagamento" onchange="onPagamentoChange()" class="sb-select" style="width:100%">
+              <option value="a_vista">1x</option>
+            </select>
+          </div>
 
-          <label class="sb-label">Parcelas</label>
-          <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select">
-            <option value="1">1x</option>
-          </select>
+          <div style="width:80px;flex-shrink:0">
+            <label class="sb-label">Parcelas</label>
+            <select id="neg-parcelas" onchange="onParcelasChange()" class="sb-select" style="width:100%">
+              <option value="1">1x</option>
+            </select>
+          </div>
 
-          <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
-          <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select"></select>
+          <div id="neg-forma-entrada-col" style="width:120px;flex-shrink:0">
+            <label class="sb-label" id="neg-forma-entrada-lbl">Forma da entrada</label>
+            <select id="neg-forma-entrada" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
+          </div>
 
-          <div id="neg-forma-parcela-wrap">
+          <div id="neg-forma-parcela-wrap" style="width:120px;flex-shrink:0">
             <label class="sb-label">Forma das parcelas</label>
-            <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select"></select>
+            <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
+        </div>
 
-          <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
-          <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:6px;padding-top:8px">
-            <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
-              <span>Taxa Juros (%/mes)</span>
-              <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
-            </label>
-            <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
-              <input type="text" id="tf-taxa-input" value="••••"
-                     readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
-                     onfocus="if(!this.readOnly) this._prev=this.value"
-                     oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
-                     onkeydown="tfTaxaKeydown(event,this)">
-              <span style="color:var(--muted);font-size:12px">%</span>
-            </div>
+        <!-- Params exclusivos do Total Flex (visivel so quando TF ativo) -->
+        <div id="sb-tf-extras" style="display:none;border-top:1px solid var(--border);margin-top:10px;padding-top:8px">
+          <label class="sb-label" style="display:flex;align-items:center;justify-content:space-between">
+            <span>Taxa Juros (%/mes)</span>
+            <span id="sb-taxa-lock" class="lock-btn" onclick="tfAbrirModalSenha('taxa')" title="Liberar taxa para gerente">&#x1F512;</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:8px">
+            <input type="text" id="tf-taxa-input" value="••••"
+                   readonly class="sb-input-sm" style="width:60px;text-align:right;letter-spacing:1px;color:var(--muted)"
+                   onfocus="if(!this.readOnly) this._prev=this.value"
+                   oninput="if(!this.readOnly){clearTimeout(_tfTimer);_tfTimer=setTimeout(atualizarTF,400)}"
+                   onkeydown="tfTaxaKeydown(event,this)">
+            <span style="color:var(--muted);font-size:12px">%</span>
           </div>
         </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="position:relative">
-          <button class="status-selector" id="neg-status-btn"
-                  onclick="negStatusClick(event)" style="min-width:92px">
-            — Status &#9660;
-          </button>
-          <div class="proj-status-dd" id="neg-status-dd" style="right:0;left:auto">
-            <div class="proj-status-dd-item" onclick="negStatusSet('quente')"><i class="ti ti-flame"></i> Quente</div>
-            <div class="proj-status-dd-item" onclick="negStatusSet('morno')">● Morno</div>
-            <div class="proj-status-dd-item" onclick="negStatusSet('frio')"><i class="ti ti-snowflake"></i> Frio</div>
-            <div class="proj-status-dd-item" onclick="negStatusSet('perdido')">✗ Perdido</div>
-          </div>
-        </div>
-        <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
-        <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
-        <button id="btn-conversa-proj" class="btn btn-ghost btn-sm" onclick="abrirConversaProjeto()" title="Orizon Chat do projeto (chat interno)"><i class="ti ti-messages"></i> Orizon Chat</button>
-        <button id="btn-recon-proj" class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Provisões e Recebíveis deste projeto">Provisões</button>
       </div>
     </div>
 
@@ -8390,19 +8394,20 @@ function onFormaChange() {
 // Aplica as regras de forma de pagamento por modalidade.
 function atualizarFormasPagamento(codigo) {
   const selE  = document.getElementById('neg-forma-entrada');
-  const lblE  = document.getElementById('neg-forma-entrada-lbl');
+  const colE  = document.getElementById('neg-forma-entrada-col');
   const wrapP = document.getElementById('neg-forma-parcela-wrap');
   const selP  = document.getElementById('neg-forma-parcela');
   if (!selE || !selP) return;
 
   if (codigo === 'a_vista') {
-    // À vista usa o painel-avista (entrada + liquidação); oculta estes seletores.
-    lblE.style.display = 'none';
-    selE.style.display = 'none';
+    // À vista usa o painel-avista (entrada + liquidação); oculta estas colunas (2026-08-24:
+    // colE agora é o wrapper — junto com wrapP — pra sumir a coluna inteira na linha de
+    // parâmetros, não só o label/select internos, que ficaram lado a lado de Modalidade/Parcelas).
+    colE.style.display = 'none';
     wrapP.style.display = 'none';
     return;
   }
-  lblE.style.display = ''; selE.style.display = ''; wrapP.style.display = '';
+  colE.style.display = ''; wrapP.style.display = '';
 
   // Entrada: sempre Pix/TED/Boleto
   _formaEntrada = _preencherSelectFormas(selE, _FORMAS_ENTRADA, _formaEntrada);
@@ -18610,6 +18615,7 @@ function renderCiclo() {
       ${projetoAtivo && _usuarioAtual && _usuarioAtual.pode_ver_parametros ? `<button class="btn btn-ghost btn-sm" onclick="abrirAuditoria('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-report-money"></i>Auditoria Contábil</button>` : ''}
       ${_podeEditarMapaFront() && projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="mapaAbrir('${esc(projetoAtivo.nome_safe)}')"><i class="ti ti-users-group"></i>Mapa de Atribuições</button>` : ''}
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos — o projeto pode ser retido a qualquer momento"><i class="ti ti-building-community"></i>Retenção</button>` : ''}
+      ${projetoAtivo && _contratoAssinado ? `<button class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Provisões e Recebíveis deste projeto"><i class="ti ti-cash"></i>Provisões</button>` : ''}
     </div>
     <div id="ciclo-transfer-prompt"></div>
   `;

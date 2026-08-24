@@ -1024,6 +1024,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
             <span id="proj-ctx-cli" style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px"></span>
           </span>
         </div>
+        <!-- Seletor de Orçamento (brief docs/design/brief-negociacao-layout.md, bloco 1): migrado
+             de #neg-orc-bar (faixa própria) pra dentro do quadro de identidade, logo abaixo de
+             Projeto/Cliente. #neg-orc-tabs preserva o id/conteúdo (renderOrcamentosBar() continua
+             escrevendo nele do mesmo jeito) — só mudou de lugar no DOM. #btn-novo-orc vira um ＋
+             compacto ao lado, mesmo onclick de sempre. -->
+        <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Orçamento:</span>
+          <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+          <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()" title="Novo Orçamento"
+                  style="padding:2px 9px;font-size:13px;line-height:1;font-weight:700">&#xFF0B;</button>
+        </div>
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           <button id="btn-params" class="btn btn-ghost btn-sm" onclick="abrirModalParams()">&#x2699; Parametros</button>
           <button id="btn-abrir-ciclo" class="btn btn-ghost btn-sm" onclick="abrirCiclo()" title="Etapas do Projeto">Etapas do Projeto</button>
@@ -1110,24 +1121,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
         </div>
 
-        <!-- Barra de orçamentos (EP-07) — oculta por padrão, exibida só se projeto tem orcamentos
-             no banco. Achado do usuário (2026-08-23): tabs + botões (Ambientes/Novo Ambiente/Novo
-             Orçamento) ficavam espalhados ponta a ponta — agrupados e centralizados. Achado do
-             usuário (2026-08-24): saiu de baixo da tabela pra cá, logo abaixo do Desconto/
-             Modalidade/Parcelas, ao lado do box de identidade. -->
-        <div id="neg-orc-bar" style="display:none;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;
-                                      padding:8px 12px;background:var(--surface);border:1px solid var(--border);
-                                      border-radius:8px">
-          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;
-                       margin-right:4px;white-space:nowrap">Orçamento:</span>
-          <span id="neg-orc-tabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
-          <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
-                  style="font-size:11px;padding:4px 10px;margin-left:10px">Ambientes</button>
-          <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
-                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Ambiente</button>
-          <button id="btn-novo-orc" class="btn btn-ghost btn-sm" onclick="abrirModalNovoOrc()"
-                  style="font-size:11px;padding:4px 10px;margin-left:4px">Novo Orçamento</button>
-        </div>
+        <!-- #neg-orc-bar (brief bloco 1): deixou de existir como faixa visível — tabs foram pro
+             quadro de identidade, Ambientes/Novo Ambiente foram pro cabeçalho da tabela, Novo
+             Orçamento virou o ＋ ao lado das tabs. O id sobrevive vazio/oculto porque
+             renderOrcamentosBar() (~linha 7415) ainda faz getElementById('neg-orc-bar') pra
+             ligar/desligar (guardado com `if(bar)`, então nem quebraria sem isto — mas o brief
+             pede o id preservado por segurança). -->
+        <span id="neg-orc-bar" style="display:none"></span>
       </div>
     </div>
 
@@ -1198,6 +1198,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- Tabela de ambientes -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      <!-- Cabeçalho da tabela (brief bloco 1): Ambientes/Novo Ambiente saíram da extinta faixa
+           #neg-orc-bar e vieram pra cá, à direita. -->
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border)">
+        <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
+                style="font-size:11px;padding:4px 10px">Ambientes</button>
+        <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
+                style="font-size:11px;padding:4px 10px">Novo Ambiente</button>
+      </div>
       <table class="cli-table">
         <thead><tr>
           <th style="width:40px;text-align:center;padding:10px 8px">

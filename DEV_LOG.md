@@ -3277,6 +3277,68 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 203 — Brief da Negociação: blocos 4-7 (adendo) revisados, 3 achados corrigidos
+
+Branch `feat/neg-layout-proposta-b`, spec `docs/design/brief-negociacao-layout.md` (reorganização
+da tela de Negociação, Proposta B). Blocos 1-3 do brief já vinham commitados (sessão anterior,
+2026-08-24: orçamento no quadro de identidade, Total do Contrato vira herói, condições no card de
+parâmetros). Nesta sessão: revisão + fechamento do **bloco 7 (adendo)**, que já estava pronto no
+working tree (não commitado) — resumo dele fica na própria seção 7 do brief; em síntese, os campos
+de cada modalidade (Aymoré/Cartão/VP/TF/À Vista) saíram dos `.mod-panel` soltos abaixo da tabela e
+subiram pro card de condições (`#sb-params`), num grid único de 4 colunas (`.neg-cond-grid`,
+`.field-float`, aposentando `.mod-grid`); o que resta abaixo da tabela virou só o **plano de
+pagamento** (`#plano-*`); Ambientes/Novo Ambiente foram pra esquerda do cabeçalho da tabela,
+Salvar/Aprovar/Imprimir pra direita (`#btn-salvar-orcamento`/`#btn-aprovar-orcamento` substituindo
+os antigos seletores `.btn-ok`/`.btn-amber`, que a hierarquia ghost/primary do commit `481ade8`
+tinha deixado sem dono, silenciosamente — `atualizarBotoesAprovacao`/`atualizarBannerBloqueio`
+achavam `null`); e o À Vista passou a usar os selects de forma da linha de parâmetros
+(`#neg-forma-entrada`/`#neg-forma-parcela`, com `_FORMAS_AVISTA`) em vez de um segundo par próprio,
+espelhados ocultos em `#av-entrada-forma`/`#av-liq-forma` via `_avSincronizarFormas()`.
+
+**QA desta sessão:** `python3 -m pytest -q` → **2293 passed** (sem mudança de código Python — só
+`static/index.html`), `node --check` limpo no `<script>` extraído, `git grep` de hex literal sem
+resíduo novo. Teste manual ao vivo (Playwright/navegador, projetos reais com ambiente) das 5
+modalidades: trocam limpo, sem card de plano vazio; salvar → recarregar confirma que a forma de
+entrada/liquidação do À Vista persiste certo.
+
+**3 achados da revisão — 2 corrigidos, 1 registrado como pré-existente (fora de escopo):**
+
+1. **Corrigido — rótulo sobreposto em 1280px:** em telas ~1280px o rótulo "Valor da liquidação"
+   colidia com a badge "calculado" (mesma linha, um absoluto à esquerda e outro à direita,
+   coluna estreita demais pros dois). Limpo em 1920px. Fix: `.neg-cond-grid .field-float label`
+   reserva 64px fixos (`max-width:calc(100% - 64px)` + `ellipsis`) — uniforme pras 5 modalidades,
+   sem precisar de `:has()`; inofensivo nos campos sem badge.
+2. **Corrigido — total/tabela ficavam com valor da modalidade ANTERIOR ao trocar para À Vista**
+   (ex.: vinha de Parcelamento Loja, trocava pra À Vista, "Total do Contrato" e a coluna "Com
+   financiamento" continuavam com o número do TF até salvar manualmente e reabrir o orçamento).
+   **Bug PRÉ-EXISTENTE** — reproduzido idêntico revertendo temporariamente o working tree pro
+   código anterior ao bloco 7 (`git stash`) e repetindo o mesmo fluxo. Causa raiz:
+   `avistaRecalcular()` era a ÚNICA das 5 `atualizar*()`/`*Recalcular()` de modalidade que não
+   chamava `agendarSalvarPagamento()` no final — sem isso, trocar PARA à vista nunca disparava o
+   auto-save que aciona `negPreview()`/`_aplicarPreviewNaTela` (o motor, fonte única do Total e da
+   coluna financiada). Fix: uma linha, `agendarSalvarPagamento()` ao fim de `avistaRecalcular()`,
+   igual às outras quatro.
+3. **Resolvido — À Vista assinado não deixava vestígio na tela.** Achado ao conferir o efeito
+   colateral já anotado no brief (seção 7): `_sbParamsAtualizar()` esconde `#sb-params` inteiro
+   pós-assinatura, e agora os CAMPOS de todas as modalidades moram lá dentro — para
+   Aymoré/Cartão/VP/TF isso é indolor porque o **plano de pagamento** (`#plano-*`, com a tabela de
+   parcelas) mora FORA do `#sb-params` e continua visível travado; só o À Vista não tinha um
+   `#plano-avista` (a informação dele sempre viveu só nos campos, agora ocultos). Confirmado ao
+   vivo num contrato À Vista assinado: sobrava só o "Total do Contrato", nada de data/forma de
+   entrada ou liquidação. Fix: novo `#plano-avista` (mesmo padrão `mod-panel` + tabela dos irmãos),
+   populado por `avistaRecalcular()` e ligado/desligado por `_negPlanoResumo('avista','av',...)` —
+   reusa a mesma mecânica já existente, sem lógica nova. Reverificado no mesmo projeto assinado:
+   "Entrada 18/08/2026 Pix R$ 0,00 / Liquidação — Pix R$ 108.541,26" aparece corretamente.
+
+Suíte reconfirmada **2293 passed** depois dos 3 fixes (sem regressão). O pedido do usuário que abriu
+esta frente (espaço vazio do card de condições + Ambientes/Novo Ambiente à esquerda do cabeçalho +
+Salvar/Aprovar/Imprimir no mesmo cabeçalho) já estava satisfeito pelo bloco 7, que só não tinha sido
+commitado/revisado ainda. **Pendências do brief,** fora de escopo desta rodada: blocos 4 (grid do
+topo, remoção dos `width` fixos), 5 (escala dos números — só o herói passa de 15px) e 6 (painéis de
+modalidade — badge + linha de conferência entrada+liquidação=total).
+
+**Arquivos:** `static/index.html`, `docs/design/brief-negociacao-layout.md`.
+
 ## Sessão 202 — QA da Vera na frente da Sessão 201: 2 achados reais, corrigidos e reverificados antes de promover
 
 **Contexto:** antes de promover a frente de Responsável/Transferência/Frame (Sessão 201) pra VPS

@@ -138,3 +138,57 @@ A linha de conferência do item 6 é o único código de fato novo — leitura e
 4. Botões de ambiente estão no cabeçalho da tabela; `＋` de orçamento junto das abas.
 5. `git grep -nE "#[0-9a-fA-F]{3,8}" static/index.html` não retorna nada novo.
 6. `python3 -m pytest -q` verde; Ctrl+F5 em 1280 / 1600 / 1920px, tema claro e escuro.
+
+---
+
+## 7. Campos da modalidade entram no card de condições (adendo, 2026-08-24)
+
+Achado do usuário sobre o resultado dos blocos 1–3: sobrou um **vazio grande no centro** do card de
+condições (`.neg-params-box`), entre a linha Desconto/Modalidade/Parcelas e a faixa
+Bruto→Desconto→À vista — o card estica pra acompanhar a altura do quadro de identidade ao lado.
+E o frame que define as condições de pagamento assumia **dois formatos diferentes**: À Vista com
+rótulo flutuante (`.field-float`) e as financiadas com rótulo em cima (`.mod-grid`).
+
+**O que mudou**
+
+- Os **campos** das cinco modalidades subiram pros `.neg-cond-campos` / `.neg-cond-grid` dentro do
+  card de condições — um grid só, 4 colunas, `.field-float` pras cinco. `.mod-grid` foi aposentado
+  (era o único uso no sistema).
+- Os ids `#painel-avista` / `#painel-aymore` / `#painel-cartao` / `#painel-vp` / `#painel-tf`
+  **viajaram junto com os campos**: é o `display` deles que o JS lê como "modalidade ativa"
+  (`_atualizarPaineisAbertos`, `_lerCondicaoPagamentoAtual`, `negConfirmarDesconto`). Mudou só o
+  valor — `grid`, não `block` — por isso todo mundo passa por `_negModExibir()`.
+- O que ficou abaixo da tabela é o **plano de pagamento**, em wrappers novos `#plano-*`. Eles só
+  aparecem quando há plano de verdade (`_negPlanoResumo()`), senão sobraria um card vazio só com o
+  título. `#painel-cartao-titulo` continua sendo o alvo do `textContent` de `cartaoMostrarPainel()`.
+- **Redundância eliminada:** "Forma da entrada" / "Forma da liquidação" do À Vista eram um
+  *segundo* par de selects, além de `#neg-forma-entrada` / `#neg-forma-parcela` da linha de cima
+  (que o à vista escondia). Agora o à vista usa os de cima — com `_FORMAS_AVISTA` (inclui
+  cheque/dinheiro) e "Forma das parcelas" virando "Forma da liquidação" via
+  `#neg-forma-parcela-lbl`. `#av-entrada-forma` / `#av-liq-forma` sobrevivem **ocultos** como
+  espelho (`_avSincronizarFormas()`), porque `_NEG_CAMPOS_POR_MODALIDADE` os salva no snapshot e
+  `avistaRecalcular()` lê deles pra montar `window._planoPagamento`.
+- **Ambientes / Novo Ambiente** foram pra **esquerda** do cabeçalho da tabela, e **Salvar / Aprovar
+  / Imprimir** subiram do rodapé pra **direita do mesmo cabeçalho**. A `.action-row` continua sendo
+  `.action-row` dentro de `#page-02` — é assim que `atualizarBotoesAprovacao()` a encontra e
+  pendura o "Assinar Contrato".
+
+**Bug pré-existente corrigido junto:** o JS procurava Salvar/Aprovar por `.btn-ok` / `.btn-amber`,
+classes que o commit `481ade8` (hierarquia ghost/primary) tirou do HTML — `atualizarBotoesAprovacao`
+e `atualizarBannerBloqueio` estavam achando `null` em silêncio, então "Aprovar" não desabilitava em
+projeto bloqueado e Salvar/Aprovar não sumiam depois de aprovado. Agora são
+`#btn-salvar-orcamento` / `#btn-aprovar-orcamento`. Os rótulos do estado bloqueado encurtaram
+("✓ Aprovar" / "🔒 Aprovado") pra caber no cabeçalho da tabela.
+
+**Efeito colateral a conferir:** `_sbParamsAtualizar()` esconde `#sb-params` inteiro pós-assinatura
+— e agora os campos da modalidade estão lá dentro. Pós-assinatura eles somem junto (o plano de
+pagamento, abaixo da tabela, continua visível). Antes ficavam na tela em modo travado.
+
+**Aceite (adendo)**
+
+1. Não há mais área vazia no card de condições em nenhuma das cinco modalidades.
+2. Os campos das cinco modalidades usam o mesmo componente e as mesmas 4 colunas.
+3. Existe **um** par de selects de forma na tela (o da linha de parâmetros).
+4. Cabeçalho da tabela: ambientes à esquerda, ações à direita; nada de `.action-row` no rodapé.
+5. `git grep -nE "#[0-9a-fA-F]{3,8}" static/index.html` não retorna nada novo.
+6. `node --check` limpo no `<script>` extraído; `python3 -m pytest -q` verde.

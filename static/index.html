@@ -484,10 +484,35 @@ body{overflow:hidden}
 /* Painel modalidade */
 .mod-panel{background:var(--card);border:1px solid var(--border2);border-radius:10px;padding:18px;margin-bottom:14px}
 .mod-panel-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px}
-.mod-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
-.mod-grid label{display:block;font-size:var(--fs-sm);color:var(--muted);margin-bottom:4px}
-.mod-grid input,.mod-grid select{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body);outline:none}
-.mod-grid input:focus{border-color:var(--accent)}
+/* .mod-grid (rótulo em cima) foi APOSENTADO no bloco 7 (2026-08-24): era o formato dos campos
+   das modalidades financiadas, o único lugar do sistema que o usava. Os cinco painéis passaram
+   a usar .field-float (rótulo flutuante), que o À Vista já usava — dois formatos pro mesmo
+   frame viraram um. Se voltar a precisar de rótulo-em-cima, recuperar do git (commit anterior). */
+/* Bloco 7 (2026-08-24): campos da modalidade dentro do card de condições (#sb-params) —
+   um grid só, 4 colunas, pras cinco modalidades. */
+.neg-cond-campos{border-top:1px solid var(--border);margin-top:var(--sp-3);padding-top:var(--sp-3)}
+.neg-cond-grid{display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3);align-items:start}
+.neg-cond-grid .field-float .input{width:100%}
+/* Achado da revisão do bloco 7 (2026-08-24): a coluna de 4 é estreita demais em telas ~1280px
+   pro rótulo "Valor da liquidação" (o único com .calc-flag) não colidir com a badge "calculado"
+   — os dois são absolutamente posicionados na mesma linha (label à esquerda, flag à direita).
+   Reserva espaço fixo pro rótulo em TODOS os campos do grid (uniforme, sem precisar de :has()) —
+   inofensivo pros campos sem badge, e o texto trunca com reticências em vez de sobrepor. */
+.neg-cond-grid .field-float label{max-width:calc(100% - 64px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.neg-cond-pct{color:var(--accent);font-size:var(--fs-xs);margin-left:4px}
+/* .neg-cond-hint ("Financiado: R$ ...", verde, sob o campo de entrada): OCULTO a pedido do
+   usuário (2026-08-24) — o percentual da entrada no rótulo (.neg-cond-pct) já diz o mesmo, e a
+   linha verde só desalinhava a altura das colunas. Os quatro divs seguem no DOM porque
+   ayEntradaChange/ccEntradaChange/vpEntradaChange/tfEntradaChange escrevem neles SEM guarda
+   (hint.textContent logo depois do getElementById) — removê-los quebraria as quatro. */
+.neg-cond-hint{display:none}
+.neg-cond-aviso{grid-column:1/-1;font-size:var(--fs-xs);padding:7px 12px;border-radius:6px}
+.neg-cond-aviso.warn{color:var(--warn);background:var(--warn-soft);border-left:3px solid var(--warn)}
+.neg-cond-aviso.err{color:var(--err);background:var(--err-soft);border-left:3px solid var(--err)}
+/* Cabeçalho da tabela de ambientes: botões de ambiente à esquerda, ações da tela à direita */
+.neg-tbl-hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;
+             padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.action-row.action-row-inline{margin-top:0;padding-bottom:0;gap:8px}
 /* Plano de pagamento */
 .plano-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:12px 0}
 .plano-hdr{padding:8px 14px;background:var(--surface);font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
@@ -1163,7 +1188,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           </div>
 
           <div id="neg-forma-parcela-wrap" style="width:170px;flex-shrink:0">
-            <label class="sb-label">Forma das parcelas</label>
+            <label class="sb-label" id="neg-forma-parcela-lbl">Forma das parcelas</label>
             <select id="neg-forma-parcela" onchange="onFormaChange()" class="sb-select" style="width:100%"></select>
           </div>
         </div>
@@ -1188,6 +1213,145 @@ input[type="date"]::-webkit-calendar-picker-indicator {
              separada por filete (.neg-cond-chain). Migrada da faixa solta que ficava logo acima
              da tabela de ambientes — mesmos ids/estilo de valor (bloco 5, escala de números,
              ainda não aplicado nesta etapa). -->
+        <!-- Bloco 7 (achado do usuário 2026-08-24): os CAMPOS da modalidade migraram pra cá, no
+             vazio que sobrava entre a linha de parâmetros e a faixa Bruto→Desconto→À vista.
+             Antes viviam nos .mod-panel abaixo da tabela em DOIS formatos diferentes pro mesmo
+             frame — À Vista com rótulo flutuante (.field-float) e as financiadas com rótulo em
+             cima (.mod-grid). Agora é UM grid de 4 colunas, mesmo componente pras cinco.
+             Os ids #painel-avista/#painel-aymore/#painel-cartao/#painel-vp/#painel-tf VIAJARAM
+             JUNTO com os campos: é o display deles que o JS liga/desliga e lê como "modalidade
+             ativa" (_atualizarPaineisAbertos, _lerCondicaoPagamentoAtual, negConfirmarDesconto).
+             Só mudou de 'block' pra 'grid' — por isso todo mundo passa pelo _negModExibir().
+             O que ficou embaixo da tabela é o PLANO de pagamento, em wrappers novos #plano-*.
+             Redundância eliminada: "Forma da entrada"/"Forma da liquidação" do À Vista eram um
+             SEGUNDO par de selects, além de #neg-forma-entrada/#neg-forma-parcela da linha de
+             cima (que o à vista escondia). Agora o à vista usa os de cima — com as formas de à
+             vista, e "Forma das parcelas" virando "Forma da liquidação" — e #av-entrada-forma/
+             #av-liq-forma viram espelhos OCULTOS, só pra não quebrar o snapshot
+             (_NEG_CAMPOS_POR_MODALIDADE) nem a leitura de avistaRecalcular(). -->
+        <div class="neg-cond-campos">
+          <!-- À Vista: entrada + liquidação (as formas vêm da linha de parâmetros acima) -->
+          <div class="neg-cond-grid" id="painel-avista" style="display:none">
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="av-entrada-data" oninput="avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada</label>
+              <input class="input" type="text" id="av-entrada-valor" inputmode="numeric"
+                     placeholder="R$ 0,00" oninput="mascaraMoedaInput(this); avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Data da liquidação</label>
+              <input class="input" type="date" id="av-liq-data" oninput="avistaRecalcular()">
+            </div>
+            <div class="field-float">
+              <label>Valor da liquidação</label>
+              <span class="calc-flag">calculado</span>
+              <input class="input readonly" type="text" id="av-liq-valor" readonly>
+            </div>
+          </div>
+          <!-- Espelhos ocultos das formas do à vista — ver comentário do bloco 7 acima.
+               Escritos por _avSincronizarFormas() a partir de #neg-forma-entrada/#neg-forma-parcela. -->
+          <span id="av-formas-espelho" style="display:none">
+            <select id="av-entrada-forma" onchange="avistaRecalcular()"></select>
+            <select id="av-liq-forma" onchange="avistaRecalcular()"></select>
+          </span>
+
+          <!-- Aymoré -->
+          <div class="neg-cond-grid" id="painel-aymore" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="ay-data-contrato" oninput="ayAtualizarCarencia()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="ay-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="ay-entrada" value="0" min="0" step="100" oninput="ayEntradaChange()">
+              <div id="ay-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="ay-entrada-data" oninput="ayAtualizarCarencia()">
+            </div>
+            <div class="field-float">
+              <label>Carência (dias)</label>
+              <input class="input" type="number" id="ay-carencia" value="30" min="15" max="120" step="5" oninput="ayCarenciaChange()">
+            </div>
+            <!-- Data 1a Parcela é calculada (data do contrato + carência); mantida oculta -->
+            <input type="hidden" id="ay-data-primeira">
+            <span id="ay-carencia-badge" style="display:none"></span>
+            <div id="ay-aviso" class="neg-cond-aviso warn" style="display:none"></div>
+          </div>
+
+          <!-- Cartão de Crédito -->
+          <div class="neg-cond-grid" id="painel-cartao" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="cc-data-contrato" oninput="atualizarCartao()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="cc-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="cc-entrada" value="0" min="0" step="100" oninput="atualizarCartao()">
+              <div id="cc-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="cc-entrada-data" oninput="atualizarCartao()">
+            </div>
+            <div class="field-float">
+              <label>Bandeira</label>
+              <select class="input" id="cc-bandeira" onchange="atualizarCartao()">
+                <option value="Visa">Visa</option>
+                <option value="Mastercard">Mastercard</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Venda Programada (3 campos: a 4ª coluna fica vazia de propósito, pra as
+               modalidades alinharem coluna a coluna) -->
+          <div class="neg-cond-grid" id="painel-vp" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="vp-data-contrato" oninput="vpDataContratoChange()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="vp-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="vp-entrada" value="0" min="0" step="100" oninput="vpEntradaChange()">
+              <div id="vp-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="vp-entrada-data" oninput="vpDataContratoChange()">
+            </div>
+            <!-- Prazo limite (395 dias): informativo, mantido oculto -->
+            <div id="vp-data-limite" style="display:none">—</div>
+            <div id="vp-aviso" class="neg-cond-aviso err" style="display:none"></div>
+          </div>
+
+          <!-- Parcelamento Loja (Total Flex) — a Taxa de Juros fica em #sb-tf-extras, acima -->
+          <div class="neg-cond-grid" id="painel-tf" style="display:none">
+            <div class="field-float">
+              <label>Data do contrato</label>
+              <input class="input" type="date" id="tf-data-contrato" oninput="tfDataContratoChange()">
+            </div>
+            <div class="field-float">
+              <label>Valor da entrada <span id="tf-entrada-pct" class="neg-cond-pct"></span></label>
+              <input class="input" type="number" id="tf-entrada" value="0" min="0" step="100" oninput="tfEntradaChange()">
+              <div id="tf-hint-financiado" class="neg-cond-hint"></div>
+            </div>
+            <div class="field-float">
+              <label>Data da entrada</label>
+              <input class="input" type="date" id="tf-entrada-data" oninput="tfEntradaChange()">
+            </div>
+            <div class="field-float">
+              <label>Prazo (meses) · 1 a 12</label>
+              <input class="input" type="number" id="tf-prazo" value="12" min="1" max="12" step="1" oninput="tfPrazoChange()">
+            </div>
+            <!-- Prazo limite (máximo 12 meses): informativo, mantido oculto -->
+            <div id="tf-data-limite" style="display:none">—</div>
+            <div id="tf-aviso" class="neg-cond-aviso err" style="display:none"></div>
+          </div>
+        </div>
         <div class="neg-cond-chain">
           <div class="neg-cond-seg">
             <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Valor Bruto</div>
@@ -1267,13 +1431,29 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     <!-- Tabela de ambientes -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
-      <!-- Cabeçalho da tabela (brief bloco 1): Ambientes/Novo Ambiente saíram da extinta faixa
-           #neg-orc-bar e vieram pra cá, à direita. -->
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border)">
-        <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
-                style="font-size:11px;padding:4px 10px">Ambientes</button>
-        <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
-                style="font-size:11px;padding:4px 10px">Novo Ambiente</button>
+      <!-- Cabeçalho da tabela (brief bloco 1 + bloco 7 de 2026-08-24): Ambientes/Novo Ambiente
+           saíram da extinta faixa #neg-orc-bar e vieram pra cá — agora à ESQUERDA, dividindo a
+           faixa com as ações da tela (Salvar/Aprovar/Imprimir), que subiram do rodapé pra
+           direita daqui. A .action-row continua sendo .action-row dentro de #page-02: é assim
+           que atualizarBotoesAprovacao() a encontra e pendura o "Assinar Contrato". -->
+      <div class="neg-tbl-hdr">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <button id="btn-pool" class="btn btn-ghost btn-sm" onclick="abrirPainelPool()"
+                  style="font-size:11px;padding:4px 10px">Ambientes</button>
+          <button id="btn-novo-ambiente" class="btn btn-ghost btn-sm" onclick="abrirModalNovoAmbiente()"
+                  style="font-size:11px;padding:4px 10px">Novo Ambiente</button>
+        </div>
+        <!-- Ações — Aprovar é a de maior peso (fecha o negócio): primário único.
+             Salvar/Imprimir: secundários. Os ids #btn-salvar-orcamento/#btn-aprovar-orcamento
+             substituem os seletores .btn-ok/.btn-amber que o JS usava e que a mudança de
+             hierarquia (commit 481ade8) tinha deixado sem dono. -->
+        <div class="action-row action-row-inline">
+          <button id="btn-salvar-orcamento" class="btn btn-ghost btn-sm" onclick="salvarOrcamento()">&#x1F4BE; Salvar</button>
+          <button id="btn-aprovar-orcamento" class="btn btn-primary btn-sm" onclick="abrirAprovacaoComDados()" title="Aprovar orçamento e iniciar contrato">&#x2713; Aprovar</button>
+          <a id="btn-imprimir-orcamento" class="btn btn-ghost btn-sm" target="_blank" rel="noopener"
+             style="text-decoration:none" href="#"
+             onclick="this.href='/api/orcamentos/'+_orcamentoAtivoId+'/proposta/pdf'">&#x1F5A8; Imprimir</a>
+        </div>
       </div>
       <table class="cli-table">
         <thead><tr>
@@ -1300,32 +1480,14 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </table>
     </div>
 
-    <!-- Painel Aymoré -->
-    <div class="mod-panel" id="painel-aymore" style="display:none">
-      <div class="mod-panel-title">&#x1F3E6; Aymore — Parametros</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="ay-data-contrato" oninput="ayAtualizarCarencia()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="ay-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="ay-entrada" value="0" min="0" step="100" oninput="ayEntradaChange()">
-          <div id="ay-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="ay-entrada-data" oninput="ayAtualizarCarencia()">
-        </div>
-        <div>
-          <label>Carência (dias)</label>
-          <input type="number" id="ay-carencia" value="30" min="15" max="120" step="5" oninput="ayCarenciaChange()">
-        </div>
-      </div>
-      <!-- Data 1a Parcela é calculada (data do contrato + carência); mantida oculta -->
-      <input type="hidden" id="ay-data-primeira">
-      <span id="ay-carencia-badge" style="display:none"></span>
-      <div id="ay-aviso" style="display:none;font-size:10px;color:var(--warn);margin-bottom:10px;padding:7px 12px;background:var(--warn-soft);border-radius:6px;border-left:3px solid var(--warn)"></div>
+    <!-- Planos de pagamento (bloco 7, 2026-08-24): o que sobrou dos antigos .mod-panel depois
+         que os CAMPOS subiram pro card de condições. Wrappers novos #plano-* — o display deles
+         acompanha o #painel-* correspondente via _negModExibir(); sem isso o resumo da
+         modalidade anterior ficaria na tela (antes ele sumia junto com o .mod-panel pai).
+         #painel-cartao-titulo continua sendo o elemento cujo textContent cartaoMostrarPainel()
+         reescreve com a descrição da modalidade. -->
+    <div class="mod-panel" id="plano-aymore" style="display:none">
+      <div class="mod-panel-title">Aymoré</div>
       <div id="ay-resumo" style="display:none">
         <!-- faixa central removida: "à vista (Loja Recebe)" já está nos cards abaixo e o
              "Contrato Parcelado" foi para a faixa superior. Ids preservados (ocultos). -->
@@ -1350,31 +1512,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Cartão -->
-    <div class="mod-panel" id="painel-cartao" style="display:none">
-      <div class="mod-panel-title" id="painel-cartao-titulo">&#x1F4B3; Cartao de Credito</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="cc-data-contrato" oninput="atualizarCartao()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="cc-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="cc-entrada" value="0" min="0" step="100" oninput="atualizarCartao()">
-          <div id="cc-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="cc-entrada-data" oninput="atualizarCartao()">
-        </div>
-        <div>
-          <label>Bandeira</label>
-          <select id="cc-bandeira" onchange="atualizarCartao()">
-            <option value="Visa">Visa</option>
-            <option value="Mastercard">Mastercard</option>
-          </select>
-        </div>
-      </div>
+    <div class="mod-panel" id="plano-cartao" style="display:none">
+      <div class="mod-panel-title" id="painel-cartao-titulo">Cartao de Credito</div>
       <div id="cc-resumo" style="display:none">
         <span id="cc-c-avista" style="display:none"></span><span id="cc-c-avista-sub" style="display:none"></span>
         <span id="cc-c-parcelado" style="display:none"></span><span id="cc-c-parcelado-sub" style="display:none"></span>
@@ -1397,27 +1536,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Venda Programada -->
-    <div class="mod-panel" id="painel-vp" style="display:none">
-      <div class="mod-panel-title">&#x1F4C5; Venda Programada</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(3,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="vp-data-contrato" oninput="vpDataContratoChange()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="vp-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="vp-entrada" value="0" min="0" step="100" oninput="vpEntradaChange()">
-          <div id="vp-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="vp-entrada-data" oninput="vpDataContratoChange()">
-        </div>
-      </div>
-      <!-- Prazo limite (395 dias): informativo, mantido oculto -->
-      <div id="vp-data-limite" style="display:none">—</div>
-      <div id="vp-aviso" style="display:none;font-size:10px;color:var(--err);margin-bottom:10px;padding:7px 12px;background:var(--err-soft);border-radius:6px;border-left:3px solid var(--err)"></div>
+    <div class="mod-panel" id="plano-vp" style="display:none">
+      <div class="mod-panel-title">Venda Programada</div>
       <div id="vp-resumo" style="display:none">
         <span id="vp-c-avista" style="display:none"></span><span id="vp-c-avista-sub" style="display:none"></span>
         <span id="vp-c-parcelado" style="display:none"></span><span id="vp-c-parcelado-sub" style="display:none"></span>
@@ -1444,31 +1564,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel Total Flex -->
-    <div class="mod-panel" id="painel-tf" style="display:none">
-      <div class="mod-panel-title">&#x26A1; Parcelamento Loja</div>
-      <div class="mod-grid" style="grid-template-columns:repeat(4,1fr)">
-        <div>
-          <label>Data do Contrato</label>
-          <input type="date" id="tf-data-contrato" oninput="tfDataContratoChange()">
-        </div>
-        <div>
-          <label>Entrada (R$) <span id="tf-entrada-pct" style="color:var(--accent);font-size:10px"></span></label>
-          <input type="number" id="tf-entrada" value="0" min="0" step="100" oninput="tfEntradaChange()">
-          <div id="tf-hint-financiado" style="font-size:10px;color:var(--ok);margin-top:4px"></div>
-        </div>
-        <div>
-          <label>Data da entrada</label>
-          <input type="date" id="tf-entrada-data" oninput="tfEntradaChange()">
-        </div>
-        <div>
-          <label>Prazo (meses) <span style="font-size:9px;color:var(--muted)">1 a 12</span></label>
-          <input type="number" id="tf-prazo" value="12" min="1" max="12" step="1" oninput="tfPrazoChange()">
-        </div>
-      </div>
-      <!-- Prazo limite (máximo 12 meses): informativo, mantido oculto -->
-      <div id="tf-data-limite" style="display:none">—</div>
-      <div id="tf-aviso" style="display:none;font-size:10px;color:var(--err);margin-bottom:10px;padding:7px 12px;background:var(--err-soft);border-radius:6px;border-left:3px solid var(--err)"></div>
+    <div class="mod-panel" id="plano-tf" style="display:none">
+      <div class="mod-panel-title">Parcelamento Loja</div>
       <div id="tf-resumo" style="display:none">
         <span id="tf-c-avista" style="display:none"></span><span id="tf-c-avista-sub" style="display:none"></span>
         <span id="tf-c-total" style="display:none"></span><span id="tf-c-total-sub" style="display:none"></span>
@@ -1505,40 +1602,36 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- Painel À Vista -->
-    <div class="mod-panel" id="painel-avista" style="display:none">
-      <div class="mod-panel-title">&#x1F4B5; A Vista</div>
-      <!-- v1.7 · rótulo flutuante (styleguide 04c): 2 linhas — Entrada / Liquidação -->
-      <div class="stack" style="max-width:720px">
-        <div class="row">
-          <div class="field-float" style="flex:1">
-            <label>Data da entrada</label>
-            <input class="input" type="date" id="av-entrada-data" oninput="avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Valor da entrada</label>
-            <input class="input" type="text" id="av-entrada-valor" inputmode="numeric"
-                   placeholder="R$ 0,00" oninput="mascaraMoedaInput(this); avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Forma da entrada</label>
-            <select class="input" id="av-entrada-forma" onchange="avistaRecalcular()"></select>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field-float" style="flex:1">
-            <label>Data da liquidação</label>
-            <input class="input" type="date" id="av-liq-data" oninput="avistaRecalcular()">
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Valor da liquidação</label>
-            <span class="calc-flag">calculado</span>
-            <input class="input readonly" type="text" id="av-liq-valor" readonly>
-          </div>
-          <div class="field-float" style="flex:1">
-            <label>Forma da liquidação</label>
-            <select class="input" id="av-liq-forma" onchange="avistaRecalcular()"></select>
-          </div>
+    <!-- #plano-avista (2026-08-24, achado da revisão do bloco 7): as outras 4 modalidades têm um
+         #plano-* que sobrevive fora do #sb-params e por isso continua visível (travado) depois da
+         assinatura — o À Vista não tinha nenhum, porque toda a informação dele sempre viveu só nos
+         CAMPOS (#painel-avista), que agora ficam dentro do #sb-params e somem junto no lock
+         (_sbParamsAtualizar). Sem isso, um contrato À Vista assinado não deixava vestígio nenhum
+         de data/forma de entrada e liquidação na tela — só o Total do Contrato. Mesma mecânica dos
+         irmãos: _negPlanoResumo('avista','av',mostrar) liga/desliga #av-resumo e #plano-avista
+         juntos; chave 'avista' + prefixo 'av' batem com o padrão pref+'-resumo'/'plano-'+chave. -->
+    <div class="mod-panel" id="plano-avista" style="display:none">
+      <div class="mod-panel-title">À Vista</div>
+      <div id="av-resumo" style="display:none">
+        <div class="plano-wrap">
+          <div class="plano-hdr">Plano de Pagamento</div>
+          <table class="plano-tbl">
+            <thead><tr><th>Tipo</th><th>Data</th><th>Forma</th><th style="text-align:right">Valor</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Entrada</td>
+                <td id="av-r-entrada-data">—</td>
+                <td id="av-r-entrada-forma">—</td>
+                <td style="text-align:right" id="av-r-entrada-valor">—</td>
+              </tr>
+              <tr>
+                <td>Liquidação</td>
+                <td id="av-r-liq-data">—</td>
+                <td id="av-r-liq-forma">—</td>
+                <td style="text-align:right" id="av-r-liq-valor">—</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1548,15 +1641,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
          só perdeu o vizinho. -->
     <div style="margin-bottom:14px">
       <div id="neg-resumo-parcelas" style="display:none;text-align:right;font-family:var(--font-sans);font-weight:700;font-size:15px;color:var(--muted);margin-top:8px;padding-right:2px"></div>
-    </div>
-
-    <!-- Ações — Aprovar é a de maior peso (fecha o negócio): primário único. Salvar/Imprimir: secundários. -->
-    <div class="action-row">
-      <button class="btn btn-ghost" onclick="salvarOrcamento()">&#x1F4BE; Salvar</button>
-      <button class="btn btn-primary" onclick="abrirAprovacaoComDados()" title="Aprovar orçamento e iniciar contrato">&#x2713; Aprovar</button>
-      <a id="btn-imprimir-orcamento" class="btn btn-ghost" target="_blank" rel="noopener"
-         style="text-decoration:none" href="#"
-         onclick="this.href='/api/orcamentos/'+_orcamentoAtivoId+'/proposta/pdf'">&#x1F5A8; Imprimir</a>
     </div>
 
     <!-- Ciclo do Projeto (EP-08) -->
@@ -8449,6 +8533,45 @@ const _FORMAS_ENTRADA = [['pix','Pix'],['ted','TED'],['boleto','Boleto']];
 const _FORMAS_AVISTA  = [['pix','Pix'],['ted','TED'],['boleto','Boleto'],['cheque','Cheque'],['dinheiro','Dinheiro']];
 const _FORMAS_PARC_VPTF = [['boleto','Boleto'],['cheque','Cheque']];
 
+// Bloco 7 (2026-08-24): cada modalidade tem DOIS elementos agora — os CAMPOS (#painel-*, no
+// card de condições) e o PLANO (#plano-*, abaixo da tabela). O id #painel-* é o mesmo de antes
+// de propósito: é o display dele que o resto do JS lê como "modalidade ativa"
+// (_atualizarPaineisAbertos, _lerCondicaoPagamentoAtual, negConfirmarDesconto). Mudou só o valor
+// visível — 'grid', não 'block', porque #painel-* virou o grid de 4 colunas.
+function _negModExibir(chave, mostrar) {
+  const campos = document.getElementById('painel-' + chave);
+  if (campos) campos.style.display = mostrar ? 'grid' : 'none';
+  // Só ESCONDE o plano aqui: quem o mostra é _negPlanoResumo(), quando há plano de verdade —
+  // senão o card abaixo da tabela apareceria vazio, só com o título, enquanto não há ambiente
+  // ou data de contrato (antes isso não acontecia porque os campos moravam dentro dele).
+  const plano = document.getElementById('plano-' + chave);
+  if (plano && !mostrar) plano.style.display = 'none';
+}
+
+// Bloco 7: resumo e wrapper do plano andam juntos — ver comentário acima.
+function _negPlanoResumo(chave, pref, mostrar) {
+  const r = document.getElementById(pref + '-resumo');
+  if (r) r.style.display = mostrar ? 'block' : 'none';
+  const p = document.getElementById('plano-' + chave);
+  if (p) p.style.display = mostrar ? 'block' : 'none';
+}
+
+// Bloco 7: o à vista deixou de ter selects próprios de forma — usa #neg-forma-entrada e
+// #neg-forma-parcela (a "parcela" do à vista é a liquidação). #av-entrada-forma/#av-liq-forma
+// sobrevivem OCULTOS como espelho, porque _NEG_CAMPOS_POR_MODALIDADE os salva no snapshot e
+// avistaRecalcular() lê deles pra montar window._planoPagamento.
+function _avSincronizarFormas() {
+  const avE = document.getElementById('av-entrada-forma');
+  const avL = document.getElementById('av-liq-forma');
+  const opts = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  if (avE && !avE.options.length) avE.innerHTML = opts;
+  if (avL && !avL.options.length) avL.innerHTML = opts;
+  const selE = document.getElementById('neg-forma-entrada');
+  const selP = document.getElementById('neg-forma-parcela');
+  if (avE && selE && selE.value) avE.value = selE.value;
+  if (avL && selP && selP.value) avL.value = selP.value;
+}
+
 function _preencherSelectFormas(sel, opcoes, valorAtual) {
   sel.innerHTML = opcoes.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
   if (opcoes.find(([v]) => v === valorAtual)) sel.value = valorAtual;
@@ -8461,6 +8584,12 @@ function onFormaChange() {
   const selP = document.getElementById('neg-forma-parcela');
   if (selE) _formaEntrada = selE.value;
   if (selP && !selP.disabled) _formaParcela = selP.value;
+  // Bloco 7: no à vista estes dois selects SÃO a forma da entrada e a da liquidação — reflete
+  // nos espelhos ocultos e remonta o plano (avistaRecalcular não é chamado por agendarCalculo).
+  if (document.getElementById('painel-avista')?.style.display !== 'none') {
+    _avSincronizarFormas();
+    if (typeof avistaRecalcular === 'function') avistaRecalcular();
+  }
   agendarCalculo();
 }
 
@@ -8472,15 +8601,25 @@ function atualizarFormasPagamento(codigo) {
   const selP  = document.getElementById('neg-forma-parcela');
   if (!selE || !selP) return;
 
+  const lblP = document.getElementById('neg-forma-parcela-lbl');
+  colE.style.display = ''; wrapP.style.display = '';
+
   if (codigo === 'a_vista') {
-    // À vista usa o painel-avista (entrada + liquidação); oculta estas colunas (2026-08-24:
-    // colE agora é o wrapper — junto com wrapP — pra sumir a coluna inteira na linha de
-    // parâmetros, não só o label/select internos, que ficaram lado a lado de Modalidade/Parcelas).
-    colE.style.display = 'none';
-    wrapP.style.display = 'none';
+    // Bloco 7 (2026-08-24): as colunas de forma NÃO somem mais no à vista — elas passaram a ser
+    // as formas dele (antes duplicadas dentro do #painel-avista). "Forma das parcelas" vira
+    // "Forma da liquidação", e as duas listas usam _FORMAS_AVISTA (inclui cheque/dinheiro).
+    if (lblP) lblP.textContent = 'Forma da liquidação';
+    selP.disabled = false;
+    _formaEntrada = _preencherSelectFormas(selE, _FORMAS_AVISTA, _formaEntrada);
+    _formaParcela = _preencherSelectFormas(selP, _FORMAS_AVISTA, _formaParcela);
+    _avSincronizarFormas();
+    // atualizarFormasPagamento roda DEPOIS de avistaMostrarPainel (ver onPagamentoChange), então
+    // é aqui que o plano sai com a forma certa — não no mostrarPainel.
+    if (document.getElementById('painel-avista')?.style.display !== 'none'
+        && typeof avistaRecalcular === 'function') avistaRecalcular();
     return;
   }
-  colE.style.display = ''; wrapP.style.display = '';
+  if (lblP) lblP.textContent = 'Forma das parcelas';
 
   // Entrada: sempre Pix/TED/Boleto
   _formaEntrada = _preencherSelectFormas(selE, _FORMAS_ENTRADA, _formaEntrada);
@@ -8781,7 +8920,7 @@ function _ayDiffDias(d1str, d2str) {
 }
 
 function ayMostrarPainel(mostrar) {
-  document.getElementById('painel-aymore').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('aymore', mostrar);
   if (mostrar) {
     const hoje = new Date().toISOString().split('T')[0];
     const dc = document.getElementById('ay-data-contrato');
@@ -8879,8 +9018,7 @@ async function atualizarAymore() {
   const carencia = parseInt(document.getElementById('ay-carencia').value) || 30;
   const dc       = document.getElementById('ay-data-contrato').value;
   if (!dc || !valorAvista) {
-    const resumo = document.getElementById('ay-resumo');
-    if (resumo) resumo.style.display = 'none';
+    _negPlanoResumo('aymore', 'ay', false);
     return;
   }
   let d;
@@ -8895,7 +9033,7 @@ async function atualizarAymore() {
   } catch(e) { console.error('[AYMORE]', e); return; }
   if (!d.ok) { console.warn('[AYMORE]', d.erro); return; }
 
-  document.getElementById('ay-resumo').style.display = 'block';
+  _negPlanoResumo('aymore', 'ay', true);
   document.getElementById('ay-r-liberado').textContent    = 'R$ '+fmt(d.valor_liberado);
   document.getElementById('ay-r-total-cliente').textContent = 'R$ '+fmt(d.total_cliente);
   document.getElementById('ay-r-retencao').textContent    = d.taxa_retencao_pct.toLocaleString('pt-BR',{minimumFractionDigits:4})+'%';
@@ -8946,7 +9084,7 @@ async function atualizarAymore() {
 let _ccTimer = null;
 
 function cartaoMostrarPainel(mostrar) {
-  document.getElementById('painel-cartao').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('cartao', mostrar);
   if (mostrar) {
     const sel = document.getElementById('neg-pagamento');
     const desc = sel.selectedOptions[0]?.text || 'Cartão de Crédito';
@@ -8979,7 +9117,7 @@ async function atualizarCartao() {
   const bandeira = document.getElementById('cc-bandeira').value;
   const dc       = document.getElementById('cc-data-contrato').value;
   if (!dc || !valorAvista) {
-    document.getElementById('cc-resumo').style.display = 'none';
+    _negPlanoResumo('cartao', 'cc', false);
     return;
   }
   let d;
@@ -8994,7 +9132,7 @@ async function atualizarCartao() {
   } catch(e) { console.error('[CARTAO]', e); return; }
   if (!d.ok) return;
 
-  document.getElementById('cc-resumo').style.display = 'block';
+  _negPlanoResumo('cartao', 'cc', true);
   document.getElementById('cc-r-liberado').textContent    = 'R$ '+fmt(d.valor_liberado);
   document.getElementById('cc-r-total-cliente').textContent = 'R$ '+fmt(d.total_cliente);
   document.getElementById('cc-r-retencao').textContent    = d.taxa_retencao_pct.toLocaleString('pt-BR',{minimumFractionDigits:4})+'%';
@@ -9059,7 +9197,7 @@ let _vpTimer = null;
 let _vpDatas  = [];   // datas editadas pelo usuário (strings ISO por parcela)
 
 function vpMostrarPainel(mostrar) {
-  document.getElementById('painel-vp').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('vp', mostrar);
   if (mostrar) {
     const hoje = new Date().toISOString().split('T')[0];
     const dc = document.getElementById('vp-data-contrato');
@@ -9118,7 +9256,7 @@ async function atualizarVP() {
   const n        = parseInt(document.getElementById('neg-parcelas').value) || 1;
   const dc       = document.getElementById('vp-data-contrato').value;
   if (!dc || !valorAvista) {
-    document.getElementById('vp-resumo').style.display = 'none';
+    _negPlanoResumo('vp', 'vp', false);
     return;
   }
   let d;
@@ -9145,7 +9283,7 @@ async function atualizarVP() {
       .map(p => p.data_iso);
   }
 
-  document.getElementById('vp-resumo').style.display = 'block';
+  _negPlanoResumo('vp', 'vp', true);
 
   // Cards
   document.getElementById('vp-r-avista').textContent  = 'R$ ' + fmt(d.valor_liberado);
@@ -9272,15 +9410,15 @@ function atualizarUIBloqueio() {
   }
 
   // Botao de aprovacao
-  const btnAprovar = document.querySelector('#page-02 .btn-amber');
+  const btnAprovar = document.getElementById('btn-aprovar-orcamento');
   if (btnAprovar) {
     btnAprovar.disabled = bloqueado;
     btnAprovar.style.opacity = bloqueado ? '0.45' : '';
     btnAprovar.style.cursor  = bloqueado ? 'not-allowed' : '';
     if (bloqueado) {
-      btnAprovar.innerHTML = '&#x1F512; Or&ccedil;amento Aprovado';
+      btnAprovar.innerHTML = '&#x1F512; Aprovado';
     } else {
-      btnAprovar.innerHTML = '&#x2713; Aprovar Or&ccedil;amento';
+      btnAprovar.innerHTML = '&#x2713; Aprovar';
     }
   }
 
@@ -9522,7 +9660,7 @@ function tfFecharAviso() {
 }
 
 function tfMostrarPainel(mostrar) {
-  document.getElementById('painel-tf').style.display = mostrar ? 'block' : 'none';
+  _negModExibir('tf', mostrar);
   const extras = document.getElementById('sb-tf-extras');
   if (extras) extras.style.display = mostrar ? 'block' : 'none';
   if (mostrar) {
@@ -9541,15 +9679,9 @@ function tfMostrarPainel(mostrar) {
 }
 
 function avistaMostrarPainel(mostrar) {
-  const p = document.getElementById('painel-avista');
-  if (p) p.style.display = mostrar ? 'block' : 'none';
+  _negModExibir('avista', mostrar);
   if (mostrar) {
-    const selE = document.getElementById('av-entrada-forma');
-    const selL = document.getElementById('av-liq-forma');
-    if (selE && !selE.options.length)
-      selE.innerHTML = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-    if (selL && !selL.options.length)
-      selL.innerHTML = _FORMAS_AVISTA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+    _avSincronizarFormas();   // opções + valores vindos da linha de parâmetros (bloco 7)
     const dE = document.getElementById('av-entrada-data');
     if (dE && !dE.value) dE.value = new Date().toISOString().split('T')[0];
     avistaRecalcular();
@@ -9578,6 +9710,18 @@ function avistaRecalcular() {
   const entradaForma = document.getElementById('av-entrada-forma')?.value || 'pix';
   const liqForma     = document.getElementById('av-liq-forma')?.value || 'pix';
 
+  // #plano-avista (achado da revisão do bloco 7): mesmo resumo read-only que as outras 4
+  // modalidades já têm — é o que sobra visível depois da assinatura (ver comentário no HTML).
+  const _formaLbl = c => (_FORMAS_AVISTA.find(([v]) => v === c) || [, c])[1] || '—';
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setTxt('av-r-entrada-data',  _dataBRCompleta(entradaData));
+  setTxt('av-r-entrada-forma', _formaLbl(entradaForma));
+  setTxt('av-r-entrada-valor', 'R$ ' + fmt(entrada));
+  setTxt('av-r-liq-data',      _dataBRCompleta(liqData));
+  setTxt('av-r-liq-forma',     _formaLbl(liqForma));
+  setTxt('av-r-liq-valor',     'R$ ' + fmt(saldo));
+  _negPlanoResumo('avista', 'av', total > 0);
+
   window._planoPagamento = {
     tipo: 'avista', nome_forma: 'A Vista',
     entrada_valor: entrada,
@@ -9586,6 +9730,13 @@ function avistaRecalcular() {
     total_cliente: total, texto_cartao: '',
     parcelas: saldo > 0 ? [{ num: 1, data: liqData, valor: saldo, forma: liqForma }] : [],
   };
+  // Achado da revisão do bloco 7 (2026-08-24, bug PRÉ-EXISTENTE — reproduzido também no código
+  // anterior ao bloco 7): faltava aqui o agendarSalvarPagamento() que as outras 4 modalidades
+  // sempre chamam ao final do próprio atualizar*() — sem ele, trocar PARA à vista nunca disparava
+  // o auto-save que aciona negPreview()/_aplicarPreviewNaTela (o motor, fonte única de
+  // #neg-total-final e da coluna "Com financiamento"). Resultado: ao vir de outra modalidade, a
+  // tela ficava com o Total/tabela da modalidade ANTERIOR até um Salvar manual + reabertura.
+  if (typeof agendarSalvarPagamento === 'function') agendarSalvarPagamento();
 }
 
 function tfDataContratoChange() {
@@ -9653,12 +9804,12 @@ async function atualizarTF() {
   }
 
   if (!dc || !valorAvista) {
-    document.getElementById('tf-resumo').style.display = 'none';
+    _negPlanoResumo('tf', 'tf', false);
     return;
   }
   const financiado = Math.max(0, valorAvista - entrada);
   if (financiado <= 0) {
-    document.getElementById('tf-resumo').style.display = 'none';
+    _negPlanoResumo('tf', 'tf', false);
     return;
   }
 
@@ -9737,7 +9888,7 @@ async function atualizarTF() {
   const ultima = parc[parc.length - 1];
   const n_parc = parc.length;
 
-  document.getElementById('tf-resumo').style.display = 'block';
+  _negPlanoResumo('tf', 'tf', true);
 
   // Cards resumo
   document.getElementById('tf-r-avista').textContent    = 'R$ ' + fmt(valorAvista);
@@ -18478,8 +18629,8 @@ function atualizarBotoesAprovacao() {
     _aplicarLockNegociacaoPosAssinatura();
     const actionRow = document.querySelector('#page-02 .action-row');
     if (actionRow) {
-      const bs = actionRow.querySelector('.btn-ok');    if (bs) bs.style.display = 'none';
-      const ba = actionRow.querySelector('.btn-amber');  if (ba) ba.style.display = 'none';
+      const bs = document.getElementById('btn-salvar-orcamento');  if (bs) bs.style.display = 'none';
+      const ba = document.getElementById('btn-aprovar-orcamento'); if (ba) ba.style.display = 'none';
       // Rever Orçamento some assim que qualquer parte assina (sem desfazer pós-assinatura)
       const br = actionRow.querySelector('#btn-rever-orcamento'); if (br) br.remove();
       const assinarExistente = actionRow.querySelector('#btn-assinar-contrato');
@@ -18503,8 +18654,8 @@ function atualizarBotoesAprovacao() {
   aplicarBloqueioNegociacao(aprovado);
   const actionRow = document.querySelector('#page-02 .action-row');
   if (!actionRow) return;
-  const btnSalvar  = actionRow.querySelector('.btn-ok');
-  const btnAprovar = actionRow.querySelector('.btn-amber');
+  const btnSalvar  = document.getElementById('btn-salvar-orcamento');
+  const btnAprovar = document.getElementById('btn-aprovar-orcamento');
   if (aprovado) {
     if (btnSalvar)  { btnSalvar.style.display  = 'none'; }
     if (btnAprovar) { btnAprovar.style.display = 'none'; }

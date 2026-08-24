@@ -502,6 +502,13 @@ body{overflow:hidden}
    Virou flex row pra caber os dois; padding/border/margin do título original migram pra cá. */
 .mod-panel-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .neg-mod-badge{font-size:var(--fs-xs);letter-spacing:normal;text-transform:none;color:var(--accent);background:var(--accent-tint);padding:2px 9px;border-radius:999px;font-weight:600}
+/* Agenda — tabela de detalhe (dia/histórico), achado do usuário (2026-08-24): 7 colunas
+   (Data/Status/Evento/Fase/Responsável/Projeto/Cliente) não cabem no padding generoso do
+   .tbl/.table-wrap compartilhado (que além disso usa overflow:hidden — corta em vez de rolar).
+   Wrapper e padding PRÓPRIOS, só pra esta tabela; .tbl continua dando cabeçalho/hover padrão. */
+.ag-det-wrap{border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto;background:var(--surface)}
+.ag-det-tbl th,.ag-det-tbl td{padding:7px 10px;white-space:nowrap}
+.ag-det-tbl td:nth-child(3){white-space:normal}   /* Evento: título pode ser longo, quebra linha */
 /* .mod-grid (rótulo em cima) foi APOSENTADO no bloco 7 (2026-08-24): era o formato dos campos
    das modalidades financiadas, o único lugar do sistema que o usava. Os cinco painéis passaram
    a usar .field-float (rótulo flutuante), que o À Vista já usava — dois formatos pro mesmo
@@ -4878,6 +4885,7 @@ async function cfgAgendaSalvar(lid){
 let _agAno=null, _agMes=null, _agSetorFiltro=null, _agMarcos=[], _agVisao='comercial', _agSetores=[];
 let _agProjFiltro=null, _agProjLista=[];   // seletor de projeto → agenda/cronograma de UM projeto
 let _agVista='cal', _agSemBase=null, _agCargas=[], _agItens=[], _agSelCarga=null;
+let _agMeus=false;   // botão "Minha Agenda" (2026-08-24, pedido do usuário — sem registro do pedido anterior)
 const _AG_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function _agSegunda(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function agendaVista(v){
@@ -4924,6 +4932,10 @@ function agendaNav(d){
   agendaCarregar();
 }
 function agendaSetor(s){ _agSetorFiltro = (_agSetorFiltro===s?null:s); _agSel=null; _agRender(); }
+// "Minha Agenda" (2026-08-24, pedido do usuário): só projetos que EU criei ou que estão
+// atribuídos a mim (Mapa de Atribuições) — pra qualquer nível, inclusive gerência/master (que
+// por padrão veem tudo). Recarrega do zero (o filtro muda no backend, não dá pra fatiar client-side).
+function agendaMinhaToggle(){ _agMeus=!_agMeus; _agSel=null; agendaCarregar(); }
 function _agIso(a,m,d){ const p=n=>String(n).padStart(2,'0'); return a+'-'+p(m+1)+'-'+p(d); }
 function _agRangeAtual(){
   // período buscado por vista: mês (cal), semana (sem) ou mês anterior+atual (mes — comparativo)
@@ -4944,7 +4956,8 @@ async function agendaCarregar(){
   const [de,ate]=_agRangeAtual();
   try{
     const r = await fetch('/api/agenda?de='+de+'&ate='+ate
-      +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):''), {credentials:'same-origin'});
+      +(_agProjFiltro?'&projeto='+encodeURIComponent(_agProjFiltro):'')
+      +(_agMeus?'&meus=1':''), {credentials:'same-origin'});
     const d = await r.json();
     if(!d.ok){ box.innerHTML='<em style="color:var(--err);font-size:12px">'+esc(d.erro||'Sem acesso.')+'</em>'; return; }
     _agMarcos=d.marcos||[]; _agCargas=d.cargas||[]; _agVisao=d.visao||'comercial';
@@ -4974,6 +4987,8 @@ function _agHeader(tituloPeriodo){
       <button class="btn btn-ghost btn-sm" onclick="agendaNav(0)">hoje</button>
     </div>
     <select onchange="agendaProjeto(this.value)" style="${_retidoInputStyle};max-width:260px">${projOpts}</select>
+    <button class="btn btn-sm ${_agMeus?'btn-primary':'btn-ghost'}" onclick="agendaMinhaToggle()"
+            title="Só projetos que eu criei ou que estão atribuídos a mim">Minha Agenda</button>
     ${chips}
   </div>`;
 }
@@ -5042,8 +5057,11 @@ function _agRender(){
     // (com nomenclatura própria por item) entram nas visões Semana/Mês e no painel Capacidade
     // da Fatia 3, onde há espaço para rotular o que cada R$ significa.
     const hoje = iso===hojeIso;
+    // Achado do usuário (2026-08-24): clicar no NÚMERO do dia agora seleciona "todos os eventos
+    // do dia" (mesmo destino de "+N projeto(s)") — antes só dava pra chegar lá pelo overflow.
     cels+=`<div style="min-height:96px;border:${hoje?'2px':'1px'} solid ${hoje?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 6px 4px">
-        <div style="font-size:11px;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':'600'}">${dia}</div>
+        <div onclick="event.stopPropagation();agendaDia('${iso}')" title="Ver todos os eventos do dia"
+             style="font-size:11px;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':'600'};cursor:pointer;display:inline-block">${dia}</div>
         <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div></div>`;
   }
   const cab=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(x=>`<div style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${x}</div>`).join('');
@@ -5051,7 +5069,11 @@ function _agRender(){
     +`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cab}${cels}</div>
     <div id="agenda-dia-det" style="margin-top:14px"></div>`;
-  if(_agSel) _agRenderDia();
+  // Achado do usuário (2026-08-24): comportamento adaptativo — clicar num EVENTO (projeto
+  // definido) mostra o histórico completo daquele projeto (_agRenderHistorico, busca à parte,
+  // sem limite de período); clicar no DIA ou no "+N projeto(s)" (projeto=null) mostra só os
+  // eventos daquele dia (_agRenderDia, usa o que já está carregado em _agMarcos).
+  if(_agSel){ if(_agSel.projeto) _agRenderHistorico(); else _agRenderDia(); }
 }
 let _agSel=null;   // {dia, projeto|null} — evento clicado (projeto=null → todos do dia)
 function agendaEvento(idx){
@@ -5059,27 +5081,63 @@ function agendaEvento(idx){
   _agSel = (_agSel && _agSel.dia===e.dia && _agSel.projeto===e.projeto) ? null : e;
   _agRender();
 }
+function agendaDia(iso){
+  _agSel = (_agSel && _agSel.dia===iso && !_agSel.projeto) ? null : {dia:iso, projeto:null};
+  _agRender();
+}
+// Colunas compartilhadas pelas duas tabelas de detalhe (dia e histórico) — achado do usuário
+// (2026-08-24): Data | Status | Evento | Fase | Responsável | Projeto | Cliente, cada um na sua
+// coluna (antes Evento/Fase vinham concatenados na mesma célula, e Projeto/Cliente também).
+function _agColunasHtml(rows, titulo){
+  return `<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${titulo}</div>
+    <div class="ag-det-wrap"><table class="tbl ag-det-tbl"><thead><tr>
+      <th>Data</th><th>Status</th><th>Evento</th><th>Fase</th><th>Responsável</th><th>Projeto</th><th>Cliente</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function _agLinhaHtml(m, hojeIso, destaque){
+  const st=_agStatusMarco(m,hojeIso);
+  return `<tr${destaque?' style="background:var(--surface-2);font-weight:700"':''}>
+    <td style="white-space:nowrap">${_dataBRCompleta(m.data)}</td>
+    <td style="white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px;vertical-align:-1px"></span>${_AG_ST_ROT[st]}</td>
+    <td>${esc(m.titulo)}</td>
+    <td style="white-space:nowrap;color:var(--muted)">${m.fase!=null?('Fase '+esc(String(m.fase))+(m.retida?' — retida':'')):(m.retida?'Retida':'—')}</td>
+    <td style="white-space:nowrap">${esc(m.responsavel||'—')}</td>
+    <td>${esc(m.projeto||'—')}</td>
+    <td style="color:var(--muted)">${esc(m.cliente||'—')}</td>
+  </tr>`;
+}
 function _agRenderDia(){
   const det=document.getElementById('agenda-dia-det'); if(!det||!_agSel) return;
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
-  let marcos=(_agSetorFiltro?_agMarcos.filter(m=>m.setor===_agSetorFiltro):_agMarcos).filter(m=>m.data===_agSel.dia);
-  if(_agSel.projeto) marcos=marcos.filter(m=>m.projeto===_agSel.projeto);
+  const marcos=(_agSetorFiltro?_agMarcos.filter(m=>m.setor===_agSetorFiltro):_agMarcos).filter(m=>m.data===_agSel.dia);
   if(!marcos.length){ det.innerHTML=''; return; }
-  marcos=marcos.slice().sort((a,b)=>(a.projeto||'').localeCompare(b.projeto||'')||_agPrio(a)-_agPrio(b));
-  const rotSetor={}; _agSetores.forEach(s=>rotSetor[s.id]=s.rotulo);
-  const rows=marcos.map(m=>{
-    const st=_agStatusMarco(m,hojeIso);
-    return `<tr>
-      <td style="white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px;vertical-align:-1px"></span>${_AG_ST_ROT[st]}</td>
-      <td>${esc(m.titulo)}${m.fase?` <span style="color:var(--muted);font-size:11px">(Fase ${m.fase}${m.retida?' — retida':''})</span>`:(m.retida?' <span style="color:var(--muted);font-size:11px">(retida)</span>':'')}</td>
-      <td style="white-space:nowrap;color:var(--muted)">${esc(rotSetor[m.setor]||m.setor)}</td>
-      <td>${esc(m.projeto||'')}${m.cliente?` <span style="color:var(--muted)">· ${esc(m.cliente)}</span>`:''}</td></tr>`;
-  }).join('');
-  const tit=_agSel.projeto
-    ? `${esc(_agSel.projeto)} — eventos de ${_fmtDataBR(_agSel.dia)}`
-    : `Todos os eventos de ${_fmtDataBR(_agSel.dia)}`;
-  det.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">${tit}</div>
-    <div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Evento</th><th>Setor</th><th>Projeto</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const ordenados=marcos.slice().sort((a,b)=>(a.projeto||'').localeCompare(b.projeto||'')||_agPrio(a)-_agPrio(b));
+  const rows=ordenados.map(m=>_agLinhaHtml(m,hojeIso,false)).join('');
+  det.innerHTML=_agColunasHtml(rows, `Todos os eventos de ${_dataBRCompleta(_agSel.dia)}`);
+}
+// Achado do usuário (2026-08-24): histórico COMPLETO do projeto clicado (não só o dia) — busca à
+// parte, sem de/ate (mod_agenda.marcos aceita período opcional; sem ele devolve tudo daquele
+// projeto). Token _agHistGen descarta a resposta se o usuário já trocou de seleção enquanto
+// carregava (evita popular a tela com o projeto errado numa corrida de cliques).
+let _agHistGen=0;
+async function _agRenderHistorico(){
+  const det=document.getElementById('agenda-dia-det'); if(!det||!_agSel||!_agSel.projeto) return;
+  const meuGen=++_agHistGen, projSel=_agSel.projeto, diaSel=_agSel.dia;
+  det.innerHTML='<em style="color:var(--muted);font-size:12px">Carregando histórico...</em>';
+  let marcos=null;
+  try{
+    const d=await fetch('/api/agenda?projeto='+encodeURIComponent(projSel),{credentials:'same-origin'}).then(r=>r.json());
+    marcos=(d&&d.ok&&d.marcos)||[];
+  }catch(e){ marcos=null; }
+  if(meuGen!==_agHistGen) return;   // seleção mudou durante o fetch — descarta
+  if(marcos===null){ det.innerHTML='<em style="color:var(--err);font-size:12px">Erro ao carregar histórico.</em>'; return; }
+  if(_agSetorFiltro) marcos=marcos.filter(m=>m.setor===_agSetorFiltro);
+  if(!marcos.length){ det.innerHTML=''; return; }
+  const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
+  // Mais recente/futuro no topo até a primeira ocorrência embaixo (pedido do usuário).
+  const ordenados=marcos.slice().sort((a,b)=>b.data.localeCompare(a.data)||_agPrio(a)-_agPrio(b));
+  const rows=ordenados.map(m=>_agLinhaHtml(m,hojeIso,m.data===diaSel)).join('');
+  det.innerHTML=_agColunasHtml(rows, `${esc(projSel)} — histórico completo (destaque: ${_dataBRCompleta(diaSel)})`);
 }
 
 // ── Fatia 3: visões SEMANA e MÊS — cargas do catálogo de itens com valor (spec §5 rev 2) ──

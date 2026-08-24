@@ -28,6 +28,29 @@ def test_marco_previsto_e_realizado():
     assert all(m["setor"] == "medicao" for m in ms if m["etapa"] in ("9", "10"))
 
 
+def test_marco_inclui_responsavel():
+    """Coluna "Responsável" da Agenda (2026-08-24, pedido do usuário). mod_agenda é PURO — só
+    repassa o que o endpoint já resolveu em etapas[cod]["responsavel"]; sem override, "" (nunca
+    inventa um default aqui, ver comentário em main._agenda_dados_projetos)."""
+    p = _proj(etapas={
+        "9":  {"prevista": datetime(2026, 9, 1), "concluida_em": None, "responsavel": "Fulano"},
+        "10": {"prevista": datetime(2026, 9, 5), "concluida_em": None},
+    })
+    por = {m["etapa"]: m["responsavel"] for m in mod_agenda.marcos([p])}
+    assert por["9"] == "Fulano"
+    assert por["10"] == ""
+
+
+def test_marco_entrega_por_fase_inclui_responsavel():
+    p = _proj(etapas={"16": {"prevista": None, "concluida_em": None, "responsavel": "Ciclana"}},
+              fases=[{"ordem": 1, "status": None, "val_liq": 100.0,
+                      "entrega_prevista": datetime(2026, 9, 20),
+                      "card_prazo_entrega": None, "card_data_entrega": None,
+                      "responsavel": "Ciclana"}])
+    ms = mod_agenda.marcos([p])
+    assert ms and ms[0]["responsavel"] == "Ciclana"
+
+
 def test_medicao_fallback_previsao_do_gate():
     p = _proj(previsao_medicao=datetime(2026, 9, 8), etapas={"10": {}})
     ms = mod_agenda.marcos([p])
@@ -355,6 +378,54 @@ def test_endpoint_agenda_inclui_assistencia(app_db, seed, http_client_factory):
     # filtro de setor no servidor
     st2, d2 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&setor=assistencia")
     assert st2 == 200 and d2["marcos"] and all(m["setor"] == "assistencia" for m in d2["marcos"])
+
+
+def test_endpoint_agenda_meus_filtra_por_posse_ou_atribuicao(app_db, seed, http_client_factory):
+    """Botão "Minha Agenda" (2026-08-24, pedido do usuário): meus=1 força escopo pessoal (criei
+    OU estou atribuído) pra QUALQUER nível — inclusive master, que por padrão vê tudo."""
+    nome = seed["projeto_l1"]
+    _setup_projeto(app_db, seed)
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    # sem meus: master (padrão) vê tudo, inclusive projeto que não criou
+    st, d = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31")
+    assert st == 200 and any(m["projeto"] == nome for m in d["marcos"])
+    # meus=1, sem posse nem atribuição: o projeto some (marcos de OUTROS testes do módulo, como
+    # a assistência avulsa de test_endpoint_agenda_inclui_assistencia, continuam — app_db é
+    # scope="module" — mas "avulso sem posse" é uma exceção deliberada, não afeta este projeto)
+    st2, d2 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&meus=1")
+    assert st2 == 200 and not any(m["projeto"] == nome for m in d2["marcos"])
+    # vira o criador do projeto → meus=1 volta a mostrar
+    db = app_db.get_session()
+    try:
+        uid = db.query(app_db.Usuario).filter_by(login="dir_l1").first().id
+        db.get(app_db.Projeto, nome).criado_por_id = uid
+        db.commit()
+    finally:
+        db.close()
+    st3, d3 = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31&meus=1")
+    assert st3 == 200 and any(m["projeto"] == nome for m in d3["marcos"])
+
+
+def test_endpoint_agenda_responsavel_resolve_nome(app_db, seed, http_client_factory):
+    """Responsável (2026-08-24): override explícito em CicloEtapa.responsavel_funcionario_id
+    resolve pro nome do Funcionário no payload do /api/agenda; sem override, "" ."""
+    nome = seed["projeto_l1"]
+    _setup_projeto(app_db, seed)
+    db = app_db.get_session()
+    try:
+        func = app_db.Funcionario(nome="Fulano de Tal", loja_id=seed["loja1_id"])
+        db.add(func); db.flush()
+        e9 = db.query(CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo="9").first()
+        e9.responsavel_funcionario_id = func.id
+        db.commit()
+    finally:
+        db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/agenda?de=2026-09-01&ate=2026-12-31")
+    assert st == 200
+    por_etapa = {m["etapa"]: m for m in d["marcos"] if m["projeto"] == nome}
+    assert por_etapa["9"]["responsavel"] == "Fulano de Tal"
+    assert por_etapa["13"]["responsavel"] == ""
 
 
 def test_endpoint_agenda_isola_loja(app_db, seed, http_client_factory):

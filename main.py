@@ -2778,6 +2778,7 @@ class Handler(BaseHTTPRequestHandler):
                     return None
             de, ate, setor = _pd(_q("de")), _pd(_q("ate")), (_q("setor") or None)
             proj_filtro = unquote(_q("projeto") or "") or None   # agenda de UM projeto (cronograma)
+            meus = (_q("meus") or "") in ("1", "true")   # botão "Minha Agenda" (2026-08-24)
             db = get_session()
             try:
                 import mod_agenda as _mag
@@ -2786,7 +2787,7 @@ class Handler(BaseHTTPRequestHandler):
                 if _err:
                     self.send_json({"ok": False, "erro": _err}, code=403); return
                 visao = mod_escopo.visao_do_papel(ator)
-                dados = _agenda_dados_projetos(db, ator, loja_id, proj_filtro)
+                dados = _agenda_dados_projetos(db, ator, loja_id, proj_filtro, meus=meus)
                 out = []
                 for m in _mag.marcos(dados, de=de, ate=ate, setor=setor):
                     if visao == "operacional":
@@ -17148,21 +17149,37 @@ def _valores_contrato_por_ambiente(orcamento_id, db):
     return out, round(float(d.get("Val_Cont") or 0), 2)
 
 
-def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
+def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None, meus=False):
     """Dados por projeto para o motor da Agenda (mod_agenda) — extraído do handler
     GET /api/agenda para reuso pelo painel de Montagem (Gantt/espelho). Aplica os escopos:
-    posse (consultor), atribuição (operacional) e filtro opcional de projeto."""
+    posse (consultor), atribuição (operacional) e filtro opcional de projeto.
+    `meus` (2026-08-24, botão "Minha Agenda" — pedido do usuário): força o escopo pessoal
+    (criei OU estou atribuído) pra QUALQUER nível, inclusive gerência/master, que por padrão
+    veem tudo. É união (OR), não os dois filtros de posse+atribuição encadeados em sequência
+    (que seria AND e esvaziaria a lista pra quem não tem as duas coisas ao mesmo tempo)."""
     projs = (db.query(Projeto)
                .join(Contrato, Contrato.projeto_nome == Projeto.nome_safe)
                .filter(Projeto.loja_id == loja_id)
                .distinct().all())
     if proj_filtro:
         projs = [p for p in projs if p.nome_safe == proj_filtro]
-    if _ve_apenas_proprios_projetos(ator.get("nivel")):
-        projs = [p for p in projs if p.criado_por_id in (None, ator.get("id"))]
-    if mod_escopo.escopo_por_atribuicao(ator):
+    if meus:
         _atrib = _projetos_atribuidos_ao_usuario(db, ator.get("id"), loja_id)
-        projs = [p for p in projs if p.nome_safe in _atrib]
+        _uid = ator.get("id")
+        projs = [p for p in projs if p.criado_por_id == _uid or p.nome_safe in _atrib]
+    else:
+        if _ve_apenas_proprios_projetos(ator.get("nivel")):
+            projs = [p for p in projs if p.criado_por_id in (None, ator.get("id"))]
+        if mod_escopo.escopo_por_atribuicao(ator):
+            _atrib = _projetos_atribuidos_ao_usuario(db, ator.get("id"), loja_id)
+            projs = [p for p in projs if p.nome_safe in _atrib]
+    # Responsável (2026-08-24, pedido do usuário — coluna nova da Agenda): usa só o override
+    # explícito da etapa (responsavel_funcionario_id) — NÃO o "responsável efetivo" completo
+    # (transferência de chat > Mapa de Atribuições > default por faixa > criador) que o /ciclo
+    # calcula, porque aquele resolvedor é por-projeto com várias queries auxiliares — replicar
+    # pra cada projeto do mês inteiro sairia caro. Sem override, a célula fica "—" (mais honesto
+    # que adivinhar um default aqui).
+    _resp_ids_todos = set()
     dados = []
     for pr in projs:
         if pr.status == "perdido":
@@ -17173,10 +17190,13 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
         cli = db.get(Cliente, pr.cliente_id) if pr.cliente_id else None
         etapas = {}
         for e in db.query(CicloEtapa).filter_by(projeto_nome=pr.nome_safe).all():
+            if e.responsavel_funcionario_id:
+                _resp_ids_todos.add(e.responsavel_funcionario_id)
             etapas[e.etapa_codigo] = {
                 "prevista": e.data_prevista_conclusao,
                 "concluida_em": (e.concluido_em
-                                 if e.status in mod_ciclo.STATUS_CONCLUSIVOS else None)}
+                                 if e.status in mod_ciclo.STATUS_CONCLUSIVOS else None),
+                "responsavel_funcionario_id": e.responsavel_funcionario_id}
         parcs = (db.query(ParcelaProjeto).filter_by(projeto_nome=pr.nome_safe)
                    .order_by(ParcelaProjeto.ordem.asc()).all())
         cards = {c.parcela_id: c for c in
@@ -17186,6 +17206,9 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
         card_glob = (db.query(CicloLogistico)
                        .filter_by(projeto_nome=pr.nome_safe, parcela_id=None)
                        .order_by(CicloLogistico.id.desc()).first())
+        # Responsável da entrega (etapa 16, por FASE): a fase não tem responsável próprio —
+        # todas herdam o override da etapa 16 do projeto (mesma simplificação do resto do bloco).
+        _resp16 = (etapas.get("16") or {}).get("responsavel_funcionario_id")
         fases = []
         for f in parcs:
             card = cards.get(f.id)
@@ -17193,7 +17216,8 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
                           "val_liq": f.val_liq_congelado,
                           "entrega_prevista": f.entrega_prevista,
                           "card_prazo_entrega": card.prazo_entrega if card else None,
-                          "card_data_entrega": card.data_entrega if card else None})
+                          "card_data_entrega": card.data_entrega if card else None,
+                          "responsavel_funcionario_id": _resp16})
         if not fases:
             _c16 = etapas.get("16") or {}
             fases = [{"id": None, "ordem": None, "status": None,
@@ -17201,7 +17225,8 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
                       "entrega_prevista": None,
                       "card_prazo_entrega": card_glob.prazo_entrega if card_glob else None,
                       "card_data_entrega": ((card_glob.data_entrega if card_glob else None)
-                                            or _c16.get("concluida_em"))}]
+                                            or _c16.get("concluida_em")),
+                      "responsavel_funcionario_id": _resp16}]
         dados.append({"nome_safe": pr.nome_safe,
                       "cliente": (cli.nome if cli else None),
                       "val_liq": (orc.valor_liquido if orc else None),
@@ -17209,6 +17234,15 @@ def _agenda_dados_projetos(db, ator, loja_id, proj_filtro=None):
                       "previsao_medicao": pr.previsao_medicao,
                       "data_entrega": pr.data_entrega,
                       "etapas": etapas, "fases": fases})
+    # Resolve os nomes dos responsáveis coletados (1 query em lote, não N+1 por projeto/etapa).
+    _resp_map = {f.id: f.nome for f in
+                 db.query(Funcionario).filter(Funcionario.id.in_(_resp_ids_todos)).all()} \
+        if _resp_ids_todos else {}
+    for p in dados:
+        for et in (p["etapas"] or {}).values():
+            et["responsavel"] = _resp_map.get(et.get("responsavel_funcionario_id"), "")
+        for f in (p["fases"] or []):
+            f["responsavel"] = _resp_map.get(f.get("responsavel_funcionario_id"), "")
     return dados
 
 

@@ -3277,6 +3277,53 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 205 — Resumo da negociação: preenche o vazio pós-assinatura e o card da Etapa 4
+
+Pedido novo do usuário (dois prints): (1) na Negociação, quando o contrato é assinado
+(`_sbParamsAtualizar()` esconde `#sb-params` inteiro) sobrava um vazio grande na coluna 1fr do
+grid, sem nada sobre modalidade/forma/data/valor de entrada; (2) no modal Etapas do Projeto, o
+card da Etapa 4 "Orçamento" só listava nome+botões Abrir/Imprimir, sem valor nem forma de
+pagamento em negociação.
+
+**Descoberta que simplificou tudo:** `Orcamento.forma_pagamento` (coluna no banco, já exposta por
+`_orcamento_dict()` no `GET /projetos/<nome>/orcamentos` que a Etapa 4 já consumia) **não é** um
+código simples — é o JSON de `_capturarPagamento()`/`window._planoPagamento` (mesmo formato:
+`tipo`, `nome_forma`, `entrada_valor/data/forma`, `total_cliente`, `parcelas[]`). Os dois pedidos
+usam a MESMA fonte de dados, só em lugares diferentes — zero endpoint novo, zero mudança de
+backend.
+
+**Implementação:**
+- `_negResumoLinhasHtml(p)` — helper único que formata as linhas (Modalidade/Forma da
+  entrada/Data da entrada/Valor da entrada/Parcelamento) a partir de um objeto no formato
+  `_planoPagamento`. Compartilhado pelos dois lugares.
+- **Negociação:** `#neg-resumo-travado` — novo card, sibling de `#sb-params` dentro de `.neg-top`.
+  Mutuamente exclusivo com ele (`_sbParamsAtualizar()` alterna os dois); o CSS Grid ignora itens
+  `display:none` no auto-placement, então quando `#sb-params` some este vira o "2º item" e cai
+  sozinho na coluna 1fr — sem precisar de `grid-area` explícito.
+- **Etapa 4 (modal Etapas do Projeto):** cada orçamento com `valor_total > 0` ganha um bloco com
+  Total do Contrato + as mesmas 5 linhas, parseando `o.forma_pagamento` (`JSON.parse` com
+  fallback pra `null` — protege orçamentos legados/sem plano salvo).
+
+**Bug achado e corrigido durante o teste (não existia antes desta feature, é dela mesma):**
+`window._planoPagamento` só fica pronto DEPOIS do fetch assíncrono de cada modalidade financiada
+(Aymoré/Cartão/VP/TF) — abrir um projeto TRAVADO com uma dessas modalidades disparava
+`_sbParamsAtualizar()` (que popula o resumo) ANTES desse fetch resolver, e o card nascia com o
+valor default (à vista/zerado) em vez do real. Fix: as 4 `atualizar*()` assíncronas chamam
+`_sbParamsAtualizar()` de novo no fim (mesmo padrão de `agendarSalvarPagamento()`/
+`_negPlanoResumo()` que elas já chamavam) — no-op barato quando não está travado. À Vista não
+precisou (roda síncrono, sem fetch).
+
+**Verificação:** `node --check` limpo, suíte **2293 passed** (zero mudança Python). Playwright: os
+dois locais testados com projeto real assinado (Aymoré, 10x) nos dois temas — valores batendo
+exatamente com o `#plano-aymore` já existente; card da Etapa 4 testado também com orçamento NÃO
+assinado (À Vista, "1x R$ ... (liquidação)"); `#sb-params`/`#neg-resumo-travado` confirmados
+mutuamente exclusivos num projeto destravado.
+
+**Autorizado pelo usuário** a seguir o mesmo fluxo das Sessões 203/204 (merge sem esperar revisão,
+deploy até VPS B, produção intocada).
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 204 — Brief da Negociação: fecha blocos 4-6 (grid do topo, escala dos números, badge de modalidade + conferência) e deploy A/B
 
 Branch `feat/neg-blocos-4-6`, seguindo direto da Sessão 203 (PR #34 já mergeado). Fecha os 3 blocos

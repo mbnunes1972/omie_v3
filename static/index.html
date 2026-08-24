@@ -509,6 +509,14 @@ body{overflow:hidden}
 .ag-det-wrap{border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto;background:var(--surface)}
 .ag-det-tbl th,.ag-det-tbl td{padding:7px 10px;white-space:nowrap}
 .ag-det-tbl td:nth-child(3){white-space:normal}   /* Evento: título pode ser longo, quebra linha */
+/* Arrastar-para-reagendar (2026-08-24, item 5 do brief de análise): arraste "manual" via
+   mouse events (não o drag nativo do navegador) — precisa sobreviver a um re-render de
+   #agenda-ui no meio do gesto (troca de mês na borda), o que o drag nativo não tolera bem. */
+.ag-drag-linha{cursor:grab}
+.ag-drag-ghost{position:fixed;z-index:9999;pointer-events:none;background:var(--card);
+  border:1px solid var(--accent);border-radius:6px;padding:4px 10px;font-size:11px;
+  color:var(--text);box-shadow:var(--shadow-md);white-space:nowrap}
+.ag-day-hover{outline:2px dashed var(--accent);outline-offset:-2px}
 /* .mod-grid (rótulo em cima) foi APOSENTADO no bloco 7 (2026-08-24): era o formato dos campos
    das modalidades financiadas, o único lugar do sistema que o usava. Os cinco painéis passaram
    a usar .field-float (rótulo flutuante), que o À Vista já usava — dois formatos pro mesmo
@@ -3475,6 +3483,30 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     </div>
   </div>
 
+  <!-- Modal: arrastar-para-reagendar na Agenda (2026-08-24, pedido do usuário — item 5 do brief
+       de análise). Mesmo padrão de reautenticação do #modal-crono (senha confirma a mudança,
+       mesmo pra quem já tem sessão-autorizada — fricção deliberada, igual ao resto do sistema),
+       só que autocontido (não depende de projetoAtivo — a Agenda mostra vários projetos). -->
+  <div id="modal-ag-reagendar" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:26px;max-width:400px;width:92%;animation:mIn .18s ease">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-family:var(--font-display);font-weight:900;font-size:15px">Reagendar</div>
+        <span onclick="agReagFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
+      </div>
+      <div id="ag-reag-resumo" style="font-size:12px;color:var(--text);margin-bottom:6px"></div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Alteração de prazo exige reautenticação (Gerente+) e fica registrada na auditoria (quem, quando, valor antigo → novo).</div>
+      <label style="font-size:var(--fs-sm);color:var(--muted)">Login</label>
+      <input type="text" id="ag-reag-login" style="width:100%;box-sizing:border-box;margin-bottom:10px">
+      <label style="font-size:var(--fs-sm);color:var(--muted)">Confirme sua senha</label>
+      <input type="password" id="ag-reag-senha" onkeydown="if(event.key==='Enter')agReagSalvar()" style="width:100%;box-sizing:border-box">
+      <div id="ag-reag-erro" style="font-size:11px;min-height:16px;margin:8px 0"></div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost btn-sm" onclick="agReagFechar()" style="flex:1;justify-content:center">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="agReagSalvar()" style="flex:1;justify-content:center">Autorizar e salvar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: autorização gerencial para registrar data de entrega SEM folga (Fatia 2) -->
   <div id="modal-autoriza-entrega" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
     <div style="background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:26px;max-width:400px;width:92%;animation:mIn .18s ease">
@@ -5039,11 +5071,19 @@ function _agRender(){
     let linhas='';
     grupos.slice(0,3).forEach(g=>{
       const idx=_agEntradas.length;
-      _agEntradas.push({dia:iso, projeto:g.pj});
+      // Item 5 (2026-08-24, análise entregue ao usuário — implementado com escopo reduzido: só
+      // gerente/master, nunca Entrega no cliente (16) nem Assistência (etapa=null, cadeia de
+      // datas própria), nunca marco já concluído (é fato, não plano), e só quando o dia NÃO tem
+      // outros marcos do mesmo projeto empilhados (g.n>1 — ambíguo qual dos N mover).
+      const podeArrastar = g.n===1 && g.principal.etapa && g.principal.etapa!=='16'
+        && !g.principal.realizado && _podeAutorizarFront();
+      _agEntradas.push({dia:iso, projeto:g.pj, etapa:g.principal.etapa, titulo:g.principal.titulo});
       const sel=_agSel && _agSel.dia===iso && _agSel.projeto===g.pj;
       // agenda de UM projeto: dispensa o prefixo do nome — a célula vira o cronograma dele
       const rotulo=_agProjFiltro?`${esc(g.principal.titulo)}`:`${esc(g.pj)} · ${esc(g.principal.titulo)}`;
-      linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})" title="${esc(g.pj)} — ${esc(g.principal.titulo)}${g.n>1?' (+'+(g.n-1)+' relacionados)':''}"
+      linhas+=`<div onclick="event.stopPropagation();agendaEvento(${idx})"
+        ${podeArrastar?`onmousedown="agendaDragStart(event,${idx})" class="ag-drag-linha"`:''}
+        title="${esc(g.pj)} — ${esc(g.principal.titulo)}${g.n>1?' (+'+(g.n-1)+' relacionados)':''}${podeArrastar?' — arraste pra reagendar':''}"
         style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text);cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-radius:5px;padding:1px 3px;${sel?'background:var(--surface-2);font-weight:700;':''}">
         <span style="flex:none;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[g.st]}"></span>
         <span style="overflow:hidden;text-overflow:ellipsis">${rotulo}${g.n>1?` (+${g.n-1})`:''}</span></div>`;
@@ -5059,7 +5099,8 @@ function _agRender(){
     const hoje = iso===hojeIso;
     // Achado do usuário (2026-08-24): clicar no NÚMERO do dia agora seleciona "todos os eventos
     // do dia" (mesmo destino de "+N projeto(s)") — antes só dava pra chegar lá pelo overflow.
-    cels+=`<div style="min-height:96px;border:${hoje?'2px':'1px'} solid ${hoje?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 6px 4px">
+    // data-ag-dia: alvo do drop no arrastar-para-reagendar (achado via elementFromPoint).
+    cels+=`<div data-ag-dia="${iso}" style="min-height:96px;border:${hoje?'2px':'1px'} solid ${hoje?'var(--accent)':'var(--border)'};border-radius:8px;padding:6px 6px 4px">
         <div onclick="event.stopPropagation();agendaDia('${iso}')" title="Ver todos os eventos do dia"
              style="font-size:11px;color:${hoje?'var(--accent)':'var(--muted)'};font-weight:${hoje?'800':'600'};cursor:pointer;display:inline-block">${dia}</div>
         <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div></div>`;
@@ -5084,6 +5125,116 @@ function agendaEvento(idx){
 function agendaDia(iso){
   _agSel = (_agSel && _agSel.dia===iso && !_agSel.projeto) ? null : {dia:iso, projeto:null};
   _agRender();
+}
+
+// ── Arrastar-para-reagendar (2026-08-24, item 5 do brief de análise) ─────────────────────────
+// Arraste MANUAL via mouse events (não o drag nativo HTML5) — o gesto pode disparar
+// agendaNav()/agendaCarregar() (troca de mês perto da borda), que reescreve o innerHTML de
+// #agenda-ui inteiro; o drag nativo do navegador não sobrevive a isso, um _agDrag em JS sim (o
+// ghost fica em document.body, fora da árvore que é re-renderizada). Escopo (ver _agRender):
+// só gerente/master, nunca etapa 16 (Entrega) nem Assistência, nunca marco já concluído, nunca
+// dia com mais de um marco do mesmo projeto empilhado.
+let _agDrag = null;
+function agendaDragStart(ev, idx){
+  const e = _agEntradas[idx];
+  if(!e || !e.etapa || e.etapa==='16' || !_podeAutorizarFront()) return;
+  const startX=ev.clientX, startY=ev.clientY;
+  let iniciado=false;
+  const onMove=(mv)=>{
+    if(!iniciado){
+      if(Math.abs(mv.clientX-startX)<5 && Math.abs(mv.clientY-startY)<5) return;
+      iniciado=true;
+      _agDragIniciar(e, mv);
+    }
+    _agDragTick(mv);
+  };
+  const onUp=(up)=>{
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    if(iniciado) _agDragSoltar(up);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+function _agDragIniciar(e, mv){
+  const ghost=document.createElement('div');
+  ghost.className='ag-drag-ghost';
+  ghost.textContent=e.titulo+' · '+e.projeto;
+  document.body.appendChild(ghost);
+  _agDrag={projeto:e.projeto, etapa:e.etapa, titulo:e.titulo, dataOrigem:e.dia,
+            ghost, overIso:null, edgeTimer:null, edgeDir:0};
+  _agDragTick(mv);
+}
+function _agDragTick(mv){
+  if(!_agDrag) return;
+  _agDrag.ghost.style.left=(mv.clientX+12)+'px';
+  _agDrag.ghost.style.top=(mv.clientY+12)+'px';
+  const alvo=document.elementFromPoint(mv.clientX, mv.clientY);
+  const cel=alvo && alvo.closest('[data-ag-dia]');
+  document.querySelectorAll('.ag-day-hover').forEach(x=>x.classList.remove('ag-day-hover'));
+  if(cel){ cel.classList.add('ag-day-hover'); _agDrag.overIso=cel.dataset.agDia; }
+  else _agDrag.overIso=null;
+  // Auto-avançar mês perto da borda esquerda/direita do calendário (pedido do usuário: "ao
+  // chegar no fim da tela a direita" muda o mês, segurando o arraste). Segura ~700ms perto da
+  // borda antes de virar — evita disparo acidental ao só passar de raspão.
+  const box=document.getElementById('agenda-ui');
+  if(box){
+    const r=box.getBoundingClientRect(), margem=48;
+    const dir = mv.clientX > r.right-margem ? 1 : mv.clientX < r.left+margem ? -1 : 0;
+    if(dir!==0){
+      if(_agDrag.edgeDir!==dir){
+        if(_agDrag.edgeTimer) clearTimeout(_agDrag.edgeTimer);
+        _agDrag.edgeDir=dir;
+        _agDrag.edgeTimer=setTimeout(async ()=>{
+          if(!_agDrag) return;
+          agendaNav(dir);
+          await new Promise(r=>setTimeout(r,300));   // agendaCarregar() é assíncrono
+          if(_agDrag) _agDrag.edgeTimer=null;
+        }, 700);
+      }
+    } else if(_agDrag.edgeTimer || _agDrag.edgeDir!==0){
+      clearTimeout(_agDrag.edgeTimer); _agDrag.edgeTimer=null; _agDrag.edgeDir=0;
+    }
+  }
+}
+function _agDragSoltar(up){
+  if(!_agDrag) return;
+  const d=_agDrag; _agDrag=null;
+  if(d.edgeTimer) clearTimeout(d.edgeTimer);
+  d.ghost.remove();
+  document.querySelectorAll('.ag-day-hover').forEach(x=>x.classList.remove('ag-day-hover'));
+  if(!d.overIso || d.overIso===d.dataOrigem) return;   // soltou fora ou no mesmo dia — no-op
+  agReagAbrir(d.projeto, d.etapa, d.titulo, d.dataOrigem, d.overIso);
+}
+let _agReag=null;
+function agReagAbrir(projeto, etapa, titulo, dataOrigem, dataDestino){
+  _agReag={projeto, etapa, dataDestino};
+  document.getElementById('ag-reag-resumo').innerHTML =
+    `<strong>${esc(titulo)}</strong> · ${esc(projeto)}<br>`
+    +`${_dataBRCompleta(dataOrigem)} &#x2192; <strong>${_dataBRCompleta(dataDestino)}</strong>`;
+  document.getElementById('ag-reag-login').value=(_usuarioAtual && _usuarioAtual.login)||'';
+  document.getElementById('ag-reag-senha').value='';
+  document.getElementById('ag-reag-erro').textContent='';
+  document.getElementById('modal-ag-reagendar').style.display='flex';
+  setTimeout(()=>document.getElementById('ag-reag-senha').focus(),60);
+}
+function agReagFechar(){ document.getElementById('modal-ag-reagendar').style.display='none'; _agReag=null; }
+async function agReagSalvar(){
+  if(!_agReag) return;
+  const st=document.getElementById('ag-reag-erro');
+  const login=document.getElementById('ag-reag-login').value.trim();
+  const senha=document.getElementById('ag-reag-senha').value;
+  if(!senha){ st.textContent='Confirme sua senha para autorizar.'; st.style.color='var(--err)'; return; }
+  st.textContent='Salvando…'; st.style.color='var(--muted)';
+  const url=`/api/projetos/${encodeURIComponent(_agReag.projeto)}/ciclo/${_agReag.etapa}/data-prevista`;
+  const d=await fetch(url,{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({login, senha, data_prevista:_agReag.dataDestino})})
+    .then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ st.textContent='Erro: '+(d.erro||'falha'); st.style.color='var(--err)'; return; }
+  agReagFechar();
+  showToast('Reagendado.', false);
+  agendaCarregar();
 }
 // Colunas compartilhadas pelas duas tabelas de detalhe (dia e histórico) — achado do usuário
 // (2026-08-24): Data | Status | Evento | Fase | Responsável | Projeto | Cliente, cada um na sua

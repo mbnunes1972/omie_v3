@@ -3277,6 +3277,52 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 207 — Agenda da Loja: item 5 — arrastar-para-reagendar (escopo reduzido)
+
+Continuação da Sessão 206 (análise de risco entregue antes, sem código). O usuário decidiu: (1)
+prossegue SEM Entrega no cliente nem Assistências (os dois tipos com cadeia de datas complexa,
+ver análise da Sessão 206); (2) política de acesso simplificada — **só gerente e master** mudam
+por enquanto ("evitar a questão de responsabilidade").
+
+**Achado que simplificou a política de acesso:** o endpoint que já existe pra reagendar
+(`/ciclo/<etapa>/data-prevista`) já tem um mecanismo "sessão-primeiro" — se quem está logado já
+tem a capacidade `autorizar` (gerente/master), ele PRÓPRIO autentica sem redigitar senha
+(`_usuario_com_capacidade(...,sessao=...)`). Como a política pedida agora é literalmente "só quem
+já tem essa capacidade", **nenhuma mudança de backend foi necessária** — só fazer o arraste
+aparecer/funcionar apenas pra quem `_podeAutorizarFront()` já diz que sim (mesma função usada no
+Cronograma). Quem não tem, a tela fica exatamente como antes.
+
+**Arraste MANUAL (mouse events), não o drag nativo HTML5:** o gesto precisa sobreviver a um
+re-render de `#agenda-ui` no meio (troca de mês na borda), e o drag nativo do navegador não
+tolera bem isso. Threshold de 5px antes de "engajar" o arraste (senão um clique simples também
+dispararia o ghost por uma fração de segundo). Ghost fica em `document.body` — fora da árvore que
+o re-render substitui.
+
+**Escopo do que é arrastável** (`_agRender`, junto com o resto da lógica de grupo do calendário):
+só gerente/master; nunca etapa 16 (Entrega); nunca marco já `realizado` (é fato, não plano);
+nunca dia com mais de um marco do mesmo projeto empilhado (`g.n>1` — ambíguo qual dos N mover).
+Assistências já saem de fora sozinhas (não têm `etapa` — vem de outro modelo).
+
+**Confirmação por senha:** ao soltar num dia diferente, abre `#modal-ag-reagendar` (mesmo padrão
+visual do `#modal-crono` já existente, mas autocontido — não depende de `projetoAtivo`, que a
+Agenda não tem: mostra vários projetos ao mesmo tempo). Confirma → chama o MESMO endpoint que já
+existia, sem mudança nenhuma nele; auditoria (`LogAcaoGerencial`) já vem de graça.
+
+**Auto-avanço de mês na borda** (pedido original: "arrastar o mouse... deve deslocar o cursor...
+ao chegar no fim da tela"): segura ~700ms com o cursor a <48px da borda esquerda/direita do
+calendário → `agendaNav(±1)`. Testado (sintético, via dispatchEvent) segurando na borda direita:
+avançou de Agosto pra Setembro 2026 mantendo o arraste vivo, e soltar num dia de Setembro abriu o
+modal corretamente com a data nova.
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2297 passed**
+(zero mudança Python — reusa o endpoint existente). Playwright: arraste real (`page.dragTo`) de
+"Projeto_Novo · Revisão de PE" (02/08→05/08) — modal certo, senha, salvou, item sumiu do dia 2 e
+apareceu no dia 5 no calendário recarregado. Gate de acesso confirmado (`_usuarioAtual.nivel`
+trocado pra "operador" ao vivo → zero itens arrastáveis; restaurado pra master → 19). Confirmado
+que nenhum item de Entrega/Assistência nunca aparece arrastável. Claro/escuro conferidos.
+
+**Arquivos:** `static/index.html` (só — endpoint de backend reusado sem alteração).
+
 ## Sessão 206 — Agenda da Loja: bug de data, tabela adaptativa em colunas, coluna Responsável, botão Minha Agenda
 
 Pedido do usuário (print da Agenda): melhorar a distribuição da tabela de detalhe em colunas, mais

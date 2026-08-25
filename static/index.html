@@ -3507,17 +3507,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       <div id="ag-reag-resumo" style="font-size:12px;color:var(--text);margin-bottom:6px"></div>
       <div id="ag-reag-data-wrap" style="display:none;margin-bottom:10px">
         <label style="font-size:var(--fs-sm);color:var(--muted)">Nova data</label>
-        <input type="date" id="ag-reag-data-edit" style="width:100%;box-sizing:border-box">
+        <input type="date" id="ag-reag-data-edit" onkeydown="if(event.key==='Enter')agReagSalvar()" style="width:100%;box-sizing:border-box">
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Alteração de prazo exige reautenticação (Gerente+) e fica registrada na auditoria (quem, quando, valor antigo → novo).</div>
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Login</label>
-      <input type="text" id="ag-reag-login" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Confirme sua senha</label>
-      <input type="password" id="ag-reag-senha" onkeydown="if(event.key==='Enter')agReagSalvar()" style="width:100%;box-sizing:border-box">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">A alteração fica registrada na auditoria (quem, quando, valor antigo → novo) — sua sessão de Gerente/Master já autoriza, sem repetir a senha de entrada.</div>
       <div id="ag-reag-erro" style="font-size:11px;min-height:16px;margin:8px 0"></div>
       <div style="display:flex;gap:10px">
         <button class="btn btn-ghost btn-sm" onclick="agReagFechar()" style="flex:1;justify-content:center">Cancelar</button>
-        <button class="btn btn-primary btn-sm" onclick="agReagSalvar()" style="flex:1;justify-content:center">Autorizar e salvar</button>
+        <button class="btn btn-primary btn-sm" onclick="agReagSalvar()" style="flex:1;justify-content:center">Confirmar reagendamento</button>
       </div>
     </div>
   </div>
@@ -5264,11 +5260,8 @@ function agReagAbrir(projeto, etapa, titulo, dataOrigem, dataDestino, grupo){
     +`${_dataBRCompleta(dataOrigem)} &#x2192; <strong>${_dataBRCompleta(dataDestino)}</strong>`
     +extra;
   document.getElementById('ag-reag-data-wrap').style.display='none';
-  document.getElementById('ag-reag-login').value=(_usuarioAtual && _usuarioAtual.login)||'';
-  document.getElementById('ag-reag-senha').value='';
   document.getElementById('ag-reag-erro').textContent='';
   document.getElementById('modal-ag-reagendar').style.display='flex';
-  setTimeout(()=>document.getElementById('ag-reag-senha').focus(),60);
 }
 // Achado do usuário (2026-08-25): "e o evento escondido atrás do +N, como reagenda?" — o arrastar
 // só move o grupo inteiro pra mesma data; pra mexer num evento individual (mesmo escondido pela
@@ -5281,8 +5274,6 @@ function agReagAbrirEditavel(m){
   const dataWrap=document.getElementById('ag-reag-data-wrap');
   dataWrap.style.display='block';
   document.getElementById('ag-reag-data-edit').value=m.data||'';
-  document.getElementById('ag-reag-login').value=(_usuarioAtual && _usuarioAtual.login)||'';
-  document.getElementById('ag-reag-senha').value='';
   document.getElementById('ag-reag-erro').textContent='';
   document.getElementById('modal-ag-reagendar').style.display='flex';
   setTimeout(()=>document.getElementById('ag-reag-data-edit').focus(),60);
@@ -5295,25 +5286,28 @@ function agReagFechar(){ document.getElementById('modal-ag-reagendar').style.dis
 async function agReagSalvar(){
   if(!_agReag) return;
   const st=document.getElementById('ag-reag-erro');
-  const login=document.getElementById('ag-reag-login').value.trim();
-  const senha=document.getElementById('ag-reag-senha').value;
   // Modo editável (lápis): dataDestino não veio do drop, sai do campo de data do modal.
   let dataDestino=_agReag.dataDestino;
   if(!dataDestino){
     dataDestino=document.getElementById('ag-reag-data-edit').value;
     if(!dataDestino){ st.textContent='Informe a nova data.'; st.style.color='var(--err)'; return; }
   }
-  if(!senha){ st.textContent='Confirme sua senha para autorizar.'; st.style.color='var(--err)'; return; }
   st.textContent='Salvando…'; st.style.color='var(--muted)';
-  // Grupo: um POST por etapa, mesma senha (o endpoint autentica por chamada — não há operação em
-  // lote no backend). Se alguma falhar no meio, as anteriores já foram gravadas (não é atômico);
-  // reporta quais falharam pro usuário decidir se corrige manualmente.
+  // Achado do usuário (2026-08-25): só chega até aqui quem já passou por _podeAutorizarFront()
+  // (master/gerencial) — redigitar a própria senha de entrada é atrito redundante, não uma camada
+  // de segurança real ("a credencial de entrada deve liberar as permissões da credencial"). Envia
+  // login/senha vazios: o endpoint já reconhece sessão-primeiro (autoriza pela SESSÃO logada
+  // quando vêm vazios e ela já tem a capacidade "autorizar") — se por algum motivo a sessão não
+  // tiver mais a capacidade, o backend recusa e o erro aparece normalmente abaixo.
+  // Grupo: um POST por etapa (o endpoint não tem operação em lote). Se alguma falhar no meio, as
+  // anteriores já foram gravadas (não é atômico); reporta quais falharam pro usuário decidir se
+  // corrige manualmente.
   const falhas=[];
   for(const etapaCod of _agReag.etapas){
     const url=`/api/projetos/${encodeURIComponent(_agReag.projeto)}/ciclo/${etapaCod}/data-prevista`;
     const d=await fetch(url,{method:'POST',credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({login, senha, data_prevista:dataDestino})})
+      body:JSON.stringify({login:'', senha:'', data_prevista:dataDestino})})
       .then(r=>r.json()).catch(()=>({}));
     if(!d.ok) falhas.push(etapaCod+': '+(d.erro||'falha'));
   }

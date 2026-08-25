@@ -50,6 +50,27 @@ def test_data_prevista_rejeita_data_passada(http_client_factory, seed, projetos_
     assert "passada" in d.get("erro", "")
 
 
+# Achado do usuário (2026-08-25, testando ao vivo): a trava acima barrava também CORRIGIR um
+# evento que JÁ estava atrasado (data prevista antiga < hoje, não concluído) — "o evento, se não
+# concluído, estava atrasado, deveria aceitar reagendamento". Só barra ir pro passado quando a
+# etapa ainda NÃO estava atrasada (sem data prevista, ou data prevista futura).
+def test_data_prevista_aceita_correcao_de_atraso_para_data_ainda_passada(http_client_factory, seed, projetos_dir, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    antiga = datetime.now() - timedelta(days=10)
+    db = app_db.get_session()
+    try:
+        # "18" (não usada por outro teste deste arquivo) — evita colidir com a linha de "9"
+        # já criada por test_data_prevista_reauth_gerente_edita_e_audita (mesma fixture app_db).
+        db.add(app_db.CicloEtapa(projeto_nome="Proj_L1", etapa_codigo="18", data_prevista_conclusao=antiga))
+        db.commit()
+    finally:
+        db.close()
+    nova = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")   # ainda passada, mas > antiga
+    st, d = c.post("/api/projetos/Proj_L1/ciclo/18/data-prevista",
+                   {"login": "dir_l1", "senha": "senha123", "data_prevista": nova})
+    assert st == 200 and d.get("ok") is True, d
+
+
 def test_data_prevista_rejeita_antes_do_predecessor(http_client_factory, seed, projetos_dir, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     base = (datetime.now() + timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)

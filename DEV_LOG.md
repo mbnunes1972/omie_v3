@@ -3277,6 +3277,41 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 209 — Agenda: revisão do arrastar-para-reagendar (concluído + empilhados + badge)
+
+Usuário testou de novo com dois prints comparando um evento que não arrastava (dia 3,
+Projeto_Vera_E2E · Medição, +8) com um que arrastava sozinho (dia 4, vários eventos). Achado ao
+investigar ao vivo: **não era bug** — os 9 eventos do dia 3 estavam TODOS concluídos (bolinha
+verde), e por cima disso a Sessão 207 tinha bloqueado arraste sempre que havia mais de 1 evento
+empilhado no dia/projeto (`g.n>1`). A confusão do usuário: achou que o fator era "ser Medição",
+quando na real são dois fatores sem relação com o tipo de evento — status (já aconteceu?) e
+empilhamento (tem mais de um junto?). Depois de eu explicar isso, o usuário reproduziu a resposta
+original que tinha dado numa pergunta anterior (que eu tinha interpretado errado como "retirada")
+com 3 pedidos concretos:
+
+1. **Concluído continua bloqueado, mas agora com mensagem.** Antes o handler nem era anexado
+   (silencioso, parecia bug). Agora a tentativa é detectada (limiar de 5px já cruzado) e mostra
+   `mostrarErroModal` — "Evento concluído — não é possível alterar a data." Testado ao vivo.
+2. **Empilhados (`g.n>1`) passam a ser arrastáveis** — arrastar o evento PRINCIPAL agora arrasta o
+   GRUPO inteiro (mesmo dia/projeto), mas com confirmação antes: `agReagAbrir` separa os outros
+   marcos do grupo em "vai junto" (não concluídos) e "fica parado" (já concluídos, listados à
+   parte) e mostra os dois no modal antes de gravar. `agReagSalvar` faz um POST por etapa do
+   grupo (mesmo login/senha, o endpoint não tem operação em lote) — se algum falhar no meio, as
+   anteriores já foram gravadas (não é atômico), reporta quais falharam. Testado ao vivo: arrastei
+   "Aprovação do PE pelo cliente" (Projeto_Teste_4, empilhado com "Conferência e Implantação do
+   Pedido") de 09/08 pra 06/08 — os DOIS marcos moveram juntos, confirmado via `/api/agenda`.
+3. **Bolinha visual com o número de eventos empilhados** — pedido do usuário: o "(+n)" em texto
+   corrido já existia mas passava despercebido. Virou `.ag-badge-grupo` (pill colorido com o
+   número), ao lado da linha.
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2297 passed** (zero
+mudança Python — mesmo endpoint reusado, só mais de uma chamada por vez). Playwright: os 3 itens
+testados ao vivo (mensagem de concluído com screenshot do modal de erro, arraste de grupo
+confirmado ponta a ponta via fetch direto no `/api/agenda`, badge visível nos dois temas). Clique
+simples (sem arrastar) reconfirmado — ainda abre o histórico normalmente.
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 208 — Agenda: fix "arrastar não funciona" num mouse de verdade (user-select)
 
 Achado do usuário ao usar de verdade (não a suíte, não o teste automatizado): "tentei arrastar

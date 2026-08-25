@@ -12632,6 +12632,22 @@ class Handler(BaseHTTPRequestHandler):
                     if nova_dt is None:
                         self.send_json({"ok": False, "erro": "Informe a nova data prevista"}, code=400)
                         return
+                    # Achado do usuário (2026-08-25, testando o arrastar-para-reagendar da Agenda):
+                    # nada impedia reagendar pro passado, nem pra antes da etapa que precede esta no
+                    # ciclo (ex.: Medição antes da Solicitação de medição) — a UI deixaria a data
+                    # inconsistente sem avisar. As duas checagens valem pro endpoint inteiro (também
+                    # usado pelo lápis do Cronograma, não só a Agenda).
+                    if nova_dt.date() < date.today():
+                        self.send_json({"ok": False, "erro": "Não é possível agendar para uma data passada"}, code=400)
+                        return
+                    cod_anterior = mod_ciclo.etapa_anterior(etapa_cod)
+                    if cod_anterior:
+                        etapa_ant = db.query(CicloEtapa).filter_by(
+                            projeto_nome=nome_safe, etapa_codigo=cod_anterior).first()
+                        if etapa_ant and etapa_ant.data_prevista_conclusao and nova_dt.date() < etapa_ant.data_prevista_conclusao.date():
+                            nome_ant = mod_ciclo.ETAPA_NOME.get(cod_anterior, cod_anterior)
+                            self.send_json({"ok": False, "erro": f"Não pode ser antes de \"{nome_ant}\" ({etapa_ant.data_prevista_conclusao.date().isoformat()})"}, code=400)
+                            return
                     etapa = db.query(CicloEtapa).filter_by(
                         projeto_nome=nome_safe, etapa_codigo=etapa_cod).first()
                     if etapa is None:

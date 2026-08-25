@@ -3505,6 +3505,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <span onclick="agReagFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
       <div id="ag-reag-resumo" style="font-size:12px;color:var(--text);margin-bottom:6px"></div>
+      <div id="ag-reag-data-wrap" style="display:none;margin-bottom:10px">
+        <label style="font-size:var(--fs-sm);color:var(--muted)">Nova data</label>
+        <input type="date" id="ag-reag-data-edit" style="width:100%;box-sizing:border-box">
+      </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Alteração de prazo exige reautenticação (Gerente+) e fica registrada na auditoria (quem, quando, valor antigo → novo).</div>
       <label style="font-size:var(--fs-sm);color:var(--muted)">Login</label>
       <input type="text" id="ag-reag-login" style="width:100%;box-sizing:border-box;margin-bottom:10px">
@@ -5259,11 +5263,33 @@ function agReagAbrir(projeto, etapa, titulo, dataOrigem, dataDestino, grupo){
     `<strong>${esc(titulo)}</strong> · ${esc(projeto)}<br>`
     +`${_dataBRCompleta(dataOrigem)} &#x2192; <strong>${_dataBRCompleta(dataDestino)}</strong>`
     +extra;
+  document.getElementById('ag-reag-data-wrap').style.display='none';
   document.getElementById('ag-reag-login').value=(_usuarioAtual && _usuarioAtual.login)||'';
   document.getElementById('ag-reag-senha').value='';
   document.getElementById('ag-reag-erro').textContent='';
   document.getElementById('modal-ag-reagendar').style.display='flex';
   setTimeout(()=>document.getElementById('ag-reag-senha').focus(),60);
+}
+// Achado do usuário (2026-08-25): "e o evento escondido atrás do +N, como reagenda?" — o arrastar
+// só move o grupo inteiro pra mesma data; pra mexer num evento individual (mesmo escondido pela
+// pilha), reusa o mesmo modal, mas em modo "editável": em vez de já vir com dataDestino fixada
+// pelo drop, mostra um campo de data pro usuário escolher. dataDestino fica null até salvar.
+function agReagAbrirEditavel(m){
+  _agReag={projeto:m.projeto, dataDestino:null, etapas:[m.etapa]};
+  document.getElementById('ag-reag-resumo').innerHTML =
+    `<strong>${esc(m.titulo)}</strong> · ${esc(m.projeto)}<br>Data atual: ${_dataBRCompleta(m.data)}`;
+  const dataWrap=document.getElementById('ag-reag-data-wrap');
+  dataWrap.style.display='block';
+  document.getElementById('ag-reag-data-edit').value=m.data||'';
+  document.getElementById('ag-reag-login').value=(_usuarioAtual && _usuarioAtual.login)||'';
+  document.getElementById('ag-reag-senha').value='';
+  document.getElementById('ag-reag-erro').textContent='';
+  document.getElementById('modal-ag-reagendar').style.display='flex';
+  setTimeout(()=>document.getElementById('ag-reag-data-edit').focus(),60);
+}
+function agReagAbrirEditavelIdx(ridx){
+  const m=_agReagCandidatos[ridx]; if(!m) return;
+  agReagAbrirEditavel(m);
 }
 function agReagFechar(){ document.getElementById('modal-ag-reagendar').style.display='none'; _agReag=null; }
 async function agReagSalvar(){
@@ -5271,6 +5297,12 @@ async function agReagSalvar(){
   const st=document.getElementById('ag-reag-erro');
   const login=document.getElementById('ag-reag-login').value.trim();
   const senha=document.getElementById('ag-reag-senha').value;
+  // Modo editável (lápis): dataDestino não veio do drop, sai do campo de data do modal.
+  let dataDestino=_agReag.dataDestino;
+  if(!dataDestino){
+    dataDestino=document.getElementById('ag-reag-data-edit').value;
+    if(!dataDestino){ st.textContent='Informe a nova data.'; st.style.color='var(--err)'; return; }
+  }
   if(!senha){ st.textContent='Confirme sua senha para autorizar.'; st.style.color='var(--err)'; return; }
   st.textContent='Salvando…'; st.style.color='var(--muted)';
   // Grupo: um POST por etapa, mesma senha (o endpoint autentica por chamada — não há operação em
@@ -5281,13 +5313,19 @@ async function agReagSalvar(){
     const url=`/api/projetos/${encodeURIComponent(_agReag.projeto)}/ciclo/${etapaCod}/data-prevista`;
     const d=await fetch(url,{method:'POST',credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({login, senha, data_prevista:_agReag.dataDestino})})
+      body:JSON.stringify({login, senha, data_prevista:dataDestino})})
       .then(r=>r.json()).catch(()=>({}));
     if(!d.ok) falhas.push(etapaCod+': '+(d.erro||'falha'));
   }
   if(falhas.length){ st.textContent='Erro: '+falhas.join(' | '); st.style.color='var(--err)'; return; }
+  // Achado do usuário (2026-08-25): agReagFechar() zera _agReag ANTES da linha de baixo ler
+  // _agReag.etapas.length — estourava TypeError (silencioso, dentro de async) logo após o POST
+  // ter sido gravado com sucesso: o toast nunca aparecia e agendaCarregar() nunca rodava, então
+  // a tela continuava mostrando a data antiga apesar do backend já ter a nova. Guarda o tamanho
+  // ANTES de fechar.
+  const nEtapas=_agReag.etapas.length;
   agReagFechar();
-  showToast(_agReag.etapas.length>1 ? 'Reagendado (grupo).' : 'Reagendado.', false);
+  showToast(nEtapas>1 ? 'Reagendado (grupo).' : 'Reagendado.', false);
   agendaCarregar();
 }
 // Colunas compartilhadas pelas duas tabelas de detalhe (dia e histórico) — achado do usuário
@@ -5299,10 +5337,24 @@ function _agColunasHtml(rows, titulo){
       <th>Data</th><th>Status</th><th>Evento</th><th>Fase</th><th>Responsável</th><th>Projeto</th><th>Cliente</th>
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+// Achado do usuário (2026-08-25): "e o evento que fica escondido atrás do +N, como reagenda?" —
+// arrastar move o grupo inteiro junto, nunca UM escondido sozinho pra uma data diferente dos
+// outros. Cada linha das tabelas (dia/histórico) ganha um lápis PRÓPRIO — reagenda só aquele
+// marco, sem depender do agrupamento do calendário. Índice em vez de string crua no onclick
+// (mesmo padrão de _agEntradas/agendaDragStart): projeto/título podem ter aspas, indexar evita
+// escapar HTML dentro de atributo.
+let _agReagCandidatos=[];
 function _agLinhaHtml(m, hojeIso, destaque){
   const st=_agStatusMarco(m,hojeIso);
+  const podeEditar = !m.realizado && m.etapa && m.etapa!=='16' && _podeAutorizarFront();
+  let editar='';
+  if(podeEditar){
+    const ridx=_agReagCandidatos.length;
+    _agReagCandidatos.push(m);
+    editar=` <i class="ti ti-pencil" title="Reagendar este evento" style="cursor:pointer;font-size:11px;color:var(--muted)" onclick="event.stopPropagation();agReagAbrirEditavelIdx(${ridx})"></i>`;
+  }
   return `<tr${destaque?' style="background:var(--surface-2);font-weight:700"':''}>
-    <td style="white-space:nowrap">${_dataBRCompleta(m.data)}</td>
+    <td style="white-space:nowrap">${_dataBRCompleta(m.data)}${editar}</td>
     <td style="white-space:nowrap"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${_AG_ST_COR[st]};margin-right:6px;vertical-align:-1px"></span>${_AG_ST_ROT[st]}</td>
     <td>${esc(m.titulo)}</td>
     <td style="white-space:nowrap;color:var(--muted)">${m.fase!=null?('Fase '+esc(String(m.fase))+(m.retida?' — retida':'')):(m.retida?'Retida':'—')}</td>
@@ -5317,6 +5369,7 @@ function _agRenderDia(){
   const marcos=(_agSetorFiltro?_agMarcos.filter(m=>m.setor===_agSetorFiltro):_agMarcos).filter(m=>m.data===_agSel.dia);
   if(!marcos.length){ det.innerHTML=''; return; }
   const ordenados=marcos.slice().sort((a,b)=>(a.projeto||'').localeCompare(b.projeto||'')||_agPrio(a)-_agPrio(b));
+  _agReagCandidatos=[];   // reseta o índice do lápis a cada render — ver comentário em _agLinhaHtml
   const rows=ordenados.map(m=>_agLinhaHtml(m,hojeIso,false)).join('');
   det.innerHTML=_agColunasHtml(rows, `Todos os eventos de ${_dataBRCompleta(_agSel.dia)}`);
 }
@@ -5341,6 +5394,7 @@ async function _agRenderHistorico(){
   const hj=new Date(), hojeIso=_agIso(hj.getFullYear(),hj.getMonth(),hj.getDate());
   // Mais recente/futuro no topo até a primeira ocorrência embaixo (pedido do usuário).
   const ordenados=marcos.slice().sort((a,b)=>b.data.localeCompare(a.data)||_agPrio(a)-_agPrio(b));
+  _agReagCandidatos=[];   // reseta o índice do lápis a cada render — ver comentário em _agLinhaHtml
   const rows=ordenados.map(m=>_agLinhaHtml(m,hojeIso,m.data===diaSel)).join('');
   det.innerHTML=_agColunasHtml(rows, `${esc(projSel)} — histórico completo (destaque: ${_dataBRCompleta(diaSel)})`);
 }

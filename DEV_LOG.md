@@ -3277,6 +3277,57 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 210 — Agenda: reagendar evento individual empilhado (lápis) + trava de data passada/predecessor + fix de bug real no "arrastar não reagendou"
+
+Usuário perguntou: "num conjunto de eventos empilhado só aparece o primeiro — como reagenda o
+evento oculto da pilha?" O arraste (Sessão 209) só move o grupo inteiro junto; não havia como
+mexer num evento individual escondido atrás do "+N". Solução: cada linha das tabelas de detalhe
+(dia e histórico) ganha um lápis próprio (`_agLinhaHtml`), que reabre o mesmo modal de reagendar
+(`#modal-ag-reagendar`) num modo "editável" — com um campo de data em vez de vir com destino já
+fixado pelo drop. `_agReagCandidatos` é o índice por render (mesmo padrão de `_agEntradas`), zerado
+em `_agRenderDia`/`_agRenderHistorico`; `agReagAbrirEditavelIdx(idx)` → `agReagAbrirEditavel(m)` →
+`_agReag={projeto,dataDestino:null,etapas:[m.etapa]}`. `agReagSalvar` agora lê
+`_agReag.dataDestino || #ag-reag-data-edit.value`. Testado ao vivo: projeto real com 3 eventos
+empilhados no mesmo dia (Medição/Solicitação concluídos + NFe pendente) — o lápis da NFe abriu o
+modal certo, editou a data e salvou sem mexer nos outros dois.
+
+Enquanto isso, o usuário reportou ao vivo: "arrastei um evento e não reagendou — seletor e arraste
+funcionaram, mas a data não mudou", junto com dois pedidos de trava: (1) não deixar reagendar pro
+passado, (2) não deixar reagendar pra antes de uma etapa que precede a atual no ciclo. Investigando
+achei os DOIS problemas:
+
+1. **Bug real, não relato equivocado.** `agReagSalvar()` chamava `agReagFechar()` (que zera
+   `_agReag`) e SÓ DEPOIS lia `_agReag.etapas.length` pro texto do toast — `TypeError` dentro de
+   uma função `async`, sem handler, então: o POST já tinha sido gravado com sucesso no backend, mas
+   o toast nunca aparecia e o `agendaCarregar()` da linha seguinte nunca rodava — a tela ficava
+   parada na data antiga como se nada tivesse acontecido, mesmo o banco já tendo a data nova. Fix:
+   guarda `nEtapas=_agReag.etapas.length` ANTES de fechar. Isso explica por que o Playwright da
+   Sessão 207/209 nunca pegou (testava via chamada direta, sem passar por esse caminho específico
+   de sucesso simples).
+2. **Faltavam as duas travas pedidas**, de fato — nada no `POST /ciclo/<cod>/data-prevista`
+   impedia data passada nem violava a ordem do ciclo. Adicionadas no endpoint (único usado por
+   arrastar, lápis E o editor de Cronograma legado `cronoSalvar`): rejeita `nova_dt < hoje` ("Não é
+   possível agendar para uma data passada") e, via `mod_ciclo.etapa_anterior(etapa_cod)` +
+   `PREDECESSOR_OVERRIDE`, rejeita `nova_dt < data_prevista_conclusao` da etapa predecessora, se
+   ela estiver preenchida ("Não pode ser antes de \"X\" (data)"). **Limitação conhecida:** a checagem
+   usa `CicloEtapa.data_prevista_conclusao`; a etapa "16" (Entrega no cliente) tem sua data real
+   calculada pela cadeia canônica de `mod_agenda.data_entrega_da_fase` (card/fase/projeto), não
+   necessariamente espelhada nessa coluna — então o predecessor de "17" (Montagem) pode não pegar
+   se "16" nunca teve a coluna preenchida diretamente. Etapa 16 já é excluída do arrastar/lápis por
+   completo (não muda por essa via), então o gap só afeta o predecessor-check de "17" nesse caso
+   específico; degrada de forma segura (não bloqueia por engano, só deixa de bloquear).
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2299 passed** (2 novos
+em `test_cronograma.py`: `test_data_prevista_rejeita_data_passada`,
+`test_data_prevista_rejeita_antes_do_predecessor`; 1 teste existente ajustado pra data dinâmica —
+`"2026-08-15"` fixo tinha "envelhecido" pro passado e ia quebrar com a trava nova). Playwright:
+restart do servidor (mudança em `main.py` exige), lápis testado ponta a ponta num projeto real
+(evento oculto reagendado sem mexer nos irmãos empilhados), trava de data passada e de predecessor
+confirmadas via fetch direto, fluxo completo do lápis (senha vazia barra, senha certa salva sem
+crash, toast aparece, `agendaCarregar()` roda).
+
+**Arquivos:** `static/index.html`, `main.py`, `tests/test_cronograma.py`.
+
 ## Sessão 209 — Agenda: revisão do arrastar-para-reagendar (concluído + empilhados + badge)
 
 Usuário testou de novo com dois prints comparando um evento que não arrastava (dia 3,

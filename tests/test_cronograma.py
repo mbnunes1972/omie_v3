@@ -6,13 +6,16 @@ import mod_provisoes
 # ── HTTP: editar data_prevista com reautenticação + auditoria (Gerente+) ─────────
 def test_data_prevista_reauth_gerente_edita_e_audita(http_client_factory, seed, projetos_dir, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
+    # data futura calculada (não fixa): o endpoint agora rejeita reagendar pro passado
+    # (achado do usuário 2026-08-25) — uma string fixa "envelheceria" e quebraria o teste.
+    nova = (datetime.now() + timedelta(days=20)).replace(hour=0, minute=0, second=0, microsecond=0)
     st, d = c.post("/api/projetos/Proj_L1/ciclo/9/data-prevista",
-                   {"login": "dir_l1", "senha": "senha123", "data_prevista": "2026-08-15"})
+                   {"login": "dir_l1", "senha": "senha123", "data_prevista": nova.strftime("%Y-%m-%d")})
     assert st == 200 and d.get("ok") is True, d
     db = app_db.get_session()
     try:
         e9 = db.query(app_db.CicloEtapa).filter_by(projeto_nome="Proj_L1", etapa_codigo="9").first()
-        assert e9 and e9.data_prevista_conclusao == datetime(2026, 8, 15)
+        assert e9 and e9.data_prevista_conclusao == nova
         log = (db.query(app_db.LogAcaoGerencial)
                .filter_by(projeto_nome="Proj_L1", acao="editar_data_prevista", etapa_alvo="9").first())
         assert log is not None                    # auditado (quem/quando/old→new)
@@ -34,6 +37,34 @@ def test_data_prevista_senha_errada_barrada(http_client_factory, seed, projetos_
     st, d = c.post("/api/projetos/Proj_L1/ciclo/10/data-prevista",
                    {"login": "dir_l1", "senha": "errada", "data_prevista": "2026-08-20"})
     assert st == 403 and d.get("ok") is False
+
+
+# Achado do usuário (2026-08-25, testando o arrastar-para-reagendar da Agenda): nada impedia
+# reagendar pro passado, nem pra antes da etapa que precede esta no ciclo.
+def test_data_prevista_rejeita_data_passada(http_client_factory, seed, projetos_dir, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    ontem = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    st, d = c.post("/api/projetos/Proj_L1/ciclo/9/data-prevista",
+                   {"login": "dir_l1", "senha": "senha123", "data_prevista": ontem})
+    assert st == 400 and d.get("ok") is False
+    assert "passada" in d.get("erro", "")
+
+
+def test_data_prevista_rejeita_antes_do_predecessor(http_client_factory, seed, projetos_dir, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    base = (datetime.now() + timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+    db = app_db.get_session()
+    try:
+        # "14" (Recebimento do Pedido) depende de "13" (Produção) via PREDECESSOR_OVERRIDE.
+        db.add(app_db.CicloEtapa(projeto_nome="Proj_L1", etapa_codigo="13", data_prevista_conclusao=base))
+        db.commit()
+    finally:
+        db.close()
+    antes = (base - timedelta(days=5)).strftime("%Y-%m-%d")
+    st, d = c.post("/api/projetos/Proj_L1/ciclo/14/data-prevista",
+                   {"login": "dir_l1", "senha": "senha123", "data_prevista": antes})
+    assert st == 400 and d.get("ok") is False
+    assert "Produção" in d.get("erro", "")
 
 
 # ── v12: funcionário responsável filtrado pela função exigida pela fase ──────────

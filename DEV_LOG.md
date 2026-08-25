@@ -3277,6 +3277,49 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 215 — Auditoria da Vera + reordenar_cadeia (generalização do reancoro pra qualquer ponto do ciclo)
+
+Pedido do usuário: "chama a Vera pra auditar o resto dos projetos" — depois do fix da Sessão 214
+(só corrige daqui pra frente, quando `POST /data-entrega` é chamado de novo), projetos com dado JÁ
+inconsistente no banco não se autocorrigem sozinhos.
+
+**Achados da Vera (auditoria read-only, 29 projetos, nada gravado):**
+- **Checagem 1** (mesma classe do bug original — entrega vs. 17-20 pendentes): 5 projetos —
+  `Projeto_Novo`, `Projeto_Vera_E2E`, `Vera_QA_Provisoes_2aAssinatura`, `Teste_Desconto_Bug`,
+  `Vera_QA_Folha_Item2_2026-08-12`. O projeto do print original NÃO aparece mais (confirma o fix).
+- **Checagem 2** (mais ampla, via `mod_ciclo.etapa_anterior`): `Projeto_Novo` tinha a cadeia inteira
+  12→13→14→15→16 fora de ordem (não só o trecho pós-entrega) e `Projeto_Teste_4` tinha 12 antes de
+  11 — provavelmente de edições manuais anteriores à trava de predecessor em
+  `/ciclo/<cod>/data-prevista` (que só existe desde 2026-08-25, Sessão 210).
+- Todos os 6 projetos afetados são teste/QA/dev (`Vera_QA_*`/`Teste_*`/`cliente_id=1`= a conta do
+  próprio dev) — nenhum dado de cliente real.
+
+**Decisão do usuário:** reexecutar o reancoro nos 5 da Checagem 1 agora; escrever uma função
+GENÉRICA de reordenar a cadeia (não só o trecho 17-20) pra cobrir a Checagem 2 e casos futuros.
+
+**`mod_cronograma.reordenar_cadeia(db, projeto_nome, cfg)`** (novo, generaliza
+`reancorar_pos_entrega`): varre TODAS as etapas principais (`mod_ciclo.ETAPA_NOME`, ordem
+numérica) e corrige qualquer etapa PENDENTE cuja data esteja ausente ou anterior à da sua
+predecessora (`mod_ciclo.etapa_anterior`, já resolve `PREDECESSOR_OVERRIDE`) — usa a duração
+configurada no Cronograma Padrão da loja como afastamento mínimo. Mesma disciplina das outras
+funções do módulo: nunca reescreve etapa concluída (vira âncora factual pra quem vem depois);
+predecessora sem data conhecida não gera piso (não inventa data sem base). Só cobre etapas
+principais, não subfases (11a-11e, 17a) — fora de escopo por ora. Idempotente.
+
+**Dado real corrigido** (script one-off, não commitado — mesmo padrão da auditoria da Vera):
+`reancorar_pos_entrega` nos 5 da Checagem 1, `reordenar_cadeia` em `Projeto_Novo` e
+`Projeto_Teste_4` — os dois se complementaram sem conflito (rodei a Checagem 1 primeiro; quando
+`reordenar_cadeia` rodou depois, 17-20 já estavam corretos, então só mexeu no trecho anterior:
+13/14/16 em `Projeto_Novo`, 12 em `Projeto_Teste_4`). Confirmado via query: as duas cadeias ficaram
+não-decrescentes ponta a ponta.
+
+**Verificação:** suíte **2305 passed** (3 novos testes de `reordenar_cadeia` em
+`test_cronograma.py`: corrige inversão, preserva etapa concluída, não inventa data sem
+predecessora com data conhecida). `git grep` de hex sem resíduo (Python puro, sem frontend).
+
+**Arquivos:** `mod_cronograma.py`, `tests/test_cronograma.py` (+ dado corrigido diretamente no
+banco via script one-off, sem código de migração — mesmo padrão usado antes pro projeto original).
+
 ## Sessão 214 — Reancorar Montagem/Assistência/Vistoria/Aprovação final quando a entrega real muda
 
 Usuário reportou (com print da Agenda) um caso concreto que parecia impossível: no projeto

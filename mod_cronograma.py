@@ -117,6 +117,56 @@ def reancorar_pos_entrega(db, projeto_nome, cfg, nova_entrega):
     return afetadas
 
 
+def reordenar_cadeia(db, projeto_nome, cfg):
+    """Generalização de `reancorar_pos_entrega`: varre TODAS as etapas PRINCIPAIS do ciclo (não só
+    17-20) em ordem numérica e corrige qualquer etapa PENDENTE cuja data_prevista_conclusao esteja
+    ausente ou anterior à da sua predecessora (`mod_ciclo.etapa_anterior`, já resolve
+    PREDECESSOR_OVERRIDE) — usa a duração configurada no Cronograma Padrão da loja (prazo_dias)
+    como afastamento mínimo a partir da predecessora corrigida (ou factual, se já concluída).
+
+    Achado da auditoria da Vera (2026-08-25, a pedido do usuário depois do bug da entrega):
+    `reancorar_pos_entrega` só resolve a colisão entrega→17-20; alguns projetos de teste têm a
+    cadeia toda embaralhada em outros pontos (ex.: 12→13→14→15→16 fora de ordem), provavelmente de
+    edições manuais anteriores à trava de predecessor em `/ciclo/<cod>/data-prevista`
+    (2026-08-25) — datas gravadas antes disso nunca foram validadas contra a predecessora.
+
+    Mesma disciplina das outras funções deste módulo: nunca reescreve etapa já concluída (ela vira
+    a âncora FACTUAL pra quem vem depois, mesmo que sua data real não bata com o que a cadeia
+    calculada sugeriria — o que já aconteceu não se corrige). Predecessora sem data conhecida
+    (nunca teve `data_prevista_conclusao`, nem foi corrigida nesta mesma passada) não gera piso —
+    a etapa é deixada como está, evita "inventar" uma data sem base. Só cobre etapas PRINCIPAIS
+    (`mod_ciclo.ETAPA_NOME`); não mexe em subfases (11a-11e, 17a). Idempotente. Retorna as
+    CicloEtapa corrigidas (lista vazia se a cadeia já estava coerente)."""
+    import mod_ciclo
+    durs = {e["codigo"]: e["prazo_dias"] for e in cronograma_padrao(cfg)}
+    codigos = mod_ciclo.ordenar_codigos(mod_ciclo.ETAPA_NOME.keys())
+    regs = {e.etapa_codigo: e for e in
+            db.query(CicloEtapa).filter_by(projeto_nome=projeto_nome)
+              .filter(CicloEtapa.etapa_codigo.in_(codigos)).all()}
+    ancoras = {}   # código → data efetiva (corrigida ou factual), referência pro próximo da cadeia
+    afetadas = []
+    for cod in codigos:
+        pred = mod_ciclo.etapa_anterior(cod)
+        piso = (ancoras[pred] + timedelta(days=durs.get(cod, 0))) if pred in ancoras else None
+        reg = regs.get(cod)
+        if reg is None:
+            continue   # etapa nunca chegou a existir pra este projeto — nada a corrigir
+        if reg.status in mod_ciclo.STATUS_CONCLUSIVOS:
+            if reg.data_prevista_conclusao:
+                ancoras[cod] = reg.data_prevista_conclusao
+            continue
+        atual = reg.data_prevista_conclusao
+        if piso is not None and (atual is None or atual < piso):
+            reg.data_prevista_conclusao = piso
+            afetadas.append(reg)
+            ancoras[cod] = piso
+        elif atual is not None:
+            ancoras[cod] = atual
+    if afetadas:
+        db.flush()
+    return afetadas
+
+
 # ── Fase A — prazo por fase validado contra o cronograma do projeto ──────────────────────────────
 
 def limite_etapa(db, projeto_nome, etapa_codigo):

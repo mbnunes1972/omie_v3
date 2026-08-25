@@ -208,6 +208,58 @@ def test_gerar_cronograma_define_data_prevista_acumulado(app_db):
     db.close()
 
 
+# reordenar_cadeia — generalização de reancorar_pos_entrega pra QUALQUER trecho da cadeia
+# (achado da auditoria da Vera 2026-08-25: projetos de teste tinham a cadeia inteira embaralhada
+# em pontos fora de 17-20, provavelmente de edições manuais anteriores à trava de predecessor).
+def test_reordenar_cadeia_corrige_etapa_antes_da_predecessora(app_db):
+    db = app_db.get_session()
+    cfg = _cfg([{"codigo": "12", "prazo_dias": 3}, {"codigo": "13", "prazo_dias": 25}])
+    db.add(app_db.CicloEtapa(projeto_nome="ProjBaguncado", etapa_codigo="12",
+                              data_prevista_conclusao=datetime(2026, 8, 10)))
+    # "13" (predecessora "12") gravada ANTES de "12" — inversão, provavelmente de edição manual antiga.
+    db.add(app_db.CicloEtapa(projeto_nome="ProjBaguncado", etapa_codigo="13",
+                              data_prevista_conclusao=datetime(2026, 8, 6)))
+    db.commit()
+    afetadas = mod_cronograma.reordenar_cadeia(db, "ProjBaguncado", cfg)
+    db.commit()
+    assert {a.etapa_codigo for a in afetadas} == {"13"}
+    e13 = db.query(app_db.CicloEtapa).filter_by(projeto_nome="ProjBaguncado", etapa_codigo="13").first()
+    assert e13.data_prevista_conclusao == datetime(2026, 8, 10) + timedelta(days=25)
+    db.close()
+
+
+def test_reordenar_cadeia_nunca_reescreve_etapa_concluida(app_db):
+    db = app_db.get_session()
+    cfg = _cfg([{"codigo": "12", "prazo_dias": 3}, {"codigo": "13", "prazo_dias": 25}])
+    concluida_em = datetime(2026, 8, 6)   # "estranha" (antes do que a cadeia calculada sugeriria)
+    db.add(app_db.CicloEtapa(projeto_nome="ProjConcl", etapa_codigo="12", status="concluido",
+                              data_prevista_conclusao=concluida_em))
+    db.add(app_db.CicloEtapa(projeto_nome="ProjConcl", etapa_codigo="13",
+                              data_prevista_conclusao=datetime(2026, 8, 1)))   # antes de "12"
+    db.commit()
+    afetadas = mod_cronograma.reordenar_cadeia(db, "ProjConcl", cfg)
+    db.commit()
+    assert {a.etapa_codigo for a in afetadas} == {"13"}   # só a pendente é corrigida
+    e12 = db.query(app_db.CicloEtapa).filter_by(projeto_nome="ProjConcl", etapa_codigo="12").first()
+    e13 = db.query(app_db.CicloEtapa).filter_by(projeto_nome="ProjConcl", etapa_codigo="13").first()
+    assert e12.data_prevista_conclusao == concluida_em   # intocada
+    assert e13.data_prevista_conclusao == concluida_em + timedelta(days=25)   # âncora na concluída, não recalculada
+    db.close()
+
+
+def test_reordenar_cadeia_sem_predecessora_com_data_nao_inventa(app_db):
+    db = app_db.get_session()
+    cfg = _cfg([{"codigo": "12", "prazo_dias": 3}, {"codigo": "13", "prazo_dias": 25}])
+    # "12" nunca teve data_prevista_conclusao (None) — "13" fica como está, sem piso pra comparar.
+    db.add(app_db.CicloEtapa(projeto_nome="ProjSemAncora", etapa_codigo="12"))
+    db.add(app_db.CicloEtapa(projeto_nome="ProjSemAncora", etapa_codigo="13",
+                              data_prevista_conclusao=datetime(2026, 8, 1)))
+    db.commit()
+    afetadas = mod_cronograma.reordenar_cadeia(db, "ProjSemAncora", cfg)
+    assert afetadas == []
+    db.close()
+
+
 def test_gerar_cronograma_de_config_legada_reproduz_offsets_originais(app_db):
     # Regressão: config LEGADA (acumulado) normalizada → durações e então acumulada por
     # gerar_cronograma_projeto deve reproduzir EXATAMENTE os offsets acumulados originais.

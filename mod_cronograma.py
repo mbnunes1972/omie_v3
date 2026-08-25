@@ -77,6 +77,46 @@ def gerar_cronograma_projeto(db, projeto_nome, cfg, d0):
     return afetadas
 
 
+# Etapas cuja data_prevista_conclusao deriva da entrega real (16), não do D0 — Montagem→Aprovação
+# final, nessa ordem sequencial (mesma ordem em cronograma_padrao).
+CODIGOS_POS_ENTREGA = ("17", "18", "19", "20")
+
+
+def reancorar_pos_entrega(db, projeto_nome, cfg, nova_entrega):
+    """Reancora Montagem/Assistência pós Montagem/Vistoria final/Aprovação final a partir da data de
+    ENTREGA REAL (Projeto.data_entrega, editável na tela de Contrato) em vez do D0 da assinatura.
+
+    Achado do usuário (2026-08-25): `gerar_cronograma_projeto` fixa a data prevista dessas 4 etapas
+    UMA VEZ, no D0, a partir da entrega estimada de então — mas a entrega real é reavaliada depois
+    (atraso de produção etc.) via Projeto.data_entrega, um campo independente. Nada resincronizava
+    o restante: um projeto podia terminar com "Montagem" datada ANTES da "Entrega no cliente" real,
+    uma inversão impossível no mundo real. Chamar isto sempre que Projeto.data_entrega muda evita a
+    divergência. Nunca toca etapa já concluída (não reescreve histórico) — nesse caso preserva a
+    data e continua acumulando as durações a partir dela mesma, e não da nova entrega, pra manter a
+    cadeia coerente com o que já aconteceu de fato. Idempotente. Retorna as CicloEtapa afetadas
+    (lista vazia se nada precisou mudar)."""
+    import mod_ciclo
+    durs = {e["codigo"]: e["prazo_dias"] for e in cronograma_padrao(cfg)}
+    afetadas = []
+    ancora = nova_entrega
+    for cod in CODIGOS_POS_ENTREGA:
+        reg = db.query(CicloEtapa).filter_by(projeto_nome=projeto_nome, etapa_codigo=cod).first()
+        if reg is None:
+            reg = CicloEtapa(projeto_nome=projeto_nome, etapa_codigo=cod)
+            db.add(reg)
+        if reg.status in mod_ciclo.STATUS_CONCLUSIVOS:
+            if reg.data_prevista_conclusao:
+                ancora = reg.data_prevista_conclusao   # já aconteceu — a cadeia segue dali, não da entrega
+            continue
+        ancora = ancora + timedelta(days=durs.get(cod, 0))
+        if reg.data_prevista_conclusao != ancora:
+            reg.data_prevista_conclusao = ancora
+            afetadas.append(reg)
+    if afetadas:
+        db.flush()
+    return afetadas
+
+
 # ── Fase A — prazo por fase validado contra o cronograma do projeto ──────────────────────────────
 
 def limite_etapa(db, projeto_nome, etapa_codigo):

@@ -3277,6 +3277,60 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 214 — Reancorar Montagem/Assistência/Vistoria/Aprovação final quando a entrega real muda
+
+Usuário reportou (com print da Agenda) um caso concreto que parecia impossível: no projeto
+`Vera_QA_Comissao_Faixa_Alta_2026-08-12`, "Entrega no cliente" em 15/12/2026, mas Montagem
+(18/11), Assistência pós Montagem (21/11), Vistoria final (26/11) e Aprovação final (28/11) —
+todos ANTES da entrega. "O ciclo do projeto tem uma ordem temporal que para muitos eventos não tem
+como acontecer de forma invertida."
+
+**Causa raiz — duas fontes de "data de entrega" que não se sincronizam:** a etapa "16" (Entrega no
+cliente) tem `CicloEtapa.data_prevista_conclusao`, fixada UMA VEZ na assinatura do contrato
+(`gerar_cronograma_projeto`, D0 + durações do Cronograma Padrão da loja) — mas a Agenda **não usa
+essa coluna** pra desenhar a entrega, usa `Projeto.data_entrega` (campo editável na tela de
+Contrato, "Passo 2: define/valida a data de entrega", que reflete a realidade — atraso de
+produção etc.). No projeto do print: `CicloEtapa("16").data_prevista_conclusao` = 23/09/2026
+(o D0 original), `Projeto.data_entrega` = 15/12/2026 (ajustado depois). Montagem/Assistência/
+Vistoria/Aprovação final (17-20) foram fixadas no D0 relativas à entrega de SETEMBRO e nunca
+foram recalculadas quando a entrega real virou DEZEMBRO — a etapa 17 dessa loja em particular tem
+`prazo_dias=56` no Cronograma Padrão customizado (loja 1), o que fez a defasagem saltar aos
+olhos. Essa é justamente a limitação que eu tinha documentado na Sessão 210 ("a trava de
+predecessor usa a coluna do banco, não a entrega real — degrada de forma segura, só deixa de
+bloquear") — o usuário achou o caso concreto que ela deixava passar.
+
+**Decisão do usuário** (pergunta com 3 opções): recalcular automaticamente as 4 etapas seguintes
+sempre que a entrega real mudar e ficar depois do que elas já previam — não só avisar, não só
+corrigir a trava de validação.
+
+**Implementação:**
+- `mod_cronograma.reancorar_pos_entrega(db, projeto_nome, cfg, nova_entrega)` (novo): reancora
+  17→18→19→20 em cadeia a partir da nova entrega, usando as MESMAS durações do Cronograma Padrão
+  da loja (`prazo_dias`) já usadas em `gerar_cronograma_projeto` — mesmo padrão, âncora diferente.
+  Nunca reescreve etapa já concluída (`mod_ciclo.STATUS_CONCLUSIVOS`); se uma etapa no meio da
+  cadeia já aconteceu, a cadeia segue a partir da data REAL dela (não da entrega) pras seguintes —
+  preserva o que já é fato. Idempotente (só grava o que muda).
+- `POST /api/projetos/<nome>/data-entrega` (main.py): depois de persistir `Projeto.data_entrega`,
+  acha a primeira etapa da cadeia 17-20 ainda NÃO concluída; se a data dela é `None` ou já não fica
+  mais depois da nova entrega (colisão), chama `reancorar_pos_entrega` — só mexe quando de fato
+  ficaria inconsistente, não recalcula à toa quando a entrega muda mas ainda cabe antes do resto
+  (não atropela um reagendamento manual de Montagem feito por gerência via drag/lápis, se ele
+  ainda fizer sentido). Resposta ganha `reancorado: [códigos]` quando mexeu em algo.
+- Frontend (`salvarDataEntrega`/`salvarModalAutorizaEntrega`): mostra um aviso — "Montagem/
+  Assistência/Vistoria/Aprovação final foram reagendadas..." — quando `reancorado` vem preenchido,
+  pra não parecer mágica silenciosa.
+
+**Dado real corrigido:** reexecutei o próprio endpoint pro projeto do print (mesma
+`data_entrega`, só pra disparar o reancoro) — as 4 etapas foram pra 09/02, 12/02, 17/02, 19/02 de
+2027 (ordem coerente com a entrega de 15/12/2026 + as durações de 56/3/5/2 dias daquela loja).
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2302 passed** (2
+novos em `test_data_entrega.py`: reancora quando colide, preserva etapa já concluída). Playwright,
+ao vivo: reexecutei o endpoint no projeto real do print e confirmei via `/api/agenda` que a ordem
+temporal ficou coerente.
+
+**Arquivos:** `mod_cronograma.py`, `main.py`, `static/index.html`, `tests/test_data_entrega.py`.
+
 ## Sessão 213 — Folga de senha (sessão-primeiro) vira política geral: tudo que não é financeiro
 
 Usuário generalizou o pedido da Sessão 212 (folga só no reagendar da Agenda): "a folga de senha

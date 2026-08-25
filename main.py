@@ -12641,14 +12641,12 @@ class Handler(BaseHTTPRequestHandler):
                     # Achado do usuário (2026-08-25, testando o arrastar-para-reagendar da Agenda):
                     # nada impedia reagendar pra antes da etapa que precede esta no ciclo (ex.: Medição
                     # antes da Solicitação de medição) — a UI deixaria a data inconsistente sem avisar.
-                    # A trava de "data passada" original barrava também a correção de evento JÁ
-                    # atrasado (achado do usuário, 2026-08-25: "o evento, se não concluído, estava
-                    # atrasado, deveria aceitar reagendamento" — antecipar ou corrigir um atraso pode
-                    # legitimamente resultar numa data anterior a hoje). Só barra ir pro passado quando
-                    # a etapa AINDA NÃO estava atrasada (sem data prevista, ou data prevista >= hoje) —
-                    # aí sim seria "inventar passado" pra algo que ainda nem venceu.
-                    ja_atrasada = antigo is not None and antigo.date() < date.today()
-                    if nova_dt.date() < date.today() and not ja_atrasada:
+                    # Trava de "data passada": SEMPRE exige hoje ou futuro, mesmo corrigindo um evento
+                    # já atrasado — usuário testou e reverteu a exceção (2026-08-25, 2ª rodada): "reagendar
+                    # um evento passado não concluído (atrasado) deve ser para uma data presente ou
+                    # futura" — reagendar de um passado pra OUTRO passado não é correção, seria reescrever
+                    # o histórico.
+                    if nova_dt.date() < date.today():
                         self.send_json({"ok": False, "erro": "Não é possível agendar para uma data passada"}, code=400)
                         return
                     cod_anterior = mod_ciclo.etapa_anterior(etapa_cod)

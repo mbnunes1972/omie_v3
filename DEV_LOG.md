@@ -3277,6 +3277,46 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 212 — Agenda: reverte a exceção de "atrasado pode ir pro passado" + reagendar sem redigitar senha
+
+Duas correções do usuário, testando o reagendar ao vivo:
+
+**(1) Reverte a exceção da Sessão 211.** O usuário reagendou um evento de uma data passada pra
+OUTRA data passada e foi aceito — mas não deveria: "reagendar um evento passado não concluído
+(atrasado) deve ser para uma data presente ou futura." A Sessão 211 tinha interpretado errado o
+pedido anterior — abrira uma exceção pra permitir passado→passado quando a etapa já estava
+atrasada. Passado→passado reescreveria o histórico, não é correção de fato. Fix: volta a exigir
+`nova_data >= hoje` **sempre**, sem exceção — a diferenciação por "já estava atrasada" foi removida
+por inteiro (`main.py`, endpoint `POST /ciclo/<cod>/data-prevista`). Teste da Sessão 211
+(`test_data_prevista_aceita_correcao_de_atraso_para_data_ainda_passada`) substituído por
+`test_data_prevista_rejeita_passado_mesmo_ja_atrasada` (confirma passado→passado barrado, e
+passado→hoje aceito — o jeito certo de corrigir o atraso).
+
+**(2) Autorizar reagendar sem redigitar a senha de entrada.** "Estou logado como gerente, não
+deveria precisar da mesma senha de entrada para autorizar o evento. A credencial de entrada deve
+liberar as permissões da credencial." Achado: o modal de reagendar (`#modal-ag-reagendar`, usado
+tanto pelo arrastar quanto pelo lápis) sempre pedia login+senha antes de salvar — copiado do padrão
+do Cronograma legado (`cronoSalvar`), que existe pra suportar um usuário SEM a capacidade pedindo a
+senha de outra pessoa que tem. Mas esse cenário não existe aqui: só quem já tem `_podeAutorizarFront()`
+(master/gerencial) consegue sequer ABRIR o modal (arrastar e o lápis são gateados por isso desde a
+Sessão 207/210) — redigitar a própria senha era atrito puro, sem ganho de segurança real (o backend
+já suporta sessão-primeiro desde 2026-07-24: `_usuario_com_capacidade` autoriza pela sessão logada
+quando login/senha vêm vazios e ela já tem a capacidade). Fix: removidos os campos Login/Senha do
+modal; `agReagSalvar()` envia `login:''/senha:''` sempre, deixando o backend resolver via sessão —
+se por algum motivo a sessão perder a capacidade no meio do caminho, o erro do backend aparece
+normalmente na área de erro do modal (sem crash, sem UX quebrada). Botão renomeado "Confirmar
+reagendamento" (não é mais "Autorizar e salvar" — não há mais autorização por credencial digitada).
+**Fora de escopo, anotado:** o Cronograma legado (`cronoSalvar`) tem o mesmo padrão de pedir senha e
+NÃO foi alterado nesta rodada — o pedido do usuário foi especificamente sobre "autorizar o evento"
+da Agenda; se a mesma folga fizer sentido lá, é uma frente separada.
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2300 passed** (1 teste
+trocado, mesma contagem). Playwright, ao vivo (restart do servidor): modal do lápis sem campos de
+login/senha, reagendou "Emissão da NFe do cliente" pra 10/09 sem digitar nada além da data,
+confirmado via `/api/agenda` que a data persistiu — sessão-primeiro funcionando ponta a ponta.
+
+**Arquivos:** `static/index.html`, `main.py`, `tests/test_cronograma.py`.
+
 ## Sessão 211 — Agenda: trava de data passada não pode barrar correção de evento atrasado
 
 Usuário testou a trava da Sessão 210 ao vivo: "tentei reagendar de 16 de agosto para 23 de agosto

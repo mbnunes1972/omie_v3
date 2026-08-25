@@ -50,11 +50,12 @@ def test_data_prevista_rejeita_data_passada(http_client_factory, seed, projetos_
     assert "passada" in d.get("erro", "")
 
 
-# Achado do usuário (2026-08-25, testando ao vivo): a trava acima barrava também CORRIGIR um
-# evento que JÁ estava atrasado (data prevista antiga < hoje, não concluído) — "o evento, se não
-# concluído, estava atrasado, deveria aceitar reagendamento". Só barra ir pro passado quando a
-# etapa ainda NÃO estava atrasada (sem data prevista, ou data prevista futura).
-def test_data_prevista_aceita_correcao_de_atraso_para_data_ainda_passada(http_client_factory, seed, projetos_dir, app_db):
+# Achado do usuário (2026-08-25, 2ª rodada): tinha aberto uma exceção pra deixar corrigir a data
+# de um evento JÁ atrasado indo pra OUTRO passado — o usuário testou ao vivo e reverteu: "reagendar
+# um evento passado não concluído (atrasado) deve ser para uma data presente ou futura". Reagendar
+# de um passado pra outro passado reescreveria o histórico, não é correção — sempre exige hoje ou
+# futuro, mesmo pra evento já atrasado.
+def test_data_prevista_rejeita_passado_mesmo_ja_atrasada(http_client_factory, seed, projetos_dir, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     antiga = datetime.now() - timedelta(days=10)
     db = app_db.get_session()
@@ -68,7 +69,13 @@ def test_data_prevista_aceita_correcao_de_atraso_para_data_ainda_passada(http_cl
     nova = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")   # ainda passada, mas > antiga
     st, d = c.post("/api/projetos/Proj_L1/ciclo/18/data-prevista",
                    {"login": "dir_l1", "senha": "senha123", "data_prevista": nova})
-    assert st == 200 and d.get("ok") is True, d
+    assert st == 400 and d.get("ok") is False
+    assert "passada" in d.get("erro", "")
+    # Mas pra hoje/futuro segue liberado — é o jeito certo de corrigir o atraso.
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    st2, d2 = c.post("/api/projetos/Proj_L1/ciclo/18/data-prevista",
+                      {"login": "dir_l1", "senha": "senha123", "data_prevista": hoje})
+    assert st2 == 200 and d2.get("ok") is True, d2
 
 
 def test_data_prevista_rejeita_antes_do_predecessor(http_client_factory, seed, projetos_dir, app_db):

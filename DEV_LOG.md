@@ -3277,6 +3277,57 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 217 — QA da Vera na Visão Geral (Sessão 216): achou o buraco real — faltava BOTÃO pra 2ª renegociação
+
+Usuário pediu "chama a Vera pra testar a Visão Geral". Achado 🔴 alto, bloqueante pro cenário que a
+Sessão 216 inteira foi feita pra proteger: depois que o Termo Aditivo é assinado (loja+cliente), o
+card em "Negociar Complemento" (11e) passava a mostrar só `✓ loja / ✓ cliente` — **nenhum botão**
+pra iniciar uma 2ª rodada de renegociação. O backend já suportava isso desde sempre
+(`POST /aditivo` com `{novo:true}` abre o PRÓXIMO aditivo, nunca regera o assinado — comentário
+já existia no código), mas nenhum lugar do frontend enviava essa flag; `peAditivoGerar()` (a única
+função que chama o endpoint) sempre manda `{}`. A Vera confirmou reproduzindo o clique real
+(`fetch` idêntico ao do botão) e recebendo `"Termo aditivo já assinado — não pode ser regerado."`
+— exatamente o guard que o backend usa pra rejeitar regeração indevida, mas que também bloqueia a
+ÚNICA rota de "próximo aditivo" por não vir com a flag certa. **Achado importante sobre os testes**:
+a suíte automatizada (`test_lista_aditivos_preserva_forma_pagamento_de_cada_renegociacao`) passa
+verde porque testa a capacidade do BACKEND via HTTP direto com `{"novo": True}` explícito — nunca
+exercitou o caminho que o usuário de verdade navegaria pela tela. Lição de processo: teste de API
+prova que o motor funciona, não que dá pra chegar lá clicando.
+
+**Fix:** botão novo "Gerar novo Termo Aditivo" (`peAditivoGerarNovo()`, static/index.html) no card
+do Termo Aditivo quando `status === 'assinado'` — confirma antes (`confirmarPopup`, lembrando de
+negociar o complemento de novo primeiro) e chama `POST /aditivo` com `{novo:true}`. O aditivo
+assinado nunca é alterado (mesma trava de sempre); só passa a existir um CAMINHO pra criar o
+próximo. Sem mudança de backend (a capacidade já existia).
+
+**Achado 🟠 médio, virou correção de DOCUMENTAÇÃO, não de código:** a Vera notou que a seção
+financeira da Visão Geral, sem acesso ao módulo, abre o modal global de step-up ("Autorização
+necessária") em vez de só mostrar o texto "Módulo financeiro inativo ou sem acesso." — contradizendo
+a frase "degrada graciosamente" da Sessão 216. Investigando: **isso é o comportamento CORRETO e
+já existente** — `_contabil_ctx` devolve `precisa_stepup:"financeiro"` em 403 por falta de acesso
+(não por módulo inativo), e o interceptor global de `fetch` (que envolve TODA chamada do app,
+inclusive o painel "Provisões" já existente, que usa o mesmo `_contabil_ctx`) intercepta e abre o
+step-up antes de qualquer `.then()` rodar. Ou seja, a Visão Geral só herda o padrão já usado pelo
+resto do módulo financeiro — não é uma regressão nem inconsistência, era a minha descrição na
+Sessão 216 que estava imprecisa (o fallback de texto só é alcançado pra "módulo inativo" ou erro
+de rede, não pra "sem acesso"). Nenhum código mudou por causa deste achado.
+
+**Sem achados nas demais frentes** (Vera testou tudo isso e não achou problema): cabeçalho
+projeto+cliente, aba fixa antes da "1", as 3 seções sem erro de console, navegação de volta pro
+fichário normal depois de visitar a Visão Geral, banner "Projeto concluído" nos dois temas, PDFs
+distintos por id, tema claro/escuro sem hex solto, responsivo a 1024px (achou um overflow
+horizontal a 768px, mas reproduziu o MESMO problema na lista de Projetos — pré-existente, fora do
+escopo desta frente).
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo. Suíte de backend inalterada
+(o fix é 100% frontend) — **2314 passed**, mesma contagem da Sessão 216. Playwright: reproduzi o
+clique real do botão novo (`peAditivoGerarNovo()`, com `confirmarPopup` mockado pra não travar em
+prompt manual) no projeto de teste que a Vera deixou com 2 aditivos assinados — gerou um 3º aditivo
+(`status: para_assinatura`), confirmando que o caminho da UI agora chega no mesmo lugar que o teste
+automatizado já provava funcionar no backend.
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 216 — Visão Geral do Projeto: fases, financeiro (planejado×realizado) e histórico de renegociações
 
 Pedido do usuário, com print da tela "Etapas do Projeto": (1) o cabeçalho não mostra projeto/

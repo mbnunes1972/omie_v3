@@ -21312,6 +21312,10 @@ async function peComplementoRender(){
       ${!assinado ? `<div style="display:flex;gap:8px;margin-top:8px">
         <input id="pe-ad-nome" placeholder="Nome do signatário" style="flex:1;padding:5px 8px">
         <input id="pe-ad-cpf" placeholder="CPF" style="width:140px;padding:5px 8px">
+      </div>` : ''}
+      ${assinado ? `<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">
+        <button class="btn-ciclo" onclick="peAditivoGerarNovo()"><i class="ti ti-file-plus"></i> Gerar novo Termo Aditivo</button>
+        <div style="font-size:var(--fs-xs);color:var(--text-3);margin-top:4px">Para uma NOVA renegociação (o assinado acima nunca é alterado) — negocie o complemento de novo antes.</div>
       </div>` : ''}`;
   }
   const bloco = (titulo, corpo) => `
@@ -21519,6 +21523,26 @@ async function peAditivoGerar(){
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
     if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Termo Aditivo'}); return; }
     showToast('Termo aditivo gerado.');
+    peComplementoRender();
+  } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); }
+}
+
+// Achado da Vera (2026-08-25, testando a Visão Geral): depois que o Termo Aditivo é assinado, o
+// card só mostrava "✓ loja / ✓ cliente" — sem NENHUM caminho pra uma 2ª rodada de renegociação.
+// O backend já suportava isso desde sempre (POST /aditivo com {novo:true} abre o PRÓXIMO aditivo,
+// nunca regera o assinado — ver comentário em main.py), mas nenhum botão do frontend chamava com
+// essa flag. Sem isto, o histórico da Visão Geral nunca teria uma 2ª linha na prática.
+async function peAditivoGerarNovo(){
+  if(!projetoAtivo) return;
+  if(!(await confirmarPopup('Gerar um NOVO Termo Aditivo para esta fase? O anterior, já assinado, '
+    + 'não é alterado. Confirme que já negociou o complemento de novo em "Negociar Complemento" '
+    + 'antes de continuar.', {titulo:'Nova renegociação'}))) return;
+  try {
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({novo:true})}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Termo Aditivo'}); return; }
+    showToast('Novo termo aditivo gerado — assine loja e cliente.');
     peComplementoRender();
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); }
 }

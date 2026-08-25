@@ -3277,6 +3277,66 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 213 — Folga de senha (sessão-primeiro) vira política geral: tudo que não é financeiro
+
+Usuário generalizou o pedido da Sessão 212 (folga só no reagendar da Agenda): "a folga de senha
+para usuário logado com credencial que permite executar a ação deve ocorrer em todos os casos que
+não envolvam eventos financeiros." Investigação: `pedirCredenciaisGerente(opts)` — a função
+genérica usada por ~25 fluxos do app (financeiro, medição, PE, destravar bloqueador, etc.) — **já**
+implementava esse atalho desde 2026-07-24 (`if (cap && _usuarioAtual['pode_'+cap]) resolve({auto:
+true})`), mas SEM diferenciar financeiro: um Diretor com `pode_aprovar_financeiro` também pulava a
+senha em "Aprovar Financeira", "Aprovar AF2", "Registrar devolução" etc. — o oposto do que o
+usuário quer pro financeiro.
+
+**Fix central (`pedirCredenciaisGerente`):** o atalho agora é recusado quando `cap ===
+'aprovar_financeiro'` — reautenticação vira passo deliberado, sem atalho, antes de qualquer ação
+que mexa no razão contábil. Todos os outros ~20 usos (medição, PE, destravar bloqueador, reabrir
+etapa, etc.) continuam com a folga de antes — nada mudou pra eles, a função já tratava esses casos
+corretamente.
+
+**2 achados de rota (capacidade mal rotulada):** `ramoFinanceiroTrocar` (troca de ramo financeiro
+do orçamento) e `conferenciaRegistrar` (ajuste do Custo de Fábrica na Conferência) chamavam
+`pedirCredenciaisGerente` **sem** `capacidade` — caíam no `'autorizar'` genérico da folga, mesmo
+lançando no razão contábil (o backend de ambos usa `_aprovador_financeiro`/`aprovar_financeiro`).
+Coincidia hoje (master/gerencial têm as duas capacidades), mas não deveria depender de coincidência
+— corrigido pra `capacidade: 'aprovar_financeiro'` explícita, fechando a folga nos dois.
+
+**2 modais "antigos" que não usavam `pedirCredenciaisGerente`** (pré-datam a função genérica),
+mesmo padrão da Sessão 212 (Agenda/Cronograma): botão só aparece pra quem já tem
+`_podeAutorizarFront()`, então login/senha eram atrito redundante — removidos os campos:
+- **Cronograma legado** (`cronoSalvar`/`cronoAbrirEdicao`, modal `#modal-crono`) — mesmo endpoint
+  `POST /ciclo/<cod>/data-prevista` do reagendar da Agenda (já ganhou a folga na Sessão 212); ficou
+  faltando por engano ("fora de escopo, anotado" na Sessão 212 — agora dentro).
+- **Autorizar entrega sem folga** (`salvarModalAutorizaEntrega`, modal `#modal-autoriza-entrega`,
+  endpoint `/api/projetos/<nome>/data-entrega`) — não é financeiro (é agendamento de entrega vs.
+  medição); o botão que abre o modal já é gateado por `_podeAutorizarFront()` (achado em
+  `salvarDataEntrega`). **Detalhe do endpoint:** o backend só tenta a autorização por sessão quando
+  `login`, `senha` OU `override` vêm preenchidos (`quer_override = bool(login or senha or
+  req.get("override"))`) — sem isso o request de folga negativa nem tentava autorizar, só devolvia
+  `requer_autorizacao`. Corrigido enviando `override:true` junto com `login:''/senha:''`.
+
+**Verificado, não mexido (fora de escopo, achados que já existiam ANTES desta sessão):** 2 outros
+fluxos já tinham a mesma folga implementada manualmente desde 2026-07-24 —
+`abrirModalReverOrcamento` ("Rever Orçamento") e `tfAbrirModalSenha` (Total Flex: liberar taxa de
+juros/desconto sem limite de perfil). Não toquei nesses dois: são código já revisado e funcionando,
+e "taxa de juros"/"desconto sem limite" têm sabor financeiro — se o usuário quiser a mesma trava do
+`aprovar_financeiro` aplicada ali, é uma decisão explícita a pedir, não uma inferência minha.
+Também verificados e descartados por não se encaixarem no padrão (não são "reautenticar a própria
+credencial redundante"): `auth-modal-senha` (autorização de desconto — só abre quando o desconto
+EXCEDE o limite do usuário atual, ou seja, é sempre credencial de terceiro, nunca redundante),
+`li-senha`/liberar impostos (revela dado fiscal sensível — financeiro), `cfg-priv-senha` (aprovar
+acesso EXTERNO da assessoria a dados sensíveis — confirmação de identidade, não autorização de
+ação), `stepup-senha` (elevação de módulo fora do perfil — sempre terceiro por definição),
+`musr-senha` (troca de senha, não é gate de autorização).
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2300 passed** (zero
+mudança de backend nesta rodada — só `static/index.html`). Playwright, ao vivo: `pedirCredenciaisGerente`
+com capacidade não-financeira resolve `{auto:true}` sem modal; com `aprovar_financeiro` abre o modal
+completo (login+senha) mesmo pro Diretor logado — confirmado que a trava financeira segura. Modais
+do Cronograma legado e Autorizar Entrega confirmados sem campos de login/senha.
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 212 — Agenda: reverte a exceção de "atrasado pode ir pro passado" + reagendar sem redigitar senha
 
 Duas correções do usuário, testando o reagendar ao vivo:

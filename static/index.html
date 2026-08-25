@@ -3479,17 +3479,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:15px">Editar data prevista — etapa <span id="crono-etapa-cod"></span></div>
         <span onclick="cronoFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Alteração de prazo exige reautenticação (Gerente+) e fica registrada na auditoria (quem, quando, valor antigo → novo).</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">A alteração fica registrada na auditoria (quem, quando, valor antigo → novo) — sua sessão de Gerente/Master já autoriza, sem repetir a senha de entrada.</div>
       <label style="font-size:var(--fs-sm);color:var(--muted)">Nova data prevista</label>
-      <input type="date" id="crono-nova-data" style="width:160px;box-sizing:border-box;margin-bottom:12px">
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Login</label>
-      <input type="text" id="crono-login" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Confirme sua senha</label>
-      <input type="password" id="crono-senha" onkeydown="if(event.key==='Enter')cronoSalvar()" style="width:100%;box-sizing:border-box">
+      <input type="date" id="crono-nova-data" onkeydown="if(event.key==='Enter')cronoSalvar()" style="width:160px;box-sizing:border-box;margin-bottom:12px">
       <div id="crono-erro" style="font-size:11px;min-height:16px;margin:8px 0"></div>
       <div style="display:flex;gap:10px">
         <button class="btn btn-ghost btn-sm" onclick="cronoFechar()" style="flex:1;justify-content:center">Cancelar</button>
-        <button class="btn btn-primary btn-sm" onclick="cronoSalvar()" style="flex:1;justify-content:center">Autorizar e salvar</button>
+        <button class="btn btn-primary btn-sm" onclick="cronoSalvar()" style="flex:1;justify-content:center">Confirmar</button>
       </div>
     </div>
   </div>
@@ -3525,15 +3521,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:15px">Registrar data sem folga</div>
         <span onclick="fecharModalAutorizaEntrega()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">A data informada não cabe no cronograma (folga negativa). Registrar mesmo assim exige reautenticação de Gerente/Diretor e fica na auditoria (quem, quando, folga).</div>
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Login do autorizador</label>
-      <input type="text" id="ae-login" style="width:100%;box-sizing:border-box;margin-bottom:10px">
-      <label style="font-size:var(--fs-sm);color:var(--muted)">Confirme a senha</label>
-      <input type="password" id="ae-senha" onkeydown="if(event.key==='Enter')salvarModalAutorizaEntrega()" style="width:100%;box-sizing:border-box">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px">A data informada não cabe no cronograma (folga negativa). Registrar mesmo assim fica na auditoria (quem, quando, folga) — sua sessão de Gerente/Master já autoriza, sem repetir a senha de entrada.</div>
       <div id="ae-erro" style="font-size:11px;min-height:16px;margin:8px 0"></div>
       <div style="display:flex;gap:10px">
         <button class="btn btn-ghost btn-sm" onclick="fecharModalAutorizaEntrega()" style="flex:1;justify-content:center">Cancelar</button>
-        <button class="btn btn-primary btn-sm" onclick="salvarModalAutorizaEntrega()" style="flex:1;justify-content:center">Autorizar e registrar</button>
+        <button class="btn btn-primary btn-sm" onclick="salvarModalAutorizaEntrega()" style="flex:1;justify-content:center">Confirmar registro</button>
       </div>
     </div>
   </div>
@@ -19677,25 +19669,24 @@ function cronoAbrirEdicao(codigo, isoPrev) {
   _cronoEtapa = codigo;
   document.getElementById('crono-etapa-cod').textContent = codigo;
   document.getElementById('crono-nova-data').value = (isoPrev || '').slice(0, 10);
-  document.getElementById('crono-login').value = (_usuarioAtual && _usuarioAtual.login) || '';
-  document.getElementById('crono-senha').value = '';
   document.getElementById('crono-erro').textContent = '';
   document.getElementById('modal-crono').style.display = 'flex';
-  setTimeout(() => document.getElementById('crono-senha').focus(), 60);
+  setTimeout(() => document.getElementById('crono-nova-data').focus(), 60);
 }
 function cronoFechar() { document.getElementById('modal-crono').style.display = 'none'; }
+// Achado do usuário (2026-08-25): "a folga de senha... deve ocorrer em todos os casos que não
+// envolvam eventos financeiros" — o lápis só aparece pra quem já tem _podeAutorizarFront()
+// (master/gerencial), então redigitar a própria senha era atrito sem ganho real (mesmo ajuste já
+// feito no reagendar da Agenda). Envia login/senha vazios: o endpoint resolve pela sessão.
 async function cronoSalvar() {
   const cod = _cronoEtapa, st = document.getElementById('crono-erro');
   const data_prevista = document.getElementById('crono-nova-data').value;
-  const login = document.getElementById('crono-login').value.trim();
-  const senha = document.getElementById('crono-senha').value;
   if (!data_prevista) { st.textContent = 'Informe a nova data prevista.'; st.style.color = 'var(--err)'; return; }
-  if (!senha) { st.textContent = 'Confirme sua senha para autorizar.'; st.style.color = 'var(--err)'; return; }
   st.textContent = 'Salvando…'; st.style.color = 'var(--muted)';
   const url = `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/${cod}/data-prevista`;
   const d = await (await fetch(url, { method: 'POST', credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, senha, data_prevista }) })).json().catch(() => ({}));
+    body: JSON.stringify({ login: '', senha: '', data_prevista }) })).json().catch(() => ({}));
   if (!d.ok) { st.textContent = 'Erro: ' + (d.erro || 'falha'); st.style.color = 'var(--err)'; return; }
   cronoFechar(); showToast('Data prevista atualizada.', false); carregarCiclo();
 }
@@ -21946,8 +21937,11 @@ async function ramoAntecipacaoRegistrar(){
 
 async function ramoFinanceiroTrocar(ramo){
   if(!_orcamentoAtivoId) return;
-  // a troca lança/reverte no razão → exige aprovador financeiro
+  // a troca lança/reverte no razão → exige aprovador financeiro. capacidade explícita (achado
+  // 2026-08-25): sem isso caía no 'autorizar' genérico da folga — coincide hoje com quem tem
+  // aprovar_financeiro (master/gerencial), mas não deveria depender de coincidência.
   const cred = await pedirCredenciaisGerente({
+    capacidade: 'aprovar_financeiro',
     titulo: 'Financiamento do custo financeiro',
     mensagem: 'A troca lança/reverte no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if(!cred){ ramoFinanceiroRender(); return; }   // cancelou → re-renderiza (desfaz o radio)
@@ -22034,7 +22028,10 @@ async function conferenciaRegistrar(){
   const _num = id => { const el=document.getElementById(id); return el ? (parseFloat((el.value||'').replace(/\./g,'').replace(',','.'))||0) : 0; };
   const custo = _num('conf-custo'), outros = _num('conf-outros');
   if(!(custo > 0) && !(outros > 0)){ await avisoPopup('Informe o custo de fábrica do PE e/ou o valor a migrar.', {titulo:'Conferência'}); return; }
+  // capacidade explícita (achado 2026-08-25, mesmo motivo do ramoFinanceiroTrocar): lança no
+  // razão, não pode cair no atalho do 'autorizar' genérico.
   const cred = await pedirCredenciaisGerente({
+    capacidade: 'aprovar_financeiro',
     titulo: 'Conferência e Implantação do Pedido',
     mensagem: 'Lança o ajuste no razão. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if(!cred) return;
@@ -22767,8 +22764,12 @@ function pedirCredenciaisGerente(opts) {
   // 2026-07-24: logado com a permissão não redigita senha — resolve direto sem modal
   // (o backend aceita request SEM credenciais quando a sessão tem a capacidade).
   // opts.capacidade: qual permissão libera o atalho (default 'autorizar'); null = sempre pergunta.
+  // Achado do usuário (2026-08-25): a folga NÃO vale pra eventos financeiros — "deve ocorrer em
+  // todos os casos que não envolvam eventos financeiros". `aprovar_financeiro` sempre pede a
+  // senha de novo, mesmo pra quem já tem a capacidade — reautenticação como passo extra de
+  // confiança antes de mexer no razão contábil, deliberadamente sem atalho.
   const cap = (opts.capacidade === undefined) ? 'autorizar' : opts.capacidade;
-  if (cap && _usuarioAtual && _usuarioAtual['pode_' + cap]) {
+  if (cap && cap !== 'aprovar_financeiro' && _usuarioAtual && _usuarioAtual['pode_' + cap]) {
     return Promise.resolve({ auto: true });
   }
   const titulo = opts.titulo || 'Autorização gerencial';
@@ -22849,14 +22850,15 @@ async function salvarDataEntrega(){
   } catch(e){ setRes('Erro de rede.', 'var(--err)'); }
 }
 
-// Override gerencial da folga negativa — modal com senha mascarada (mesmo padrão do modal-crono),
-// no lugar do prompt() nativo. Reusa os campos do card + reautentica Gerente+ (o backend valida e audita).
+// Override gerencial da folga negativa — modal (mesmo padrão do modal-crono). Reusa os campos do
+// card + audita no backend. Botão só aparece pra quem já tem _podeAutorizarFront() (achado do
+// usuário 2026-08-25: "a folga de senha... deve ocorrer em todos os casos que não envolvam eventos
+// financeiros" — folga de agenda/cronograma, não financeiro; redigitar a própria senha era atrito
+// sem ganho real), então não pede login/senha — só confirma e manda override:true (o endpoint só
+// tenta a autorização por sessão se algum desses vier preenchido).
 function abrirModalAutorizaEntrega(){
-  document.getElementById('ae-login').value = (_usuarioAtual && _usuarioAtual.login) || '';
-  document.getElementById('ae-senha').value = '';
   document.getElementById('ae-erro').textContent = '';
   document.getElementById('modal-autoriza-entrega').style.display = 'flex';
-  setTimeout(()=>document.getElementById('ae-senha').focus(), 60);
 }
 function fecharModalAutorizaEntrega(){
   document.getElementById('modal-autoriza-entrega').style.display = 'none';
@@ -22867,9 +22869,6 @@ function fecharModalAutorizaEntrega(){
 }
 async function salvarModalAutorizaEntrega(){
   const st = document.getElementById('ae-erro');
-  const login = document.getElementById('ae-login').value.trim();
-  const senha = document.getElementById('ae-senha').value;
-  if(!senha){ st.textContent = 'Confirme a senha para autorizar.'; st.style.color = 'var(--err)'; return; }
   const data = (document.getElementById('ct-data-entrega')||{}).value || '';
   const med  = (document.getElementById('ct-previsao-medicao')||{}).value || '';
   const prog = !!(document.getElementById('ct-venda-programada')||{}).checked;
@@ -22878,7 +22877,8 @@ async function salvarModalAutorizaEntrega(){
   try {
     j = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/data-entrega',
       { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ data_entrega:data, previsao_medicao:med, venda_programada:prog, login, senha }) }).then(r=>r.json());
+        body: JSON.stringify({ data_entrega:data, previsao_medicao:med, venda_programada:prog,
+                                login:'', senha:'', override:true }) }).then(r=>r.json());
   } catch(e){ st.textContent = 'Erro de rede.'; st.style.color = 'var(--err)'; return; }
   if(!j || !j.ok){ st.textContent = esc((j && j.erro) || 'Falha'); st.style.color = 'var(--err)'; return; }
   document.getElementById('modal-autoriza-entrega').style.display = 'none';   // sucesso: esconde SEM reverter

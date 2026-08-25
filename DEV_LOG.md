@@ -3277,6 +3277,73 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 216 — Visão Geral do Projeto: fases, financeiro (planejado×realizado) e histórico de renegociações
+
+Pedido do usuário, com print da tela "Etapas do Projeto": (1) o cabeçalho não mostra projeto/
+cliente (achado corrigido logo no início da sessão — subtítulo com `nome_projeto`+`cliente.nome`
+no `renderCiclo()`); (2) já existe uma "Visão geral" por SUB-FASE (11 · Visão geral, do Projeto
+Executivo), mas ele quer uma Visão Geral do PROJETO INTEIRO — fases+andamento, financeiro (se teve
+diferenças entre planejado e realizado), virando o resumo definitivo pra gestão quando o projeto
+termina; (3) pode haver RENEGOCIAÇÃO de diferenças (o motor de PE já tem isso — Complemento de
+Projeto/Termo Aditivo), que pode envolver novos parcelamentos, e a tela deve guardar histórico no
+banco "como faz no contrato" (nunca sobrescrever uma renegociação anterior). Pedido explícito:
+"Monte uma boa proposta gerencial" — usei Plan Mode (pesquisa + 1 agente de design, com
+verificação cruzada linha a linha do código crítico antes de escrever o plano final) antes de
+codar qualquer coisa.
+
+**Achado principal da investigação: quase tudo já existia.** `mod_contabil.margem_projeto()`
+(receita, custo, provisões, comissão, margem real/projetada) já era testado mas sem endpoint HTTP.
+`mod_contabil.reconciliacao()` já era exposto (Provisionado×Efetivado×Saldo). E o mais importante:
+`Aditivo`/`AditivoAssinatura` (database.py) **já versiona a renegociação exatamente como o
+contrato** — uma linha NOVA por renegociação, nunca sobrescrita, com `modelo_versao_id` congelado
+(mesmo padrão de `documento_modelos`). **Risco real confirmado no código** (não hipotético): o
+endpoint "Negociar Complemento" (`/pe/complemento/orcamento`) REAPROVEITA o mesmo `Orcamento` entre
+rodadas de renegociação e **zera `forma_pagamento=None` a cada abertura** — o `Aditivo.dados_json`
+de antes só guardava o VALOR da diferença, nunca a condição de pagamento, então a 2ª renegociação
+apagava silenciosamente o parcelamento da 1ª (só sobrava uma frase textual livre nos "blocos" do
+PDF). Nenhuma migração de banco foi necessária — só um campo novo dentro de `dados_json` (Text
+livre) e 3 endpoints de leitura/agregação.
+
+**Backend (`main.py`):**
+- `GET /api/financeiro/margem-projeto?projeto=<nome>` (novo) — `margem_projeto()` +
+  `reconciliacao()["totais"]` num round-trip só, gated por `_contabil_ctx` (mesmo padrão de
+  `reconciliacao-provisoes`). Deliberadamente NÃO usa `margem_todos_projetos`/`projetos-dre`
+  (documentado como O(n) projetos, caro).
+- `GET /api/projetos/<nome>/aditivos` (novo, plural) — histórico COMPLETO; o singular existente só
+  devolvia o mais recente. Reaproveita `_aditivo_dict` por item, sem alterá-la.
+- `GET /api/projetos/<nome>/aditivo/<id>/pdf` (novo) — PDF de qualquer renegociação histórica, não
+  só a mais recente (o singular `.../aditivo/pdf` some sem `id`, mantido intocado).
+- `forma_pagamento_snapshot` em `dados_json` na geração do Termo Aditivo (`POST .../aditivo`) —
+  congela a condição de pagamento NO MOMENTO da geração, antes que a próxima rodada de negociação
+  zere o Orçamento reaproveitado. Aditivos já gerados antes desta mudança não ganham o snapshot
+  retroativamente (só a frase textual que já existia).
+- `GET /projetos/<nome>` — expõe `Projeto.status` (faltava; a Visão Geral usa pra saber quando é
+  "concluído").
+
+**Frontend (`static/index.html`):** aba fixa "Visão Geral" no fichário (sentinela
+`_FICHA_VISAO_CODIGO`, fora de `ETAPAS_PRINCIPAIS`, sempre visível — preferida a modal ou "só
+depois de concluído", mesma metáfora que o usuário já usa). 3 seções em `_visaoGeralRender()`:
+fases (100% client-side, dado já carregado), financeiro (fetch novo, degrada graciosamente sem
+acesso ao módulo, botão "Ver detalhamento" abre `abrirReconciliacaoProjeto()` já existente sem
+duplicar a tabela) e histórico de renegociações (fetch novo, cada item com seção expansível
+reaproveitando `_negResumoLinhasHtml()` — a mesma função do resumo pós-assinatura da Negociação —
+sobre `dados.forma_pagamento_snapshot`, e link pro PDF daquela renegociação específica). Banner
+"Projeto concluído" quando `projetoAtivo.status === 'concluido'` — mesma tela, moldura diferente,
+sem duplicar.
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2314 passed** (9
+novos: `test_margem_projeto_api.py` ok/sem-projeto-400/sem-acesso-403; `test_aditivo_lista_api.py`
+— o teste principal simula DUAS rodadas de renegociação com parcelamento DIFERENTE cada uma e prova
+que a lista devolve as duas com o snapshot intacto e distinto, a prova real do "não sobrescrever";
+`test_aditivo_pdf_por_id.py`; `test_projeto_status_no_get.py`). Playwright: aba nova renderiza fases
++ financeiro (zerado, projeto de teste sem lançamento) + "nenhuma renegociação" (vazio, correto);
+banner "Projeto concluído" confirmado ao marcar `Projeto.status='concluido'` num projeto real e
+reverter depois.
+
+**Arquivos:** `main.py`, `static/index.html`, `tests/test_margem_projeto_api.py` (novo),
+`tests/test_aditivo_lista_api.py` (novo), `tests/test_aditivo_pdf_por_id.py` (novo),
+`tests/test_projeto_status_no_get.py` (novo).
+
 ## Sessão 215 — Auditoria da Vera + reordenar_cadeia (generalização do reancoro pra qualquer ponto do ciclo)
 
 Pedido do usuário: "chama a Vera pra auditar o resto dos projetos" — depois do fix da Sessão 214

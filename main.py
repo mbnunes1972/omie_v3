@@ -2235,6 +2235,26 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/financeiro/margem-projeto":
+            # Visão Geral do Projeto (Etapas do Projeto → aba Visão Geral, achado do usuário
+            # 2026-08-25): margem real + totais de reconciliação de UM projeto, num round-trip só —
+            # deliberadamente NÃO usa margem_todos_projetos/projetos-dre (O(n) projetos, caro).
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            from urllib.parse import parse_qs
+            usuario, db, ot, oid = ctx
+            try:
+                proj = (parse_qs(urlparse(self.path).query).get("projeto") or [None])[0]
+                if not proj:
+                    self.send_json({"ok": False, "erro": "Informe o projeto."}, code=400); return
+                margem = mod_contabil.margem_projeto(db, ot, oid, proj)
+                rec = mod_contabil.reconciliacao(db, ot, oid, projeto_id=proj)
+                self.send_json({"ok": True, "margem": margem, "reconciliacao_totais": rec["totais"]})
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/recebiveis":
             # Recebimento de Venda (2026-08-07): espelha reconciliacao-provisoes — histórico
             # completo (previsto+confirmado), ?projeto=<nome> → granular; sem → consolidado (mesmo
@@ -4162,6 +4182,7 @@ class Handler(BaseHTTPRequestHandler):
                     _enriquecer_cliente_do_projeto(proj, db)   # contato sempre do cadastro vivo
                     try:
                         proj['loja_id'] = _meta.loja_id
+                        proj['status'] = _meta.status   # Visão Geral usa pra saber se "concluido"
                     except Exception:
                         pass
                     session_set("projeto_ativo", nome_safe)
@@ -5435,6 +5456,71 @@ class Handler(BaseHTTPRequestHandler):
                     a = (db.query(Aditivo).filter_by(projeto_nome=nome_safe)
                            .order_by(Aditivo.id.desc()).first())
                     if a is None or not a.pdf_path or not os.path.exists(a.pdf_path):
+                        self.send_json({"ok": False, "erro": "PDF do aditivo não encontrado."},
+                                       code=404); return
+                    with open(a.pdf_path, "rb") as fh:
+                        data = fh.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Length", len(data))
+                    self.send_header("Content-Disposition",
+                                     'inline; filename="aditivo_%d.pdf"' % a.id)
+                    self.end_headers()
+                    self.wfile.write(data)
+                finally:
+                    db.close()
+                return
+
+            m = _re.match(r'^/api/projetos/([^/]+)/aditivos$', path)
+            if m:
+                # Visão Geral do Projeto (achado do usuário 2026-08-25): histórico COMPLETO de
+                # renegociações — o singular acima só devolve a mais recente. Cada linha em
+                # `aditivos` já é uma renegociação distinta, nunca sobrescrita.
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    itens = (db.query(Aditivo).filter_by(projeto_nome=nome_safe)
+                               .order_by(Aditivo.id.asc()).all())
+                    out = []
+                    for a in itens:
+                        d = _aditivo_dict(a)
+                        orc = db.get(Orcamento, a.orcamento_complemento_id)
+                        d["parcela_id"] = orc.parcela_id if orc else None
+                        out.append(d)
+                    self.send_json({"ok": True, "aditivos": out})
+                finally:
+                    db.close()
+                return
+
+            m = _re.match(r'^/api/projetos/([^/]+)/aditivo/(\d+)/pdf$', path)
+            if m:
+                # PDF de uma renegociação HISTÓRICA específica (não só a mais recente, que o
+                # endpoint singular acima já cobre) — usado pela Visão Geral do Projeto.
+                nome_safe = unquote(m.group(1))
+                aditivo_id = int(m.group(2))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    a = db.get(Aditivo, aditivo_id)
+                    if (a is None or a.projeto_nome != nome_safe
+                            or not a.pdf_path or not os.path.exists(a.pdf_path)):
                         self.send_json({"ok": False, "erro": "PDF do aditivo não encontrado."},
                                        code=404); return
                     with open(a.pdf_path, "rb") as fh:
@@ -8866,10 +8952,20 @@ class Handler(BaseHTTPRequestHandler):
                           for ch in ("considerandos", "lista_integral", "inclusoes",
                                      "exclusoes", "valores")}
                 n_ord = _aditivo_ordinal_atual(db, contrato, aditivo)
+                # Achado do usuário (2026-08-25): "Negociar Complemento" (11e) REAPROVEITA o mesmo
+                # Orcamento entre rodadas de renegociação e zera forma_pagamento a cada abertura —
+                # sem congelar aqui, a condição de pagamento desta rodada se perde quando a próxima
+                # começar. Snapshot estruturado (não só a frase textual dos `blocos`), pra Visão
+                # Geral do Projeto mostrar o histórico real de condições, uma por renegociação.
+                try:
+                    _fp_snapshot = json.loads(orc_aj.forma_pagamento) if orc_aj.forma_pagamento else None
+                except Exception:
+                    _fp_snapshot = None
                 dados = {"ambientes": linhas_amb, "valor_original": tot_orig,
                          "valor_novo": tot_novo, "diferenca": dif,
                          "num_contrato_original": contrato.num_contrato or "",
-                         "ordinal": n_ord, "blocos": blocos}
+                         "ordinal": n_ord, "blocos": blocos,
+                         "forma_pagamento_snapshot": _fp_snapshot}
                 if not preview and not aditivo.num_aditivo:
                     from mod_contrato import gerar_num_contrato as _gnc
                     _existing = [x.num_aditivo for x in db.query(Aditivo)

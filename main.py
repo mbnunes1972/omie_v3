@@ -11429,8 +11429,29 @@ class Handler(BaseHTTPRequestHandler):
                     proj.venda_programada = 1 if req.get("venda_programada") else 0
                 if not proj.data_inicio:
                     proj.data_inicio = datetime.utcnow()   # âncora do progressivo
+                # Achado do usuário (2026-08-25): a entrega real (este campo) e a data prevista de
+                # Montagem/Assistência/Vistoria/Aprovação final (fixada uma vez no D0 da assinatura,
+                # via gerar_cronograma_projeto) são independentes — sem isto, um atraso de produção
+                # que empurra a entrega deixava essas 4 etapas com data ANTES da entrega real (uma
+                # inversão impossível). Só reancora quando a entrega nova de fato colide com o que já
+                # estava previsto (não mexe se a entrega andou mas ainda cabe antes do resto) — olha a
+                # primeira etapa da cadeia AINDA NÃO concluída (se 17 já aconteceu, o que importa é
+                # se 18 colide, e assim por diante).
+                _pos_entrega_por_cod = {e.etapa_codigo: e for e in
+                    db.query(CicloEtapa).filter_by(projeto_nome=nome_safe)
+                      .filter(CicloEtapa.etapa_codigo.in_(_mcr.CODIGOS_POS_ENTREGA)).all()}
+                pendente = next((_pos_entrega_por_cod[cod] for cod in _mcr.CODIGOS_POS_ENTREGA
+                                  if cod in _pos_entrega_por_cod
+                                  and _pos_entrega_por_cod[cod].status not in mod_ciclo.STATUS_CONCLUSIVOS), None)
+                reancoradas = []
+                if pendente and (pendente.data_prevista_conclusao is None
+                                  or pendente.data_prevista_conclusao.date() <= data_entrega.date()):
+                    reancoradas = _mcr.reancorar_pos_entrega(db, nome_safe, cfg, data_entrega)
                 db.commit()
-                self.send_json({"ok": True, "cabe": cabe, "folga_min": folga})
+                resp = {"ok": True, "cabe": cabe, "folga_min": folga}
+                if reancoradas:
+                    resp["reancorado"] = [r.etapa_codigo for r in reancoradas]
+                self.send_json(resp)
             except Exception as _e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(_e)}, code=500)

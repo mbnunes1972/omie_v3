@@ -22845,8 +22845,16 @@ async function salvarDataEntrega(){
       return;
     }
     // persistido: cabe, ou gravado sob autorização gerencial
-    if(j.cabe){ setRes('&#x2713; Cabe (folga do trecho medição&rarr;entrega: '+fm+').', 'var(--ok)'); }
-    else { setRes('&#x2713; Registrado com autorização (não cabe — folga '+fm+').', 'var(--warn)'); }
+    let msgOk = j.cabe
+      ? '&#x2713; Cabe (folga do trecho medição&rarr;entrega: '+fm+').'
+      : '&#x2713; Registrado com autorização (não cabe — folga '+fm+').';
+    // Achado do usuário (2026-08-25): entrega real mais tardia deixava Montagem/Assistência/
+    // Vistoria/Aprovação final com data ANTES da entrega — o backend agora reancora essas 4
+    // etapas automaticamente quando isso aconteceria; avisa aqui pra não parecer mágica.
+    if(j.reancorado && j.reancorado.length){
+      msgOk += '<br><span style="color:var(--warn);font-size:var(--fs-xs)">&#x1F504; Montagem/Assistência/Vistoria/Aprovação final foram reagendadas pra depois da nova entrega (etapas '+j.reancorado.join(', ')+').</span>';
+    }
+    setRes(msgOk, 'var(--ok)');
   } catch(e){ setRes('Erro de rede.', 'var(--err)'); }
 }
 
@@ -22884,7 +22892,11 @@ async function salvarModalAutorizaEntrega(){
   document.getElementById('modal-autoriza-entrega').style.display = 'none';   // sucesso: esconde SEM reverter
   const res = document.getElementById('ct-entrega-result');
   const fm = (j.folga_min!=null) ? (j.folga_min+'d') : '—';
-  if(res){ res.innerHTML = '&#x2713; Registrado com autorização (não cabe — folga '+fm+').'; res.style.color = 'var(--warn)'; }
+  let msgOk = '&#x2713; Registrado com autorização (não cabe — folga '+fm+').';
+  if(j.reancorado && j.reancorado.length){
+    msgOk += '<br><span style="color:var(--warn);font-size:var(--fs-xs)">&#x1F504; Montagem/Assistência/Vistoria/Aprovação final foram reagendadas pra depois da nova entrega (etapas '+j.reancorado.join(', ')+').</span>';
+  }
+  if(res){ res.innerHTML = msgOk; res.style.color = 'var(--warn)'; }
 }
 
 function renderContratoUI(contrato) {

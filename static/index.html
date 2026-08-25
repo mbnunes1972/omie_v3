@@ -19252,6 +19252,12 @@ function renderCiclo() {
   const panel = document.getElementById('ciclo-panel');
   if (!panel) return;
   if (typeof _bfEstacionar === 'function') _bfEstacionar();   // não destruir o form do briefing
+  // Achado do usuário (2026-08-25): a tela não mostrava projeto/cliente — quem navega por várias
+  // etapas de vários projetos perde a referência de "em qual projeto eu estou". Mesma info que já
+  // aparece no cabeçalho da Negociação (nome_projeto + cliente.nome do projetoAtivo).
+  const _cicloSubtitulo = projetoAtivo
+    ? `<div style="margin:-2px 0 10px;font-size:12px;color:var(--muted)"><i class="ti ti-folder" style="font-size:12px;margin-right:4px"></i>${esc(projetoAtivo.nome_projeto || projetoAtivo.nome_safe)}${(projetoAtivo.cliente||{}).nome ? ' <span style="opacity:.6">·</span> '+esc(projetoAtivo.cliente.nome) : ''}</div>`
+    : '';
   panel.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap">
       <h3 style="margin:0;color:var(--text);font-weight:800">Etapas do Projeto</h3>
@@ -19265,6 +19271,7 @@ function renderCiclo() {
       ${projetoAtivo ? `<button class="btn btn-ghost btn-sm" onclick="retidoAbrir('${esc(projetoAtivo.nome_safe)}')" title="Ambientes retidos — o projeto pode ser retido a qualquer momento"><i class="ti ti-building-community"></i>Retenção</button>` : ''}
       ${projetoAtivo && _contratoAssinado ? `<button class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()" title="Provisões e Recebíveis deste projeto"><i class="ti ti-cash"></i>Provisões</button>` : ''}
     </div>
+    ${_cicloSubtitulo}
     <div id="ciclo-transfer-prompt"></div>
   `;
   // ── FICHÁRIO (spec ciclo/2026-08-01): lombada com as 19 etapas principais + tela cheia ──
@@ -19298,6 +19305,11 @@ const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '13': ['14','15','1
 // Rótulo do GRUPO (aba/cabeçalho) quando o código é cabeça de um _FICHA_SUBS — cada sub-aba
 // individual continua mostrando seu próprio nome (ETAPAS_CICLO), intocado.
 const _FICHA_GRUPO_NOME = { '13': 'Logística e Expedição' };
+// Visão Geral do Projeto (achado do usuário 2026-08-25): aba fixa fora de ETAPAS_PRINCIPAIS —
+// fases+andamento, financeiro (planejado×realizado) e histórico de renegociações. Sentinela nunca
+// colide com um código real (_fichaMae/_fichaNumeroExibicao/_fichaEtapaDef degradam sem exceção
+// pra qualquer string que não seja um código de etapa).
+const _FICHA_VISAO_CODIGO = '__visao__';
 
 // Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento). Cabeça de
 // grupo (_FICHA_SUBS) só é "concluída" quando TODAS as etapas do grupo estiverem — achado
@@ -19358,7 +19370,15 @@ function _fichaRenderLombada() {
   const box = document.getElementById('ficha-lombada');
   if (!box) return;
   const ativaMae = _fichaMae(_cicloEtapaAtiva);
-  box.innerHTML = ETAPAS_PRINCIPAIS.map(c => {
+  const visaoAtiva = _cicloEtapaAtiva === _FICHA_VISAO_CODIGO;
+  const finalizado = projetoAtivo && projetoAtivo.status === 'concluido';
+  const visaoDot = finalizado
+    ? '<span class="ficha-dot"><i class="ti ti-check"></i></span>'
+    : '<span class="ficha-dot"><i class="ti ti-report-analytics"></i></span>';
+  const visaoTab = `<div class="ficha-tab st-${finalizado ? 'concluida' : 'andamento'}${visaoAtiva ? ' ativa' : ''}"
+      onclick="_fichaSelecionar('${_FICHA_VISAO_CODIGO}')" title="Visão Geral do Projeto — fases, financeiro e histórico de renegociações">
+      ${visaoDot}<span class="ficha-nome">Visão Geral</span></div>`;
+  box.innerHTML = visaoTab + ETAPAS_PRINCIPAIS.map(c => {
     const e = _fichaEtapaDef(c); if (!e) return '';
     const st = _statusFichario(c);
     const dot = st === 'concluida'
@@ -19376,6 +19396,10 @@ function _fichaRenderConteudo() {
   if (!box) return;
   if (typeof _bfEstacionar === 'function') _bfEstacionar();   // não destruir o form do briefing
   const codigo = _cicloEtapaAtiva;
+  if (codigo === _FICHA_VISAO_CODIGO) {
+    box.innerHTML = '<div id="visao-geral-projeto"><span style="color:var(--muted);font-size:.82rem">Carregando…</span></div>';
+    return;
+  }
   const etapa = _fichaEtapaDef(codigo);
   if (!etapa) { box.innerHTML = ''; return; }
   const dados = _cicloData[codigo] || {};
@@ -19477,6 +19501,7 @@ function _fichaCorpoBase(etapa, dados, bloqueada) {
 // Efeitos de carregamento sob demanda que antes disparavam ao ABRIR o card do acordeão —
 // no fichário disparam ao selecionar a etapa (depois do render, pois escrevem no DOM dela).
 function _fichaEfeitos(codigo) {
+  if (codigo === _FICHA_VISAO_CODIGO) { _visaoGeralRender(); return; }
   if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
   if (codigo === '7') { carregarDadosContrato(); _contratoParamsResumo(); }
   if (codigo === '11e') peComplementoRender();
@@ -19499,6 +19524,151 @@ function _fichaSelecionar(codigo) {
 // Compat: os deep-links antigos (ex.: abrirCiclo() + toggleCicloCard('7')) seguem funcionando —
 // selecionar no fichário é o equivalente a "abrir o card".
 function toggleCicloCard(codigo) { _fichaSelecionar(codigo); }
+
+// ── Visão Geral do Projeto (achado do usuário 2026-08-25) ────────────────────────────────────
+// 3 seções: fases (client-side, dado já carregado), financeiro (planejado×realizado, gated por
+// acesso ao módulo financeiro) e histórico de renegociações (Termo Aditivo — cada renegociação é
+// uma linha própria no banco, nunca sobrescrita, mesmo espírito do Contrato versionado).
+async function _visaoGeralRender() {
+  const box = document.getElementById('visao-geral-projeto');
+  if (!box || !projetoAtivo) return;
+  const finalizado = projetoAtivo.status === 'concluido';
+  const banner = finalizado
+    ? `<div style="background:var(--ok-soft);border:1px solid var(--ok);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text)">
+        <i class="ti ti-flag-check" style="color:var(--ok)"></i> <strong>Projeto concluído</strong> —
+        os números abaixo são o fechamento gerencial definitivo.</div>`
+    : '';
+  box.innerHTML = banner
+    + '<div style="display:grid;grid-template-columns:1fr;gap:18px">'
+    + '<div>' + _visaoFasesHtml() + '</div>'
+    + '<div id="visao-financeiro"><span style="color:var(--muted);font-size:.82rem">Carregando financeiro…</span></div>'
+    + '<div id="visao-aditivos"><span style="color:var(--muted);font-size:.82rem">Carregando histórico de renegociações…</span></div>'
+    + '</div>';
+  _visaoFinanceiroRender();
+  _visaoAditivosRender();
+}
+
+// Fases — 100% client-side (ETAPAS_PRINCIPAIS/_cicloData já carregados por carregarCiclo()).
+function _visaoFasesHtml() {
+  const linhas = ETAPAS_PRINCIPAIS.map(c => {
+    const e = _fichaEtapaDef(c); if (!e) return '';
+    const st = _statusFichario(c);
+    const dados = _cicloData[c] || {};
+    const cor = st === 'concluida' ? 'var(--ok)' : st === 'andamento' ? 'var(--accent)' : 'var(--muted)';
+    const rot = { nao_iniciada: 'Não iniciada', andamento: 'Em andamento', concluida: 'Concluída' }[st];
+    const dataTxt = dados.concluido_em ? 'Concluída em ' + _fmtDataBR(dados.concluido_em)
+      : dados.data_prevista_conclusao ? 'Prevista ' + _fmtDataBR(dados.data_prevista_conclusao) : '';
+    return `<div onclick="_fichaSelecionar('${c}')" style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+      <span style="width:9px;height:9px;border-radius:50%;background:${cor};flex:none"></span>
+      <span style="font-weight:600;color:var(--text);min-width:26px">${_fichaNumeroExibicao(c)}</span>
+      <span style="flex:1;color:var(--text)">${esc(_fichaTituloGrupo(c))}</span>
+      <span style="font-size:11px;color:${cor}">${rot}</span>
+      <span style="font-size:11px;color:var(--muted);min-width:140px;text-align:right">${dataTxt}</span>
+    </div>`;
+  }).join('');
+  return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+    <div style="font-weight:800;color:var(--text);margin-bottom:8px"><i class="ti ti-list-check"></i> Fases do projeto</div>
+    ${linhas}
+  </div>`;
+}
+
+async function _visaoFinanceiroRender() {
+  const box = document.getElementById('visao-financeiro');
+  if (!box || !projetoAtivo) return;
+  let d;
+  try {
+    d = await fetch('/api/financeiro/margem-projeto?projeto=' + encodeURIComponent(projetoAtivo.nome_safe),
+      { credentials: 'same-origin' }).then(r => r.json());
+  } catch (e) { d = null; }
+  if (!document.getElementById('visao-financeiro')) return;   // usuário já trocou de aba
+  if (!d || !d.ok) {
+    document.getElementById('visao-financeiro').innerHTML =
+      `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-weight:800;color:var(--text);margin-bottom:6px"><i class="ti ti-report-money"></i> Financeiro</div>
+        <em style="color:var(--muted);font-size:12px">Módulo financeiro inativo ou sem acesso.</em>
+      </div>`;
+    return;
+  }
+  const m = d.margem, t = d.reconciliacao_totais;
+  const cel = (lbl, v, neg) => `<div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${lbl}</div>
+    <div style="font-weight:700;font-family:var(--font-mono);color:${neg && v < 0 ? 'var(--st-quente)' : 'var(--text)'}">R$ ${_fBRL(v)}</div></div>`;
+  document.getElementById('visao-financeiro').innerHTML =
+    `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-weight:800;color:var(--text);margin-bottom:10px"><i class="ti ti-report-money"></i> Financeiro — planejado × realizado</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px 14px;margin-bottom:12px">
+        ${cel('Receita', m.receita)}${cel('Cust. Produto', m.custo_produto, true)}
+        ${cel('Prov. Montagem', m.prov_montagem, true)}${cel('Prov. Assist.', m.prov_assistencia, true)}
+        ${cel('Prov. Garantia', m.prov_garantia, true)}${cel('Comissão', m.comissao, true)}
+      </div>
+      <div style="display:flex;gap:24px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:10px">
+        <div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px">Margem de Contribuição</div>
+          <div style="font-weight:800;font-family:var(--font-mono);font-size:15px;color:${m.margem_contribuicao < 0 ? 'var(--st-quente)' : 'var(--accent)'}">R$ ${_fBRL(m.margem_contribuicao)}</div></div>
+        <div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px">Margem Projetada</div>
+          <div style="font-weight:700;font-family:var(--font-mono);color:${m.margem_projetada < 0 ? 'var(--st-quente)' : 'var(--text)'}">R$ ${_fBRL(m.margem_projetada)}</div></div>
+        <div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px">Saldo em Aberto (diferença)</div>
+          <div style="font-weight:700;font-family:var(--font-mono);color:${_reconSaldoCor(t.saldo_aberto)}">R$ ${_fBRL(t.saldo_aberto)}</div></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="abrirReconciliacaoProjeto()"><i class="ti ti-list-details"></i> Ver detalhamento completo</button></div>
+    </div>`;
+}
+
+async function _visaoAditivosRender() {
+  const box = document.getElementById('visao-aditivos');
+  if (!box || !projetoAtivo) return;
+  let d;
+  try {
+    d = await fetch('/api/projetos/' + encodeURIComponent(projetoAtivo.nome_safe) + '/aditivos',
+      { credentials: 'same-origin' }).then(r => r.json());
+  } catch (e) { d = null; }
+  if (!document.getElementById('visao-aditivos')) return;   // usuário já trocou de aba
+  if (!d || !d.ok) {
+    document.getElementById('visao-aditivos').innerHTML =
+      `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-weight:800;color:var(--text);margin-bottom:6px"><i class="ti ti-file-diff"></i> Histórico de renegociações</div>
+        <em style="color:var(--err);font-size:12px">Falha ao carregar.</em>
+      </div>`;
+    return;
+  }
+  const itens = (d.aditivos || []).slice().reverse();   // mais recente primeiro
+  if (!itens.length) {
+    document.getElementById('visao-aditivos').innerHTML =
+      `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+        <div style="font-weight:800;color:var(--text);margin-bottom:6px"><i class="ti ti-file-diff"></i> Histórico de renegociações</div>
+        <em style="color:var(--muted);font-size:12px">Nenhuma renegociação (Termo Aditivo) registrada neste projeto.</em>
+      </div>`;
+    return;
+  }
+  const corStatus = s => s === 'assinado' ? 'var(--ok)' : s === 'rascunho' ? 'var(--muted)' : 'var(--warn)';
+  const linhas = itens.map((a, i) => {
+    const dados = a.dados || {};
+    const fase = a.parcela_id != null ? ('Fase ' + a.parcela_id) : 'Projeto inteiro';
+    const pagId = 'visao-adit-pag-' + a.id;
+    return `<div style="border-top:1px solid var(--border);padding:10px 0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <strong style="color:var(--text)">${esc(a.num_aditivo || ('Aditivo #' + a.id))}</strong>
+        <span style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:${corStatus(a.status)}">${esc(a.status)}</span>
+        <span style="font-size:11px;color:var(--muted)">${esc(fase)}</span>
+        <span style="margin-left:auto;font-family:var(--font-mono);font-weight:700;color:${_reconSaldoCor(dados.diferenca || 0)}">Δ R$ ${_fBRL(dados.diferenca)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${a.gerado_em ? 'Gerado em ' + esc(a.gerado_em) : ''}</div>
+      <div style="margin-top:6px">
+        <span style="font-size:11px;color:var(--accent);cursor:pointer" onclick="document.getElementById('${pagId}').style.display=document.getElementById('${pagId}').style.display==='none'?'block':'none'"><i class="ti ti-chevron-down"></i> Condições de pagamento desta renegociação</span>
+        <div id="${pagId}" style="display:none;margin-top:6px;padding:10px;background:var(--surface);border-radius:6px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px 14px">
+            ${_negResumoLinhasHtml(dados.forma_pagamento_snapshot)}
+          </div>
+        </div>
+        ${a.tem_pdf ? `<a href="/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo/${a.id}/pdf" target="_blank" style="font-size:11px;color:var(--accent);margin-left:14px"><i class="ti ti-file-download"></i> Baixar PDF</a>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('visao-aditivos').innerHTML =
+    `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
+      <div style="font-weight:800;color:var(--text);margin-bottom:4px"><i class="ti ti-file-diff"></i> Histórico de renegociações</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Cada renegociação fica registrada — a condição de pagamento de uma nunca é sobrescrita pela seguinte.</div>
+      ${linhas}
+    </div>`;
+}
 
 // Desmembramento em FASES de entrega (spec 2026-07-27) — disponível DESDE a Solicitação de
 // Medição (r2 do fichário, pedido 2026-08-02): o backend só exige contrato assinado (etapa 7),

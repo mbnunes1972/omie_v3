@@ -3277,6 +3277,37 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 211 — Agenda: trava de data passada não pode barrar correção de evento atrasado
+
+Usuário testou a trava da Sessão 210 ao vivo: "tentei reagendar de 16 de agosto para 23 de agosto
+[hoje é 25/08], o sistema recusou por 'data passada', mas a data não é passada nesse sentido — o
+evento, se não concluído, estava atrasado, deveria aceitar reagendamento. Antecipar eventos ou
+reagendar eventos atrasados deve ser possível. Não posso agendar um evento para o passado, voltar
+no tempo." A trava original comparava só contra "hoje", cegamente — isso barrava exatamente o caso
+mais comum de uso real: corrigir/atualizar a data prevista de algo que já venceu (a correção em si
+também cai no passado por natureza, já que o evento está atrasado). O que a trava deveria proteger
+é outra coisa: um evento que AINDA NÃO venceu (não está atrasado) não devia ganhar uma data
+retroativa "inventada" — isso sim seria "voltar no tempo" sem sentido.
+
+**Fix em `main.py` (endpoint `POST /ciclo/<cod>/data-prevista`):** a etapa é buscada ANTES da
+checagem de data (não depois); `ja_atrasada = antigo is not None and antigo.date() < hoje`. Só
+rejeita `nova_dt < hoje` quando `not ja_atrasada` — ou seja, se a etapa já estava atrasada (tinha
+data prevista anterior e ela já passou, sem estar concluída), qualquer nova data é aceita (sujeita
+ainda à trava de predecessor, inalterada). Etapa sem data prevista ainda (`antigo is None`)
+continua tratada como "não atrasada" — não há atraso pra corrigir, então a trava de hoje continua
+valendo (evita popular etapa nova direto no passado por engano).
+
+**Verificação:** suíte **2300 passed** (+1: `test_data_prevista_aceita_correcao_de_atraso_para_data_ainda_passada`,
+usando etapa "18" pra não colidir com a linha de "9" já criada por outro teste do arquivo via a
+fixture `app_db` compartilhada — 1ª tentativa deu erro de constraint por chave duplicada, corrigido
+trocando de etapa). Testado ao vivo (restart do servidor): etapa "12" (Conferência e Implantação do
+Pedido) de um projeto real, atrasada desde 20/07, reagendada pra 10/08 (ainda passada, mas depois
+da original) — aceito. Etapa "18" do mesmo projeto, futura (25/09, não vencida), tentativa de
+empurrar pro passado (10/08) — recusada como antes, confirmando que a trava continua valendo pro
+caso que ela deveria proteger.
+
+**Arquivos:** `main.py`, `tests/test_cronograma.py`.
+
 ## Sessão 210 — Agenda: reagendar evento individual empilhado (lápis) + trava de data passada/predecessor + fix de bug real no "arrastar não reagendou"
 
 Usuário perguntou: "num conjunto de eventos empilhado só aparece o primeiro — como reagenda o

@@ -3277,6 +3277,91 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## ⏸️ ESTADO ATUAL (2026-08-26, noite) — retomar aqui
+
+**Sessão em andamento, pausada por reinício de máquina (WSL travou em I/O de disco — ver nota no
+fim). Retomar exatamente daqui, não repetir o que já está feito.**
+
+**O que está em execução:** o usuário fez uma revisão de navegação AO VIVO (clicando de verdade,
+com Claude in Chrome — não Playwright) e escreveu o relatório completo em
+`docs/superpowers/specs/_geral/2026-08-26-revisao-navegacao-achados.md` — **leia esse arquivo
+primeiro**, ele tem os 12 achados com reprodução e medição, mais detalhado do que este resumo.
+O usuário deu a ordem de execução explícita, **uma frente por PR**, e disse **não mexer em
+"Cancelamento de Ambiente"** (mockup próprio, decisões pendentes — nem faz parte desta lista):
+
+1. **P0-1** — `_fmtDataBR` (e ~10 chamadas inline de `toLocaleDateString('pt-BR')`) parseava
+   `"YYYY-MM-DD"` como UTC-meia-noite e exibia um dia antes (virando mês/ano nas viradas).
+2. **P0-2** — `/api/comunicacao/inbox` e `/api/me/ciclo/pendencias` chegam a 85s — o
+   `varrer_triagem_vencida` (sweep de escrita) precisa sair do caminho do GET.
+3. **P1-1** — regressão do commit `4c140ff` (desta mesma sessão, Sessão 219): `_etapaSatisfeita`
+   dá o passe `toggleavel` também pra etapa-MÃE (não só pras subs), então "Montagem" aparece
+   concluída em todo projeto que ainda não materializou `ciclo_etapas`.
+4. **P1-3** — sessão única sem aviso (política mantida, decisão do Marcelo) + o
+   `location.href='/login'` precisa abortar requisições pendentes antes de redirecionar (hoje
+   congela ~25s).
+5. **P1-2** — `.content { display:block }` faz o fichário rodar em 1/3 da tela (fix testado pelo
+   usuário no DOM, já validado: 6→13 abas visíveis) — **mas exige regressão nas outras telas**
+   antes de subir, porque `.content` é o container de todas as páginas.
+6. **P2-1** — numeração/nome inconsistentes pro mesmo código (`13` aparece como "9 Logística e
+   Expedição" na lombada, "13 · Visão geral" nas sub-abas, "13 · Produção" no modal de Retenção) +
+   etapas 8/9 sem aba própria (a etapa que trava o projeto pode não ter tela pra abrir).
+7. **P2-2 e P3** (agrupados numa frente só) — atritos de formulário: mensagem de erro do cadastro
+   de cliente nasce 325px fora da tela; asteriscos nos campos errados; briefing titulado pelo
+   cliente em vez do projeto; consultor perguntado duas vezes (Novo Projeto + Briefing); outros
+   menores (Provisões truncadas, Escape não fecha o Briefing, Lista de Projetos com colunas
+   Status/Fase redundantes).
+
+**Fora da ordem dada** (não iniciar sem perguntar): P2-3 ("duas páginas ficam empilhadas depois de
+F5" — o próprio relatório diz "causa não isolada", o usuário não incluiu na lista numerada).
+
+**Progresso real:**
+- **P0-1: código ESCRITO, NÃO verificado ao vivo, NÃO commitado.** `static/index.html` já tem a
+  correção de `_fmtDataBR` (regex pra `YYYY-MM-DD`, constrói `Date` local em vez de deixar o
+  construtor de string cair em UTC) + as ~10 chamadas inline trocadas por `_fmtDataBR(...)`
+  (linhas ~19945, 20458, 20627, 20980, 21011, 21253, 21262, 21282, 22413, 22507, 22567 — conferir
+  de novo após o restart, posso ter desatualizado). **Deixado de propósito sem tocar:** a linha
+  ~5911 (`dt.toLocaleDateString('pt-BR')` sobre um objeto `Date` construído com `setDate` — não é
+  parse de string, não tem o bug). `node --check` já rodou **verde** antes do travamento. Falta:
+  verificar ao vivo no navegador (os 4 casos da tabela do relatório: `2026-08-26`→26/08,
+  `2026-09-01`→01/09, `2027-01-01`→01/01, `...T10:00:00`→inalterado), rodar a suíte, escrever a
+  entrada de DEV_LOG da Sessão 231, commitar, PR, merge, tag, deploy, reingest MCP.
+- **P0-2 até P2-2/P3: NADA feito ainda.** Ordem a seguir é a lista acima.
+
+**Nota do travamento (por que a sessão pausou):** no meio da verificação do P0-1, o login no
+`localhost:8765` começou a travar (~15s+ sem resposta). Investigando, achei processos Postgres
+locais em estado `Ds`/`Dl` (uninterruptible sleep, espera de disco) parados desde as 18:23 numa
+`UPDATE`/`COMMIT` que nunca terminou — e **até um `node -e` simples e um `psql` novo travaram do
+mesmo jeito**, o que aponta pra um travamento de I/O do **WSL/disco**, não especificamente do
+Postgres nem do meu código. Reiniciei o servidor Python 2x sem resolver (as migrações do boot
+ficaram paradas em `ALTER TABLE waiting`, atrás do lock morto). **Isso pode ser coincidência de
+ambiente, ou pode ser uma manifestação real do que o P0-2 descreve** (`ThreadingHTTPServer`
+serializando atrás de uma request lenta) — mas o sintoma que vi (Node.js travando numa conta
+aritmética pura, sem tocar rede/banco) sugere mais um problema de disco da VM WSL do que lógica da
+aplicação. Vale reobservar com atenção depois do restart, sem assumir que é a mesma causa do P0-2
+até confirmar.
+
+## Sessão 231 — P0-1 verificado e commitado (retomada da pausa de 26/08)
+
+Retomando exatamente do ponto da pausa acima. Ambiente sem acesso a browser real nesta sessão
+(container não alcança `localhost:8765` nem tem extensão Claude in Chrome disponível), então a
+verificação dos 4 casos da tabela do relatório foi feita **isolando `_fmtDataBR` em Node** (função
+extraída tal como está em `static/index.html`, rodada com `TZ=America/Sao_Paulo`) em vez de
+verificação ao vivo no navegador como o plano original previa — os 4 casos bateram
+(`2026-08-26`→26/08/2026, `2026-09-01`→01/09/2026, `2027-01-01`→01/01/2027,
+`2026-08-26T10:00:00`→26/08/2026, inalterado). Verificação ao vivo no navegador continua em
+aberto para quem tiver acesso à instância rodando.
+
+`node --check` no `<script>` extraído de `static/index.html` ficou verde. Suíte completa
+`python3 -m pytest -q`: **2344 passed** (408s). Sem código novo desta sessão — o fix e as ~9
+chamadas trocadas por `_fmtDataBR(...)` já estavam escritos pela sessão anterior; esta sessão só
+verificou e commitou.
+
+Próximo, começando frente separada: itens N1–N6 de
+`docs/superpowers/specs/_geral/2026-08-26-navegacao-diagnostico-design.md` §5 (vocabulário
+active/ativo, numeração de exibição nas sub-abas/modais, etapas 8/9 sem aba, `.content` em 1/3 da
+tela, filtro da lista de projetos, "Voltar" redundantes) — uma frente por PR. P0-2, P1-1, P1-3 e o
+restante da lista de achados (fora do escopo desta frente de navegação) seguem pendentes.
+
 ## Sessão 230 — Reteste E2E7 em fluxo real + 2 achados novos corrigidos
 
 Usuário pediu novo teste ("aos moldes do teste 3") especificamente pra confirmar os 3 fixes da

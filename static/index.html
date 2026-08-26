@@ -19942,7 +19942,7 @@ async function _entregaFaixaRender(){
 let _concFinalNomes = {};   // conta -> nome, pra rotular o resultado pós-conciliação
 function _renderCardConciliacaoFinal(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
-  const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
+  const dt = dados.concluido_em ? _fmtDataBR(dados.concluido_em) : '';
   if (concluido) {
     return `<div style="font-size:.85rem;color:var(--muted);line-height:1.7">
         Números finais conciliados — projeto <strong style="color:var(--accent)">Concluído</strong>${dt ? ' em ' + dt : ''}.
@@ -20020,7 +20020,14 @@ function _podeAutorizarFront() {
 }
 function _fmtDataBR(s) {
   if (!s) return '';
-  const d = new Date(s);
+  // Achado do usuário (2026-08-26, revisão de navegação, P0-1): "YYYY-MM-DD" é ISO de DATA PURA
+  // (sem hora) — o construtor `new Date(string)` trata isso como meia-noite UTC por
+  // especificação, e toLocaleDateString('pt-BR') mostra em UTC-3 → SEMPRE um dia antes (e vira
+  // mês/ano nas viradas: "2026-09-01" virava "31/08/2026"). Só-data usa os componentes
+  // year/month/day direto no construtor local (sem timezone); com hora, o comportamento antigo
+  // já estava certo (mantido).
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s).trim());
+  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
   return isNaN(d) ? '' : d.toLocaleDateString('pt-BR');
 }
 function _cronoLabelEtapa(codigo, dados) {
@@ -20448,7 +20455,7 @@ async function retidoLiberar(pid){
 function _renderCardGenerico(etapa, dados, bloqueada) {
   const concluido = dados.status === 'concluido';
   const dt = dados.concluido_em
-    ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
+    ? _fmtDataBR(dados.concluido_em) : '';
 
   // Card especial etapa 1 — Captação / Cadastro do cliente
   if (etapa.codigo === '1') {
@@ -20617,7 +20624,7 @@ function _renderCardAprovacaoFinanceira(codigo, dados, bloqueada) {
          Aprovação financeira restrita ao Gerente Administrativo/Financeiro e Diretores.</div>`;
   if (concluido) {
     const dt = dados.concluido_em
-      ? new Date(dados.concluido_em).toLocaleDateString('pt-BR')
+      ? _fmtDataBR(dados.concluido_em)
       : '';
     const reabrir = codigo === '8'
       ? `<button onclick="abrirModalReabrir('8')"
@@ -20970,7 +20977,7 @@ async function abrirAuditoria(nomeSafe){
   const ESTORNO = {devolucao:1, cancelamento_contrato:1, ajuste_provisao_af:1, resolucao_sobra:1, resolucao_falta:1};
   const rows = (j.lancamentos||[]).map(l => {
     const est = ESTORNO[l.origem];
-    const dt = l.data ? new Date(l.data).toLocaleDateString('pt-BR') : '—';
+    const dt = l.data ? _fmtDataBR(l.data) : '—';
     return `<tr style="${est?'background:var(--warn-soft)':''}">`
       + `<td style="white-space:nowrap">${dt}</td>`
       + `<td><span style="font-family:var(--font-mono);font-size:var(--fs-xs)">${esc(l.debito.cod)}</span> ${esc(l.debito.nome)}</td>`
@@ -21001,7 +21008,7 @@ async function abrirCronograma(nomeSafe){
   catch(e){ await avisoPopup('Erro ao carregar: '+_detalheErroRede(e), {titulo:'Cronograma'}); return; }
   if(!j.ok){ await avisoPopup(j.erro||'Falha ao carregar.', {titulo:'Cronograma'}); return; }
   const nomeEt = c => { const e = ETAPAS_CICLO.find(x=>x.codigo===c); return e ? e.nome : ('Etapa '+c); };
-  const d = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
+  const d = iso => iso ? _fmtDataBR(iso) : '—';
   const rows = (j.cronograma||[]).map(l => {
     const fCor = (l.folga_dias==null) ? 'var(--text-3)' : (l.folga_dias<0 ? 'var(--err)' : 'var(--ok)');
     const fTxt = (l.folga_dias==null) ? '—' : (l.folga_dias>0?'+':'')+l.folga_dias+'d';
@@ -21243,7 +21250,7 @@ function _renderCardPE(codigo, dados, bloqueada) {
   const sfData = _pePayload.subfases[codigo] || {};
   const concluido = STATUS_CONCLUSIVOS.has(sfData.status);
   const dt = sfData.concluido_em
-    ? new Date(sfData.concluido_em).toLocaleDateString('pt-BR') : '';
+    ? _fmtDataBR(sfData.concluido_em) : '';
 
   // Documentos desta subfase (newest first)
   const docs = (_pePayload.documentos || [])
@@ -21252,7 +21259,7 @@ function _renderCardPE(codigo, dados, bloqueada) {
   let docsHtml = '';
   if (docs.length) {
     const linhas = docs.map(d => {
-      const dDt = d.enviado_em ? new Date(d.enviado_em).toLocaleDateString('pt-BR') : '';
+      const dDt = d.enviado_em ? _fmtDataBR(d.enviado_em) : '';
       return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:.8rem">
         <a href="/api/projetos/${encodeURIComponent(projetoAtivo ? projetoAtivo.nome_safe : '')}/ciclo/documento/${d.id}"
            target="_blank" rel="noopener"
@@ -21272,7 +21279,7 @@ function _renderCardPE(codigo, dados, bloqueada) {
     const revs = (_pePayload.revisoes || []).filter(rv => rv.etapa_codigo === codigo);
     if (revs.length) {
       const linhas = revs.map(rv => {
-        const rDt = rv.aberta_em ? new Date(rv.aberta_em).toLocaleDateString('pt-BR') : '';
+        const rDt = rv.aberta_em ? _fmtDataBR(rv.aberta_em) : '';
         const docLink = rv.relatorio_doc_id
           ? `<a href="/api/projetos/${encodeURIComponent(projetoAtivo ? projetoAtivo.nome_safe : '')}/ciclo/documento/${rv.relatorio_doc_id}"
                target="_blank" rel="noopener" style="color:var(--accent);font-size:.78rem;margin-left:6px">&#x1F4CE; relatório</a>`
@@ -22403,7 +22410,7 @@ async function peUpload(codigo, inputFile) {
 // ── Etapa 12 — Implantação do pedido ───────────────────────────────────────
 function _renderCardImplantacao(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
-  const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
+  const dt = dados.concluido_em ? _fmtDataBR(dados.concluido_em) : '';
   if (bloqueada) {
     return `<p style="color:var(--muted);font-size:.85rem;margin:0"><i class="ti ti-lock"></i> Conclua a etapa anterior para liberar esta etapa.</p>`;
   }
@@ -22497,7 +22504,7 @@ async function encaminharPedidosFabrica() {
 // ── Etapa 13 — Produção ────────────────────────────────────────────────────
 function _renderCardProducao(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
-  const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
+  const dt = dados.concluido_em ? _fmtDataBR(dados.concluido_em) : '';
   if (bloqueada) {
     return `<p style="color:var(--muted);font-size:.85rem;margin:0"><i class="ti ti-lock"></i> Conclua a etapa anterior para liberar esta etapa.</p>`;
   }
@@ -22557,7 +22564,7 @@ async function producaoConcluida() {
 // ── Etapa 14 — Recebimento do Pedido (sub-aba de "Logística e Expedição") ──
 function _renderCardEntrega(dados, bloqueada) {
   const concluido = dados.status === 'concluido';
-  const dt = dados.concluido_em ? new Date(dados.concluido_em).toLocaleDateString('pt-BR') : '';
+  const dt = dados.concluido_em ? _fmtDataBR(dados.concluido_em) : '';
   if (bloqueada) {
     return `<p style="color:var(--muted);font-size:.85rem;margin:0"><i class="ti ti-lock"></i> Conclua a etapa anterior para liberar esta etapa.</p>`;
   }

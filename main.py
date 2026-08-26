@@ -1581,6 +1581,21 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/centro-custo/retrato":
+            # Frente 0 (spec 2026-08-25): retrato do estado REAL do banco pras contas do grupo
+            # 5, com divergência vs CLASSIFICACAO_GRUPO5_V1 — pré-requisito de leitura antes de
+            # qualquer reclassificação.
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                itens = mod_contabil.retrato_classificacao_grupo5(db, ot, oid)
+                self.send_json({"ok": True, "contas": itens,
+                                "gerado_em": datetime.utcnow().isoformat()})
+            finally:
+                db.close()
+            return
         if path == "/api/financeiro/plano-contas/natureza-relatorio":
             ctx = _contabil_ctx(self, exige_edicao=False)
             if ctx is None: return

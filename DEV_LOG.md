@@ -3277,6 +3277,28 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 223 — Centro de Custo/Natureza: Frente 0 (retrato do estado real)
+
+Início da execução de `docs/superpowers/specs/financeiro/2026-08-25-centro-custo-natureza-edicao-
+e-reclassificacao-design.md` — seis frentes, uma por PR, todas as 10 decisões já fechadas pelo
+Marcelo na própria spec (nenhuma dúvida em aberto). Esta é a Frente 0, pré-requisito das demais.
+
+Novo `mod_contabil.retrato_classificacao_grupo5(db, owner_tipo, owner_id)`: para cada conta do
+grupo 5, compara o que está **gravado no banco agora** (centro de custo, natureza) contra o que
+`CLASSIFICACAO_GRUPO5_V1` prevê, com uma coluna `diverge` — inclui tanto reclassificação manual
+legítima quanto conta ainda sem classificação nenhuma (os dois casos importam pra decisão da
+Frente 3, "varrer contas sem classificação antes de ligar a obrigatoriedade"). Contas fora do mapa
+(criadas depois das 59 originais) marcam `sem_mapa=True`, não contam como divergência. Endpoint
+`GET /api/financeiro/centro-custo/retrato` (mesmo gate de leitura dos outros relatórios
+financeiros, `_contabil_ctx(exige_edicao=False)`), devolve `contas` + `gerado_em`.
+
+**Verificação:** `tests/test_centro_custo_relatorios.py` ganhou 4 testes novos (divergência de
+natureza, conta não classificada conta como divergência, conta fora do mapa marca `sem_mapa`,
+endpoint HTTP) — 40 passed no arquivo+`test_centro_custo_natureza.py`; suíte inteira
+**2324 passed**.
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `tests/test_centro_custo_relatorios.py`.
+
 ## Sessão 222 — E2E4 (chat gerencial + reabertura de PE pós-assinatura) + fix da cascata de revisão + constantes simbólicas de etapa + spec de Cancelamento de Ambiente
 
 Usuário pediu uma 4ª rodada E2E "aos moldes do teste 3", mas com parâmetros novos, variação de

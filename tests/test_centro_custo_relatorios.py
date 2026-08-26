@@ -137,7 +137,61 @@ def test_relatorio_natureza_esconde_zero_e_mostra_nao_classificado(app_db):
     db.close()
 
 
+# ── retrato_classificacao_grupo5 (Frente 0, spec 2026-08-25) ─────────────────────────────────────
+def test_retrato_aponta_divergencia_de_natureza(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 1006
+    contas, ccs = _preparar(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)
+    # 5.4.20 é ("4.5", "fixo") no mapa — reclassifica manualmente pra "variavel"
+    contas = _contas(db, ot, oid)
+    contas["5.4.20"].natureza_custo = "variavel"
+    db.commit()
+
+    itens = mc.retrato_classificacao_grupo5(db, ot, oid)
+    item = next(i for i in itens if i["codigo"] == "5.4.20")
+    assert item["natureza_atual"] == "variavel"
+    assert item["natureza_esperada"] == "fixo"
+    assert item["diverge"] is True
+    # uma conta que bate com o mapa não diverge
+    outro = next(i for i in itens if i["codigo"] == "5.1.01")
+    assert outro["diverge"] is False
+    db.close()
+
+
+def test_retrato_conta_sem_classificacao_nao_diverge_ate_migrar(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 1007
+    _preparar(db, ot, oid)   # sem rodar migrar_classificacao_grupo5_v1 — tudo None ainda
+
+    itens = mc.retrato_classificacao_grupo5(db, ot, oid)
+    item = next(i for i in itens if i["codigo"] == "5.1.01")
+    assert item["centro_custo_atual_codigo"] is None and item["natureza_atual"] is None
+    assert item["centro_custo_esperado_codigo"] == "1.2" and item["natureza_esperada"] == "variavel"
+    assert item["diverge"] is True   # None != o esperado — conta ainda não classificada É divergência
+    db.close()
+
+
+def test_retrato_conta_fora_do_mapa_marca_sem_mapa(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 1008
+    contas, ccs = _preparar(db, ot, oid)
+    extra = mc.Conta(owner_tipo=ot, owner_id=oid, codigo="5.9.99", nome="Conta nova sem mapa",
+                     grupo=5, tipo="analitica", natureza="devedora",
+                     pai_id=contas["5.4.20"].pai_id, ativa=1, ordem=999)
+    db.add(extra); db.commit()
+
+    itens = mc.retrato_classificacao_grupo5(db, ot, oid)
+    item = next(i for i in itens if i["codigo"] == "5.9.99")
+    assert item["sem_mapa"] is True and item["diverge"] is False
+    db.close()
+
+
 # ── endpoints HTTP ──────────────────────────────────────────────────────────────────────────────
+def test_endpoint_centro_custo_retrato(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.get("/api/financeiro/centro-custo/retrato")
+    assert st == 200 and d["ok"]
+    assert "contas" in d and "gerado_em" in d
+
+
 def test_endpoint_centro_custo_relatorio(http_client_factory, seed, app_db):
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.get("/api/financeiro/centro-custo/relatorio")

@@ -3277,6 +3277,25 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 228 — Centro de Custo/Natureza: Frente 5 (vocabulário: dois "variável" convivendo)
+
+Sexta e última frente da spec — fecha a execução das 6 frentes de
+`docs/superpowers/specs/financeiro/2026-08-25-centro-custo-natureza-edicao-e-reclassificacao-
+design.md`. Documentação pura, sem lógica nova. A fronteira entre os dois "variável" já estava
+escrita na spec (§ Frente 5, desde 2026-08-25); faltava só "na tela do relatório de natureza".
+
+Aba "Natureza dos Custos" (`_naturezaCustoRenderizar`) ganhou uma linha explicando que a
+classificação ali é do **plano de contas** (etiqueta de gestão por conta), independente do
+Custo Variável/Margem de Contribuição que aparece na Negociação e nas Aprovações Financeiras
+(motor da venda — CFO + rubricas de provisão) — e que reclassificar uma conta ali NÃO altera
+margem de projeto nenhum. Sem isso, ninguém do financeiro tinha como saber, olhando só a tela,
+que os dois números não foram feitos pra bater.
+
+**Verificação:** `node --check` no `<script>` extraído; sem hex fora de `orizon-tokens.css`; sem
+mudança de backend, suíte não re-rodada (nada testável mudou — puro texto de UI).
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 227 — Centro de Custo/Natureza: Frente 4 (higiene do plano de contas)
 
 Quinta frente da spec, todos os itens **DECIDIDOS** de antemão. A maioria já ficou resolvida por

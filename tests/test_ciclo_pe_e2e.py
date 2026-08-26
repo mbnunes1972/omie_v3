@@ -180,6 +180,42 @@ def test_revisao_reabre_em_cascata(http_client_factory, seed, projetos_dir, app_
     db.close()
 
 
+# Achado da Vera (2026-08-26, E2E, reproduzido ao vivo): sem fronteira nenhuma, a cascata
+# resetava etapas operacionais (12+) já em andamento/concluídas — produção encaminhada, NFe
+# emitida, montagem feita — sem checar se já havia trabalho FÍSICO real registrado ali.
+def test_revisao_bloqueada_com_etapa_operacional_ja_iniciada(http_client_factory, seed, projetos_dir, app_db):
+    c = _login(http_client_factory, "dir_l2")
+    proj = seed["projeto_l2"]
+    db = app_db.get_session()
+    for cod in ("11b", "11c", "11d", "11e"):
+        et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo=cod).first()
+        if et:
+            et.status = "concluido"
+        else:
+            db.add(app_db.CicloEtapa(projeto_nome=proj, etapa_codigo=cod, status="concluido"))
+    # etapa 12 (Conferência e Implantação do Pedido) já em andamento — ciclo avançou de verdade
+    et12 = db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo="12").first()
+    if et12:
+        et12.status = "em_andamento"
+    else:
+        db.add(app_db.CicloEtapa(projeto_nome=proj, etapa_codigo="12", status="em_andamento"))
+    db.commit(); db.close()
+
+    st, body = _post_multipart(
+        c.base, c.cookie, f"/api/projetos/{proj}/ciclo/11b/revisao",
+        {"login": "dir_l2", "senha": "senha123", "motivo": "ajuste"},
+        file_field="arquivo", filename="relatorio.pdf", filedata=b"rel")
+    assert st == 400 and "Conferência e Implantação do Pedido" in body["erro"], body
+
+    # nada foi resetado — a 12 continua em_andamento, a 11e continua concluída
+    db = app_db.get_session()
+    et12 = db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo="12").first()
+    assert et12.status == "em_andamento"
+    e11e = db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo="11e").first()
+    assert e11e.status == "concluido"
+    db.close()
+
+
 def test_revisao_exige_gerente(http_client_factory, seed, projetos_dir):
     c = _login(http_client_factory, "cons_l1")   # consultor não pode revisar
     proj = seed["projeto_l1"]

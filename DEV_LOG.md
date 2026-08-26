@@ -3277,6 +3277,66 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 222 — E2E4 (chat gerencial + reabertura de PE pós-assinatura) + fix da cascata de revisão + constantes simbólicas de etapa + spec de Cancelamento de Ambiente
+
+Usuário pediu uma 4ª rodada E2E "aos moldes do teste 3", mas com parâmetros novos, variação de
+procedimento gerencial, comunicação real pelo ChatOrizon e uma investigação central: **o que
+acontece se o cliente pede mudança no Projeto Executivo depois de assinado?** Vera rodou o E2E4
+(cliente/parceiro/orçamento novos, Cartão de Crédito, desconto 15% acima do limite com autorização,
+XML mais caro/mais barato em ambientes distintos, 2 transferências de responsabilidade, reprovação→
+correção de medição, orientações gerenciais registradas no chat antes de decisões) — tudo passou.
+
+**Achado 🔴 alto, reproduzido ao vivo:** a única ferramenta que reabre ESCOPO real do PE (não só
+valor) — `POST /ciclo/11b/revisao` / `/11c/revisao` — tem cascata sem fronteira
+(`mod_ciclo.codigos_a_resetar`): reseta qualquer etapa posterior que já tenha linha no banco, mesmo
+etapas operacionais (12-20) já EXECUTADAS de verdade (produção encaminhada, NFe emitida, montagem
+concluída) — sem checar se o ciclo já avançou. Testado ao vivo: reabrir a 11b com o projeto em
+produção resetou 11b→20 inteiras pra "pendente", zerando `concluido_em`/`responsavel_id`.
+
+Levei o achado pro usuário junto com a pergunta de design ("qual o caminho seguro pra mudança de
+escopo pós-assinatura?"). Resposta do usuário: acréscimo→cobrar (já existe via AF2), redução dentro
+do ambiente→estornar (já existe via AF2), mudança completa→cancelamento+crédito negociado à parte
+(NÃO existe — `remover ambiente` trava assim que o contrato assina, sem exceção). Pediu estudo
+profundo + as 3 frentes que saíram da análise, todas aprovadas: (A) corrigir a cascata, (B) spec do
+Cancelamento de Ambiente, (C) avaliar renumerar os códigos internos das etapas.
+
+**Sobre renumerar:** recomendei NÃO tocar nos códigos internos — `etapa_codigo` é texto livre
+persistido em ≥5 tabelas pra todo projeto já existente (inclusive um `default="15"` hardcoded no
+schema de `DocumentoFiscal`); renumerar é migração de dado real, não troca de constante. O próprio
+histórico do projeto já resolveu esse dilema do jeito certo (etapas 5/6 eliminadas, 8/9/14/15/16
+saíram de `ETAPAS_PRINCIPAIS`, SEM renumerar — só a exibição mudou, via `_fichaNumeroExibicao` no
+frontend). Proposta aceita: constantes SIMBÓLICAS (sem migração, zero risco de dado).
+
+**Frentes A+C, feitas juntas (mesmo arquivo):**
+- `mod_ciclo.py` ganhou um bloco de constantes nomeadas (`PE = "11"`, `CONTRATO = "7"`, `AF2 =
+  "11d"`, etc. — 25 nomes) e TODAS as tabelas internas do módulo (`ETAPAS_PRINCIPAIS`, `ETAPA_NOME`,
+  `SUBFASES_PE`, `ETAPAS_OPERACIONAIS`, `ETAPAS_APROVACAO_FINANCEIRA`, `FAIXA_POR_ETAPA`,
+  `PREDECESSOR_OVERRIDE`, `PROXIMA_OVERRIDE`, `GRUPOS_ESPINHACO`, `GRUPO_NOME`, `PE_SUBFASES_ORDEM`)
+  passaram a usar os nomes em vez do literal cru — puramente aliasing, valores idênticos (conferido:
+  suíte de ciclo 117 passed antes de tocar em mais nada). Escopo DELIBERADAMENTE contido ao
+  `mod_ciclo.py` (a "fonte única da verdade" do próprio módulo) — não é um sweep de `main.py`/
+  `static/index.html` (o custo/risco de reescrever milhares de literais espalhados não compensa o
+  ganho, que é só de legibilidade; usar os símbolos em código NOVO a partir de agora).
+- Nova função `mod_ciclo.etapas_operacionais_ja_iniciadas(resetar_lista, status_por_codigo)`: dos
+  códigos que a cascata resetaria, filtra os que ficam FORA da família do PE (depois de `11e`) e já
+  saíram de `"pendente"` — sinal de trabalho físico real. Endpoint `/ciclo/<codigo>/revisao` (main.py)
+  passou a checar isso e BLOQUEAR (400, mesmo padrão do bloqueio por contrato assinado que já
+  existia) em vez de resetar em silêncio.
+
+**Frente B:** spec `docs/superpowers/specs/ciclo/2026-08-26-cancelamento-ambiente-pos-contrato-
+design.md` — desenha o "Cancelamento de Ambiente pós-contrato" (status novo `cancelado` em
+`ParcelaProjeto`, reaproveitando o split de `mod_retido`; crédito via `mod_contabil.
+estornar_credito_cliente`, já existe; registro formal via `Aditivo`, já existe o modelo). Documento
+só — implementação NÃO iniciada, decisões em aberto listadas na §7 pro usuário fechar antes de codar.
+
+**Verificação:** `tests/test_ciclo_pe_e2e.py` ganhou `test_revisao_bloqueada_com_etapa_operacional_
+ja_iniciada` (reproduz o cenário exato da Vera — 400 com a lista de etapas em conflito, nada é
+resetado). Suíte de ciclo 117 passed; suíte inteira **2320 passed**. `node --check` (sem mudança de
+frontend nesta sessão); `git grep` de hex sem achado fora do esperado.
+
+**Arquivos:** `mod_ciclo.py`, `main.py`, `tests/test_ciclo_pe_e2e.py`,
+`docs/superpowers/specs/ciclo/2026-08-26-cancelamento-ambiente-pos-contrato-design.md` (novo).
+
 ## Sessão 221 — Reteste da Sessão 220 pela Vera + fix do achado novo (toast de "Orçamento salvo" mentiroso)
 
 Usuário pediu reteste dos 4 fixes da Sessão 220 antes de fechar a frente ("chama a Vera pra

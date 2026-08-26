@@ -8310,6 +8310,12 @@ async function criarProjeto(){
     const elCli  = document.getElementById('proj-ctx-cli');
     if(elNome) elNome.textContent = projetoAtivo.nome_projeto || '—';
     if(elCli)  elCli.textContent  = (projetoAtivo.cliente||{}).nome || '—';
+    // Achado da Vera (2026-08-26, E2E7): a lista de Projetos (_projListaBase) nunca era
+    // atualizada aqui — quem criava um projeto e voltava pra "Projetos" via a navegação via só
+    // via reload (F5) pra ver o novo item e pra busca/filtro encontrá-lo. Não bloqueia o fluxo
+    // de criação (segue direto pro briefing); só garante que a lista já está correta quando o
+    // usuário voltar pra ela.
+    projCarregar();
     // Reset e carga de orçamentos (igual a abrirProjeto)
     _orcamentos = []; _orcamentoAtivoId = null; _orcAmbientesAtivos = null;
     esconderFormNovoProjeto();
@@ -24318,7 +24324,12 @@ async function gerarContrato(confirmarLojaIncompleta = false, signatarioPre = un
       if (d.codigo === 'contatos_nao_confirmados') {
         // Gate de contatos (decisão 13): abre o modal, e o retry re-chama gerarContrato
         // com os MESMOS argumentos depois que o operador confirmar/declarar.
-        abrirModalContatosConf(() => gerarContrato(confirmarLojaIncompleta, signatarioPre));
+        // Achado da Vera (2026-08-26, E2E7): passava `signatarioPre` (o parâmetro ORIGINAL,
+        // ainda `undefined` na 1ª chamada) em vez de `signatarioOverride` (o valor JÁ resolvido
+        // nesta chamada) — o retry reentrava com `undefined` e reperguntava "é o próprio
+        // cliente?" pela 2ª vez, mesmo já tendo a resposta. O outro gate (loja incompleta,
+        // logo abaixo) já fazia certo — só este divergia.
+        abrirModalContatosConf(() => gerarContrato(confirmarLojaIncompleta, signatarioOverride));
         return;
       }
       if (d.precisa_confirmar_loja) {

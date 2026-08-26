@@ -7732,6 +7732,16 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False,
                         "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
                                 "aprovar a AF."}, code=400); return
+                # Achado da Vera (2026-08-26, E2E): mesma trava de ordem que já existia na 11e
+                # (mod_ciclo.subfases_pe_pendentes) — 11d é o único elo da sequência do PE fora do
+                # endpoint genérico de conclusão, então precisa checar aqui também.
+                _status_por = {e.etapa_codigo: e.status for e in
+                               db.query(CicloEtapa).filter_by(projeto_nome=nome).all()}
+                _faltando = mod_ciclo.subfases_pe_pendentes("11d", _status_por)
+                if _faltando:
+                    self.send_json({"ok": False,
+                        "erro": "Conclua as subfases anteriores do PE: " + ", ".join(_faltando) + "."},
+                        code=400); return
                 rev2 = db.query(ProvisaoRegistro).filter_by(
                     orcamento_id=contrato.orcamento_id, versao="rev2").first()
                 if rev2 is None:
@@ -15945,6 +15955,14 @@ class Handler(BaseHTTPRequestHandler):
                         # o endpoint dedicado /ciclo/11d/aprovar (mesma checagem), mas este PATCH
                         # genérico também precisa dela, senão vira um jeito de contornar a outra.
                         if etapa_cod == "11d":
+                            _status_por_11d = {e.etapa_codigo: e.status for e in
+                                               db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()}
+                            _faltando_11d = mod_ciclo.subfases_pe_pendentes("11d", _status_por_11d)
+                            if _faltando_11d:
+                                self.send_json({"ok": False,
+                                    "erro": "Conclua as subfases anteriores do PE: "
+                                            + ", ".join(_faltando_11d) + "."}, code=400)
+                                return
                             import mod_conciliacao_pe as _mconc
                             _pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()]
                             _com_pe = {a.pool_ambiente_id for a in

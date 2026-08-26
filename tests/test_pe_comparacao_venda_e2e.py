@@ -10,6 +10,17 @@ def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 
 
+def _seed_11ab_concluidas(app_db, nome):
+    """11a/11b concluídas: mod_ciclo.subfases_pe_pendentes (achado da Vera 2026-08-26, ordem
+    11a→11b→11c→11d) exige as predecessoras antes de deixar concluir a 11c. get-or-create —
+    `seed` é module-scoped e reaproveita o mesmo projeto entre os testes deste arquivo."""
+    db = app_db.get_session()
+    for cod in ("11a", "11b"):
+        if db.query(app_db.CicloEtapa).filter_by(projeto_nome=nome, etapa_codigo=cod).first() is None:
+            db.add(app_db.CicloEtapa(projeto_nome=nome, etapa_codigo=cod, status="concluido"))
+    db.commit(); db.close()
+
+
 def _seed_amb(app_db, oid, budget=80000.0, order=30000.0):
     db = app_db.get_session()
     orc = db.get(app_db.Orcamento, oid)
@@ -68,6 +79,7 @@ def test_conclusao_11c_ignora_ambiente_fora_do_orcamento(http_client_factory, se
     # "remover ambiente") não aparece na tabela da 11c — não pode contar no gate de conclusão.
     oid = seed["orcamento_l1_id"]
     nome, pid = _seed_amb(app_db, oid, budget=80000.0)
+    _seed_11ab_concluidas(app_db, nome)
     db = app_db.get_session()
     orf = app_db.PoolAmbiente(nome="Orfao", nome_exibicao="Órfão", xml_path="fake/orf.xml",
                               ambientes_json="{}", projeto_id=nome,
@@ -98,6 +110,7 @@ def test_conclusao_11c_ignora_ambiente_retido(http_client_factory, seed, app_db)
     import mod_retido
     oid = seed["orcamento_l1_id"]
     nome, pid = _seed_amb(app_db, oid, budget=80000.0)
+    _seed_11ab_concluidas(app_db, nome)
     db = app_db.get_session()
     # 2º ambiente do orçamento — vai ficar RETIDO, sem PE.
     pa2 = app_db.PoolAmbiente(nome="Suite", nome_exibicao="Suíte", xml_path="fake/suite.xml",

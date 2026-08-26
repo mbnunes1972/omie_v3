@@ -60,6 +60,12 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
                              budget_total=budget, order_total=cfo_original)
     db.add(pa); db.flush()
     db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=1))
+    # 11a/11b/11c concluídas: este arquivo testa a 11d isoladamente (checagem derivada sobre
+    # ConciliacaoPeFase), não a ordem do PE — sem isto, mod_ciclo.subfases_pe_pendentes (achado
+    # da Vera 2026-08-26, ordem 11a→11b→11c→11d) bloquearia a 11d antes de chegar nas checagens
+    # que este arquivo de fato quer exercitar.
+    for _cod in ("11a", "11b", "11c"):
+        db.add(app_db.CicloEtapa(projeto_nome=nome, etapa_codigo=_cod, status="concluido"))
     ct = (db.query(app_db.Contrato).filter_by(projeto_nome=nome)
             .order_by(app_db.Contrato.id.desc()).first())
     # Assinatura das DUAS partes + data de entrega: exigidas por _contrato_totalmente_assinado

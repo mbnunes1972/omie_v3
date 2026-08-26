@@ -3277,6 +3277,44 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 220 — Triagem dos 4 achados baixos da bateria E2E (rodadas 1-3, DEV_LOG Sessão 218)
+
+Usuário pediu pra corrigir também os 4 achados de severidade BAIXA que tinham ficado só
+documentados na Sessão 219 ("Corrige logo"). Todos os 4 corrigidos — sem migração de banco.
+
+1. **Cabeçalho "Responsável efetivo" travado** — `_statusFichario` (status do card no fichário) e
+   `_tagComABola` (bolinha "etapa atual" no cabeçalho) calculavam a etapa atual por dois caminhos
+   ligeiramente diferentes; uma etapa `toggleavel` nunca aberta (sem `CicloEtapa`) contava como
+   "concluída" pro fichário mas não pro cabeçalho, deixando os dois divergentes indefinidamente.
+   Novo helper único `_etapaSatisfeita(codigo)` (concluída OU `toggleavel` sem linha no banco),
+   reaproveitado nos dois lugares.
+2. **Campo "Entrada" vazio no modal Aprovar Orçamento** — `_lerCondicaoPagamentoAtual()` só lia o
+   valor de entrada direto pras modalidades Aymoré/Cartão; pras demais (À Vista, VP, TF) tentava
+   casar uma frase específica por regex no HTML já renderizado do resumo, que falhava em silêncio
+   quando o texto da modalidade não batia com o padrão esperado (achado com À Vista na rodada 3).
+   Reescrito pra ler direto `window._planoPagamento.entrada_valor` — o campo estruturado que TODA
+   modalidade já preenche (fonte única, sem parsing frágil de texto renderizado).
+3. **"Minha Agenda" sem estado vazio** — filtrar por "só meus eventos" e não ter nenhum no período
+   renderizava a grade do mês inteira em branco, sem nenhuma pista de que era o FILTRO (parecia bug
+   de carregamento). `_agRender` agora mostra um aviso com link "Ver agenda completa" quando o
+   filtro está ligado e zero marcos batem.
+4. **Sequência 11a→11b→11e reforçada de forma assimétrica** — só a guarda da 11e checava
+   predecessoras (`PE_SUBFASES_OBRIGATORIAS`); dava pra concluir a 11c (ou aprovar a 11d/AF2) com
+   11a/11b ainda pendentes, e só a 11e reprovava depois — parecia bug, não decisão de design. Novo
+   `mod_ciclo.subfases_pe_pendentes(codigo, status_por_codigo)` generaliza a checagem pra ORDEM
+   inteira do PE (`PE_SUBFASES_ORDEM = [11a,11b,11c,11d,11e]`) e `guarda_conclusao` passou a chamar
+   ele pra qualquer subfase, não só a 11e. Como a 11d tem endpoint próprio (`/ciclo/11d/aprovar`) e
+   ainda um segundo caminho de defesa em profundidade (PATCH genérico `/ciclo/11d`), a mesma checagem
+   foi replicada nos dois — mesmo padrão já usado ali pra `fase_completa`.
+
+**Verificação:** suíte alvo (ciclo/PE/conciliação/transferência/desmembramento) **101 passed**
+depois de ajustar testes que dependiam da ordem antiga (seeds que concluíam 11c/11d sem 11a/11b
+concluídas antes — comportamento que passou a ser bloqueado de propósito); suíte inteira
+**2319 passed**. `node --check` no script extraído; sem hex fora de `orizon-tokens.css`.
+
+**Arquivos:** `main.py`, `mod_ciclo.py`, `static/index.html`, `tests/test_ciclo.py`,
+`tests/test_conciliacao_pe_e2e.py`, `tests/test_pe_comparacao_venda_e2e.py`.
+
 ## Sessão 219 — Triagem dos 11 achados médios da bateria E2E (rodadas 1-3, DEV_LOG Sessão 218)
 
 Usuário pediu pra triar e corrigir os achados médios das 3 rodadas E2E. Todos os 11 corrigidos —

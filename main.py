@@ -18536,6 +18536,8 @@ def main():
             # Centro de Custo/Natureza (2026-08-08): rename/move/remove pontuais ANTES do backfill
             # (senão o backfill recriaria 5.2.11/5.3.10/5.3.20, já tiradas de PLANO_PADRAO). Idempotente.
             _mc.migrar_centro_custo_natureza_v1(_dbp)
+            # Frente 4 (spec 2026-08-25, DECIDIDO): "5.4.18" perde "veículos" do nome. Idempotente.
+            _mc.migrar_centro_custo_natureza_v2(_dbp)
             _mc.backfill_plano_todos_owners(_dbp)
             # Ajuste da árvore de Centro de Custo (2026-08-08): move nós ANTES do backfill, senão
             # o backfill recriaria "1.5"/"3.2" faltando e deixaria "4.1"/"2.2" velhos órfãos.

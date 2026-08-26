@@ -3277,6 +3277,25 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 227 — Centro de Custo/Natureza: Frente 4 (higiene do plano de contas)
+
+Quinta frente da spec, todos os itens **DECIDIDOS** de antemão. A maioria já ficou resolvida por
+tabela sem código novo: Semivariável já saiu da UI na Frente 3 (a lista de opções do Editar já
+nasceu sem ela); 5.5.05 já virou Variável na Frente 1; 5.3.07 Marketing/Campanhas já era Fixo no
+mapa (nenhuma mudança); 5.4.20 revisado no fechamento mensal é rotina, não código.
+
+**Único item com código: renomear 5.4.18.** De "Manutenção (loja, veículos, informática)" pra
+"Manutenção (loja e informática)" — a 5.2.10 "Manutenção de Veículos" vira a única conta de
+veículo do plano. Resolve por TEXTO (mesmo padrão de `migrar_centro_custo_natureza_v1`): sem
+mover histórico, sem criar/remover conta, sem migração de schema. Novo
+`migrar_centro_custo_natureza_v2` (idempotente, preserva nome customizado, roda no boot logo
+depois da v1) + `PLANO_PADRAO` atualizado (owner novo já nasce com o nome certo).
+
+**Verificação:** `tests/test_centro_custo_natureza.py` +4 (renomeia, preserva customizado,
+idempotente, seed novo já nasce certo) — 37 passed no arquivo; suíte inteira **2344 passed**.
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `tests/test_centro_custo_natureza.py`.
+
 ## Sessão 226 — Centro de Custo/Natureza: Frente 3 (botão Editar)
 
 Quarta frente da spec (`docs/superpowers/specs/financeiro/2026-08-25-...`). Botão **Editar**

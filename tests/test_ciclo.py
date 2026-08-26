@@ -218,6 +218,24 @@ def test_guarda_conclusao_11e_exige_anteriores():
     ok, erro = mc.guarda_conclusao("11e", tipos, st)
     assert ok is True
 
+# Achado da Vera (2026-08-26, E2E): a ordem 11a→11b→11c→11d→11e só era reforçada na 11e —
+# dava pra concluir 11c com 11a/11b ainda pendentes, e só a 11e reprovava depois (assimetria
+# que parecia bug). mod_ciclo.subfases_pe_pendentes agora trava CADA subfase nas anteriores.
+def test_guarda_conclusao_11c_exige_11a_11b():
+    ok, erro = mc.guarda_conclusao("11c", {"pe_projeto_executivo"}, {})
+    assert ok is False and "11a" in erro and "11b" in erro
+    ok, erro = mc.guarda_conclusao("11c", {"pe_projeto_executivo"}, {"11a": "concluido"})
+    assert ok is False and "11b" in erro and "11a" not in erro
+    ok, erro = mc.guarda_conclusao("11c", {"pe_projeto_executivo"},
+                                   {"11a": "concluido", "11b": "concluido"})
+    assert ok is True and erro == ""
+
+def test_subfases_pe_pendentes_ordem():
+    assert mc.subfases_pe_pendentes("11a", {}) == []   # 11a não tem predecessora
+    assert mc.subfases_pe_pendentes("11b", {}) == ["11a"]
+    assert mc.subfases_pe_pendentes("11d", {"11a": "concluido"}) == ["11b", "11c"]
+    assert mc.subfases_pe_pendentes("99z", {}) == []   # código fora da sequência: n/a
+
 def test_versao_atual():
     from datetime import datetime
     docs = [
@@ -286,13 +304,14 @@ def test_modelos_ciclo_documento_e_revisao(db_pg_limpo):
 def test_guarda_conclusao_11c_pe_por_ambiente():
     # 2026-07-21: o documento único da 11c foi substituído na UI pelo PE POR AMBIENTE
     # (tabela de comparação). Todos os ambientes com PE → conclui sem o documento antigo.
-    ok, erro = mc.guarda_conclusao("11c", set(), {}, pe_ambientes=(3, 3))
+    _ab = {"11a": "concluido", "11b": "concluido"}
+    ok, erro = mc.guarda_conclusao("11c", set(), _ab, pe_ambientes=(3, 3))
     assert ok is True and erro == ""
     # faltando ambiente → barra, com contagem
-    ok, erro = mc.guarda_conclusao("11c", set(), {}, pe_ambientes=(3, 1))
+    ok, erro = mc.guarda_conclusao("11c", set(), _ab, pe_ambientes=(3, 1))
     assert ok is False and "1/3" in erro
     # retrocompat: documento único da subfase (projeto legado) ainda satisfaz
-    ok, erro = mc.guarda_conclusao("11c", {"pe_projeto_executivo"}, {}, pe_ambientes=(3, 0))
+    ok, erro = mc.guarda_conclusao("11c", {"pe_projeto_executivo"}, _ab, pe_ambientes=(3, 0))
     assert ok is True
     # pool vazio → barra (nada a revisar não é conclusão)
     ok, erro = mc.guarda_conclusao("11c", set(), {}, pe_ambientes=(0, 0))

@@ -5116,7 +5116,15 @@ function _agRender(){
         <div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${linhas}</div></div>`;
   }
   const cab=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].map(x=>`<div style="text-align:center;font-size:11px;color:var(--muted);font-weight:700">${x}</div>`).join('');
+  // Achado da Vera (2026-08-26, E2E): "Minha Agenda" sem nenhum marco atribuído renderizava a
+  // grade do mês inteira vazia, sem nenhuma pista de que o filtro é que está ativo (parecia bug,
+  // não "sem eventos meus"). Mensagem só aparece com o filtro ligado e zero marcos no período.
+  const avisoMeus = (_agMeus && marcos.length===0)
+    ? `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--muted)">
+        Nenhum evento atribuído a você neste período. <a href="javascript:void(0)" onclick="agendaMinhaToggle()" style="color:var(--accent);font-weight:600">Ver agenda completa</a></div>`
+    : '';
   box.innerHTML = _agHeader(`${_AG_MESES[_agMes]} ${_agAno}`)
+    +avisoMeus
     +`<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px">${legenda}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">${cab}${cels}</div>
     <div id="agenda-dia-det" style="margin-top:14px"></div>`;
@@ -19122,8 +19130,12 @@ function atualizarBotoesAprovacao() {
 function _tagComABola() {
   // Fatia 2 (spec seção 6): "quem está com a bola" = responsavel_efetivo da etapa ATUAL
   // (primeira não-conclusiva na ordem do ciclo) — dado que já vem do GET /ciclo, sem
-  // campo novo em Projeto.
-  const atual = ETAPAS_CICLO.find(et => !STATUS_CONCLUSIVOS.has((_cicloData[et.codigo] || {}).status));
+  // campo novo em Projeto. Achado da Vera (2026-08-26, E2E): usava STATUS_CONCLUSIVOS cru —
+  // se o ciclo passasse por uma sub-etapa TOGGLEÁVEL nunca aberta (ex. "17a" Pendências de
+  // montagem, opcional), o header ficava preso ali pra sempre ("etapa 10 — Montagem ·
+  // Pendências de montagem"), mesmo com o projeto inteiro já concluído — mesmo bug de
+  // _statusFichario (achado #11 da Sessão 219), aqui na busca da "etapa atual" pro header.
+  const atual = ETAPAS_CICLO.find(et => !_etapaSatisfeita(et.codigo));
   if (!atual) {
     return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 12px;font-size:11px;color:var(--ok)"><i class="ti ti-flag-check"></i> Ciclo concluído</span>`;
   }
@@ -19329,25 +19341,28 @@ const _FICHA_GRUPO_NOME = { '13': 'Logística e Expedição' };
 // pra qualquer string que não seja um código de etapa).
 const _FICHA_VISAO_CODIGO = '__visao__';
 
+// Uma etapa/sub-etapa "satisfaz" (não trava mais nada dela pra frente) quando está concluída OU
+// quando é TOGGLEÁVEL e nunca chegou a ganhar CicloEtapa (opcional por natureza — ex. "17a"
+// Pendências de montagem — não existe no cronograma padrão, só nasce se alguém a abrir de
+// propósito). Uma sub-etapa que EXISTE (foi tocada) mas não está concluída NÃO satisfaz —
+// continua contando como pendência real.
+function _etapaSatisfeita(codigo) {
+  if (STATUS_CONCLUSIVOS.has((_cicloData[codigo] || {}).status)) return true;
+  const def = _fichaEtapaDef(codigo);
+  return !!(def && def.toggleavel && !_cicloData[codigo]);
+}
+
 // Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento). Cabeça de
 // grupo (_FICHA_SUBS) só é "concluída" quando TODAS as etapas do grupo estiverem — achado
 // 2026-08-18: sem isso, "13" apareceria concluída assim que só a Produção terminasse. Exceção
-// (achado da Vera, 2026-08-26, E2E): sub-etapa TOGGLEÁVEL que nunca chegou a ser aberta (sem
-// CicloEtapa — não existe no cronograma padrão, ex. "17a" Pendências de montagem, opcional por
-// natureza) não deve travar o grupo — "17" (Montagem) ficava preso em "Em andamento" pra sempre
-// em projeto sem pendência nenhuma, mesmo com a própria Montagem já concluída de verdade. Uma
-// sub-etapa que EXISTE (foi tocada) mas não está concluída continua bloqueando normalmente —
-// 14/15/16 (grupo de "13") sempre têm linha desde o D0 (gerar_cronograma_projeto), então essa
-// exceção não os afeta.
+// (achado da Vera, 2026-08-26, E2E): sub-etapa TOGGLEÁVEL que nunca chegou a ser aberta não deve
+// travar o grupo — "17" (Montagem) ficava preso em "Em andamento" pra sempre em projeto sem
+// pendência nenhuma, mesmo com a própria Montagem já concluída de verdade. 14/15/16 (grupo de
+// "13") sempre têm linha desde o D0 (gerar_cronograma_projeto), então essa exceção não os afeta.
 function _statusFichario(codigo) {
   if (_FICHA_SUBS[codigo]) {
     const todas = [codigo, ..._FICHA_SUBS[codigo]];
-    const falta = todas.some(c => {
-      if (STATUS_CONCLUSIVOS.has((_cicloData[c] || {}).status)) return false;
-      const def = _fichaEtapaDef(c);
-      if (def && def.toggleavel && !_cicloData[c]) return false;   // opcional, nunca aberta
-      return true;
-    });
+    const falta = todas.some(c => !_etapaSatisfeita(c));
     if (!falta) return 'concluida';
     if (_etapaBloqueada(codigo)) return 'nao_iniciada';
     return 'andamento';
@@ -23945,17 +23960,13 @@ function _campo(id, label, valor, tipo, placeholder, obrigatorio) {
 function _lerCondicaoPagamentoAtual() {
   const resumoEl  = document.getElementById('neg-resumo-parcelas');
   const descricao = (resumoEl?.textContent || '').trim();
-  const ayAtivo   = document.getElementById('painel-aymore')?.style.display !== 'none';
-  const ccAtivo   = document.getElementById('painel-cartao')?.style.display !== 'none';
-  let entrada = 0;
-  if (ayAtivo)
-    entrada = parseFloat(document.getElementById('ay-entrada')?.value || '0') || 0;
-  else if (ccAtivo)
-    entrada = parseFloat(document.getElementById('cc-entrada')?.value || '0') || 0;
-  else {
-    const m = descricao.match(/R\$\s*([\d.]+,\d{2})\s*de\s*entrada/i);
-    if (m) entrada = parseFloat(m[1].replace(/\./g,'').replace(',','.')) || 0;
-  }
+  // Achado da Vera (2026-08-26, E2E): a leitura antiga só cobria Aymoré/Cartão (campo direto) e
+  // tentava extrair a entrada de QUALQUER outra modalidade (À Vista incluso) via regex sobre o
+  // texto renderizado do resumo — frágil, e falhava silenciosamente (campo "Entrada" do modal de
+  // Aprovar Orçamento ficava vazio) sempre que a frase não batia exatamente com "R$ X de
+  // entrada". `window._planoPagamento.entrada_valor` já é preenchido por TODAS as modalidades
+  // (mesmo dado estruturado que `_negResumoLinhasHtml` usa) — fonte única, sem parsing de texto.
+  const entrada = (window._planoPagamento && window._planoPagamento.entrada_valor) || 0;
   return { descricao, entrada };
 }
 

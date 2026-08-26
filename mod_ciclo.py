@@ -97,8 +97,25 @@ def etapa_codigo_valido(codigo):
 # SUBFASES_PE), mas exigida aqui como pré-requisito para concluir o PE.
 PE_SUBFASES_OBRIGATORIAS = ["11a", "11b", "11c", "11d"]
 
+# Ordem sequencial do PE, ponta a ponta — usada pra travar cada subfase nas
+# anteriores, não só a 11e. Achado da Vera (2026-08-26, E2E): antes só a 11e
+# checava predecessoras (PE_SUBFASES_OBRIGATORIAS acima); dava pra concluir
+# 11c (ou aprovar a 11d) sem 11a/11b feitas — assimetria que parecia bug (a
+# 11e reprovava depois, mas só lá).
+PE_SUBFASES_ORDEM = ["11a", "11b", "11c", "11d", "11e"]
+
 # Subfase final do PE: concluí-la conclui a etapa-mãe 11.
 PE_SUBFASE_FINAL = "11e"
+
+
+def subfases_pe_pendentes(codigo, status_por_codigo):
+    """Subfases do PE anteriores a `codigo` (ordem PE_SUBFASES_ORDEM) que ainda não
+    estão concluídas. Lista vazia se `codigo` não faz parte da sequência (ex.: 11a,
+    sem predecessora) ou se todas as anteriores já estão OK."""
+    if codigo not in PE_SUBFASES_ORDEM:
+        return []
+    anteriores = PE_SUBFASES_ORDEM[:PE_SUBFASES_ORDEM.index(codigo)]
+    return [c for c in anteriores if status_por_codigo.get(c) not in STATUS_CONCLUSIVOS]
 
 
 def tipo_doc_de(codigo):
@@ -136,11 +153,9 @@ def guarda_conclusao(codigo, tipos_presentes, status_por_codigo, pe_ambientes=No
                            f"'{sf['botao']}'.")
     elif not doc_ok:
         return (False, f"Carregue o documento ({sf['doc_label']}) antes de '{sf['botao']}'.")
-    if codigo == PE_SUBFASE_FINAL:
-        faltando = [c for c in PE_SUBFASES_OBRIGATORIAS
-                    if status_por_codigo.get(c) not in STATUS_CONCLUSIVOS]
-        if faltando:
-            return (False, "Conclua as subfases anteriores do PE: " + ", ".join(faltando) + ".")
+    faltando = subfases_pe_pendentes(codigo, status_por_codigo)
+    if faltando:
+        return (False, "Conclua as subfases anteriores do PE: " + ", ".join(faltando) + ".")
     return (True, "")
 
 

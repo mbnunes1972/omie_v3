@@ -3277,6 +3277,29 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 221 — Reteste da Sessão 220 pela Vera + fix do achado novo (toast de "Orçamento salvo" mentiroso)
+
+Usuário pediu reteste dos 4 fixes da Sessão 220 antes de fechar a frente ("chama a Vera pra
+retestar"). Vera confirmou os **4 PASSOU** (suíte alvo 69 passed antes do reteste manual) — sem
+regressão em nenhum. No caminho, achou 1 problema novo, fora do escopo dos 4: **"Corrige logo"**.
+
+**Achado:** `salvarOrcamento()` (static/index.html) dispara `PATCH .../ciclo/4` pra auto-concluir a
+etapa "Orçamento" ao salvar, mas nunca lia a resposta do `fetch` — um `400` do backend (ex.: etapa
+"3"/Briefing ainda não concluída, guarda de `mod_ciclo.pode_avancar`) passava batido e o toast
+sempre dizia "Orçamento salvo!", como se a etapa tivesse avançado de fato. O orçamento em si SEMPRE
+salva corretamente (`salvarValorNegociado()` já rodou antes, sem relação com essa falha) — só o
+avanço de etapa que podia falhar em silêncio, sem o usuário saber que precisava voltar e concluir o
+briefing antes da etapa realmente avançar.
+
+**Fix:** lê `r4.ok`/`d4.ok` da resposta do PATCH; se falhar, o toast passa a incluir a mensagem real
+do backend ("Orçamento salvo. Conclua a etapa anterior (Briefing) antes de iniciar esta.", por
+exemplo) em vez do "Orçamento salvo!" genérico e enganoso.
+
+**Verificação:** só frontend — `node --check` no script extraído, `git grep` de hex (nada fora de
+`orizon-tokens.css`), suíte inteira **2319 passed** (sem mudança de backend, rodada por rigor).
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 220 — Triagem dos 4 achados baixos da bateria E2E (rodadas 1-3, DEV_LOG Sessão 218)
 
 Usuário pediu pra corrigir também os 4 achados de severidade BAIXA que tinham ficado só

@@ -17091,10 +17091,15 @@ async function salvarOrcamento(){
 
   // 2. Marca etapa 4 como concluída SOMENTE se há ambientes no orçamento
   if (temAmbientes) {
+    // Achado da Vera (2026-08-26, reteste Sessão 220): a resposta do PATCH nunca era lida —
+    // um 400 (ex.: briefing/etapa 3 ainda não concluída) passava batido e o toast sempre dizia
+    // "Orçamento salvo!", como se a etapa tivesse avançado. O orçamento em si continua salvo
+    // (salvarValorNegociado já rodou acima) — só o AVANÇO DE ETAPA que pode falhar; agora avisa.
+    let _erroEtapa4 = null;
     try {
       const etapa4atual = _cicloData['4']?.status;
       if (etapa4atual !== 'concluido') {
-        await fetch(
+        const r4 = await fetch(
           `/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/4`,
           {
             method: 'PATCH', credentials: 'same-origin',
@@ -17102,10 +17107,12 @@ async function salvarOrcamento(){
             body: JSON.stringify({ status: 'concluido' }),
           }
         );
+        const d4 = await r4.json().catch(() => null);
+        if (!r4.ok || !(d4 && d4.ok)) _erroEtapa4 = (d4 && d4.erro) || 'Não foi possível concluir a etapa.';
       }
-    } catch(e) { console.warn('salvarOrcamento etapa4:', e); }
+    } catch(e) { console.warn('salvarOrcamento etapa4:', e); _erroEtapa4 = 'Falha de rede ao concluir a etapa.'; }
     await carregarCicloSilencioso();
-    showToast('Orçamento salvo!');
+    showToast(_erroEtapa4 ? `Orçamento salvo. ${_erroEtapa4}` : 'Orçamento salvo!', false);
   } else {
     showToast('Orçamento salvo. Adicione ambientes para concluir a etapa "Orçamento".', false);
   }

@@ -3277,6 +3277,57 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 218 — Fix crítico achado em bateria E2E: desmembrar fase com AF2 já decidida derrubava o servidor
+
+Usuário pediu "3 testes completos pelo Playwright, e2e, cada um com 4 ambientes" — cadastro do
+cliente até Conciliação Final, com desmembramento de Medição em 2 fases, abertura de uma 3ª fase no
+Projeto Executivo, XML de PE mais caro e mais barato, custos adicionais, NFe em homologação, mapa de
+atribuições e reagendamentos de agenda. 3 rodadas da Vera, com nomes de projeto/cliente distintos
+pra rodar em série.
+
+**Achado de infraestrutura de teste (rodada 1, não é bug do app):** as 3 rodadas em PARALELO
+disputavam a MESMA aba/instância do navegador no servidor MCP `playwright` — sem isolamento de
+`browser_context` por agente, ações de uma rodada caíam no formulário de outra (um cliente de teste
+ficou com WhatsApp de outra rodada gravado nele). Corrigido rodando as 3 em SÉRIE (uma de cada vez);
+dado corrompido removido do banco local antes de recomeçar.
+
+**Achado de infraestrutura (rodada 1):** a emissão de NFe/NFS-e (etapa 15) trava estruturalmente
+sem token Focus de homologação configurado no ambiente local — **confirmado como comportamento
+CORRETO e seguro** (3 camadas verificadas independentemente: banco, UI Admin › Fiscal, API ao vivo,
+todas recusam emissão sem credencial). Decisão do usuário: usar um bypass só de teste
+(`main._set_etapa_status(db, projeto, "15", "emitida", usuario_id)` direto no banco, sem chamar a
+Focus) pra destravar o resto do ciclo nas rodadas de QA — documentado como bypass em cada relatório,
+nunca usado fora de teste.
+
+**🔴 Bug real encontrado e corrigido — `POST /api/projetos/<nome>/parcelas/<id>/desmembrar`
+derrubava o servidor (sem resposta nenhuma, `ERR_EMPTY_RESPONSE`) ao tentar desmembrar de novo uma
+fase que já tinha decisão de AF2 registrada** (exatamente o passo "abra a 3ª fase do Projeto
+Executivo" pedido pelo usuário — a mecânica real é desmembrar de novo uma fase já desmembrada).
+Causa: `db.delete(mae)` (main.py, endpoint de desmembrar) estourava `IntegrityError` não tratado na
+FK `conciliacao_pe_fase.parcela_id` — a função já tinha 2 guardas parecidas (fase liquidada, fase em
+expedição) mas nenhuma para "já tem decisão de AF2". Fix: mesma trava, checando
+`ConciliacaoPeFase.filter_by(parcela_id=pid)` ANTES de tentar apagar a mãe, com erro 409 claro em
+vez de crash.
+
+**Verificação:** suíte **2315 passed** (1 novo:
+`test_sucessivo_bloqueia_fase_com_decisao_af2`, mesmo padrão dos 2 guards-teste já existentes no
+arquivo — corrigiu também um leak de fixture pré-existente que o teste novo expôs, `_setup_fases`
+não limpava `ConciliacaoPeFase` entre testes). `git grep` de hex sem resíduo (mudança Python pura).
+
+**Achados adicionais das rodadas 1 e 2 (não corrigidos ainda, aguardando decisão/triagem depois da
+rodada 3)**: corrida entre auto-save de desconto e modal de autorização (Negociação); rótulo
+desatualizado no painel Fiscal ("NFS-e emissão futura"); nomenclatura de fase inconsistente entre 3
+telas (etapa 9 = "Logística e Expedição" / "Produção"); toast de autorização de desconto mostra
+"0%" quando vem da sidebar (cosmético); Visão Geral mostra margem negativa sem nenhum aviso quando o
+projeto não teve NFe real emitida (é comportamento correto de `margem_projeto`, mas sem indicação
+visual do porquê); rótulo "Comissão" no card financeiro soma o grupo contábil 5.3 inteiro (comissão
++ brinde + custo de viagem), não só comissão; medição reprovada não tem caminho de UI pra
+corrigir/reenviar (`_renderCardMedicao` só oferece "liberar com senha"); decisão "Cobrar" em AF2 não
+tem passo de digitar valor (usa `abs(diferença)` como default silencioso); "Minha Agenda" sem
+mensagem de estado vazio.
+
+**Arquivos:** `main.py`, `tests/test_desmembramento_sucessivo.py`.
+
 ## Sessão 217 — QA da Vera na Visão Geral (Sessão 216): achou o buraco real — faltava BOTÃO pra 2ª renegociação
 
 Usuário pediu "chama a Vera pra testar a Visão Geral". Achado 🔴 alto, bloqueante pro cenário que a

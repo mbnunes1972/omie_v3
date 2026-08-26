@@ -6,7 +6,8 @@ fase; os congelados da mãe são preservados exatamente (última nova fase absor
 a mãe sai e as fases são renumeradas 1..N. Fase liquidada ou já em expedição não desmembra."""
 from datetime import date
 
-from database import CicloLogistico, OrcamentoAmbiente, ParcelaAmbiente, ParcelaProjeto, PoolAmbiente
+from database import (CicloLogistico, ConciliacaoPeFase, OrcamentoAmbiente, ParcelaAmbiente,
+                       ParcelaProjeto, PoolAmbiente)
 
 import mod_parcelas
 
@@ -42,6 +43,10 @@ def _setup_fases(app_db, seed, nomes=("Cozinha", "Suite", "Home")):
     try:
         db.query(ParcelaAmbiente).delete()
         db.query(CicloLogistico).filter_by(projeto_nome=seed["projeto_l1"]).delete()
+        # ConciliacaoPeFase referencia parcela_id — precisa sair ANTES de apagar ParcelaProjeto,
+        # senão a fixture (app_db module-scoped) quebra num teste que deixou uma decisão de AF2
+        # presa (mesma classe de FK que o fix da Sessão 218 trata no endpoint).
+        db.query(ConciliacaoPeFase).filter_by(projeto_nome=seed["projeto_l1"]).delete()
         db.query(ParcelaProjeto).filter_by(projeto_nome=seed["projeto_l1"]).delete()
         ids = []
         for n in nomes:
@@ -103,6 +108,34 @@ def test_sucessivo_bloqueia_fase_em_expedicao(app_db, seed, http_client_factory)
                    {"parcelas": [[ids[0]], [ids[1]]]})
     assert st == 409, (st, d)
     assert "expedi" in d.get("erro", "").lower()
+
+
+# Achado da Vera (2026-08-26, E2E rodada 2/3): desmembrar de novo uma fase que já tem decisão de
+# AF2 (ConciliacaoPeFase) estourava IntegrityError sem tratamento no `db.delete(mae)` — FK
+# `conciliacao_pe_fase.parcela_id` — e o servidor derrubava a conexão sem resposta nenhuma
+# (ERR_EMPTY_RESPONSE no navegador). Mesma trava das outras 2 guardas desta função (liquidada /
+# em expedição), aplicada ANTES de tentar apagar a mãe.
+def test_sucessivo_bloqueia_fase_com_decisao_af2(app_db, seed, http_client_factory):
+    nome = seed["projeto_l1"]
+    ids, p1_id, _ = _setup_fases(app_db, seed)
+    db = app_db.get_session()
+    try:
+        db.add(ConciliacaoPeFase(projeto_nome=nome, parcela_id=p1_id, pool_ambiente_id=ids[0],
+                                 tipo_decisao="manter"))
+        db.commit()
+    finally:
+        db.close()
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    st, d = c.post("/api/projetos/%s/parcelas/%d/desmembrar" % (nome, p1_id),
+                   {"parcelas": [[ids[0]], [ids[1]]]})
+    assert st == 409, (st, d)
+    assert "af2" in d.get("erro", "").lower() or "aprovação financeira" in d.get("erro", "").lower()
+    # a fase-mãe continua intacta (não foi parcialmente apagada)
+    db = app_db.get_session()
+    try:
+        assert db.get(ParcelaProjeto, p1_id) is not None
+    finally:
+        db.close()
 
 
 def test_sucessivo_bloqueia_liquidada_e_particao_errada(app_db, seed, http_client_factory):

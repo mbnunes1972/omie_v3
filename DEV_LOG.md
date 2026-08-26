@@ -3277,6 +3277,47 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 229 — E2E7/E2E8 (dois ciclos variando decisões) + 3 achados corrigidos
+
+Usuário pediu novo teste E2E completo "aos moldes do teste 3", em dois ciclos variando ações e
+decisões gerenciais. Vera rodou os dois sequencialmente (Ciclo 1: Venda Programada 5x, reprovação
+de medição→correção, transferência de responsabilidade, AF2 Cobrar+Estornar com Complemento/Termo
+Aditivo; Ciclo 2: Parcelamento Loja 3x, fluxo limpo sem reprovação, AF2 Absorver+Manter+Absorver
+— primeira vez testando que a AF2 fecha SEM precisar de Complemento quando não há "Cobrar" —,
+alocação de recursos com alteração, reagendamento, detecção de conflito de agenda). Ambos os
+projetos fecharam `concluido`. Confirmação pedida explicitamente: as 6 frentes de Centro de Custo/
+Natureza (Sessões 223-228, recém-concluídas) **não quebraram nada** — 45+31 lançamentos nos dois
+ciclos, zero duplicados, suíte 2344/2344 verde durante o teste.
+
+**3 achados novos, todos corrigidos:**
+
+1. **🟠 Médio → verificado mais grave do que o relato inicial: "Confirmar conferência" nunca
+   funcionava, não só na primeira tentativa.** Reproduzido ao vivo (projeto de debug isolado,
+   bypass direto no banco até a etapa 12): `conferenciaRegistrar()` tinha um parser de moeda
+   próprio (`_num`) que não removia o prefixo "R$ " que `mascaraMoedaInput` sempre adiciona a
+   cada tecla — `parseFloat("R$ 40.000")` é `NaN`, então o campo SEMPRE caía no "custo <= 0" e
+   mostrava "Informe o custo de fábrica...", mesmo com o valor visivelmente preenchido; redigitar
+   não ajudava (confirmado ao vivo, testado 3x). Fix: reusa `parseMoeda()` (já usado em outros
+   pontos do arquivo, trata "R$"/milhar/decimal corretamente) em vez de reimplementar mal de novo.
+2. **🟡 Baixo — faixa "Etapas do Projeto" desatualizada após Contrato/Solicitação de Medição
+   inline.** `carregarDadosContrato()`/`carregarSolicitacaoMedicao()` nunca atualizavam
+   `_cicloData` nem a faixa — root cause exatamente como a Vera diagnosticou. Fix: `_fetchCiclo()`
+   antes do render (pro próprio card já nascer certo) + `_fichaRenderLombada()` depois (só a
+   faixa, sem mexer no conteúdo/seções inline abertas).
+3. **🟡 Baixo — nome errado no prompt de transferência de responsabilidade quando a próxima etapa
+   é uma sub-fase.** `_aposConcluirEtapa` trocava pelo título do GRUPO (`_fichaTituloGrupo(
+   _fichaMae(codigo))`) mesmo quando o código era uma sub-etapa (ex.: "11a", "17a") — a troca só
+   faz sentido quando o próprio código é a etapa PRINCIPAL cabeça de grupo (ex.: "13"→"Logística e
+   Expedição"). Fix: só aplica a troca quando `codigo === _fichaMae(codigo)`; sub-etapa usa seu
+   próprio nome (ex.: "11a"→"Planta de pontos de PE", não mais "Projeto executivo" repetido).
+
+**Verificação:** todos os 3 testados ao vivo no navegador (projeto de debug + funções chamadas
+diretamente no console para os casos 2/3, já que reconstituir um ciclo E2E completo só pra isso
+não valia o custo); `node --check`; sem hex fora de `orizon-tokens.css`; suíte inteira **2344
+passed** (mudança 100% frontend, backend intocado).
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 228 — Centro de Custo/Natureza: Frente 5 (vocabulário: dois "variável" convivendo)
 
 Sexta e última frente da spec — fecha a execução das 6 frentes de

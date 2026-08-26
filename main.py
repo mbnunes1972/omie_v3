@@ -6947,6 +6947,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": "Fase já liquidada — não pode ser desmembrada"}, code=409); return
                 if db.query(CicloLogistico).filter_by(projeto_nome=nome, parcela_id=pid).first():
                     self.send_json({"ok": False, "erro": "Fase já em expedição — não pode ser desmembrada"}, code=409); return
+                # Achado da Vera (2026-08-26, E2E): sem esta trava, `db.delete(mae)` mais abaixo
+                # estourava IntegrityError sem tratamento (FK conciliacao_pe_fase.parcela_id) quando
+                # a fase já tinha decisão de AF2 registrada — o servidor derrubava a conexão sem
+                # resposta nenhuma (ERR_EMPTY_RESPONSE no navegador). Mesmo padrão dos dois guards
+                # acima: bloqueia ANTES de tentar, com mensagem clara.
+                if db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome, parcela_id=pid).first():
+                    self.send_json({"ok": False, "erro": "Fase já tem decisão de Aprovação financeira "
+                                    "II (AF2) registrada — não pode ser desmembrada de novo."}, code=409); return
                 try:
                     grupos = [[int(x) for x in g] for g in grupos]
                 except (TypeError, ValueError):

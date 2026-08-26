@@ -1180,6 +1180,12 @@ class PeriodoContabil(Base):
     soma_margem_plena    = Column(Float, default=0.0)
     divergencia_residual = Column(Float, default=0.0)
     dados_json           = Column(Text, nullable=True)             # alocacao_por_projeto serializada
+    # Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): snapshot de relatorio_natureza +
+    # relatorio_centro_custo do intervalo, gravado no fechamento — coluna PRÓPRIA de propósito
+    # (não entra em dados_json, que já tem um conteúdo diferente e específico — alocação por
+    # projeto, uma lista, não um dict; misturar os dois exigiria reestruturar o formato existente
+    # pra quem já lê dados_json). Período FECHADO devolve o snapshot; aberto calcula ao vivo.
+    classificacao_snapshot_json = Column(Text, nullable=True)
     criado_em            = Column(DateTime, default=datetime.utcnow)
 
 
@@ -2393,6 +2399,8 @@ def _migrar_colunas_pg():
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_transf_dest_terc ON ciclo_etapas (transferencia_destino_terceiro_id) WHERE transferencia_status = 'pendente'",
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_funcionario ON ciclo_etapas (responsavel_funcionario_id)",
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_terceiro ON ciclo_etapas (responsavel_terceiro_id)",
+        # Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): snapshot dos relatórios no fechamento.
+        "ALTER TABLE periodo_contabil ADD COLUMN IF NOT EXISTS classificacao_snapshot_json TEXT",
     ]
     with ENGINE.begin() as conn:
         for s in stmts:

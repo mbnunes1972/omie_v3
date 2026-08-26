@@ -3021,16 +3021,62 @@ def reconciliar(db, owner_tipo, owner_id, ini=None, fim=None, metodologia="propo
 
 
 def fechar_periodo(db, owner_tipo, owner_id, ini=None, fim=None, metodologia="proporcional_receita"):
-    """Calcula a reconciliação e persiste um PeriodoContabil (status='fechado')."""
+    """Calcula a reconciliação e persiste um PeriodoContabil (status='fechado'). Frente 2 (spec
+    2026-08-25): junto grava um SNAPSHOT de relatorio_natureza/relatorio_centro_custo do mesmo
+    intervalo — período fechado nunca mais recalcula esses dois relatórios (a classificação das
+    contas pode mudar depois; o relatório de um mês já fechado tem que continuar batendo com ele
+    mesmo). Só tem efeito prático quando `ini`/`fim` são passados (um fechamento sem intervalo,
+    como o fluxo atual da UI faz, não corresponde a nenhum relatório filtrado depois — ver
+    `_periodo_fechado_correspondente`)."""
     import json as _json
     rec = reconciliar(db, owner_tipo, owner_id, ini, fim, metodologia)
+    snapshot = {
+        "natureza": relatorio_natureza(db, owner_tipo, owner_id, ini, fim),
+        "centro_custo": relatorio_centro_custo(db, owner_tipo, owner_id, ini, fim),
+    }
     p = PeriodoContabil(owner_tipo=owner_tipo, owner_id=owner_id, inicio=ini, fim=fim, status="fechado",
                         metodologia=metodologia, resultado_societario=rec["resultado_societario_oficial"],
                         soma_margem_plena=rec["soma_margem_plena"], divergencia_residual=rec["divergencia_residual"],
-                        dados_json=_json.dumps(rec["alocacao_por_projeto"]))
+                        dados_json=_json.dumps(rec["alocacao_por_projeto"]),
+                        classificacao_snapshot_json=_json.dumps(snapshot))
     db.add(p)
     db.commit()
     return {"id": p.id, **rec}
+
+
+def _periodo_fechado_correspondente(db, owner_tipo, owner_id, ini, fim):
+    """PeriodoContabil FECHADO cujo (inicio, fim) bate EXATAMENTE com o pedido, ou None. Sem
+    `ini`/`fim` explícitos (relatório sem filtro de período) nunca corresponde — sempre calcula
+    ao vivo; do contrário, o retrato "sem filtro" congelaria pra sempre assim que o primeiro
+    período fosse fechado, escondendo lançamentos novos do dia a dia."""
+    if ini is None or fim is None:
+        return None
+    return (db.query(PeriodoContabil)
+              .filter_by(owner_tipo=owner_tipo, owner_id=owner_id, status="fechado", inicio=ini, fim=fim)
+              .order_by(PeriodoContabil.id.desc()).first())
+
+
+def relatorio_natureza_periodo(db, owner_tipo, owner_id, ini=None, fim=None):
+    """Frente 2 (spec 2026-08-25): se `(ini, fim)` corresponde a um período FECHADO, devolve o
+    snapshot congelado no fechamento; senão calcula ao vivo (`relatorio_natureza`), igual antes."""
+    import json as _json
+    periodo = _periodo_fechado_correspondente(db, owner_tipo, owner_id, ini, fim)
+    if periodo is not None and periodo.classificacao_snapshot_json:
+        snap = _json.loads(periodo.classificacao_snapshot_json)
+        if "natureza" in snap:
+            return snap["natureza"]
+    return relatorio_natureza(db, owner_tipo, owner_id, ini, fim)
+
+
+def relatorio_centro_custo_periodo(db, owner_tipo, owner_id, ini=None, fim=None):
+    """Mesma lógica de `relatorio_natureza_periodo`, para `relatorio_centro_custo`."""
+    import json as _json
+    periodo = _periodo_fechado_correspondente(db, owner_tipo, owner_id, ini, fim)
+    if periodo is not None and periodo.classificacao_snapshot_json:
+        snap = _json.loads(periodo.classificacao_snapshot_json)
+        if "centro_custo" in snap:
+            return snap["centro_custo"]
+    return relatorio_centro_custo(db, owner_tipo, owner_id, ini, fim)
 
 
 def listar_periodos(db, owner_tipo, owner_id):

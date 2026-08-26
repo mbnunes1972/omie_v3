@@ -48,3 +48,72 @@ def test_fechar_periodo_persiste(app_db):
     db.close()
     assert len(periodos) == 1 and periodos[0]["status"] == "fechado"
     assert periodos[0]["resultado_societario"] == 500.0
+
+
+# ── Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): snapshot no fechamento ─────────────────
+def test_fechar_periodo_grava_snapshot_classificacao(app_db):
+    import datetime as dt, json
+    db = app_db.get_session(); ot, oid = "loja", 33
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    contas = {c.codigo: c for c in db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+    contas["5.4.01"].natureza_custo = "fixo"
+    db.commit()
+    caixa = contas["1.1.01"]
+    mc.lancar(db, ot, oid, contas["5.4.01"].id, caixa.id, 700.0,
+              data=dt.datetime(2026, 8, 15))
+
+    ini, fim = dt.datetime(2026, 8, 1), dt.datetime(2026, 8, 31, 23, 59, 59)
+    r = mc.fechar_periodo(db, ot, oid, ini=ini, fim=fim)
+    periodo = db.get(mc.PeriodoContabil, r["id"])
+    assert periodo.classificacao_snapshot_json
+    snap = json.loads(periodo.classificacao_snapshot_json)
+    assert "natureza" in snap and "centro_custo" in snap
+    assert snap["natureza"]["fixo"]["total"] == 700.0
+    db.close()
+
+
+def test_relatorio_periodo_congela_reclassificacao_depois_do_fechamento(app_db):
+    import datetime as dt
+    db = app_db.get_session(); ot, oid = "loja", 34
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    contas = {c.codigo: c for c in db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+    contas["5.4.01"].natureza_custo = "fixo"
+    db.commit()
+    caixa = contas["1.1.01"]
+    mc.lancar(db, ot, oid, contas["5.4.01"].id, caixa.id, 700.0, data=dt.datetime(2026, 8, 15))
+
+    ini, fim = dt.datetime(2026, 8, 1), dt.datetime(2026, 8, 31, 23, 59, 59)
+    mc.fechar_periodo(db, ot, oid, ini=ini, fim=fim)
+
+    # reclassifica DEPOIS do fechamento — o relatório do período fechado não pode mudar
+    contas = {c.codigo: c for c in db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+    contas["5.4.01"].natureza_custo = "variavel"
+    db.commit()
+
+    congelado = mc.relatorio_natureza_periodo(db, ot, oid, ini=ini, fim=fim)
+    assert congelado["fixo"]["total"] == 700.0             # snapshot: valor antigo
+    assert congelado["variavel"]["contas"] == []
+
+    ao_vivo = mc.relatorio_natureza(db, ot, oid, ini=ini, fim=fim)
+    assert ao_vivo["variavel"]["total"] == 700.0            # sem período, reflete a reclassificação
+    db.close()
+
+
+def test_relatorio_periodo_sem_correspondencia_nunca_congela(app_db):
+    """Achado crítico verificado antes de implementar: fechar_periodo SEM ini/fim (o fluxo atual
+    da UI, antes desta frente) grava um PeriodoContabil com inicio=fim=None. Se a correspondência
+    não exigisse ini/fim explícitos dos dois lados, TODA consulta sem filtro (a visão padrão,
+    default da tela) passaria a devolver esse snapshot congelado pra sempre a partir do primeiro
+    fechamento — escondendo lançamentos novos do dia a dia. Trava: sem ini/fim explícitos, nunca
+    corresponde a período nenhum, mesmo havendo um fechado com (None, None)."""
+    db = app_db.get_session(); ot, oid = "loja", 35
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.fechar_periodo(db, ot, oid)   # sem ini/fim — comportamento legado
+    contas = {c.codigo: c for c in db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
+    caixa = contas["1.1.01"]
+    mc.lancar(db, ot, oid, contas["5.4.01"].id, caixa.id, 150.0)   # lançamento NOVO, depois do fechamento
+
+    rel = mc.relatorio_natureza_periodo(db, ot, oid)   # sem filtro — a visão padrão
+    total = sum(b["total"] for k, b in rel.items() if k != "periodo")
+    assert total == 150.0   # o lançamento novo aparece — não ficou preso num snapshot velho
+    db.close()

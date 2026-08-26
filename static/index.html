@@ -19306,20 +19306,28 @@ function _tagComABola() {
 let _cicloTransferState = null;   // null | {concluidaCod, concluidaNome, alvoCod, alvoNome, modo:'perguntar'|'buscar'}
 
 function _aposConcluirEtapa(codigoConcluido) {
-  const def = ETAPAS_CICLO.find(et => et.codigo === codigoConcluido);
   // Mesma lógica da tag "Responsável" (_tagComABola): primeira etapa não-conclusiva na ordem.
   const alvo = ETAPAS_CICLO.find(et => !STATUS_CONCLUSIVOS.has((_cicloData[et.codigo] || {}).status));
   if (!alvo) { _cicloTransferState = null; return; }   // ciclo inteiro concluído — nada a perguntar
   // Achado da Vera (2026-08-26, E2E): nome cru da etapa ("Produção") diverge do que o fichário
   // mostra pra mesma posição quando ela é cabeça de grupo ("Logística e Expedição", achado
   // 2026-08-18) — mesmo rótulo em todo lugar que se refere à etapa, via _fichaTituloGrupo/_fichaMae.
-  const _grupoConcluida = (typeof _fichaTituloGrupo === 'function') ? _fichaTituloGrupo(_fichaMae(codigoConcluido)) : null;
-  const _grupoAlvo = (typeof _fichaTituloGrupo === 'function') ? _fichaTituloGrupo(_fichaMae(alvo.codigo)) : null;
+  // Achado da Vera (2026-08-26, E2E7/E2E8): a troca pelo título do grupo só faz sentido quando o
+  // CÓDIGO em si é a etapa PRINCIPAL cabeça de grupo (ex.: "13"→"Logística e Expedição") — só
+  // aplicar quando `codigo === _fichaMae(codigo)` (é a própria mãe, não uma sub-etapa). Aplicá-la
+  // também a uma SUB-etapa (ex.: "11a", "17a") trocava o nome específico da subfase pelo nome da
+  // etapa-mãe inteira ("Projeto executivo"/"Montagem"), fazendo o prompt repetir o mesmo nome
+  // duas vezes sem dizer qual subfase é a próxima de verdade.
+  const _tituloEtapaTransfer = (codigo) => {
+    const d2 = ETAPAS_CICLO.find(et => et.codigo === codigo);
+    if (codigo === _fichaMae(codigo) && typeof _fichaTituloGrupo === 'function') return _fichaTituloGrupo(codigo);
+    return d2 ? d2.nome : codigo;
+  };
   _cicloTransferState = {
     concluidaCod: codigoConcluido,
-    concluidaNome: _grupoConcluida || (def ? def.nome : codigoConcluido),
+    concluidaNome: _tituloEtapaTransfer(codigoConcluido),
     alvoCod: alvo.codigo,
-    alvoNome: _grupoAlvo || alvo.nome,
+    alvoNome: _tituloEtapaTransfer(alvo.codigo),
     modo: 'perguntar',
   };
 }
@@ -22429,7 +22437,12 @@ function _renderCardImplantacao(dados, bloqueada) {
 
 async function conferenciaRegistrar(){
   if(!projetoAtivo) return;
-  const _num = id => { const el=document.getElementById(id); return el ? (parseFloat((el.value||'').replace(/\./g,'').replace(',','.'))||0) : 0; };
+  // Achado da Vera (2026-08-26, E2E7/E2E8): os dois campos usam mascaraMoedaInput (que sempre
+  // prefixa "R$ " a cada tecla), mas essa leitura usava um parser próprio que não removia o
+  // prefixo — parseFloat("R$ 40.000") é NaN, então SEMPRE caía no "custo <= 0", mesmo com o
+  // campo visivelmente preenchido. parseMoeda() (já usado em outros lugares do arquivo) trata
+  // "R$ "/milhar/decimal corretamente — reaproveitando em vez de reimplementar mal de novo.
+  const _num = id => { const el=document.getElementById(id); return el ? parseMoeda(el.value) : 0; };
   const custo = _num('conf-custo'), outros = _num('conf-outros');
   if(!(custo > 0) && !(outros > 0)){ await avisoPopup('Informe o custo de fábrica do PE e/ou o valor a migrar.', {titulo:'Conferência'}); return; }
   // capacidade explícita (achado 2026-08-25, mesmo motivo do ramoFinanceiroTrocar): lança no
@@ -23214,10 +23227,17 @@ function pedirCredenciaisGerente(opts) {
 async function carregarDadosContrato() {
   if (!projetoAtivo) return;
   try {
+    // Achado da Vera (2026-08-26, E2E7/E2E8): esta função nunca atualizava _cicloData — o ✓ de
+    // "Aprovação Financeira I"/"Solicitação de Medição" (lidos de _cicloData['8']/['9'] em
+    // _renderBotoesPosAssinaturaContrato) e a faixa "Etapas do Projeto" ficavam com o status
+    // ANTIGO até o usuário sair e reentrar. _fetchCiclo() ANTES do render pra este card já
+    // nascer certo; _fichaRenderLombada() depois refaz só a faixa (não mexe no conteúdo aberto).
+    await _fetchCiclo();
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato`,
                           { credentials: 'same-origin' });
     const d = await r.json();
     renderContratoUI(d.contrato);
+    _fichaRenderLombada();
   } catch(e) { showToast('Erro ao carregar contrato: ' + _detalheErroRede(e), true); }
 }
 
@@ -23454,12 +23474,17 @@ async function carregarSolicitacaoMedicao() {
   if (!box || !projetoAtivo) return;
   box.innerHTML = '<p style="color:var(--muted);font-size:.85rem;margin:0">Carregando...</p>';
   try {
+    // Achado da Vera (2026-08-26, E2E7/E2E8): mesmo motivo de carregarDadosContrato — sem
+    // atualizar _cicloData, o ✓ ao lado do botão e a faixa "Etapas do Projeto" ficavam
+    // desatualizados até sair e reentrar.
+    await _fetchCiclo();
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`,
                           { credentials: 'same-origin' });
     const d = await r.json();
     if (!d.ok) { box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro ao carregar.</p>'; return; }
     _smAssinaturaDefaults = d.assinatura_defaults || {};
     box.innerHTML = _renderSecaoSolicitacaoMedicao(d.solicitacao);
+    _fichaRenderLombada();
   } catch(e) {
     box.innerHTML = '<p style="color:var(--err);font-size:.85rem;margin:0">Erro de rede: ' + esc(_detalheErroRede(e)) + '</p>';
   }

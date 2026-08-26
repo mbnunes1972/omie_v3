@@ -499,3 +499,61 @@ def test_endpoint_classificar_lote(http_client_factory, seed, app_db):
     st4, d4 = c.get("/api/financeiro/contas")
     conta2 = _find(d4["contas"], "5.2.01")
     assert conta2["id"] == conta["id"]
+
+
+# ── Frente 3 (spec 2026-08-25, DECIDIDO): botão Editar (PUT) reclassifica ────────────────────────
+def test_put_conta_reclassifica_com_autorizacao_e_grava_rastro(http_client_factory, seed, app_db):
+    import json
+    from database import LogAcaoGerencial
+    c = http_client_factory(); c.login("dir_l1", "senha123")   # master: tem aprovar_financeiro
+    _, d = c.get("/api/financeiro/contas")
+    conta = _find(d["contas"], "5.2.02")
+    _, d2 = c.get("/api/financeiro/centro-custo")
+    cc = _find(d2["centros_custo"], "3.1")
+
+    st, dr = c.put(f"/api/financeiro/contas/{conta['id']}",
+                   {"nome": "Comissão de Vendas", "centro_custo_id": cc["id"], "natureza_custo": "variavel"})
+    assert st == 200 and dr["ok"]
+    assert dr["conta"]["nome"] == "Comissão de Vendas"
+    assert dr["conta"]["centro_custo_id"] == cc["id"] and dr["conta"]["natureza_custo"] == "variavel"
+
+    db = app_db.get_session()
+    log = (db.query(LogAcaoGerencial).filter_by(acao="reclassificar_conta")
+             .order_by(LogAcaoGerencial.id.desc()).first())
+    assert log is not None and json.loads(log.contexto)["codigo"] == conta["codigo"]
+    db.close()
+
+
+def test_put_conta_reclassifica_sem_permissao_403(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("cons_l1", "senha123")   # operador: nem passa exige_edicao
+    st, d = c.get("/api/financeiro/contas")   # cons_l1 sem acesso financeiro -> 403 já aqui é aceitável
+    # tenta direto a reclassificação
+    st2, d2 = c.put("/api/financeiro/contas/1", {"centro_custo_id": 1, "natureza_custo": "fixo"})
+    assert st2 == 403
+
+
+def test_put_conta_nao_limpa_classificacao_grupo5_400(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    _, d = c.get("/api/financeiro/contas")
+    conta = _find(d["contas"], "5.2.03")
+    _, d2 = c.get("/api/financeiro/centro-custo")
+    cc = _find(d2["centros_custo"], "1.3")
+    c.put(f"/api/financeiro/contas/{conta['id']}", {"centro_custo_id": cc["id"], "natureza_custo": "fixo"})
+
+    st, dr = c.put(f"/api/financeiro/contas/{conta['id']}", {"centro_custo_id": None, "natureza_custo": "fixo"})
+    assert st == 400
+
+
+def test_post_conta_grupo5_exige_classificacao(http_client_factory, seed, app_db):
+    c = http_client_factory(); c.login("dir_l1", "senha123")
+    _, d = c.get("/api/financeiro/contas")
+    despesas_adm = _find(d["contas"], "5.4")
+    _, d2 = c.get("/api/financeiro/centro-custo")
+    cc = _find(d2["centros_custo"], "4.3")
+
+    st, dr = c.post("/api/financeiro/contas", {"pai_id": despesas_adm["id"], "nome": "Conta Nova Sem Classe"})
+    assert st == 400   # sem centro_custo_id/natureza_custo
+
+    st2, dr2 = c.post("/api/financeiro/contas", {"pai_id": despesas_adm["id"], "nome": "Conta Nova Classificada",
+                                                 "centro_custo_id": cc["id"], "natureza_custo": "fixo"})
+    assert st2 == 201 and dr2["conta"]["centro_custo_id"] == cc["id"]

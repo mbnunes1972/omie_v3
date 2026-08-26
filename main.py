@@ -9843,7 +9843,13 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             try:
                 dd = json.loads(body or b'{}')
-                nova = mod_contabil.criar_conta(db, ot, oid, dd.get("pai_id"), dd.get("nome", ""))
+                # Frente 3 (spec 2026-08-25, DECIDIDO): conta nova em grupo 5 nasce classificada
+                # — criar_conta exige aprovar_financeiro só quando o pai é do grupo 5 (checagem
+                # real fica em mod_contabil, que sabe o grupo do pai; aqui só informamos se ESTE
+                # perfil teria autorização, caso seja preciso).
+                nova = mod_contabil.criar_conta(db, ot, oid, dd.get("pai_id"), dd.get("nome", ""),
+                        centro_custo_id=dd.get("centro_custo_id"), natureza_custo=dd.get("natureza_custo"),
+                        reclassificar_autorizado=perfis.pode(usuario.get("nivel"), "aprovar_financeiro"))
                 self.send_json({"ok": True, "conta": nova}, code=201)
             except PermissionError as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=403)
@@ -15032,7 +15038,15 @@ class Handler(BaseHTTPRequestHandler):
         body   = self._ler_body()
         if body is None: return   # 413 já respondido pelo _ler_body
 
-        # ── PUT /api/financeiro/contas/<id> (renomear/reordenar) ──────────────
+        # ── PUT /api/financeiro/contas/<id> (Editar: nome/ordem + Centro de Custo/Natureza) ────
+        # Frente 3 (spec 2026-08-25, DECIDIDO): renomear/reordenar continua com o perfil de
+        # sempre (exige_edicao); reclassificar (centro_custo_id/natureza_custo) exige
+        # especificamente Gerente Adm/Financeiro ou Diretor (aprovar_financeiro) — checado aqui,
+        # não dentro de mod_contabil (que não conhece perfil de usuário). Sentinela `_NAO_
+        # INFORMADO` do lado do mod_contabil: só passamos os campos de classificação quando a
+        # CHAVE está presente no request (mesmo padrão de mod_comissao.editar_item) — presença,
+        # não truthiness, distingue "não mexi nisso" de "mandei vazio" (que a obrigatoriedade
+        # bloqueia pra conta do grupo 5).
         m_conta = re.match(r"^/api/financeiro/contas/(\d+)$", path)
         if m_conta:
             ctx = _contabil_ctx(self, exige_edicao=True)
@@ -15041,8 +15055,26 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             try:
                 dd = json.loads(body) if body else {}
-                r = mod_contabil.editar_conta(db, ot, oid, int(m_conta.group(1)),
-                                              nome=dd.get("nome"), ordem=dd.get("ordem"))
+                kwargs = {"nome": dd.get("nome"), "ordem": dd.get("ordem")}
+                _toca_classificacao = "centro_custo_id" in dd or "natureza_custo" in dd
+                if _toca_classificacao:
+                    kwargs["reclassificar_autorizado"] = perfis.pode(usuario.get("nivel"), "aprovar_financeiro")
+                    if "centro_custo_id" in dd:
+                        kwargs["centro_custo_id"] = dd.get("centro_custo_id")
+                    if "natureza_custo" in dd:
+                        kwargs["natureza_custo"] = dd.get("natureza_custo")
+                antes = mod_contabil._serial(mod_contabil._get_own(db, ot, oid, int(m_conta.group(1))))
+                r = mod_contabil.editar_conta(db, ot, oid, int(m_conta.group(1)), **kwargs)
+                if _toca_classificacao and (r["centro_custo_id"] != antes["centro_custo_id"]
+                                            or r["natureza_custo"] != antes["natureza_custo"]):
+                    db.add(LogAcaoGerencial(solicitante_id=usuario["id"], autorizador_id=usuario["id"],
+                            acao="reclassificar_conta",
+                            contexto=json.dumps({"conta_id": r["id"], "codigo": r["codigo"],
+                                "antes": {"centro_custo_id": antes["centro_custo_id"],
+                                          "natureza_custo": antes["natureza_custo"]},
+                                "depois": {"centro_custo_id": r["centro_custo_id"],
+                                           "natureza_custo": r["natureza_custo"]}})))
+                    db.commit()
                 self.send_json({"ok": True, "conta": r})
             except PermissionError as e:
                 self.send_json({"ok": False, "erro": str(e)}, code=403)

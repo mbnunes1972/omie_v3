@@ -16303,8 +16303,16 @@ async function _naturezaCustoRenderizar(){
       + '<div style="display:flex;padding:8px 10px;font-weight:700;font-size:12px;border-top:1px solid var(--border)"><span>Total</span>'
       + '<span style="margin-left:auto;font-family:var(--font-mono)">'+_dashBRL(balde.total)+'</span></div></div>';
   };
+  // Frente 5 (spec 2026-08-25): duas definições de "variável" convivem no sistema e NÃO
+  // conversam de propósito — a classificação aqui é do PLANO DE CONTAS (etiqueta de gestão por
+  // conta); o Cust_Var/Marg_Cont que aparece na Negociação e nas Aprovações Financeiras vem do
+  // MOTOR DA VENDA (CFO + rubricas de provisão). Reclassificar uma conta aqui não muda margem de
+  // projeto nenhuma — os dois mundos são independentes por construção.
   box.innerHTML = filtro
-    + '<div style="margin-bottom:10px;font-size:11px;color:var(--muted)">Só contas com movimento no período aparecem.</div>'
+    + '<div style="margin-bottom:10px;font-size:11px;color:var(--muted)">Só contas com movimento no período aparecem. '
+    + 'Esta classificação é do <strong>plano de contas</strong> (etiqueta de gestão) — independente do Custo '
+    + 'Variável/Margem de Contribuição da Negociação e das Aprovações Financeiras, que vem do motor da venda. '
+    + 'Reclassificar uma conta aqui não altera a margem de nenhum projeto.</div>'
     + '<div style="display:grid;grid-template-columns:repeat('+colunas.length+',1fr);gap:14px">'
     + colunas.map(colunaHtml).join('') + '</div>';
 }

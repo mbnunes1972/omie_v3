@@ -829,6 +829,39 @@ def migrar_classificacao_grupo5_v3(db):
     return {"corrigidos": corrigidos}
 
 
+def retrato_classificacao_grupo5(db, owner_tipo, owner_id):
+    """Frente 0 (spec 2026-08-25, pré-requisito das demais): retrato do estado REAL do banco
+    pras contas do grupo 5 — o que está gravado agora (não o que o mapa em código diz que
+    DEVERIA estar), com uma coluna comparando contra `CLASSIFICACAO_GRUPO5_V1`. `diverge=True`
+    não é necessariamente um erro — pode ser reclassificação manual legítima; é só o sinal pra
+    revisão humana (Marcelo/Juliana) saber onde olhar. Contas fora do mapa (`sem_mapa=True`,
+    ex.: alguma criada depois das 59 originais) não contam como divergentes — não há
+    "esperado" pra comparar."""
+    contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, grupo=5)
+                .order_by(Conta.codigo).all())
+    ccs_por_id = {c.id: c for c in db.query(CentroCusto)
+                  .filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    itens = []
+    for c in contas:
+        cc_atual = ccs_por_id.get(c.centro_custo_id)
+        esperado = CLASSIFICACAO_GRUPO5_V1.get(c.codigo)
+        cc_esperado_cod, nat_esperada = esperado if esperado else (None, None)
+        cc_atual_cod = cc_atual.codigo if cc_atual else None
+        diverge = esperado is not None and (cc_atual_cod != cc_esperado_cod
+                                            or c.natureza_custo != nat_esperada)
+        itens.append({
+            "codigo": c.codigo, "nome": c.nome, "ativa": bool(c.ativa),
+            "centro_custo_atual_codigo": cc_atual_cod,
+            "centro_custo_atual_nome": cc_atual.nome if cc_atual else None,
+            "natureza_atual": c.natureza_custo,
+            "centro_custo_esperado_codigo": cc_esperado_cod,
+            "natureza_esperada": nat_esperada,
+            "sem_mapa": esperado is None,
+            "diverge": diverge,
+        })
+    return itens
+
+
 # ── Livro de Lançamentos (sub-projeto #2) ────────────────────────────────────
 def _lanc_serial(l):
     return {"id": l.id, "data": l.data.isoformat() if l.data else None, "valor": l.valor,

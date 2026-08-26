@@ -732,10 +732,20 @@ def classificar_contas_lote(db, owner_tipo, owner_id, itens):
 
 # código da conta -> (código do centro de custo, slug de natureza) — as 59 contas do grupo 5,
 # proposta aprovada por Marcelo e Juliana (Artifact de 2026-08-08, ver DEV_LOG Sessão 177).
+# Frente 1 (spec 2026-08-25, DECIDIDO): mapa atualizado com os valores FINAIS, incorporando as
+# correções que as migrações migrar_classificacao_grupo5_v2/v3 (aposentadas do boot nesta mesma
+# mudança — ver `main()`) faziam por VALOR (não por origem). Um owner novo (banco zerado) precisa
+# nascer direto com o valor certo, sem depender de v2/v3 rodarem depois. As duas correções que
+# ainda faltavam aqui: 5.2.06 Combustível → fixo (era o default antigo que v3 corrigia) e 5.5.05
+# Perdas com Acordos Financeiros → variável (decisão nova, Frente 4 #8 — nunca teve migração
+# própria). 5.3.12 (Brindes) e 5.6.10 (Ajuste de Provisões) já estavam com o valor final aqui
+# (a correção do v2 virou no-op pra owner novo há um tempo; v2 seguia necessário só pros owners
+# que já tinham sido classificados ANTES do mapa ser corrigido — todos os ambientes atuais já
+# passaram por ela, por isso é seguro aposentar).
 CLASSIFICACAO_GRUPO5_V1 = {
     "5.1.01": ("1.2", "variavel"), "5.1.02": ("1.4", "variavel"),
     "5.2.01": ("1.3", "variavel"), "5.2.02": ("1.3", "variavel"), "5.2.03": ("1.3", "variavel"),
-    "5.2.04": ("1.4", "fixo"),     "5.2.05": ("1.3", "variavel"), "5.2.06": ("1.4", "variavel"),
+    "5.2.04": ("1.4", "fixo"),     "5.2.05": ("1.3", "variavel"), "5.2.06": ("1.4", "fixo"),
     "5.2.07": ("1.4", "variavel"), "5.2.08": ("1.4", "variavel"), "5.2.09": ("1.3", "variavel"),
     "5.2.10": ("1.4", "fixo"),     "5.2.12": ("3.1", "variavel"), "5.2.13": ("3.1", "variavel"),
     "5.3.01": ("2.1", "variavel"), "5.3.02": ("2.1", "variavel"), "5.3.03": ("4.3", "variavel"),
@@ -752,7 +762,7 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.4.15": ("4.3", "fixo"),     "5.4.16": ("4.3", "fixo"),     "5.4.17": ("4.5", "fixo"),
     "5.4.18": ("4.5", "fixo"),     "5.4.19": ("4.2", "fixo"),     "5.4.20": ("4.5", "fixo"),
     "5.5.01": ("4.3", "fixo"),     "5.5.02": ("4.3", "fixo"),     "5.5.03": ("4.3", "variavel"),
-    "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "fixo"),     "5.6.10": ("4.5", "variavel"),
+    "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "variavel"), "5.6.10": ("4.5", "variavel"),
 }
 
 

@@ -18496,12 +18496,14 @@ def main():
             # Classificação Centro de Custo/Natureza aprovada por Marcelo e Juliana (2026-08-08) —
             # roda DEPOIS do backfill acima (precisa da árvore de Centro de Custo já semeada).
             _mc.migrar_classificacao_grupo5_v1(_dbp)
-            # Correção pós-aprovação: Brindes/Ajuste de Provisões viram Variável (associadas à
-            # venda); Ajuste de Provisões também muda de Centro de Custo (2026-08-08).
-            _mc.migrar_classificacao_grupo5_v2(_dbp)
-            # Correção (achado do usuário, 2026-08-15): Combustível (5.2.06) é despesa FIXA, não
-            # associada ao volume de vendas.
-            _mc.migrar_classificacao_grupo5_v3(_dbp)
+            # Frente 1 (spec 2026-08-25, DECIDIDO): migrar_classificacao_grupo5_v2/v3 SAÍRAM do
+            # boot — corrigiam "quem ainda estivesse no default antigo" pelo VALOR, não pela
+            # origem, então uma reclassificação manual legítima que coincidisse com esse valor
+            # seria revertida em silêncio no próximo restart (a armadilha que a spec descreve).
+            # Já rodaram em todos os ambientes e são idempotentes — cumpriram o papel. O mapa
+            # `CLASSIFICACAO_GRUPO5_V1` acima já foi atualizado com os valores finais que elas
+            # corrigiam, então um owner novo nasce certo sem depender delas. Funções mantidas em
+            # mod_contabil.py (não deletadas) só como registro histórico/uso manual excepcional.
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

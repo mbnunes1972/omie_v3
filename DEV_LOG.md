@@ -3277,6 +3277,35 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 224 — Centro de Custo/Natureza: Frente 1 (blindar a edição contra as migrações)
+
+Segunda frente da spec (`docs/superpowers/specs/financeiro/2026-08-25-...`). Sem isso o botão
+Editar (Frente 3) mentiria: `migrar_classificacao_grupo5_v2`/`v3` detectavam "ainda no default
+antigo" PELO VALOR, não pela origem — uma reclassificação manual legítima que coincidisse com o
+valor antigo (ex.: alguém decidir que Combustível é Variável de novo) seria revertida em silêncio
+no próximo restart do servidor.
+
+**DECIDIDO (opção a, já na spec):** `migrar_classificacao_grupo5_v2`/`v3` **saíram do boot**
+(`main.py`) — já rodaram em todos os ambientes, são idempotentes, cumpriram o papel. Funções
+mantidas em `mod_contabil.py` (não deletadas) como registro histórico/uso manual excepcional, só
+não são mais chamadas no startup. `CLASSIFICACAO_GRUPO5_V1` atualizado com os valores finais que
+faltavam: **5.2.06 Combustível → fixo** (era o default antigo que a v3 corrigia) e **5.5.05 Perdas
+com Acordos Financeiros → variável** (decisão nova, Frente 4 #8, nunca teve migração própria —
+5.3.12 e 5.6.10 já estavam com o valor final no mapa). Um owner novo (banco zerado) agora nasce
+direto com os 3 valores certos, sem depender de v2/v3 rodarem depois.
+
+**Teste obrigatório da spec:** reclassificar manualmente Combustível de volta pro valor que a v3
+costumava "corrigir" (`variavel`), rodar de novo a rotina de boot (só `migrar_classificacao_
+grupo5_v1`, já que v2/v3 saíram) e confirmar que a escolha manual sobrevive —
+`test_boot_pos_frente1_nao_reverte_reclassificacao_manual_pro_default_antigo`. Ajustados 2 testes
+existentes de `v3` que dependiam do mapa ainda ter o default antigo (mesmo padrão que o teste de
+`v2` já usava — simular o estado legado manualmente em vez de deixar o v1 produzi-lo).
+
+**Verificação:** `tests/test_centro_custo_natureza.py` + `tests/test_centro_custo_relatorios.py`
+41 passed; suíte inteira **2325 passed**.
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `tests/test_centro_custo_natureza.py`.
+
 ## Sessão 223 — Centro de Custo/Natureza: Frente 0 (retrato do estado real)
 
 Início da execução de `docs/superpowers/specs/financeiro/2026-08-25-centro-custo-natureza-edicao-

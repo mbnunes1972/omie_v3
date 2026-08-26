@@ -425,8 +425,13 @@ def test_migracao_classificacao_grupo5_v2_idempotente(app_db):
 def test_migracao_classificacao_grupo5_v3_corrige_combustivel(app_db):
     db = app_db.get_session(); ot, oid = "loja", 996
     mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)   # deixa 5.2.06 no default antigo ("variavel")
-    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "variavel"
+    mc.migrar_classificacao_grupo5_v1(db)
+    # Frente 1 (spec 2026-08-25): CLASSIFICACAO_GRUPO5_V1 já reflete o valor CORRIGIDO ("fixo")
+    # — v1 não deixa mais 5.2.06 no default antigo. Simula o estado LEGADO (owner classificado
+    # antes desta correção), mesmo padrão já usado no teste de v2 logo acima.
+    contas = _contas(db, ot, oid)
+    contas["5.2.06"].natureza_custo = "variavel"
+    db.commit()
 
     # migração roda em TODOS os owners — outros testes do módulo já deixaram owners com 5.2.06
     # em "variavel" também, então o contador GLOBAL não é necessariamente 1 (mesma pegadinha já
@@ -457,6 +462,28 @@ def test_migracao_classificacao_grupo5_v3_idempotente(app_db):
     mc.migrar_classificacao_grupo5_v3(db)
     out2 = mc.migrar_classificacao_grupo5_v3(db)
     assert out2 == {"corrigidos": 0}
+    db.close()
+
+
+# ── Frente 1 (spec 2026-08-25): v2/v3 saíram do BOOT — teste obrigatório da spec ────────────────
+def test_boot_pos_frente1_nao_reverte_reclassificacao_manual_pro_default_antigo(app_db):
+    """Reproduz o cenário de risco descrito na spec: v2/v3 detectavam "ainda no default antigo"
+    PELO VALOR, não pela origem — reclassificar Combustível de volta pra "variavel" (o que v3
+    corrigia) seria revertido em silêncio no próximo boot. Com v2/v3 fora do boot (só
+    migrar_classificacao_grupo5_v1 roda mais — ver main.py), a escolha manual sobrevive."""
+    db = app_db.get_session(); ot, oid = "loja", 999
+    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
+    mc.migrar_classificacao_grupo5_v1(db)   # 1º "boot": Combustível nasce Fixo (mapa já corrigido)
+    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "fixo"
+
+    # decisão manual legítima: reclassifica de volta pro valor que v3 costumava "corrigir"
+    contas = _contas(db, ot, oid)
+    contas["5.2.06"].natureza_custo = "variavel"
+    db.commit()
+
+    # "reinicia o servidor" — só a v1 roda mais (v2/v3 aposentadas do boot em main.py)
+    mc.migrar_classificacao_grupo5_v1(db)
+    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "variavel"   # sobreviveu
     db.close()
 
 

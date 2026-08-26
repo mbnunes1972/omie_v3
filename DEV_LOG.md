@@ -3277,6 +3277,41 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 230 — Reteste E2E7 em fluxo real + 2 achados novos corrigidos
+
+Usuário pediu novo teste ("aos moldes do teste 3") especificamente pra confirmar os 3 fixes da
+Sessão 229 em fluxo real (não isolado/bypass). Vera rodou um ciclo completo (`Vera_QA_E2E7`,
+Parcelamento Loja 6x, custos adicionais Viagem+Especial, AF2 Absorver+Estornar, transferência de
+responsabilidade real executada) — **os 3 fixes PASSARAM no fluxo real**: conferência funcionou de
+primeira, faixa de etapas atualizou sem sair/reentrar, prompt de transferência mostrou o nome da
+sub-fase certo. Ciclo parou na etapa 15 (NF-e) por falta de token Focus de homologação — limitação
+de ambiente já conhecida (Sessão 147), não um bug.
+
+**Correção de dado (não é bug de código):** ao tentar destravar a NF-e, a Vera preencheu UF/Cidade
+do Emitente da loja INSPIRIUM (estavam vazios) com "SP"/"Caraguatatuba" — usuário confirmou UF
+correto mas cidade errada; corrigido pra "São José dos Campos" (+ `municipio_ibge` correspondente,
+3549904, que estava pareado com o código de Caraguatatuba).
+
+**2 achados novos, ambos corrigidos:**
+
+1. **🟡 Baixo — Lista de Projetos não atualizava sozinha após criar projeto via modal.**
+   `criarProjeto()` nunca chamava `projCarregar()` — quem criava um projeto só via ele na lista
+   (ou a busca encontrava) depois de um F5. Fix: `projCarregar()` (fire-and-forget, não bloqueia
+   a navegação pro briefing) logo após o sucesso. Verificado ao vivo: `_projListaBase` passa a
+   incluir o projeto novo sem reload.
+2. **🟡 Baixo — Prompt "Signatário é o próprio cliente?" repetia na aprovação do orçamento.**
+   `gerarContrato()`, no retry após o gate de "contatos não confirmados", chamava a si mesma
+   passando `signatarioPre` (o parâmetro ORIGINAL, ainda `undefined` na 1ª chamada) em vez de
+   `signatarioOverride` (o valor JÁ resolvido) — o retry reentrava com `undefined` e reperguntava
+   pela 2ª vez. O gate irmão (loja incompleta, mesma função) já fazia certo — só este divergia.
+   Fix: passa `signatarioOverride`. Verificado com simulação de fetch/gate: prompt dispara 1x, não
+   2x, com o retry chegando até o sucesso.
+
+**Verificação:** ambos testados ao vivo no navegador; `node --check`; sem hex fora de
+`orizon-tokens.css`; suíte inteira **2344 passed** (mudança 100% frontend).
+
+**Arquivos:** `static/index.html`.
+
 ## Sessão 229 — E2E7/E2E8 (dois ciclos variando decisões) + 3 achados corrigidos
 
 Usuário pediu novo teste E2E completo "aos moldes do teste 3", em dois ciclos variando ações e

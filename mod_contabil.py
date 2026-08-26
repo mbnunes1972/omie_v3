@@ -449,7 +449,8 @@ def backfill_plano_todos_owners(db):
 
 def _serial(c):
     return {"id": c.id, "codigo": c.codigo, "nome": c.nome, "grupo": c.grupo,
-            "tipo": c.tipo, "natureza": c.natureza, "pai_id": c.pai_id, "ativa": bool(c.ativa)}
+            "tipo": c.tipo, "natureza": c.natureza, "pai_id": c.pai_id, "ativa": bool(c.ativa),
+            "centro_custo_id": c.centro_custo_id, "natureza_custo": c.natureza_custo}
 
 
 def listar_contas(db, owner_tipo, owner_id, incluir_inativas=False):
@@ -506,21 +507,56 @@ def _proximo_codigo(db, pai):
     return f"{pai.codigo}.{seq:02d}"
 
 
-def criar_conta(db, owner_tipo, owner_id, pai_id, nome):
+# Sentinela: distingue "campo ausente do request" de "None explícito" — mesmo padrão de
+# mod_comissao._NAO_INFORMADO. Necessário pra Frente 3 (spec 2026-08-25): centro_custo_id/
+# natureza_custo OMITIDOS não mexem em nada (ex.: só renomear); PASSADOS vazio/None numa conta do
+# grupo 5 é tentativa de LIMPAR, que a obrigatoriedade (DECIDIDO) bloqueia.
+_NAO_INFORMADO = object()
+
+
+def criar_conta(db, owner_tipo, owner_id, pai_id, nome, centro_custo_id=None, natureza_custo=None,
+                reclassificar_autorizado=False):
+    """`centro_custo_id`/`natureza_custo`: obrigatórios quando o pai é do grupo 5 (Frente 3,
+    DECIDIDO — toda conta do grupo 5 nasce classificada). `reclassificar_autorizado`: o CALLER
+    (HTTP layer) já validou o perfil (Gerente Adm/Financeiro ou Diretor) — sem isso, criar conta
+    no grupo 5 (que exige classificar) levanta PermissionError."""
     pai = _get_own(db, owner_tipo, owner_id, pai_id)
     if not (nome or "").strip():
         raise ValueError("nome obrigatório")
     if pai.tipo == "analitica":
         pai.tipo = "sintetica"                            # pai passa a agrupar
+    cc_id, nat = None, None
+    if pai.grupo == 5:
+        if not reclassificar_autorizado:
+            raise PermissionError("Criar conta em Despesas/Custos exige Gerente Adm/Financeiro ou Diretor.")
+        if not centro_custo_id:
+            raise ValueError("Centro de Custo é obrigatório para contas do grupo 5.")
+        if not natureza_custo:
+            raise ValueError("Natureza é obrigatória para contas do grupo 5.")
+        cc = _get_own_cc(db, owner_tipo, owner_id, centro_custo_id)
+        naturezas_validas = {slug for slug, _ in NATUREZA_CUSTO}
+        if natureza_custo not in naturezas_validas:
+            raise ValueError(f"natureza inválida: {natureza_custo}")
+        cc_id, nat = cc.id, natureza_custo
     c = Conta(owner_tipo=owner_tipo, owner_id=owner_id, codigo=_proximo_codigo(db, pai),
               nome=nome.strip(), grupo=pai.grupo, tipo="analitica", natureza=_natureza(pai.grupo),
-              pai_id=pai.id, ativa=1, ordem=999)
+              pai_id=pai.id, ativa=1, ordem=999, centro_custo_id=cc_id, natureza_custo=nat)
     db.add(c)
     db.commit()
     return _serial(c)
 
 
-def editar_conta(db, owner_tipo, owner_id, conta_id, nome=None, ordem=None):
+def editar_conta(db, owner_tipo, owner_id, conta_id, nome=None, ordem=None,
+                 centro_custo_id=_NAO_INFORMADO, natureza_custo=_NAO_INFORMADO,
+                 reclassificar_autorizado=False):
+    """Botão Editar (Frente 3, spec 2026-08-25) — substitui Renomear, reune nome + Centro de
+    Custo + Natureza numa transação só. `centro_custo_id`/`natureza_custo`:
+    `_NAO_INFORMADO` (default) = não mexe (renomear/reordenar sozinho continua igual de sempre);
+    qualquer OUTRO valor (inclusive `None`/vazio) = pedido de reclassificação, que:
+    (a) exige `reclassificar_autorizado=True` (perfil Gerente Adm/Financeiro ou Diretor — checado
+    pelo CALLER, esta função não conhece perfil de usuário); (b) numa conta do grupo 5, não aceita
+    vazio — classificação é OBRIGATÓRIA (DECIDIDO); limpar continua só possível por
+    `classificar_contas_lote`, ferramenta administrativa."""
     c = _get_own(db, owner_tipo, owner_id, conta_id)
     if nome is not None:
         if not nome.strip():
@@ -528,6 +564,26 @@ def editar_conta(db, owner_tipo, owner_id, conta_id, nome=None, ordem=None):
         c.nome = nome.strip()
     if ordem is not None:
         c.ordem = int(ordem)
+    if centro_custo_id is not _NAO_INFORMADO or natureza_custo is not _NAO_INFORMADO:
+        if not reclassificar_autorizado:
+            raise PermissionError("Reclassificar Centro de Custo/Natureza exige Gerente Adm/Financeiro ou Diretor.")
+        if c.grupo == 5:
+            if not centro_custo_id:
+                raise ValueError("Centro de Custo é obrigatório para contas do grupo 5.")
+            if not natureza_custo:
+                raise ValueError("Natureza é obrigatória para contas do grupo 5.")
+        if centro_custo_id:
+            cc = _get_own_cc(db, owner_tipo, owner_id, centro_custo_id)
+            c.centro_custo_id = cc.id
+        elif centro_custo_id is not _NAO_INFORMADO:
+            c.centro_custo_id = None
+        if natureza_custo:
+            naturezas_validas = {slug for slug, _ in NATUREZA_CUSTO}
+            if natureza_custo not in naturezas_validas:
+                raise ValueError(f"natureza inválida: {natureza_custo}")
+            c.natureza_custo = natureza_custo
+        elif natureza_custo is not _NAO_INFORMADO:
+            c.natureza_custo = None
     db.commit()
     return _serial(c)
 

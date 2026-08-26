@@ -3277,6 +3277,60 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 226 — Centro de Custo/Natureza: Frente 3 (botão Editar)
+
+Quarta frente da spec (`docs/superpowers/specs/financeiro/2026-08-25-...`). Botão **Editar**
+substitui **Renomear** nas contas ANALÍTICAS do grupo 5 (Despesas/Custos) — nome + Centro de
+Custo + Natureza numa modal só. Sintéticas (cabeçalhos do grupo 5) e contas de outros grupos
+continuam com o "renomear" simples de sempre — nunca precisaram dessa classificação.
+
+**Verificado antes de ligar a obrigatoriedade (pré-requisito da spec §3):** consultei o banco
+local — 0 contas ANALÍTICAS do grupo 5 sem `centro_custo_id`/`natureza_custo` (os 21 registros
+"sem classificação" encontrados eram todos SINTÉTICAS, os cabeçalhos "5"/"5.1".."5.6", que nunca
+entram na classificação). `migrar_classificacao_grupo5_v1` roda em todo boot pra todo owner e
+cobre as 59 contas do mapa — VPS A/B rodam o mesmo boot, então herdam o mesmo estado limpo no
+deploy. Produção segue um runbook separado — vale rodar o mesmo check por lá antes/depois do
+deploy de produção.
+
+**Backend (`mod_contabil.py`):**
+- `editar_conta` ganhou `centro_custo_id`/`natureza_custo` com sentinela `_NAO_INFORMADO` (mesmo
+  padrão de `mod_comissao._NAO_INFORMADO`) — distingue "campo ausente" (renomear sozinho,
+  comportamento de sempre) de "campo presente" (pedido de reclassificação, mesmo que vazio). Exige
+  `reclassificar_autorizado=True` (checado pelo CALLER — main.py, que sabe o perfil; mod_contabil
+  não conhece usuário) e, em conta do grupo 5, não aceita limpar (`ValueError`) — só
+  `classificar_contas_lote` (ferramenta administrativa) ainda pode.
+- `criar_conta` ganhou os mesmos campos — conta nova em pai do grupo 5 exige classificação +
+  autorização, senão `ValueError`/`PermissionError`. Grupos 1-4 seguem sem exigir nada (nunca
+  precisaram).
+- `_serial(c)` passou a expor `centro_custo_id`/`natureza_custo` (faltava — o frontend não tinha
+  como pré-popular o modal de edição).
+
+**Permissão (main.py, DECIDIDO):** renomear/reordenar continua com `exige_edicao` (perfil de
+sempre); reclassificar (chave `centro_custo_id`/`natureza_custo` presente no request, mesmo
+vazia) exige especificamente `aprovar_financeiro` (Gerente Adm/Financeiro ou Diretor). Rastro:
+`LogAcaoGerencial` (`acao="reclassificar_conta"`, antes/depois em `contexto`) gravado só quando
+algo de fato mudou.
+
+**Frontend:** `_pcNode` mostra "Editar" (abre `pcEditarConta`, modal com nome + `<select>` de
+Centro de Custo — árvore achatada e indentada — + `<select>` de Natureza) só pra conta ANALÍTICA
+do grupo 5; todo o resto continua com "renomear" (`promptPopup` simples). Antecipação da Frente 4
+#4 (ainda não feita): a lista de Natureza já nasce sem "Semivariável" como opção nova — só aparece
+se já for o valor atual da conta (spec: "não some se já gravado, só não oferece pra escolha
+nova"). "+ filho" em pai do grupo 5 abre a mesma modal (criação com nome vazio) em vez do prompt
+simples. Aviso na tela sobre o impacto em relatórios de período aberto (ligação com a Frente 2).
+
+**Verificação:** navegador real (Playwright, login local com usuário `pdm2026`/master de
+`seed.py`) — Editar em "5.4.05 Contabilidade" abriu pré-preenchido (nome/CC "4.3 ·
+Administrativo-financeiro"/natureza "fixo"), reclassificar pra "variavel" persistiu no banco e
+gravou o `LogAcaoGerencial` esperado, sem erro no console; revertido depois do teste. Backend:
+`tests/test_plano_contas.py` (+7), `tests/test_centro_custo_natureza.py` (+4 HTTP) — 1 teste
+existente (`test_plano_contas_api.py::test_post_cria_e_put_renomeia`) precisou de ajuste (criar
+conta em grupo 5 agora exige classificação). Suíte inteira **2340 passed**. `node --check`; sem
+hex fora de `orizon-tokens.css`.
+
+**Arquivos:** `mod_contabil.py`, `main.py`, `static/index.html`, `tests/test_plano_contas.py`,
+`tests/test_plano_contas_api.py`, `tests/test_centro_custo_natureza.py`.
+
 ## Sessão 225 — Centro de Custo/Natureza: Frente 2 (congelamento no fechamento)
 
 Terceira frente da spec. **DECIDIDO na spec:** congelar no fechamento, snapshot de

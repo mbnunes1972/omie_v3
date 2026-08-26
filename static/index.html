@@ -16309,6 +16309,14 @@ async function _naturezaCustoRenderizar(){
     + colunas.map(colunaHtml).join('') + '</div>';
 }
 
+// Frente 3 (spec 2026-08-25): cache plano — id -> conta (achatado) — pra abrir o modal de Editar
+// sem precisar refazer fetch nem embutir JSON cru num atributo onclick.
+let _pcContasCache = {};
+function _pcAchatarContas(nodes, out){
+  out = out || {};
+  (nodes||[]).forEach(c=>{ out[c.id] = c; _pcAchatarContas(c.filhos, out); });
+  return out;
+}
 async function _pcCarregar(cfgKey){
   const cfg = _PC_CFGS[cfgKey];
   const box = document.getElementById(cfg.boxId);
@@ -16317,7 +16325,8 @@ async function _pcCarregar(cfgKey){
   if(r.status === 403){ box.innerHTML = '<em style="color:var(--muted)">Módulo financeiro inativo ou sem acesso.</em>'; return; }
   const d = await r.json().catch(()=>({}));
   if(!d.ok){ box.innerHTML = '<em style="color:var(--muted)">Falha ao carregar.</em>'; return; }
-  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, renomeie ou inative um item. Itens em uso nunca são apagados — só inativados.</div>'
+  if(cfgKey === 'contas') _pcContasCache = _pcAchatarContas(d[cfg.itemsKey]);
+  box.innerHTML = '<div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Adicione filho, edite ou inative um item. Itens em uso nunca são apagados — só inativados. Contas de Despesas/Custos (grupo 5) exigem Centro de Custo e Natureza (Editar).</div>'
     + d[cfg.itemsKey].map(c => _pcNode(cfgKey, c, 0)).join('');
 }
 
@@ -16335,9 +16344,17 @@ function _pcNode(cfgKey, c, nivel){
   const sint = (c.filhos||[]).length > 0;
   const cod  = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(c.codigo)+'</span>';
   const nome = '<span style="font-weight:'+(sint?700:400)+';color:var(--text)">'+esc(c.nome)+'</span>'+(cfg.mostraSelo?_finSeloBadge(c.grupo):'');
+  // Frente 3 (spec 2026-08-25, DECIDIDO): "Editar" (nome + Centro de Custo + Natureza numa modal
+  // só) substitui "renomear" pras contas ANALÍTICAS do grupo 5 — só elas recebem lançamento e
+  // são a "unidade" que a classificação descreve. Sintéticas (grupo 5) e qualquer conta de outro
+  // grupo continuam com o renomear simples (nunca tiveram/precisam de Centro de Custo/Natureza).
+  const editarClassificacao = (cfgKey === 'contas' && c.grupo === 5 && !sint);
+  const btnEditarOuRenomear = editarClassificacao
+    ? '<button class="btn btn-ghost btn-sm" onclick="pcAbrirEdicaoConta('+c.id+')">Editar</button>'
+    : '<button class="btn btn-ghost btn-sm" onclick="pcRenomear(\''+cfgKey+'\','+c.id+')">renomear</button>';
   const acoes = '<span style="margin-left:auto;display:flex;gap:6px">'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcNovo(\''+cfgKey+'\','+c.id+')">+ filho</button>'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcRenomear(\''+cfgKey+'\','+c.id+')">renomear</button>'
+    + '<button class="btn btn-ghost btn-sm" onclick="pcNovo(\''+cfgKey+'\','+c.id+','+c.grupo+')">+ filho</button>'
+    + btnEditarOuRenomear
     + '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\''+cfgKey+'\','+c.id+')">inativar/apagar</button>'
     + '</span>';
   const linha = '<div style="display:flex;align-items:center;padding:5px 10px 5px '+pad+'px;border-bottom:1px solid var(--border);font-size:12px">'+cod+nome+acoes+'</div>';
@@ -16345,8 +16362,21 @@ function _pcNode(cfgKey, c, nivel){
   return linha + filhos;
 }
 
-async function pcNovo(cfgKey, paiId){
+async function pcNovo(cfgKey, paiId, paiGrupo){
   const cfg = _PC_CFGS[cfgKey];
+  // Frente 3 (spec 2026-08-25, DECIDIDO): conta nova em grupo 5 nasce classificada — mesma
+  // modal do Editar, só que com nome vazio (criação) em vez de pré-preenchido.
+  if(cfgKey === 'contas' && Number(paiGrupo) === 5){
+    const resultado = await pcEditarConta({nome:'', centro_custo_id:null, natureza_custo:null}, 'Nova conta');
+    if(!resultado) return;
+    const r = await fetch(cfg.criarUrl, {method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome: resultado.nome,
+        centro_custo_id: resultado.centro_custo_id, natureza_custo: resultado.natureza_custo})});
+    const d = await r.json().catch(()=>({}));
+    if(!d.ok) showToast(d.erro || 'Falha ao criar', true);
+    _pcRefresh(cfgKey);
+    return;
+  }
   const nome = await promptPopup('Nome do novo item:', {titulo:'Novo item'});
   if(!nome) return;
   const r = await fetch(cfg.criarUrl, {method:'POST', headers:{'Content-Type':'application/json'},
@@ -16362,6 +16392,75 @@ async function pcRenomear(cfgKey, id){
   await fetch(cfg.putUrlBase+id, {method:'PUT', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({nome})});
   _pcRefresh(cfgKey);
+}
+
+// Frente 3 (spec 2026-08-25, DECIDIDO): botão Editar — nome + Centro de Custo + Natureza numa
+// modal só, pra conta ANALÍTICA do grupo 5 (Despesas/Custos). Achata a árvore de Centro de Custo
+// (indenta por profundidade nas options) e a lista de Natureza (Semivariável some da lista de
+// opções — Frente 4 #4 — mas continua aparecendo se já for o valor atual da conta, pra não
+// esconder dado já gravado).
+function _pcAchatarCC(nodes, depth, out){
+  out = out || [];
+  (nodes||[]).forEach(n=>{ out.push({id:n.id, codigo:n.codigo, nome:n.nome, depth}); _pcAchatarCC(n.filhos, depth+1, out); });
+  return out;
+}
+async function pcEditarConta(conta, tituloOverride){
+  const r = await fetch('/api/financeiro/centro-custo', {credentials:'same-origin'});
+  const d = await r.json().catch(()=>({}));
+  const ccFlat = d.ok ? _pcAchatarCC(d.centros_custo, 0) : [];
+  const ccOpts = ccFlat.map(cc =>
+    '<option value="'+cc.id+'"'+(conta.centro_custo_id===cc.id?' selected':'')+'>'
+    + '—'.repeat(cc.depth)+' '+esc(cc.codigo)+' · '+esc(cc.nome)+'</option>').join('');
+  const natBase = [['fixo','Fixo'], ['variavel','Variável']];
+  if(conta.natureza_custo === 'semivariavel') natBase.push(['semivariavel', 'Semivariável']);
+  const natOpts = natBase.map(([v,l]) =>
+    '<option value="'+v+'"'+(conta.natureza_custo===v?' selected':'')+'>'+l+'</option>').join('');
+  const inputStyle = 'width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);'
+    + 'color:var(--fg);padding:7px;border-radius:4px;font-size:.88rem;margin-bottom:10px';
+
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 12px;font-size:1rem;color:var(--accent)">'+esc(tituloOverride||'Editar conta')+'</h4>'
+      + '<label style="font-size:var(--fs-sm);color:var(--muted);display:block;margin-bottom:3px">Nome</label>'
+      + '<input id="_pce-nome" type="text" autocomplete="off" value="'+esc(conta.nome||'')+'" style="'+inputStyle+'">'
+      + '<label style="font-size:var(--fs-sm);color:var(--muted);display:block;margin-bottom:3px">Centro de Custo</label>'
+      + '<select id="_pce-cc" style="'+inputStyle+'"><option value="">— selecione —</option>'+ccOpts+'</select>'
+      + '<label style="font-size:var(--fs-sm);color:var(--muted);display:block;margin-bottom:3px">Natureza</label>'
+      + '<select id="_pce-nat" style="'+inputStyle+'"><option value="">— selecione —</option>'+natOpts+'</select>'
+      + '<div style="font-size:10px;color:var(--muted);margin:-4px 0 12px">Centro de Custo e Natureza são obrigatórios '
+      + 'para contas de Despesas/Custos e exigem perfil Gerente Adm/Financeiro ou Diretor. A mudança afeta os '
+      + 'relatórios de Natureza/Centro de Custo de qualquer período ainda aberto (períodos fechados com um '
+      + 'intervalo definido ficam congelados, ver Reconciliação).</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end">'
+      + '<button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);'
+      + 'border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Cancelar</button>'
+      + '<button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);'
+      + 'border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;'
+      + 'cursor:pointer">Salvar</button></div>');
+    const fin = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if(e.target === ov) fin(null); });
+    ov.querySelector('[data-act="ok"]').onclick = () => {
+      const nome = ov.querySelector('#_pce-nome').value.trim();
+      if(!nome){ showToast('Nome é obrigatório', true); return; }
+      const ccVal = ov.querySelector('#_pce-cc').value;
+      const natVal = ov.querySelector('#_pce-nat').value;
+      if(!ccVal || !natVal){ showToast('Centro de Custo e Natureza são obrigatórios', true); return; }
+      fin({nome, centro_custo_id: parseInt(ccVal), natureza_custo: natVal});
+    };
+    setTimeout(() => ov.querySelector('#_pce-nome').focus(), 60);
+  });
+}
+async function pcAbrirEdicaoConta(id){
+  const conta = _pcContasCache[id];
+  if(!conta) return;
+  const resultado = await pcEditarConta(conta);
+  if(!resultado) return;
+  const r = await fetch('/api/financeiro/contas/'+id, {method:'PUT', headers:{'Content-Type':'application/json'},
+    credentials:'same-origin', body: JSON.stringify(resultado)});
+  const d = await r.json().catch(()=>({}));
+  if(!d.ok) showToast(d.erro || 'Falha ao salvar', true);
+  _pcRefresh('contas');
 }
 async function pcRemover(cfgKey, id){
   const cfg = _PC_CFGS[cfgKey];

@@ -70,6 +70,28 @@ SUBFASES_PE = {
             "doc_label": "Projeto Executivo Assinado","botao": "Concluir Projeto Executivo","revisavel": False},
 }
 
+# Nome de QUALQUER sub-etapa (não só as 4 "enriquecidas" de SUBFASES_PE acima) — espelha
+# ETAPAS_CICLO do frontend (static/index.html) pros códigos "11d"/"17a", que não têm entrada em
+# SUBFASES_PE (11d é gerida por outro handler; 17a não tem doc/botão associado). Achado da Vera
+# (2026-08-26, E2E): a validação de `POST /ciclo/<cod>/pos-conclusao` só reconhecia códigos de
+# ETAPA_NOME (etapas principais) — quando a "próxima etapa" calculada pelo frontend caía numa
+# sub-etapa (ex.: "17a" logo depois da Montagem), o endpoint recusava com 400 mesmo sendo um
+# alvo legítimo.
+NOME_SUBETAPA = {cod: sf["nome"] for cod, sf in SUBFASES_PE.items()}
+NOME_SUBETAPA["11d"] = "Aprovação financeira II"
+NOME_SUBETAPA["17a"] = "Pendências de montagem"
+
+
+def nome_etapa_qualquer(codigo):
+    """Nome de exibição pra QUALQUER código válido — principal ou sub-etapa. Cai no código cru
+    só se `codigo` não for reconhecido (não deveria acontecer com dado consistente)."""
+    return ETAPA_NOME.get(codigo) or NOME_SUBETAPA.get(codigo) or codigo
+
+
+def etapa_codigo_valido(codigo):
+    """True se `codigo` é uma etapa OU sub-etapa reconhecida (principal ou não)."""
+    return codigo in ETAPA_NOME or codigo in NOME_SUBETAPA
+
 # Subfases que precisam estar concluídas antes de concluir o PE (11e).
 # 11d é a aprovação financeira II (gerida por outro handler, sem entrada em
 # SUBFASES_PE), mas exigida aqui como pré-requisito para concluir o PE.
@@ -261,6 +283,13 @@ PROXIMA_OVERRIDE = {"13": "14", "14": "15", "15": "16", "16": "17"}
 # etapa atual" (ou contando etapas concluídas) precisa saber que "13" só está de fato
 # concluída quando TODO o grupo está — ver etapa_concluida_agregada.
 GRUPOS_ESPINHACO = {"13": ["13", "14", "15", "16"]}
+
+# Rótulo do GRUPO quando "13" é a etapa atual — espelha `_FICHA_GRUPO_NOME` do frontend
+# (static/index.html). Achado da Vera (2026-08-26, E2E): a lista de Projetos e o diálogo de
+# transferência de responsabilidade usavam ETAPA_NOME["13"] cru ("Produção") pra essa posição,
+# divergindo do fichário do projeto (que mostra "Logística e Expedição") — mesma etapa, nomes
+# diferentes em telas diferentes. Manter os dois dicionários em sincronia se o grupo mudar.
+GRUPO_NOME = {"13": "Logística e Expedição"}
 
 
 def codigos_relevantes_fase():

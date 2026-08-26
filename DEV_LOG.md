@@ -3277,6 +3277,74 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 219 — Triagem dos 11 achados médios da bateria E2E (rodadas 1-3, DEV_LOG Sessão 218)
+
+Usuário pediu pra triar e corrigir os achados médios das 3 rodadas E2E. Todos os 11 corrigidos —
+sem migração de banco, tudo frontend + 2 ajustes pequenos de backend.
+
+1. **Corrida entre auto-save de desconto e modal de autorização** — `onblur` do campo de desconto
+   disparava `salvarDescontoAutomatico()` IMEDIATAMENTE (antes do `onclick` do botão "✓ OK", que
+   sempre passa por um blur primeiro), tentando salvar sem autorização, sendo recusado e revertendo
+   o campo — o que fazia `negConfirmarDesconto()` ler um valor já revertido e nem abrir o modal (ou
+   os dois diálogos coexistirem, se a corrida fosse na outra direção). Fix: `salvarDescontoAutomatico()`
+   agora recusa salvar quando o valor excede `cfgGetDescontoMax()` (que já reflete autorização
+   vigente) — só o fluxo de autorização (`negConfirmarDesconto`) mexe nesse caso.
+2. **Rótulo desatualizado no painel Fiscal** — "NFS-e (emissão futura — só captura de dado)" virou
+   só "NFS-e" (a emissão já é real, só falta token Focus configurado).
+3. **Nomenclatura de fase inconsistente entre 3 telas** — etapa "13" é cabeça do grupo visual
+   "Logística e Expedição" no fichário do projeto, mas a lista de Projetos e o diálogo de
+   transferência de responsabilidade mostravam o nome cru da etapa individual ("Produção") pra
+   mesma posição. Novo `mod_ciclo.GRUPO_NOME` (Python, espelha `_FICHA_GRUPO_NOME` do frontend) +
+   `_enriquecer_projetos_com_status` usa ele; o diálogo de transferência passou a rotear pelo mesmo
+   `_fichaTituloGrupo`/`_fichaMae` que o fichário já usa.
+4. **Toast de autorização de desconto mostra "0%" quando vem da sidebar** — `confirmarAutorizacao()`
+   sempre lia `#mp-desconto` (campo do modal de Parâmetros, nunca populado nesse contexto) pro
+   toast de sucesso; agora reusa a variável `desc`, já calculada corretamente por `contexto`.
+5. **Medição reprovada sem caminho de UI pra corrigir/reenviar** — `_renderCardMedicao` só oferecia
+   "Liberar (decisão comercial)"; o endpoint já aceitava reenvio de parecer sem guarda nenhuma
+   contra isso. Adicionado um link expansível "Ou: o medidor corrigiu e quer registrar um novo
+   parecer" reaproveitando o mesmo formulário original (`_medicaoFormHtml()`, extraído).
+6. **Decisão "Cobrar" em AF2 sem passo de digitar valor** — ao contrário de "Estornar" (que já abre
+   um prompt editável), "Cobrar" usava `abs(diferença)` como default silencioso
+   (`mod_conciliacao_pe.montar_decisao`) sem nenhuma indicação visual. Agora a mensagem de
+   confirmação (`pedirCredenciaisGerente`) mostra o valor calculado antes de confirmar — não virou
+   editável de propósito (é cálculo direto, diferente do Estorno, que é negociado).
+7. **Visão Geral mostra margem negativa sem aviso quando a NF-e não foi emitida** — Receita/Custo
+   de Produto só populam quando a NF-e é realmente emitida (FASE D2), comportamento correto de
+   `margem_projeto`, mas sem indício nenhum na tela. Banner de aviso quando `receita === 0`,
+   explicando que não é prejuízo real.
+8. **Rótulo "Comissão" no card financeiro** soma o grupo contábil 5.3 inteiro (comissão + brinde +
+   custo de viagem) — renomeado pra "Comissão e Desp. Comerciais" com tooltip explicando o que
+   entra, sem mudar o cálculo (que já estava certo).
+9. **Clicar "Não" no diálogo de transferência de responsabilidade sempre disparava um erro 400** —
+   a validação de `POST /ciclo/<cod>/pos-conclusao` só reconhecia códigos de `ETAPA_NOME`
+   (etapas principais); quando a "próxima etapa" calculada pelo frontend caía numa SUB-etapa (ex.:
+   "17a", logo após concluir "17"/Montagem), o endpoint recusava com 400 mesmo sendo alvo legítimo.
+   Novo `mod_ciclo.etapa_codigo_valido`/`nome_etapa_qualquer` (cobrem principais + sub-etapas,
+   incluindo "11d"/"17a" que não tinham nome em lugar nenhum do backend).
+10. **Deadlock entre Retenção e Revisão de PE (11c)** — a 11c exigia PE de TODOS os ambientes do
+    orçamento pra concluir, mas ambiente RETIDO corretamente bloqueia upload de PE — as duas travas
+    se contradiziam, nunca dava pra concluir a 11c sem antes liberar a retenção (contrariando o
+    propósito da retenção, que é deixar a obra seguir com uma parte parada). Fix: ambiente retido
+    sai do universo "todos precisam ter PE" — mesmo princípio já usado pra ambiente fora do
+    orçamento (`test_conclusao_11c_ignora_ambiente_fora_do_orcamento`).
+11. **Etapa "Montagem" (17) presa em "Em andamento" na Visão Geral mesmo já concluída** — `_statusFichario`
+    tratava "17" como cabeça de grupo (sub "17a" Pendências de montagem) e exigia AMBAS concluídas —
+    mas "17a" é `toggleavel` e opcional (nunca ganha `CicloEtapa` se o projeto não teve pendência
+    nenhuma), então o grupo nunca fechava. Fix: sub-etapa toggleável que nunca foi aberta (sem
+    `CicloEtapa`) não trava mais o grupo; sub-etapa que EXISTE mas não está concluída continua
+    bloqueando normalmente (14/15/16 do grupo "13" sempre têm linha desde o D0 — não regridem).
+
+**Verificação:** `node --check` limpo, `git grep` de hex sem resíduo, suíte **2317 passed** (2
+novos: `test_pos_conclusao_aceita_sub_etapa_como_alvo`, `test_conclusao_11c_ignora_ambiente_retido`
+— achados #9 e #10, os únicos com lógica de backend testável; os demais são ajustes de
+frontend/rótulo, verificados ao vivo via Playwright: rótulo "Montagem · Concluída" (achado #11),
+banner de aviso de Receita zerada e rótulo "Comissão e Desp. Comerciais" (achados #7/#8) conferidos
+num projeto real da bateria E2E).
+
+**Arquivos:** `static/index.html`, `main.py`, `mod_ciclo.py`, `tests/test_ciclo_transferencia.py`,
+`tests/test_pe_comparacao_venda_e2e.py`.
+
 ## Sessão 218 — Fix crítico achado em bateria E2E: desmembrar fase com AF2 já decidida derrubava o servidor
 
 Usuário pediu "3 testes completos pelo Playwright, e2e, cada um com 4 ambientes" — cadastro do

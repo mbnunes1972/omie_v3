@@ -14404,6 +14404,22 @@ class Handler(BaseHTTPRequestHandler):
                     cstatus = contrato.status if contrato else ""
                     if mod_ciclo.reabertura_bloqueada_por_contrato(resetar, cstatus):
                         self.send_json({"ok": False, "erro": "Contrato já assinado — não é possível revisar esta etapa"}, code=400); return
+                    # Achado da Vera (2026-08-26, E2E, reproduzido ao vivo): a cascata reseta
+                    # QUALQUER etapa posterior que já tenha linha no banco, mesmo etapas
+                    # operacionais (12-20) sem relação com o PE que já foram fisicamente
+                    # executadas (produção encaminhada, NFe emitida, montagem concluída) —
+                    # resetar o status delas pra "pendente" não desfaz o mundo real, só apaga o
+                    # rastro de conclusão em silêncio. Ver mod_ciclo.etapas_operacionais_ja_iniciadas.
+                    _status_por_codigo_full = {e.etapa_codigo: e.status for e in todas}
+                    _ja_iniciadas = mod_ciclo.etapas_operacionais_ja_iniciadas(resetar, _status_por_codigo_full)
+                    if _ja_iniciadas:
+                        _nomes = ", ".join(mod_ciclo.nome_etapa_qualquer(c) for c in
+                                           sorted(_ja_iniciadas, key=mod_ciclo.chave_ordenacao))
+                        self.send_json({"ok": False,
+                            "erro": "Já existe trabalho registrado em etapas posteriores ao Projeto "
+                                    f"Executivo ({_nomes}) — revisar agora apagaria esse histórico. "
+                                    "Trate a mudança pelo Complemento de Projeto ou fale com a "
+                                    "gerência sobre um cancelamento formal do ambiente."}, code=400); return
                     resetar_set = set(resetar)
                     status_anterior = {e.etapa_codigo: e.status for e in todas
                                        if e.etapa_codigo in resetar_set}

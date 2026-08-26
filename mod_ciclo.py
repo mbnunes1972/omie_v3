@@ -6,6 +6,42 @@ pode avançar. A ordem aqui (2=Criação do projeto, 3=Briefing) é a canônica 
 o ETAPAS_CICLO do frontend é alinhado a ela na tarefa de frontend.
 """
 
+# ── Nomes simbólicos dos códigos ────────────────────────────────────────────────────────────
+# Os CÓDIGOS abaixo (strings tipo "11d") são o dado real — persistidos em `ciclo_etapas.
+# etapa_codigo` e outras tabelas há anos, pra TODO projeto já existente. NUNCA renumerar (ver
+# análise de 2026-08-26 no DEV_LOG): a numeração é histórica, não posicional — o Projeto
+# Executivo nasceu como a 11ª etapa e ainda é "11"/"11a".."11e" no código mesmo hoje aparecendo
+# como a 7ª etapa na tela (a REEXIBIÇÃO 1-based já é resolvida só na camada visual, por
+# `_fichaNumeroExibicao` no frontend — o código-fonte não muda). Estas constantes existem só
+# pra quem LÊ o código não precisar decorar "11d é a AF2" — usar nos pontos novos/tocados;
+# não é um sweep retroativo de todo `main.py`/`static/index.html` (custo/risco não compensa
+# pra um valor puramente de legibilidade — ver a mesma análise no DEV_LOG).
+CADASTRO_CLIENTE         = "1"
+CRIACAO_PROJETO          = "2"
+BRIEFING                 = "3"
+ORCAMENTO                = "4"
+CONTRATO                 = "7"
+AF1                      = "8"     # Aprovação financeira I
+SOLICITACAO_MEDICAO      = "9"
+MEDICAO                  = "10"
+PE                       = "11"    # Projeto Executivo (etapa-mãe)
+PE_PLANTA_PONTOS         = "11a"
+PE_ALINHAMENTO           = "11b"
+PE_REVISAO               = "11c"
+AF2                      = "11d"   # Aprovação financeira II (Conciliação de PE)
+PE_APROVACAO_CLIENTE     = "11e"
+CONFERENCIA_IMPLANTACAO  = "12"
+PRODUCAO                 = "13"
+RECEBIMENTO_PEDIDO       = "14"
+NFE_CLIENTE               = "15"
+ENTREGA_CLIENTE          = "16"
+MONTAGEM                 = "17"
+MONTAGEM_PENDENCIAS      = "17a"
+ASSISTENCIA_POS_MONTAGEM = "18"
+VISTORIA_FINAL           = "19"
+APROVACAO_FINAL          = "20"
+CONCILIACAO_FINAL        = "21"
+
 # Etapas PRINCIPAIS, na ordem. Sub-etapas ("11a".."11e", "17a") NÃO entram aqui
 # — elas são livres dentro do pai.
 # "8" (Aprovação financeira I) e "9" (Solicitação de medição) SAÍRAM daqui (achado do
@@ -23,31 +59,32 @@ o ETAPAS_CICLO do frontend é alinhado a ela na tarefa de frontend.
 # aparecer como 4 abas separadas no fichário. Ver GRUPOS_ESPINHACO/etapa_concluida_agregada
 # pra quem precisa saber se "o grupo inteiro" já terminou (não só a Produção).
 ETAPAS_PRINCIPAIS = [
-    "1", "2", "3", "4", "7", "10",
-    "11", "12", "13", "17", "18", "19", "20",
-    "21",   # FASE D2: Conciliação Final — fecha os números e encerra o projeto (status "Concluído")
+    CADASTRO_CLIENTE, CRIACAO_PROJETO, BRIEFING, ORCAMENTO, CONTRATO, MEDICAO,
+    PE, CONFERENCIA_IMPLANTACAO, PRODUCAO, MONTAGEM, ASSISTENCIA_POS_MONTAGEM, VISTORIA_FINAL,
+    APROVACAO_FINAL,
+    CONCILIACAO_FINAL,   # FASE D2: fecha os números e encerra o projeto (status "Concluído")
 ]
 
 ETAPA_NOME = {
-    "1": "Cadastro do Cliente",
-    "2": "Criação do projeto",
-    "3": "Briefing",
-    "4": "Orçamento",
-    "7": "Contrato",
-    "8": "Aprovação financeira I",
-    "9": "Solicitação de medição",
-    "10": "Medição",
-    "11": "Projeto executivo",
-    "12": "Conferência e Implantação do Pedido",
-    "13": "Produção",
-    "14": "Recebimento do Pedido",
-    "15": "Emissão da NFe do cliente",
-    "16": "Entrega no cliente",
-    "17": "Montagem",
-    "18": "Assistência pós Montagem",
-    "19": "Vistoria final",
-    "20": "Aprovação final",
-    "21": "Conciliação Final",
+    CADASTRO_CLIENTE: "Cadastro do Cliente",
+    CRIACAO_PROJETO: "Criação do projeto",
+    BRIEFING: "Briefing",
+    ORCAMENTO: "Orçamento",
+    CONTRATO: "Contrato",
+    AF1: "Aprovação financeira I",
+    SOLICITACAO_MEDICAO: "Solicitação de medição",
+    MEDICAO: "Medição",
+    PE: "Projeto executivo",
+    CONFERENCIA_IMPLANTACAO: "Conferência e Implantação do Pedido",
+    PRODUCAO: "Produção",
+    RECEBIMENTO_PEDIDO: "Recebimento do Pedido",
+    NFE_CLIENTE: "Emissão da NFe do cliente",
+    ENTREGA_CLIENTE: "Entrega no cliente",
+    MONTAGEM: "Montagem",
+    ASSISTENCIA_POS_MONTAGEM: "Assistência pós Montagem",
+    VISTORIA_FINAL: "Vistoria final",
+    APROVACAO_FINAL: "Aprovação final",
+    CONCILIACAO_FINAL: "Conciliação Final",
 }
 
 # Status que contam como "etapa concluída" para fins de gating (espelha o
@@ -60,13 +97,13 @@ STATUS_CONCLUSIVOS = frozenset({
 
 # ── Projeto Executivo (etapa 11) — subfases enriquecidas ──────────────────────
 SUBFASES_PE = {
-    "11a": {"nome": "Planta de pontos de PE",       "tipo_doc": "pe_planta_pontos",
+    PE_PLANTA_PONTOS: {"nome": "Planta de pontos de PE",       "tipo_doc": "pe_planta_pontos",
             "doc_label": "arquivo de medição",       "botao": "Encaminhar para PE",       "revisavel": False},
-    "11b": {"nome": "Reunião de alinhamento",        "tipo_doc": "pe_relatorio_alinhamento",
+    PE_ALINHAMENTO: {"nome": "Reunião de alinhamento",        "tipo_doc": "pe_relatorio_alinhamento",
             "doc_label": "relatório da reunião",     "botao": "Projeto Alinhado",         "revisavel": True},
-    "11c": {"nome": "Revisão de PE",                 "tipo_doc": "pe_projeto_executivo",
+    PE_REVISAO: {"nome": "Revisão de PE",                 "tipo_doc": "pe_projeto_executivo",
             "doc_label": "Projeto Executivo",        "botao": "Concluído",                "revisavel": True},
-    "11e": {"nome": "Aprovação do PE pelo cliente",  "tipo_doc": "pe_pe_assinado",
+    PE_APROVACAO_CLIENTE: {"nome": "Aprovação do PE pelo cliente",  "tipo_doc": "pe_pe_assinado",
             "doc_label": "Projeto Executivo Assinado","botao": "Concluir Projeto Executivo","revisavel": False},
 }
 
@@ -78,8 +115,8 @@ SUBFASES_PE = {
 # sub-etapa (ex.: "17a" logo depois da Montagem), o endpoint recusava com 400 mesmo sendo um
 # alvo legítimo.
 NOME_SUBETAPA = {cod: sf["nome"] for cod, sf in SUBFASES_PE.items()}
-NOME_SUBETAPA["11d"] = "Aprovação financeira II"
-NOME_SUBETAPA["17a"] = "Pendências de montagem"
+NOME_SUBETAPA[AF2] = "Aprovação financeira II"
+NOME_SUBETAPA[MONTAGEM_PENDENCIAS] = "Pendências de montagem"
 
 
 def nome_etapa_qualquer(codigo):
@@ -95,17 +132,17 @@ def etapa_codigo_valido(codigo):
 # Subfases que precisam estar concluídas antes de concluir o PE (11e).
 # 11d é a aprovação financeira II (gerida por outro handler, sem entrada em
 # SUBFASES_PE), mas exigida aqui como pré-requisito para concluir o PE.
-PE_SUBFASES_OBRIGATORIAS = ["11a", "11b", "11c", "11d"]
+PE_SUBFASES_OBRIGATORIAS = [PE_PLANTA_PONTOS, PE_ALINHAMENTO, PE_REVISAO, AF2]
 
 # Ordem sequencial do PE, ponta a ponta — usada pra travar cada subfase nas
 # anteriores, não só a 11e. Achado da Vera (2026-08-26, E2E): antes só a 11e
 # checava predecessoras (PE_SUBFASES_OBRIGATORIAS acima); dava pra concluir
 # 11c (ou aprovar a 11d) sem 11a/11b feitas — assimetria que parecia bug (a
 # 11e reprovava depois, mas só lá).
-PE_SUBFASES_ORDEM = ["11a", "11b", "11c", "11d", "11e"]
+PE_SUBFASES_ORDEM = [PE_PLANTA_PONTOS, PE_ALINHAMENTO, PE_REVISAO, AF2, PE_APROVACAO_CLIENTE]
 
 # Subfase final do PE: concluí-la conclui a etapa-mãe 11.
-PE_SUBFASE_FINAL = "11e"
+PE_SUBFASE_FINAL = PE_APROVACAO_CLIENTE
 
 
 def subfases_pe_pendentes(codigo, status_por_codigo):
@@ -140,7 +177,7 @@ def guarda_conclusao(codigo, tipos_presentes, status_por_codigo, pe_ambientes=No
     if not sf:
         return (False, "Subfase de PE desconhecida.")
     doc_ok = sf["tipo_doc"] in tipos_presentes
-    if codigo == "11c" and pe_ambientes is not None and not doc_ok:
+    if codigo == PE_REVISAO and pe_ambientes is not None and not doc_ok:
         total, com_pe = pe_ambientes
         if total <= 0:
             return (False, "Projeto sem ambientes no pool — carregue o PE dos ambientes antes de concluir.")
@@ -172,11 +209,11 @@ def versao_atual(documentos, tipo):
 # capability dedicada): quem já pode avançar o ciclo executa. Só a 12 aceita
 # upload (XMLs dos pedidos); 13/14 guardam texto em CicloEtapa.observacoes.
 ETAPAS_OPERACIONAIS = {
-    "12": {"nome": "Conferência e Implantação do Pedido", "exige": "xml",
+    CONFERENCIA_IMPLANTACAO: {"nome": "Conferência e Implantação do Pedido", "exige": "xml",
            "tipo_doc": "implantacao_pedido_xml", "botao": "Encaminhar Pedidos à Fábrica"},
-    "13": {"nome": "Produção",              "exige": "numeros",
+    PRODUCAO: {"nome": "Produção",              "exige": "numeros",
            "botao": "Produção Concluída"},
-    "14": {"nome": "Recebimento do Pedido", "exige": "relatorio",
+    RECEBIMENTO_PEDIDO: {"nome": "Recebimento do Pedido", "exige": "relatorio",
            "botao": "Concluir Relatório de Entrega"},
 }
 
@@ -214,7 +251,7 @@ def guarda_conclusao_operacional(codigo, tem_xml, numeros_txt, relatorio_txt):
 
 
 # Etapas que exigem autorização financeira (login+senha de quem pode aprovar).
-ETAPAS_APROVACAO_FINANCEIRA = frozenset({"8", "11d"})
+ETAPAS_APROVACAO_FINANCEIRA = frozenset({AF1, AF2})
 
 
 def exige_aprovacao_financeira(codigo):
@@ -225,15 +262,18 @@ def exige_aprovacao_financeira(codigo):
 # a uma faixa/equipe; as transições entre faixas são os gates de controle (8, 11d). Mapa explícito —
 # antes a titularidade estava só implícita nas capabilities/constantes.
 FAIXA_POR_ETAPA = {
-    "1": "vendas", "2": "vendas", "3": "vendas", "4": "vendas", "7": "vendas",
-    "8": "gate_financeiro_1",
-    "9": "execucao_projeto", "10": "execucao_projeto",
-    "11": "execucao_projeto", "11a": "execucao_projeto", "11b": "execucao_projeto",
-    "11c": "execucao_projeto", "11e": "execucao_projeto",
-    "11d": "gate_financeiro_2",
-    "12": "expedicao", "13": "expedicao", "14": "expedicao", "15": "expedicao", "16": "expedicao",
-    "17": "montagem", "18": "montagem", "19": "montagem", "20": "montagem",
-    "21": "conciliacao_final",   # FASE D2: encerramento financeiro do projeto
+    CADASTRO_CLIENTE: "vendas", CRIACAO_PROJETO: "vendas", BRIEFING: "vendas",
+    ORCAMENTO: "vendas", CONTRATO: "vendas",
+    AF1: "gate_financeiro_1",
+    SOLICITACAO_MEDICAO: "execucao_projeto", MEDICAO: "execucao_projeto",
+    PE: "execucao_projeto", PE_PLANTA_PONTOS: "execucao_projeto", PE_ALINHAMENTO: "execucao_projeto",
+    PE_REVISAO: "execucao_projeto", PE_APROVACAO_CLIENTE: "execucao_projeto",
+    AF2: "gate_financeiro_2",
+    CONFERENCIA_IMPLANTACAO: "expedicao", PRODUCAO: "expedicao", RECEBIMENTO_PEDIDO: "expedicao",
+    NFE_CLIENTE: "expedicao", ENTREGA_CLIENTE: "expedicao",
+    MONTAGEM: "montagem", ASSISTENCIA_POS_MONTAGEM: "montagem", VISTORIA_FINAL: "montagem",
+    APROVACAO_FINAL: "montagem",
+    CONCILIACAO_FINAL: "conciliacao_final",   # FASE D2: encerramento financeiro do projeto
 }
 
 
@@ -280,8 +320,9 @@ def etapa_pai(codigo):
 # porque, tirando 14/15/16 de ETAPAS_PRINCIPAIS, o predecessor POSICIONAL de "17" passaria a
 # ser "13" direto — pulando o resto do grupo.
 PREDECESSOR_OVERRIDE = {
-    "8": "7", "9": "7", "10": "9",
-    "14": "13", "15": "14", "16": "15", "17": "16",
+    AF1: CONTRATO, SOLICITACAO_MEDICAO: CONTRATO, MEDICAO: SOLICITACAO_MEDICAO,
+    RECEBIMENTO_PEDIDO: PRODUCAO, NFE_CLIENTE: RECEBIMENTO_PEDIDO,
+    ENTREGA_CLIENTE: NFE_CLIENTE, MONTAGEM: ENTREGA_CLIENTE,
 }
 
 # Espelho, na direção contrária, do PREDECESSOR_OVERRIDE acima — só pra 13→14→15→16→17
@@ -290,21 +331,22 @@ PREDECESSOR_OVERRIDE = {
 # uma) precisa continuar funcionando de verdade nessa cadeia — diferente de 8/9 (que viraram
 # paralelas e perderam essa notificação de propósito), aqui é um handoff sequencial real
 # entre equipes (produção → depósito → fiscal → expedição) que vale a pena manter.
-PROXIMA_OVERRIDE = {"13": "14", "14": "15", "15": "16", "16": "17"}
+PROXIMA_OVERRIDE = {PRODUCAO: RECEBIMENTO_PEDIDO, RECEBIMENTO_PEDIDO: NFE_CLIENTE,
+                    NFE_CLIENTE: ENTREGA_CLIENTE, ENTREGA_CLIENTE: MONTAGEM}
 
 # Grupos do espinhaço (achado do usuário 2026-08-18): "13" representa visualmente todo o
 # grupo "Logística e Expedição" (Produção→Entrega no Cliente) — mas cada código continua
 # com CicloEtapa própria, concluindo em separado. Quem varre ETAPAS_PRINCIPAIS achando "a
 # etapa atual" (ou contando etapas concluídas) precisa saber que "13" só está de fato
 # concluída quando TODO o grupo está — ver etapa_concluida_agregada.
-GRUPOS_ESPINHACO = {"13": ["13", "14", "15", "16"]}
+GRUPOS_ESPINHACO = {PRODUCAO: [PRODUCAO, RECEBIMENTO_PEDIDO, NFE_CLIENTE, ENTREGA_CLIENTE]}
 
 # Rótulo do GRUPO quando "13" é a etapa atual — espelha `_FICHA_GRUPO_NOME` do frontend
 # (static/index.html). Achado da Vera (2026-08-26, E2E): a lista de Projetos e o diálogo de
 # transferência de responsabilidade usavam ETAPA_NOME["13"] cru ("Produção") pra essa posição,
 # divergindo do fichário do projeto (que mostra "Logística e Expedição") — mesma etapa, nomes
 # diferentes em telas diferentes. Manter os dois dicionários em sincronia se o grupo mudar.
-GRUPO_NOME = {"13": "Logística e Expedição"}
+GRUPO_NOME = {PRODUCAO: "Logística e Expedição"}
 
 
 def codigos_relevantes_fase():
@@ -398,4 +440,20 @@ def codigos_a_resetar(codigo_alvo, codigos_existentes):
 
 def reabertura_bloqueada_por_contrato(codigos_a_resetar_lista, contrato_status):
     """True se a cascata desfaria a etapa 7 (Contrato) com contrato já firmado."""
-    return "7" in set(codigos_a_resetar_lista) and contrato_status in ("assinado", "vigente")
+    return CONTRATO in set(codigos_a_resetar_lista) and contrato_status in ("assinado", "vigente")
+
+
+def etapas_operacionais_ja_iniciadas(codigos_a_resetar_lista, status_por_codigo):
+    """Códigos da cascata de reabertura que ficam FORA da família do PE (numericamente depois de
+    11e — Conferência, Produção, NFe, Montagem...) e que já saíram de 'pendente': indício de
+    trabalho FÍSICO real em curso ou concluído. Resetar esse status pra 'pendente' não desfaz o
+    mundo real (produção já encaminhada, NFe já emitida, montagem já feita) — só apaga o rastro
+    de conclusão no banco, silenciosamente.
+
+    Achado da Vera (2026-08-26, E2E, reproduzido ao vivo): `codigos_a_resetar` não tinha nenhuma
+    fronteira aqui — reabrir uma subfase do PE (11b/11c) resetava até etapas 12-20 já concluídas,
+    sem aviso nenhum. `reabertura_bloqueada_por_contrato` só cobria a etapa 7 (Contrato); esta
+    função generaliza a mesma ideia pro limite real do PE (11e)."""
+    limite = _parse_codigo(PE_SUBFASE_FINAL)   # (11, 'e') — tudo até aqui é "família do PE"
+    fora_do_pe = [c for c in codigos_a_resetar_lista if _parse_codigo(c) > limite]
+    return [c for c in fora_do_pe if status_por_codigo.get(c, "pendente") != "pendente"]

@@ -10944,6 +10944,15 @@ function tfTaxaKeydown(e, el){
 async function salvarDescontoAutomatico(){
   if(!projetoAtivo || !_orcamentoAtivoId) return;
   const desconto = parseFloat(document.getElementById('neg-desconto').value)||0;
+  // Achado da Vera (2026-08-26, E2E): `onblur` do campo dispara este auto-save IMEDIATAMENTE — e
+  // clicar no botão "✓ OK" (que abre o modal de autorização) sempre passa por um blur do campo
+  // antes do próprio clique. Sem esta guarda, a corrida terminava com o auto-save chegando
+  // primeiro: POST sem autorização → recusado → campo revertido silenciosamente → o clique em
+  // "✓ OK" via negConfirmarDesconto() lia o valor JÁ revertido e nem abria o modal (ou os dois
+  // diálogos coexistiam, se o clique vencesse a corrida). Acima do limite (sem autorização ainda
+  // coberta por cfgGetDescontoMax(), que já reflete _limiteAutorizado), quem deve salvar é só o
+  // fluxo de autorização (negConfirmarDesconto → abrirModalAutorizacaoSidebar), nunca o auto-save.
+  if(desconto > cfgGetDescontoMax()) return;
   const mg = Object.assign({}, projetoAtivo.margens||{}, {desconto_pct: desconto}, _credAutorizacaoDesconto||{});
   try{
     const r = await fetch('/api/orcamentos/'+_orcamentoAtivoId+'/margens',{
@@ -11289,8 +11298,12 @@ async function confirmarAutorizacao(){
     });
     const d = await r.json();
     if(d.ok){
-      // Salva o desconto específico aprovado como novo limite (não o limite do perfil)
-      const descontoAprovado = parseFloat(document.getElementById('mp-desconto').value) || 0;
+      // Salva o desconto específico aprovado como novo limite (não o limite do perfil).
+      // Achado da Vera (2026-08-26): antes lia sempre #mp-desconto (campo do modal de
+      // Parâmetros) — quando a autorização vinha da sidebar, esse campo nunca foi preenchido
+      // (mostrava "Desconto de 0% autorizado..." mesmo com o valor certo já persistido). `desc`
+      // já foi calculado acima respeitando o `contexto` — reusa em vez de reler errado.
+      const descontoAprovado = desc;
       _limiteAutorizado = descontoAprovado;
       _credAutorizacaoDesconto = { login_autorizador: login, senha_autorizador: senha };
       // Limpa hint e borda vermelha do campo
@@ -16511,7 +16524,7 @@ async function adminFiscalCarregar(kind, id){
     `<div class="grid2" style="gap:14px">${inp('cfop_dentro_uf','CFOP dentro do estado')}${inp('cfop_fora_uf','CFOP fora do estado')}${inp('serie_nfe','Série da NF-e')}
       <div><label class="field-label">Discrimina impostos (Lei da Transparência)</label>
         <label class="sw" style="margin-top:4px"><input type="checkbox" id="pf-discrimina_impostos" ${p.discrimina_impostos?'checked':''}><span class="sw-slider"></span></label></div></div>` +
-    sec('NFS-e (emissão futura — só captura de dado)') +
+    sec('NFS-e') +
     `<div class="grid2" style="gap:14px">${inp('cnae_servico','CNAE de serviço')}${inp('cod_servico_municipio','Código do serviço no município')}${inp('aliquota_iss','Alíquota ISS (%)','number')}${inp('municipio_ibge','Município (código IBGE)')}</div>` +
     sec('Certificado digital A1') +
     `<div style="font-size:11px;color:var(--muted);margin-bottom:6px">O arquivo .pfx é enviado no painel da Focus NFe — aqui é só referência.</div>
@@ -19152,11 +19165,16 @@ function _aposConcluirEtapa(codigoConcluido) {
   // Mesma lógica da tag "Responsável" (_tagComABola): primeira etapa não-conclusiva na ordem.
   const alvo = ETAPAS_CICLO.find(et => !STATUS_CONCLUSIVOS.has((_cicloData[et.codigo] || {}).status));
   if (!alvo) { _cicloTransferState = null; return; }   // ciclo inteiro concluído — nada a perguntar
+  // Achado da Vera (2026-08-26, E2E): nome cru da etapa ("Produção") diverge do que o fichário
+  // mostra pra mesma posição quando ela é cabeça de grupo ("Logística e Expedição", achado
+  // 2026-08-18) — mesmo rótulo em todo lugar que se refere à etapa, via _fichaTituloGrupo/_fichaMae.
+  const _grupoConcluida = (typeof _fichaTituloGrupo === 'function') ? _fichaTituloGrupo(_fichaMae(codigoConcluido)) : null;
+  const _grupoAlvo = (typeof _fichaTituloGrupo === 'function') ? _fichaTituloGrupo(_fichaMae(alvo.codigo)) : null;
   _cicloTransferState = {
     concluidaCod: codigoConcluido,
-    concluidaNome: def ? def.nome : codigoConcluido,
+    concluidaNome: _grupoConcluida || (def ? def.nome : codigoConcluido),
     alvoCod: alvo.codigo,
-    alvoNome: alvo.nome,
+    alvoNome: _grupoAlvo || alvo.nome,
     modo: 'perguntar',
   };
 }
@@ -19313,11 +19331,24 @@ const _FICHA_VISAO_CODIGO = '__visao__';
 
 // Status de exibição em 3 buckets (concluída > não-iniciada/bloqueada > andamento). Cabeça de
 // grupo (_FICHA_SUBS) só é "concluída" quando TODAS as etapas do grupo estiverem — achado
-// 2026-08-18: sem isso, "13" apareceria concluída assim que só a Produção terminasse.
+// 2026-08-18: sem isso, "13" apareceria concluída assim que só a Produção terminasse. Exceção
+// (achado da Vera, 2026-08-26, E2E): sub-etapa TOGGLEÁVEL que nunca chegou a ser aberta (sem
+// CicloEtapa — não existe no cronograma padrão, ex. "17a" Pendências de montagem, opcional por
+// natureza) não deve travar o grupo — "17" (Montagem) ficava preso em "Em andamento" pra sempre
+// em projeto sem pendência nenhuma, mesmo com a própria Montagem já concluída de verdade. Uma
+// sub-etapa que EXISTE (foi tocada) mas não está concluída continua bloqueando normalmente —
+// 14/15/16 (grupo de "13") sempre têm linha desde o D0 (gerar_cronograma_projeto), então essa
+// exceção não os afeta.
 function _statusFichario(codigo) {
   if (_FICHA_SUBS[codigo]) {
     const todas = [codigo, ..._FICHA_SUBS[codigo]];
-    if (todas.every(c => STATUS_CONCLUSIVOS.has((_cicloData[c] || {}).status))) return 'concluida';
+    const falta = todas.some(c => {
+      if (STATUS_CONCLUSIVOS.has((_cicloData[c] || {}).status)) return false;
+      const def = _fichaEtapaDef(c);
+      if (def && def.toggleavel && !_cicloData[c]) return false;   // opcional, nunca aberta
+      return true;
+    });
+    if (!falta) return 'concluida';
     if (_etapaBloqueada(codigo)) return 'nao_iniciada';
     return 'andamento';
   }
@@ -19590,15 +19621,26 @@ async function _visaoFinanceiroRender() {
     return;
   }
   const m = d.margem, t = d.reconciliacao_totais;
-  const cel = (lbl, v, neg) => `<div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${lbl}</div>
+  const cel = (lbl, v, neg, title) => `<div${title?` title="${esc(title)}"`:''}><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${lbl}</div>
     <div style="font-weight:700;font-family:var(--font-mono);color:${neg && v < 0 ? 'var(--st-quente)' : 'var(--text)'}">R$ ${_fBRL(v)}</div></div>`;
+  // Achado da Vera (2026-08-26, E2E): Receita zerada num projeto já concluído parecia prejuízo
+  // real — é comportamento correto de margem_projeto (Receita só entra quando a NF-e é
+  // efetivamente emitida, FASE D2), mas sem nenhum indício na tela do porquê. Aviso explícito.
+  const avisoReceita = (m.receita === 0)
+    ? `<div style="background:var(--warn-soft);border:1px solid var(--warn);border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:11px;color:var(--text)">
+        <i class="ti ti-info-circle" style="color:var(--warn)"></i> Receita R$ 0,00 — a NF-e deste
+        projeto ainda não foi emitida (é ela que reconhece a receita no razão). Não significa
+        prejuízo real; os custos/provisões abaixo continuam corretos.</div>`
+    : '';
   document.getElementById('visao-financeiro').innerHTML =
     `<div style="border:1px solid var(--border);border-radius:10px;padding:14px">
       <div style="font-weight:800;color:var(--text);margin-bottom:10px"><i class="ti ti-report-money"></i> Financeiro — planejado × realizado</div>
+      ${avisoReceita}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px 14px;margin-bottom:12px">
         ${cel('Receita', m.receita)}${cel('Cust. Produto', m.custo_produto, true)}
         ${cel('Prov. Montagem', m.prov_montagem, true)}${cel('Prov. Assist.', m.prov_assistencia, true)}
-        ${cel('Prov. Garantia', m.prov_garantia, true)}${cel('Comissão', m.comissao, true)}
+        ${cel('Prov. Garantia', m.prov_garantia, true)}
+        ${cel('Comissão e Desp. Comerciais', m.comissao, true, 'Comissão do consultor/medidor/PE + brinde + custo de viagem — tudo que o razão agrupa em Despesas Comerciais (5.3)')}
       </div>
       <div style="display:flex;gap:24px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:10px">
         <div><div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.5px">Margem de Contribuição</div>
@@ -20953,12 +20995,25 @@ function _renderCardMedicao(dados, bloqueada) {
   if (bloqueada)
     return `<p style="color:var(--muted);font-size:.85rem;margin:0"><i class="ti ti-lock"></i> Conclua a etapa anterior.</p>`;
   if (_medicaoCache && _medicaoCache.parecer === 'reprovado') {
+    // Achado da Vera (2026-08-26, E2E): só oferecia "Liberar com decisão comercial" — sem
+    // caminho de UI pra corrigir e reenviar o parecer (ex.: o medidor voltou, remediu, quer
+    // registrar Aprovado de verdade). O endpoint /medicao/parecer já aceita reenvio mesmo com
+    // reprovado anterior (sem guarda contra isso) — só faltava expor o formulário de novo.
     return `
       <p style="color:var(--warn);margin:0 0 10px">Medição <strong>Reprovada</strong> — aguardando decisão comercial.</p>
       <p style="color:var(--muted);font-size:.82rem;margin:0 0 8px">Anexe o documento de aprovação do cliente e libere com senha de Gerente de Vendas/Adm-Fin/Diretor.</p>
       <input type="file" id="med-doc-file" style="font-size:.82rem;margin-bottom:10px"><br>
-      <button onclick="enviarDecisaoReprovado()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Liberar (decisão comercial)</button>`;
+      <button onclick="enviarDecisaoReprovado()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">Liberar (decisão comercial)</button>
+      <div style="margin-top:16px;border-top:1px dashed var(--border);padding-top:12px">
+        <span style="font-size:.82rem;color:var(--accent);cursor:pointer" onclick="document.getElementById('med-reenviar-wrap').style.display=document.getElementById('med-reenviar-wrap').style.display==='none'?'block':'none'"><i class="ti ti-chevron-down"></i> Ou: o medidor corrigiu e quer registrar um novo parecer</span>
+        <div id="med-reenviar-wrap" style="display:none;margin-top:10px">
+          ${_medicaoFormHtml()}
+        </div>
+      </div>`;
   }
+  return _medicaoFormHtml();
+}
+function _medicaoFormHtml() {
   return `
     <p style="color:var(--muted);font-size:.85rem;margin:0 0 8px">Registre o parecer da medição, anexe a planta promob e confirme com a senha do medidor.</p>
     <label style="font-size:var(--fs-sm)">Parecer:
@@ -21756,8 +21811,15 @@ async function peConciliacaoDecidir(poolAmbienteId, tipoDecisao, diferencaValorC
       await avisoPopup('Valor inválido.', {titulo:'Estornar'}); return;
     }
   }
+  // Achado da Vera (2026-08-26, E2E): "Cobrar" (e as demais decisões, exceto Estornar, que já
+  // pede o valor) não mostravam o valor antes de confirmar — o backend usa abs(diferença) como
+  // default silencioso (mod_conciliacao_pe.montar_decisao), podia parecer R$0,00 sem indicação
+  // de que foi calculado, não digitado. Mostra o valor que será registrado na própria mensagem
+  // de confirmação (não editável aqui — é o cálculo direto da diferença, diferente do Estorno).
+  const valorMostrado = valorAprovado !== undefined ? valorAprovado : Math.abs(diferencaValorContrato);
   const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Conciliação de PE',
-    mensagem:`Confirma a decisão "${_peConcTipos[tipoDecisao].label}" para "${nomeAmbiente}"?`});
+    mensagem:`Confirma a decisão "${_peConcTipos[tipoDecisao].label}" para "${nomeAmbiente}"`
+      + (valorAprovado === undefined ? ` — valor calculado: R$ ${valorMostrado.toFixed(2).replace('.', ',')}?` : '?')});
   if(!cred) return;
   try {
     const body = {login: cred.login, senha: cred.senha, tipo_decisao: tipoDecisao};

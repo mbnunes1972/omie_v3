@@ -88,3 +88,41 @@ def test_conclusao_11c_ignora_ambiente_fora_do_orcamento(http_client_factory, se
     st, body = c.post(f"/api/projetos/{nome}/ciclo/11c/concluir",
                       {"login": "dir_l1", "senha": "senha123"})
     assert st == 200 and body["ok"], body   # órfão não trava; o ambiente vendido tem PE
+
+
+# Achado da Vera (2026-08-26, E2E): ambiente RETIDO bloqueia upload de PE (correto), mas antes
+# também travava a conclusão da 11c, que exigia PE de TODOS os ambientes do orçamento — deadlock
+# entre as duas features. Mesmo princípio do teste acima (ambiente fora do orçamento): retido não
+# entra no universo, não trava a conclusão.
+def test_conclusao_11c_ignora_ambiente_retido(http_client_factory, seed, app_db):
+    import mod_retido
+    oid = seed["orcamento_l1_id"]
+    nome, pid = _seed_amb(app_db, oid, budget=80000.0)
+    db = app_db.get_session()
+    # 2º ambiente do orçamento — vai ficar RETIDO, sem PE.
+    pa2 = app_db.PoolAmbiente(nome="Suite", nome_exibicao="Suíte", xml_path="fake/suite.xml",
+                              ambientes_json="{}", projeto_id=nome,
+                              budget_total=50000.0, order_total=20000.0)
+    db.add(pa2); db.flush()
+    db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa2.id, ordem=2))
+    parcela = app_db.ParcelaProjeto(projeto_nome=nome, ordem=1, status=mod_retido.STATUS_RETIDO,
+                                    fracao_val_cont=1.0, val_cont_congelado=50000.0,
+                                    orcamento_id=oid)
+    db.add(parcela); db.flush()
+    db.add(app_db.ParcelaAmbiente(parcela_id=parcela.id, pool_ambiente_id=pa2.id))
+    # PE só pro ambiente NÃO retido (pid) — pa2 (retido) fica sem PE de propósito.
+    for oa in db.query(app_db.OrcamentoAmbiente).filter_by(orcamento_id=oid).all():
+        if oa.pool_ambiente_id == pa2.id:
+            continue
+        ja = (db.query(app_db.ArquivoPE)
+                .filter_by(projeto_nome=nome, pool_ambiente_id=oa.pool_ambiente_id,
+                           formato="xml_pe").first())
+        if ja is None:
+            db.add(app_db.ArquivoPE(projeto_nome=nome, pool_ambiente_id=oa.pool_ambiente_id,
+                                    formato="xml_pe", valor_atualizado=30000.0, valor_venda=80000.0))
+    db.commit(); db.close()
+
+    c = _login(http_client_factory, "dir_l1")
+    st, body = c.post(f"/api/projetos/{nome}/ciclo/11c/concluir",
+                      {"login": "dir_l1", "senha": "senha123"})
+    assert st == 200 and body["ok"], body   # retido não trava; o ambiente não-retido tem PE

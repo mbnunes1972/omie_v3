@@ -95,6 +95,25 @@ def test_pos_conclusao_exige_etapa_ja_concluida(http_client_factory, seed, app_d
     assert st == 400, body
 
 
+# Achado da Vera (2026-08-26, E2E): o alvo calculado pelo frontend pode cair numa SUB-etapa
+# (ex.: "17a", logo depois de concluir "17"/Montagem) — a validação só reconhecia códigos de
+# ETAPA_NOME (principais) e recusava com 400 mesmo sendo um alvo legítimo.
+def test_pos_conclusao_aceita_sub_etapa_como_alvo(http_client_factory, seed, app_db):
+    db = app_db.get_session()
+    _mk_etapa(db, app_db, "Proj_L1", "17", status="concluido")
+    db.commit(); db.close()
+
+    c = _login(http_client_factory, "dir_l1")
+    st, body = c.post("/api/projetos/Proj_L1/ciclo/17/pos-conclusao",
+                       {"etapa_alvo_codigo": "17a", "transferir": False})
+    assert st == 200 and body["ok"], body
+
+    db = app_db.get_session()
+    e17a = db.query(app_db.CicloEtapa).filter_by(projeto_nome="Proj_L1", etapa_codigo="17a").first()
+    assert e17a is not None and e17a.transferencia_status == "nenhuma"
+    db.close()
+
+
 # ── pos-conclusao: transferir para quem TEM login (pendente) ────────────────
 
 def test_transferir_para_funcionario_com_login_fica_pendente(http_client_factory, seed, app_db):

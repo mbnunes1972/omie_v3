@@ -160,7 +160,10 @@ def _enriquecer_projetos_com_fase_ciclo(projetos):
             atual = next((cod for cod in mod_ciclo.ETAPAS_PRINCIPAIS
                           if not mod_ciclo.etapa_concluida_agregada(cod, st)), None)
             p['etapa_atual_codigo'] = atual
-            p['etapa_atual_nome']   = mod_ciclo.ETAPA_NOME.get(atual) if atual else None
+            # Achado da Vera (2026-08-26): "13" é cabeça do grupo "Logística e Expedição" no
+            # fichário do projeto — usa o mesmo rótulo aqui, não o nome cru da etapa individual
+            # ("Produção"), senão a lista de Projetos e o fichário divergem pra mesma posição.
+            p['etapa_atual_nome']   = (mod_ciclo.GRUPO_NOME.get(atual) or mod_ciclo.ETAPA_NOME.get(atual)) if atual else None
             p['fase_ciclo']         = mod_ciclo.faixa_da_etapa(atual) if atual else "concluido"
             # Transferência de responsabilidade (2026-08-23): a etapa atual pode estar com
             # aceite pendente — a lista mostra "Em transferência" no lugar do nome da etapa
@@ -12879,7 +12882,12 @@ class Handler(BaseHTTPRequestHandler):
                     if etapa_concluida is None or etapa_concluida.status not in mod_ciclo.STATUS_CONCLUSIVOS:
                         self.send_json({"ok": False,
                             "erro": "Esta etapa ainda não foi concluída."}, code=400); return
-                    if not etapa_alvo_cod or etapa_alvo_cod not in mod_ciclo.ETAPA_NOME:
+                    # Achado da Vera (2026-08-26, E2E): `etapa_alvo_codigo` calculado no frontend
+                    # (mesma lógica da tag "Responsável") pode cair numa SUB-etapa (ex.: "17a",
+                    # "11d") — ETAPA_NOME cru só cobre as principais, e essas eram recusadas com
+                    # 400 mesmo sendo alvo legítimo. `etapa_codigo_valido`/`nome_etapa_qualquer`
+                    # cobrem as duas.
+                    if not etapa_alvo_cod or not mod_ciclo.etapa_codigo_valido(etapa_alvo_cod):
                         self.send_json({"ok": False, "erro": "Etapa alvo inválida."}, code=400); return
                     etapa_alvo = db.query(CicloEtapa).filter_by(
                         projeto_nome=nome_safe, etapa_codigo=etapa_alvo_cod).first()
@@ -12894,8 +12902,8 @@ class Handler(BaseHTTPRequestHandler):
                     _pm = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
                     conv = _mchat.get_or_create_conversa_projeto(
                         db, loja_id, nome_safe, cliente_id=(_pm.cliente_id if _pm else None))
-                    etapa_concluida_nome = mod_ciclo.ETAPA_NOME.get(etapa_cod, etapa_cod)
-                    etapa_alvo_nome = mod_ciclo.ETAPA_NOME.get(etapa_alvo_cod, etapa_alvo_cod)
+                    etapa_concluida_nome = mod_ciclo.nome_etapa_qualquer(etapa_cod)
+                    etapa_alvo_nome = mod_ciclo.nome_etapa_qualquer(etapa_alvo_cod)
 
                     if not transferir:
                         resp_nome = ""
@@ -14451,6 +14459,15 @@ class Handler(BaseHTTPRequestHandler):
                         ids_orc = ({oa.pool_ambiente_id for oa in
                                     db.query(OrcamentoAmbiente).filter_by(orcamento_id=ct.orcamento_id).all()}
                                    if ct is not None else set())
+                        # Achado da Vera (2026-08-26, E2E): ambiente RETIDO trava upload de PE
+                        # (gate_operacao_ambiente, achado correto) mas antes também entrava no
+                        # universo "todos precisam ter PE" da 11c — as duas travas se
+                        # contradiziam (nunca dava pra concluir a 11c sem antes liberar a
+                        # retenção, mesmo a retenção existindo pra deixar a obra seguir com uma
+                        # parte parada). Mesmo princípio já usado pra ambiente fora do
+                        # orçamento: não entra no universo, não trava a conclusão.
+                        import mod_retido as _mret
+                        ids_orc -= _mret.ambientes_retidos(db, nome_safe)
                         if ids_orc:
                             com_pe = (db.query(ArquivoPE.pool_ambiente_id)
                                         .filter_by(projeto_nome=nome_safe)

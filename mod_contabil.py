@@ -138,7 +138,11 @@ PLANO_PADRAO = [
     ("5.4.10", "Sistemas (ERP, CRM, assinatura digital)"), ("5.4.11", "Salários Administrativos"),
     ("5.4.12", "Pró-labore"), ("5.4.13", "Encargos sobre Folha"),
     ("5.4.14", "Vale-Transporte"), ("5.4.15", "Sindicato e Contribuições"), ("5.4.16", "Rescisões"),
-    ("5.4.17", "IPVA/IPTU/Licenciamentos"), ("5.4.18", "Manutenção (loja, veículos, informática)"),
+    ("5.4.17", "IPVA/IPTU/Licenciamentos"),
+    # Frente 4 (spec 2026-08-25, DECIDIDO): "5.4.18" perde "veículos" do nome — a 5.2.10
+    # "Manutenção de Veículos" vira a ÚNICA conta de veículo do plano (sem mover histórico, sem
+    # criar/remover conta; ver migrar_centro_custo_natureza_v2).
+    ("5.4.18", "Manutenção (loja e informática)"),
     # Centro de Custo/Natureza (2026-08-08): 2 contas novas pedidas pra fechar a classificação
     ("5.4.19", "Licenças Promob e Sketchup"), ("5.4.20", "Outras Despesas"),
     ("5.5", "Despesas Financeiras"),
@@ -333,6 +337,33 @@ def migrar_centro_custo_natureza_v1(db):
     db.commit()
     return {"renomeadas": renomeadas, "combustivel_unificado": combustivel_unificado,
             "removidas": removidas, "inativadas": inativadas, "criadas": criadas}
+
+
+_RENOMEIA_CENTRO_CUSTO_V2 = {
+    "5.4.18": ("Manutenção (loja, veículos, informática)", "Manutenção (loja e informática)"),
+}
+
+
+def migrar_centro_custo_natureza_v2(db):
+    """Higiene do plano de contas (Frente 4, spec 2026-08-25, DECIDIDO): "5.4.18" perde
+    "veículos" do nome — a 5.2.10 "Manutenção de Veículos" vira a ÚNICA conta de veículo do
+    plano (veículo de montagem/entrega é Logística/Expedição; manutenção de loja e TI segue em
+    Custos Distribuídos, sem mover). Resolve por TEXTO — sem mover histórico, sem criar/remover
+    conta, sem migração de schema. Mesmo padrão idempotente de
+    migrar_centro_custo_natureza_v1 (só toca quem AINDA tiver o nome antigo). Roda no boot, em
+    TODOS os owners."""
+    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
+    renomeadas = 0
+    for ot, oid in owners:
+        contas = {c.codigo: c for c in db.query(Conta)
+                  .filter_by(owner_tipo=ot, owner_id=oid).all()}
+        for cod, (nome_antigo, nome_novo) in _RENOMEIA_CENTRO_CUSTO_V2.items():
+            c = contas.get(cod)
+            if c is not None and c.nome == nome_antigo:
+                c.nome = nome_novo
+                renomeadas += 1
+    db.commit()
+    return {"renomeadas": renomeadas}
 
 
 def migrar_centro_custo_v2(db):

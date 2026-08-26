@@ -106,6 +106,50 @@ def test_preserva_nome_customizado(app_db):
     db.close()
 
 
+# ── migrar_centro_custo_natureza_v2 (Frente 4, spec 2026-08-25: 5.4.18 perde "veículos") ────────
+def test_migrar_centro_custo_natureza_v2_renomeia_5418(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 970
+    mc.seed_plano(db, ot, oid)
+    c = _contas(db, ot, oid)["5.4.18"]
+    c.nome = "Manutenção (loja, veículos, informática)"   # simula estado pré-Frente 4
+    db.commit()
+    out = mc.migrar_centro_custo_natureza_v2(db)
+    assert out["renomeadas"] >= 1
+    assert _contas(db, ot, oid)["5.4.18"].nome == "Manutenção (loja e informática)"
+    db.close()
+
+
+def test_migrar_centro_custo_natureza_v2_preserva_nome_customizado(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 971
+    mc.seed_plano(db, ot, oid)
+    c = _contas(db, ot, oid)["5.4.18"]
+    c.nome = "Manutenção Predial e TI"   # já renomeada manualmente pelo lojista
+    db.commit()
+    mc.migrar_centro_custo_natureza_v2(db)
+    assert _contas(db, ot, oid)["5.4.18"].nome == "Manutenção Predial e TI"
+    db.close()
+
+
+def test_migrar_centro_custo_natureza_v2_idempotente(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 972
+    mc.seed_plano(db, ot, oid)
+    c = _contas(db, ot, oid)["5.4.18"]
+    c.nome = "Manutenção (loja, veículos, informática)"
+    db.commit()
+    out1 = mc.migrar_centro_custo_natureza_v2(db)
+    assert out1["renomeadas"] >= 1
+    out2 = mc.migrar_centro_custo_natureza_v2(db)
+    assert out2["renomeadas"] == 0
+    db.close()
+
+
+def test_seed_plano_novo_owner_ja_nasce_com_nome_novo(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 973
+    mc.seed_plano(db, ot, oid)
+    assert _contas(db, ot, oid)["5.4.18"].nome == "Manutenção (loja e informática)"
+    db.close()
+
+
 def test_evento_retencao_debita_5301_apos_migracao(app_db):
     """A provisão de Retenção de Comissão de Vendas efetiva sem erro mesmo depois que 5.3.20
     some do plano — o evento foi redirecionado pra 5.3.01 Comissão de Vendedor."""

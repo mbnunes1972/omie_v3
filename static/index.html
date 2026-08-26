@@ -15515,25 +15515,41 @@ async function balancoCarregar(){
     + confere;
 }
 
+// Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): "Fechar período" sem intervalo (De/Até
+// vazios) mantém o comportamento de sempre — reconcilia tudo até agora, sem congelar relatório
+// nenhum (PeriodoContabil.inicio/fim ficam NULL, nunca correspondem a um filtro de relatório).
+// Só com os dois preenchidos o fechamento vira um snapshot que o relatório de Natureza/Centro de
+// Custo passa a devolver quando filtrado pelo MESMO intervalo — ver mod_contabil.
+// relatorio_natureza_periodo/relatorio_centro_custo_periodo.
+let _reconIni = null, _reconFim = null;
 function reconInit(){
   const box = document.getElementById('recon-box');
   if(!box) return;
   box.innerHTML =
-     '<div style="display:flex;gap:8px;align-items:end;margin-bottom:12px">'
+     '<div style="display:flex;gap:8px;align-items:end;margin-bottom:12px;flex-wrap:wrap">'
     +'<div><label class="field-label">Base de rateio</label>'
     +'<select id="recon-metodo" style="'+_finInput+'">'
     +'<option value="proporcional_receita">Proporcional à receita</option>'
     +'<option value="proporcional_custo_direto">Proporcional ao custo direto</option>'
     +'<option value="linear_por_projeto">Linear por projeto</option></select></div>'
+    +'<div><label class="field-label">De (opcional)</label><input type="date" value="'+esc(_reconIni||'')
+    +'" onchange="_reconIni=this.value||null;reconRodar()" style="'+_finInput+';width:auto"></div>'
+    +'<div><label class="field-label">Até (opcional)</label><input type="date" value="'+esc(_reconFim||'')
+    +'" onchange="_reconFim=this.value||null;reconRodar()" style="'+_finInput+';width:auto"></div>'
     +'<button class="btn btn-ghost btn-sm" onclick="reconRodar()">Reconciliar</button>'
     +'<button class="btn btn-primary btn-sm" onclick="reconFechar()">Fechar período</button>'
-    +'</div><div id="recon-result"></div>';
+    +'</div><div id="recon-hint" style="font-size:10px;color:var(--muted);margin-bottom:8px"></div>'
+    +'<div id="recon-result"></div>';
   reconRodar();
 }
 async function reconRodar(){
   const metodologia = document.getElementById('recon-metodo').value;
+  const hint = document.getElementById('recon-hint');
+  if(hint) hint.textContent = (_reconIni && _reconFim)
+    ? 'Fechar agora congela o relatório de Natureza/Centro de Custo deste intervalo — ele para de acompanhar reclassificações futuras.'
+    : 'Sem De/Até, o fechamento reconcilia tudo até agora sem congelar nenhum relatório (comportamento de sempre).';
   const r = await fetch('/api/financeiro/reconciliar', {method:'POST', headers:{'Content-Type':'application/json'},
-    credentials:'same-origin', body: JSON.stringify({metodologia})});
+    credentials:'same-origin', body: JSON.stringify({metodologia, ini:_reconIni, fim:_reconFim})});
   const d = await r.json().catch(()=>({}));
   const out = document.getElementById('recon-result');
   if(!d.ok){ out.innerHTML='<em style="color:var(--muted)">'+esc((d&&d.erro)||'Falha')+'</em>'; return; }
@@ -15556,9 +15572,12 @@ async function reconRodar(){
 }
 async function reconFechar(){
   const metodologia = document.getElementById('recon-metodo').value;
-  if(!(await confirmarPopup('Fechar o período com esta base de rateio? (registra um snapshot)', {titulo:'Fechar período', okLabel:'Fechar período'}))) return;
+  const msg = (_reconIni && _reconFim)
+    ? 'Fechar o período de '+_reconIni+' a '+_reconFim+' com esta base de rateio? Isso CONGELA o relatório de Natureza/Centro de Custo desse intervalo — reclassificações futuras não vão mais mudá-lo.'
+    : 'Fechar o período com esta base de rateio? (registra um snapshot; sem De/Até, não congela nenhum relatório)';
+  if(!(await confirmarPopup(msg, {titulo:'Fechar período', okLabel:'Fechar período'}))) return;
   const r = await fetch('/api/financeiro/periodos', {method:'POST', headers:{'Content-Type':'application/json'},
-    credentials:'same-origin', body: JSON.stringify({metodologia})});
+    credentials:'same-origin', body: JSON.stringify({metodologia, ini:_reconIni, fim:_reconFim})});
   const d = await r.json().catch(()=>({}));
   if(d.ok) showToast('Período fechado (snapshot registrado)'); else showToast((d&&d.erro)||'Falha', true);
 }

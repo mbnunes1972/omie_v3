@@ -3277,6 +3277,44 @@ funcionando nos dois sentidos.
 rodada:** editar caso já criado (hoje só cria); comissão de assistência (retirada da etapa 18,
 sem substituto).
 
+## Sessão 225 — Centro de Custo/Natureza: Frente 2 (congelamento no fechamento)
+
+Terceira frente da spec. **DECIDIDO na spec:** congelar no fechamento, snapshot de
+`relatorio_natureza`/`relatorio_centro_custo` gravado no `PeriodoContabil` (coluna própria
+`classificacao_snapshot_json` — `dados_json` já guarda um conteúdo diferente e específico,
+`alocacao_por_projeto`, e é uma LISTA, não um dict; misturar exigiria reestruturar quem já lê o
+campo). Migração de coluna via `_migrar_colunas_pg` (sem Alembic ainda, ver CLAUDE.md).
+
+**Achado antes de implementar, mudou o escopo:** a spec assume que fechar um período corresponde
+a um intervalo de datas — mas a UI atual (`reconFechar()`) chama `POST /api/financeiro/periodos`
+**sem `ini`/`fim` nenhum** (sempre "tudo até agora", cumulativo). Sem isso corrigido, o
+congelamento seria inerte na prática (nenhum fechamento teria um intervalo pra bater com o
+relatório depois) — ou pior, se a correspondência não exigisse os dois lados explícitos, a visão
+PADRÃO (sem filtro) congelaria pra sempre a partir do primeiro fechamento, escondendo lançamentos
+novos do dia a dia. Escopo ampliado: `mod_contabil._periodo_fechado_correspondente` só corresponde
+com `ini`/`fim` explícitos dos dois lados (guarda contra o caso acima — testado explicitamente,
+`test_relatorio_periodo_sem_correspondencia_nunca_congela`); e a UI de "Fechar período" ganhou
+campos De/Até **opcionais** (vazios = comportamento de sempre, sem congelar nada).
+
+**Normalização de `fim`:** novo `_parse_fim_dia_cheio` (main.py) — sem ele, "fim" só com data (sem
+hora) vira meia-noite no fechamento mas fim-do-dia no filtro do relatório (a GET já normalizava
+assim), e a correspondência exata nunca bateria mesmo com o usuário informando o mesmo dia dos dois
+lados. Aplicado nos dois POSTs (`/reconciliar`, `/periodos`) pra bater com o que a GET já fazia.
+
+Novo `mod_contabil.relatorio_natureza_periodo`/`relatorio_centro_custo_periodo`: se `(ini,fim)`
+bate com um `PeriodoContabil` fechado, devolve o snapshot congelado; senão computa ao vivo
+(`relatorio_natureza`/`relatorio_centro_custo`, inalteradas, ainda usadas puras internamente e
+pelos testes existentes). Os 2 endpoints GET (`centro-custo/relatorio`, `natureza-relatorio`)
+passaram a chamar as versões `_periodo`.
+
+**Verificação:** `tests/test_reconciliacao.py`/`test_reconciliacao_api.py`/
+`test_centro_custo_relatorios.py`/`test_centro_custo_natureza.py` **50 passed** (5 testes novos,
+incluindo o de segurança "sem correspondência nunca congela" e um HTTP end-to-end fechar→
+reclassificar→conferir congelado); `node --check`; suíte inteira **2329 passed**.
+
+**Arquivos:** `database.py`, `mod_contabil.py`, `main.py`, `static/index.html`,
+`tests/test_reconciliacao.py`, `tests/test_reconciliacao_api.py`.
+
 ## Sessão 224 — Centro de Custo/Natureza: Frente 1 (blindar a edição contra as migrações)
 
 Segunda frente da spec (`docs/superpowers/specs/financeiro/2026-08-25-...`). Sem isso o botão

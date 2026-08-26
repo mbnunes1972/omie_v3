@@ -650,6 +650,20 @@ def _parse_data(s):
             return None
 
 
+def _parse_fim_dia_cheio(s):
+    """Como `_parse_data`, mas normaliza `fim` pro FIM do dia (23:59:59.999999) — sem isso, um
+    "fim" que só veio como data (sem hora) vira meia-noite, e o mesmo dia informado em dois
+    request diferentes (ex.: fechar um período × filtrar o relatório desse período depois) nunca
+    bateria byte-a-byte. Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): a correspondência
+    exata de `(ini, fim)` entre `PeriodoContabil` e o relatório depende dessa normalização ser a
+    MESMA nos dois lados."""
+    d = _parse_data(s)
+    if d is None:
+        return None
+    from datetime import datetime as _dt
+    return _dt.combine(d.date(), _dt.max.time())
+
+
 def _fin_evento_seguro(loja_id, tipo_evento, valor, projeto_id, ref):
     """Wiring evento→lançamento a partir de um fluxo de negócio (contrato/NF-e).
     **Fail-soft e isolado**: usa sessão própria e NUNCA levanta — contabilidade não pode abortar o
@@ -1576,7 +1590,8 @@ class Handler(BaseHTTPRequestHandler):
             if fim is not None:
                 fim = datetime.combine(fim.date(), datetime.max.time())
             try:
-                rel = mod_contabil.relatorio_centro_custo(db, ot, oid, ini=ini, fim=fim)
+                # Frente 2 (spec 2026-08-25): período fechado devolve o snapshot congelado.
+                rel = mod_contabil.relatorio_centro_custo_periodo(db, ot, oid, ini=ini, fim=fim)
                 self.send_json({"ok": True, **rel})
             finally:
                 db.close()
@@ -1608,7 +1623,8 @@ class Handler(BaseHTTPRequestHandler):
             if fim is not None:
                 fim = datetime.combine(fim.date(), datetime.max.time())
             try:
-                rel = mod_contabil.relatorio_natureza(db, ot, oid, ini=ini, fim=fim)
+                # Frente 2 (spec 2026-08-25): período fechado devolve o snapshot congelado.
+                rel = mod_contabil.relatorio_natureza_periodo(db, ot, oid, ini=ini, fim=fim)
                 self.send_json({"ok": True, **rel})
             finally:
                 db.close()
@@ -9915,7 +9931,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 dd = json.loads(body or b'{}')
                 rec = mod_contabil.reconciliar(db, ot, oid, ini=_parse_data(dd.get("ini")),
-                                               fim=_parse_data(dd.get("fim")),
+                                               fim=_parse_fim_dia_cheio(dd.get("fim")),
                                                metodologia=dd.get("metodologia", "proporcional_receita"))
                 self.send_json({"ok": True, "reconciliacao": rec})
             except ValueError as e:
@@ -10094,7 +10110,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 dd = json.loads(body or b'{}')
                 r = mod_contabil.fechar_periodo(db, ot, oid, ini=_parse_data(dd.get("ini")),
-                                                fim=_parse_data(dd.get("fim")),
+                                                fim=_parse_fim_dia_cheio(dd.get("fim")),
                                                 metodologia=dd.get("metodologia", "proporcional_receita"))
                 self.send_json({"ok": True, "periodo": r}, code=201)
             except ValueError as e:

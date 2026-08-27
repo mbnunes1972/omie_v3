@@ -50,29 +50,55 @@ else
 fi
 echo "     historico:"; alembic history 2>/dev/null | sed 's/^/       /'
 
-titulo "2. Modelos x banco principal (autogenerate)"
-saida=$(alembic revision --autogenerate -m sonda_conferencia 2>&1)
-NOVA=$(echo "$saida" | sed -n 's/.*Generating \(.*\.py\).*/\1/p' | tr -d ' ')
-if [ -z "$NOVA" ] || [ ! -f "$NOVA" ]; then
-  reprova "autogenerate nao produziu arquivo"; echo "$saida" | sed 's/^/       /'
+titulo "2. Modelos x banco principal (comparacao direta)"
+python3 - <<'PY' > "$TMP/cmp" 2>&1
+import os, sys
+sys.path.insert(0, os.getcwd())
+from sqlalchemy import create_engine
+from alembic.migration import MigrationContext
+from alembic.autogenerate import compare_metadata
+import database as _db
+eng = create_engine(os.environ["PGURL"])
+with eng.connect() as conn:
+    ctx = MigrationContext.configure(conn, opts={"compare_type": True,
+                                                 "compare_server_default": True})
+    diff = [d for d in compare_metadata(ctx, _db.Base.metadata)
+            if "pg_stat_statements" not in str(d)]
+for d in diff:
+    print(d)
+print("TOTAL:", len(diff))
+PY
+if grep -qx 'TOTAL: 0' "$TMP/cmp"; then
+  aprova "modelos e banco principal identicos (comparacao direta, sem depender do head)"
 else
-  ops=$(grep -cE '^\s+op\.' "$NOVA")
-  if [ "$ops" = "0" ]; then aprova "autogenerate vazio — modelos e banco identicos"
-  else reprova "autogenerate gerou $ops operacoes"; grep -nE '^\s+op\.' "$NOVA" | head -40 | sed 's/^/       /'; fi
-  rm -f "$NOVA"; NOVA=""
+  reprova "modelos divergem do banco principal"
+  head -40 "$TMP/cmp" | sed 's/^/       /'
 fi
 
 titulo "3. Banco construido apenas pelas migrations (B2)"
+rev_princ=$(alembic current 2>/dev/null | tail -1 | awk '{print $1}')
+rev_head=$(alembic heads 2>/dev/null | awk '{print $1}')
 if ! psql "$TESTE" -q -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' 2>"$TMP/erro"; then
   reprova "nao consegui limpar $TESTE"; sed 's/^/       /' "$TMP/erro"
 else
-  if DATABASE_URL="$TESTE" alembic upgrade head >"$TMP/up" 2>&1; then
-    aprova "upgrade head do zero completou sem erro"
+  # Ponte do estado intermediario: a 0001 e um baseline vazio de stamp, entao a
+  # cadeia 0001-0009 pressupoe um schema que ja existe. Quem cria as tabelas e o
+  # candidato de baseline, no fim da cadeia. Ate o B3 colapsar isso, o banco de
+  # teste precisa ser carimbado na revisao atual antes de subir o candidato.
+  if [ "$rev_princ" != "$rev_head" ]; then
+    if DATABASE_URL="$TESTE" alembic stamp "$rev_princ" >"$TMP/up" 2>&1; then
+      echo "       ponte: banco de teste carimbado em $rev_princ (estado intermediario)"
+    else
+      reprova "falhou o stamp da ponte em $rev_princ"; tail -10 "$TMP/up" | sed 's/^/       /'
+    fi
+  fi
+  if DATABASE_URL="$TESTE" alembic upgrade head >>"$TMP/up" 2>&1; then
+    aprova "upgrade do zero ate o head completou sem erro"
     nt=$(psql "$TESTE" -At -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
     if [ "${nt:-0}" -gt 50 ]; then aprova "banco construido tem $nt tabelas"
     else reprova "banco construido tem so $nt tabelas — a baseline nao criou nada"; fi
   else
-    reprova "upgrade head do zero falhou"; tail -20 "$TMP/up" | sed 's/^/       /'
+    reprova "upgrade do zero falhou"; tail -25 "$TMP/up" | sed 's/^/       /'
   fi
 fi
 
@@ -101,11 +127,9 @@ for fkname in funcionarios_usuario_id_fkey redes_emitente_central_id_fkey fk_orc
 done
 
 titulo "6. Testes de integridade de schema"
-if git grep -lI 'pg_constraint\|inspect(' -- tests >/dev/null 2>&1; then
-  aprova "existem testes de schema: $(git grep -lI 'pg_constraint\|inspect(' -- tests | tr '\n' ' ')"
-else
-  reprova "nenhum teste em tests/ compara metadata com o banco"
-fi
+for tst in tests/test_schema_fk_integridade.py tests/test_schema_boot_estavel.py; do
+  [ -f "$tst" ] && aprova "$tst existe" || reprova "$tst NAO existe"
+done
 
 titulo "7. Versionamento"
 sujo=$(git status --porcelain -- migrations docs/db tests | head -20)

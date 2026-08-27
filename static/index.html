@@ -19611,7 +19611,8 @@ function _fichaRenderConteudo() {
     const itens = [mae, ..._FICHA_SUBS[mae]];
     subs = '<div class="ficha-subs">' + itens.map(c => {
       const d = _fichaEtapaDef(c); const s = _statusFichario(c);
-      const rot = c === mae ? `${c} · Visão geral` : `${c} · ${d ? d.nome : c}`;
+      const numExibSub = _fichaNumeroExibicao(c);
+      const rot = c === mae ? `${numExibSub} · Visão geral` : `${numExibSub} · ${d ? d.nome : c}`;
       return `<span class="ficha-subtab st-${s}${c === codigo ? ' ativa' : ''}" onclick="_fichaSelecionar('${c}')">${esc(rot)}</span>`;
     }).join('') + '</div>';
   }
@@ -20333,9 +20334,17 @@ function _retidoRenderNova(d){
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px">${btn}</div>
   </div>`;
 }
+// N2 (2026-08-26): mesma numeração/rótulo de exibição da lombada e do cabeçalho do fichário
+// (_fichaNumeroExibicao/_fichaTituloGrupo) — antes usava o código cru e o nome de ETAPAS_CICLO
+// direto, e colidia com a numeração visual (achado P2-1: "13 · Produção" pra etapa exibida como
+// "9" na lombada).
 function _etapaRotulo(cod){
-  const e = (typeof ETAPAS_CICLO !== 'undefined') && ETAPAS_CICLO.find(x=>x.codigo===cod);
-  return e ? cod+' · '+e.nome : cod;
+  const e = _fichaEtapaDef(cod);
+  if (!e) return cod;
+  const mae = _fichaMae(cod);
+  const numExib = _fichaNumeroExibicao(cod);
+  const tituloMae = _fichaTituloGrupo(mae);
+  return (cod === mae) ? `${numExib} · ${tituloMae}` : `${numExib} · ${tituloMae} · ${e.nome}`;
 }
 async function retidoReter(){
   const ids = [...document.querySelectorAll('.retido-novo-chk:checked')].map(c=>parseInt(c.value,10));

@@ -84,6 +84,5 @@ COMUNICACAO/
 docs/db/backup/
 *.dump
 dia0_resultado.txt
-ERD.mmd
 __pycache__/
 *.pyc

@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict OrwNQXOJ6y7pDzx4GhwxF9QAH083SXuY9ZRLAF8dc6wagYQH9QSXzIjo7gu7dkE
+\restrict SUG595tYhf5PKMiU1gE3e7k3GwTdjZzPVx1n9djW8FAwVVIUOHebThFzbcrDDOE
 
 -- Dumped from database version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
 -- Dumped by pg_dump version 18.6 (Ubuntu 18.6-0ubuntu0.26.04.1)
@@ -18,6 +18,20 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: pg_stat_statements; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_stat_statements; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_stat_statements IS 'track planning and execution statistics of all SQL statements executed';
+
 
 SET default_tablespace = '';
 
@@ -293,6 +307,15 @@ CREATE SEQUENCE public.ajuste_fabrica_id_seq
 --
 
 ALTER SEQUENCE public.ajuste_fabrica_id_seq OWNED BY public.ajuste_fabrica.id;
+
+
+--
+-- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alembic_version (
+    version_num character varying(32) NOT NULL
+);
 
 
 --
@@ -3925,6 +3948,14 @@ ALTER TABLE ONLY public.ajuste_fabrica
 
 
 --
+-- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alembic_version
+    ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
+
+
+--
 -- Name: aprovacoes_pe_assinaturas aprovacoes_pe_assinaturas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4709,10 +4740,73 @@ ALTER TABLE ONLY public.usuarios
 
 
 --
+-- Name: ix_acordo_fabrica_contraparte_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_acordo_fabrica_contraparte_id ON public.acordo_fabrica USING btree (contraparte_id);
+
+
+--
+-- Name: ix_acordo_fabrica_loja_titular_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_acordo_fabrica_loja_titular_id ON public.acordo_fabrica USING btree (loja_titular_id);
+
+
+--
 -- Name: ix_acordo_movimento_acordo_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_acordo_movimento_acordo_id ON public.acordo_movimento USING btree (acordo_id);
+
+
+--
+-- Name: ix_adiantamento_funcionario_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_adiantamento_funcionario_funcionario_id ON public.adiantamento_funcionario USING btree (funcionario_id);
+
+
+--
+-- Name: ix_adiantamento_funcionario_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_adiantamento_funcionario_loja_id ON public.adiantamento_funcionario USING btree (loja_id);
+
+
+--
+-- Name: ix_aditivos_assinaturas_aditivo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aditivos_assinaturas_aditivo_id ON public.aditivos_assinaturas USING btree (aditivo_id);
+
+
+--
+-- Name: ix_aditivos_contrato_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aditivos_contrato_id ON public.aditivos USING btree (contrato_id);
+
+
+--
+-- Name: ix_aditivos_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aditivos_loja_id ON public.aditivos USING btree (loja_id);
+
+
+--
+-- Name: ix_aditivos_modelo_versao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aditivos_modelo_versao_id ON public.aditivos USING btree (modelo_versao_id);
+
+
+--
+-- Name: ix_aditivos_orcamento_complemento_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aditivos_orcamento_complemento_id ON public.aditivos USING btree (orcamento_complemento_id);
 
 
 --
@@ -4723,10 +4817,59 @@ CREATE INDEX ix_aditivos_projeto_nome ON public.aditivos USING btree (projeto_no
 
 
 --
+-- Name: ix_ajuste_fabrica_acordo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ajuste_fabrica_acordo_id ON public.ajuste_fabrica USING btree (acordo_id);
+
+
+--
+-- Name: ix_ajuste_fabrica_aplicacao_ajuste_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ajuste_fabrica_aplicacao_ajuste_id ON public.ajuste_fabrica_aplicacao USING btree (ajuste_id);
+
+
+--
 -- Name: ix_ajuste_fabrica_aplicacao_projeto_nome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_ajuste_fabrica_aplicacao_projeto_nome ON public.ajuste_fabrica_aplicacao USING btree (projeto_nome);
+
+
+--
+-- Name: ix_ajuste_fabrica_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ajuste_fabrica_loja_id ON public.ajuste_fabrica USING btree (loja_id);
+
+
+--
+-- Name: ix_aprovacoes_pe_assinaturas_aprovacao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aprovacoes_pe_assinaturas_aprovacao_id ON public.aprovacoes_pe_assinaturas USING btree (aprovacao_id);
+
+
+--
+-- Name: ix_aprovacoes_pe_contrato_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aprovacoes_pe_contrato_id ON public.aprovacoes_pe USING btree (contrato_id);
+
+
+--
+-- Name: ix_aprovacoes_pe_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aprovacoes_pe_loja_id ON public.aprovacoes_pe USING btree (loja_id);
+
+
+--
+-- Name: ix_aprovacoes_pe_modelo_versao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_aprovacoes_pe_modelo_versao_id ON public.aprovacoes_pe USING btree (modelo_versao_id);
 
 
 --
@@ -4737,10 +4880,59 @@ CREATE INDEX ix_aprovacoes_pe_projeto_nome ON public.aprovacoes_pe USING btree (
 
 
 --
+-- Name: ix_arquivo_pe_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_arquivo_pe_pool_ambiente_id ON public.arquivo_pe USING btree (pool_ambiente_id);
+
+
+--
 -- Name: ix_arquivo_pe_projeto_nome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_arquivo_pe_projeto_nome ON public.arquivo_pe USING btree (projeto_nome);
+
+
+--
+-- Name: ix_assistencia_anexos_caso_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_anexos_caso_id ON public.assistencia_anexos USING btree (caso_id);
+
+
+--
+-- Name: ix_assistencia_caso_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_caso_loja_id ON public.assistencia_caso USING btree (loja_id);
+
+
+--
+-- Name: ix_assistencia_caso_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_caso_pool_ambiente_id ON public.assistencia_caso USING btree (pool_ambiente_id);
+
+
+--
+-- Name: ix_assistencia_executores_caso_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_executores_caso_id ON public.assistencia_executores USING btree (caso_id);
+
+
+--
+-- Name: ix_assistencia_executores_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_executores_funcionario_id ON public.assistencia_executores USING btree (funcionario_id);
+
+
+--
+-- Name: ix_assistencia_executores_terceiro_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_assistencia_executores_terceiro_id ON public.assistencia_executores USING btree (terceiro_id);
 
 
 --
@@ -4751,6 +4943,48 @@ CREATE INDEX ix_assuntos_loja_id ON public.assuntos USING btree (loja_id);
 
 
 --
+-- Name: ix_atribuicoes_ambiente_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_atribuicoes_ambiente_funcionario_id ON public.atribuicoes_ambiente USING btree (funcionario_id);
+
+
+--
+-- Name: ix_atribuicoes_ambiente_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_atribuicoes_ambiente_loja_id ON public.atribuicoes_ambiente USING btree (loja_id);
+
+
+--
+-- Name: ix_atribuicoes_ambiente_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_atribuicoes_ambiente_pool_ambiente_id ON public.atribuicoes_ambiente USING btree (pool_ambiente_id);
+
+
+--
+-- Name: ix_atribuicoes_ambiente_terceiro_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_atribuicoes_ambiente_terceiro_id ON public.atribuicoes_ambiente USING btree (terceiro_id);
+
+
+--
+-- Name: ix_briefings_cliente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_briefings_cliente_id ON public.briefings USING btree (cliente_id);
+
+
+--
+-- Name: ix_centro_custo_pai_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_centro_custo_pai_id ON public.centro_custo USING btree (pai_id);
+
+
+--
 -- Name: ix_ciclo_etapas_responsavel_funcionario; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4758,10 +4992,10 @@ CREATE INDEX ix_ciclo_etapas_responsavel_funcionario ON public.ciclo_etapas USIN
 
 
 --
--- Name: ix_ciclo_etapas_responsavel_terceiro; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_ciclo_etapas_responsavel_terceiro_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_ciclo_etapas_responsavel_terceiro ON public.ciclo_etapas USING btree (responsavel_terceiro_id);
+CREATE INDEX ix_ciclo_etapas_responsavel_terceiro_id ON public.ciclo_etapas USING btree (responsavel_terceiro_id);
 
 
 --
@@ -4779,10 +5013,115 @@ CREATE INDEX ix_ciclo_etapas_transf_dest_terc ON public.ciclo_etapas USING btree
 
 
 --
+-- Name: ix_ciclo_etapas_transferencia_destino_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_etapas_transferencia_destino_funcionario_id ON public.ciclo_etapas USING btree (transferencia_destino_funcionario_id);
+
+
+--
+-- Name: ix_ciclo_etapas_transferencia_destino_terceiro_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_etapas_transferencia_destino_terceiro_id ON public.ciclo_etapas USING btree (transferencia_destino_terceiro_id);
+
+
+--
+-- Name: ix_ciclo_etapas_transferencia_solicitada_por_usuario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_etapas_transferencia_solicitada_por_usuario_id ON public.ciclo_etapas USING btree (transferencia_solicitada_por_usuario_id);
+
+
+--
+-- Name: ix_ciclo_logistico_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_logistico_loja_id ON public.ciclo_logistico USING btree (loja_id);
+
+
+--
+-- Name: ix_ciclo_logistico_nfe_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_logistico_nfe_id ON public.ciclo_logistico USING btree (nfe_id);
+
+
+--
+-- Name: ix_ciclo_logistico_parcela_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_logistico_parcela_id ON public.ciclo_logistico USING btree (parcela_id);
+
+
+--
+-- Name: ix_ciclo_logistico_transicao_ciclo_logistico_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_logistico_transicao_ciclo_logistico_id ON public.ciclo_logistico_transicao USING btree (ciclo_logistico_id);
+
+
+--
+-- Name: ix_ciclo_revisoes_relatorio_doc_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ciclo_revisoes_relatorio_doc_id ON public.ciclo_revisoes USING btree (relatorio_doc_id);
+
+
+--
+-- Name: ix_clientes_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_clientes_loja_id ON public.clientes USING btree (loja_id);
+
+
+--
+-- Name: ix_comissao_folha_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_comissao_folha_funcionario_id ON public.comissao_folha USING btree (funcionario_id);
+
+
+--
+-- Name: ix_comissao_folha_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_comissao_folha_loja_id ON public.comissao_folha USING btree (loja_id);
+
+
+--
+-- Name: ix_conciliacao_pe_fase_parcela_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conciliacao_pe_fase_parcela_id ON public.conciliacao_pe_fase USING btree (parcela_id);
+
+
+--
+-- Name: ix_conciliacao_pe_fase_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conciliacao_pe_fase_pool_ambiente_id ON public.conciliacao_pe_fase USING btree (pool_ambiente_id);
+
+
+--
 -- Name: ix_conciliacao_pe_fase_projeto_nome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_conciliacao_pe_fase_projeto_nome ON public.conciliacao_pe_fase USING btree (projeto_nome);
+
+
+--
+-- Name: ix_conta_centro_custo_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conta_centro_custo_id ON public.conta USING btree (centro_custo_id);
+
+
+--
+-- Name: ix_conta_pai_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conta_pai_id ON public.conta USING btree (pai_id);
 
 
 --
@@ -4800,10 +5139,59 @@ CREATE INDEX ix_contato_confirmacoes_projeto_nome ON public.contato_confirmacoes
 
 
 --
+-- Name: ix_contratos_assinaturas_contrato_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_contratos_assinaturas_contrato_id ON public.contratos_assinaturas USING btree (contrato_id);
+
+
+--
+-- Name: ix_contratos_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_contratos_loja_id ON public.contratos USING btree (loja_id);
+
+
+--
+-- Name: ix_contratos_modelo_versao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_contratos_modelo_versao_id ON public.contratos USING btree (modelo_versao_id);
+
+
+--
+-- Name: ix_contratos_orcamento_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_contratos_orcamento_id ON public.contratos USING btree (orcamento_id);
+
+
+--
 -- Name: ix_conversa_mensagens_conversa_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_conversa_mensagens_conversa_id ON public.conversa_mensagens USING btree (conversa_id);
+
+
+--
+-- Name: ix_conversa_mensagens_destinatario_usuario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversa_mensagens_destinatario_usuario_id ON public.conversa_mensagens USING btree (destinatario_usuario_id);
+
+
+--
+-- Name: ix_conversa_mensagens_documento_ref_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversa_mensagens_documento_ref_id ON public.conversa_mensagens USING btree (documento_ref_id);
+
+
+--
+-- Name: ix_conversa_mensagens_transferido_para_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversa_mensagens_transferido_para_funcionario_id ON public.conversa_mensagens USING btree (transferido_para_funcionario_id);
 
 
 --
@@ -4828,6 +5216,34 @@ CREATE INDEX ix_conversa_participantes_usuario_id ON public.conversa_participant
 
 
 --
+-- Name: ix_conversas_assunto_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_assunto_id ON public.conversas USING btree (assunto_id);
+
+
+--
+-- Name: ix_conversas_cliente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_cliente_id ON public.conversas USING btree (cliente_id);
+
+
+--
+-- Name: ix_conversas_concluido_por_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_concluido_por_id ON public.conversas USING btree (concluido_por_id);
+
+
+--
+-- Name: ix_conversas_criado_por_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_criado_por_id ON public.conversas USING btree (criado_por_id);
+
+
+--
 -- Name: ix_conversas_loja_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4842,10 +5258,73 @@ CREATE INDEX ix_conversas_projeto_nome ON public.conversas USING btree (projeto_
 
 
 --
+-- Name: ix_conversas_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_rede_id ON public.conversas USING btree (rede_id);
+
+
+--
+-- Name: ix_conversas_responsavel_usuario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_conversas_responsavel_usuario_id ON public.conversas USING btree (responsavel_usuario_id);
+
+
+--
+-- Name: ix_documento_fiscal_danfe_doc_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_documento_fiscal_danfe_doc_id ON public.documento_fiscal USING btree (danfe_doc_id);
+
+
+--
+-- Name: ix_documento_fiscal_emitente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_documento_fiscal_emitente_id ON public.documento_fiscal USING btree (emitente_id);
+
+
+--
+-- Name: ix_documento_fiscal_fabrica_doc_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_documento_fiscal_fabrica_doc_id ON public.documento_fiscal USING btree (fabrica_doc_id);
+
+
+--
+-- Name: ix_documento_fiscal_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_documento_fiscal_loja_id ON public.documento_fiscal USING btree (loja_id);
+
+
+--
+-- Name: ix_documento_fiscal_xml_doc_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_documento_fiscal_xml_doc_id ON public.documento_fiscal USING btree (xml_doc_id);
+
+
+--
 -- Name: ix_documento_tipos_loja_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_documento_tipos_loja_id ON public.documento_tipos USING btree (loja_id);
+
+
+--
+-- Name: ix_emitente_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_emitente_rede_id ON public.emitente USING btree (rede_id);
+
+
+--
+-- Name: ix_envios_externos_destinatario; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_envios_externos_destinatario ON public.envios_externos USING btree (destinatario_tipo, destinatario_id);
 
 
 --
@@ -4863,6 +5342,132 @@ CREATE INDEX ix_envios_externos_mensagem_id ON public.envios_externos USING btre
 
 
 --
+-- Name: ix_envios_externos_template_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_envios_externos_template_id ON public.envios_externos USING btree (template_id);
+
+
+--
+-- Name: ix_envios_externos_triagem_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_envios_externos_triagem_id ON public.envios_externos USING btree (triagem_id);
+
+
+--
+-- Name: ix_folha_pagamento_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_folha_pagamento_funcionario_id ON public.folha_pagamento USING btree (funcionario_id);
+
+
+--
+-- Name: ix_folha_pagamento_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_folha_pagamento_loja_id ON public.folha_pagamento USING btree (loja_id);
+
+
+--
+-- Name: ix_fornecedores_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_fornecedores_loja_id ON public.fornecedores USING btree (loja_id);
+
+
+--
+-- Name: ix_funcionarios_funcao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_funcionarios_funcao_id ON public.funcionarios USING btree (funcao_id);
+
+
+--
+-- Name: ix_funcionarios_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_funcionarios_loja_id ON public.funcionarios USING btree (loja_id);
+
+
+--
+-- Name: ix_funcoes_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_funcoes_loja_id ON public.funcoes USING btree (loja_id);
+
+
+--
+-- Name: ix_integracoes_clicksign_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_integracoes_clicksign_loja_id ON public.integracoes_clicksign USING btree (loja_id);
+
+
+--
+-- Name: ix_integracoes_clicksign_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_integracoes_clicksign_rede_id ON public.integracoes_clicksign USING btree (rede_id);
+
+
+--
+-- Name: ix_integracoes_d4sign_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_integracoes_d4sign_loja_id ON public.integracoes_d4sign USING btree (loja_id);
+
+
+--
+-- Name: ix_integracoes_d4sign_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_integracoes_d4sign_rede_id ON public.integracoes_d4sign USING btree (rede_id);
+
+
+--
+-- Name: ix_lancamento_conta_credito_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lancamento_conta_credito_id ON public.lancamento USING btree (conta_credito_id);
+
+
+--
+-- Name: ix_lancamento_conta_debito_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lancamento_conta_debito_id ON public.lancamento USING btree (conta_debito_id);
+
+
+--
+-- Name: ix_lancamento_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lancamento_owner ON public.lancamento USING btree (owner_tipo, owner_id);
+
+
+--
+-- Name: ix_lojas_emitente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lojas_emitente_id ON public.lojas USING btree (emitente_id);
+
+
+--
+-- Name: ix_lojas_loja_mae_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lojas_loja_mae_id ON public.lojas USING btree (loja_mae_id);
+
+
+--
+-- Name: ix_lojas_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lojas_rede_id ON public.lojas USING btree (rede_id);
+
+
+--
 -- Name: ix_mensagem_anexos_mensagem_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4877,10 +5482,129 @@ CREATE UNIQUE INDEX ix_numero_conectado_loja_id ON public.numero_conectado USING
 
 
 --
+-- Name: ix_orcamento_ambientes_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_orcamento_ambientes_pool_ambiente_id ON public.orcamento_ambientes USING btree (pool_ambiente_id);
+
+
+--
+-- Name: ix_orcamentos_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_orcamentos_loja_id ON public.orcamentos USING btree (loja_id);
+
+
+--
+-- Name: ix_orcamentos_parcela_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_orcamentos_parcela_id ON public.orcamentos USING btree (parcela_id);
+
+
+--
+-- Name: ix_parceiro_lojas_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_parceiro_lojas_loja_id ON public.parceiro_lojas USING btree (loja_id);
+
+
+--
+-- Name: ix_parceiro_lojas_parceiro_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_parceiro_lojas_parceiro_id ON public.parceiro_lojas USING btree (parceiro_id);
+
+
+--
+-- Name: ix_parceiros_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_parceiros_rede_id ON public.parceiros USING btree (rede_id);
+
+
+--
+-- Name: ix_parcela_ambiente_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_parcela_ambiente_pool_ambiente_id ON public.parcela_ambiente USING btree (pool_ambiente_id);
+
+
+--
+-- Name: ix_parcela_projeto_orcamento_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_parcela_projeto_orcamento_id ON public.parcela_projeto USING btree (orcamento_id);
+
+
+--
 -- Name: ix_parcela_projeto_projeto_nome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_parcela_projeto_projeto_nome ON public.parcela_projeto USING btree (projeto_nome);
+
+
+--
+-- Name: ix_perfil_emissao_emitente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_perfil_emissao_emitente_id ON public.perfil_emissao USING btree (emitente_id);
+
+
+--
+-- Name: ix_periodo_contabil_owner; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_periodo_contabil_owner ON public.periodo_contabil USING btree (owner_tipo, owner_id);
+
+
+--
+-- Name: ix_projetos_meta_cliente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_projetos_meta_cliente_id ON public.projetos_meta USING btree (cliente_id);
+
+
+--
+-- Name: ix_projetos_meta_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_projetos_meta_loja_id ON public.projetos_meta USING btree (loja_id);
+
+
+--
+-- Name: ix_provisao_data_prevista_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_provisao_data_prevista_loja_id ON public.provisao_data_prevista USING btree (loja_id);
+
+
+--
+-- Name: ix_provisao_registro_por_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_provisao_registro_por_id ON public.provisao_registro USING btree (por_id);
+
+
+--
+-- Name: ix_recebivel_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_recebivel_loja_id ON public.recebivel USING btree (loja_id);
+
+
+--
+-- Name: ix_recebivel_orcamento_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_recebivel_orcamento_id ON public.recebivel USING btree (orcamento_id);
+
+
+--
+-- Name: ix_redes_emitente_central_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_redes_emitente_central_id ON public.redes USING btree (emitente_central_id);
 
 
 --
@@ -4898,10 +5622,66 @@ CREATE INDEX ix_segmento_config_loja_id ON public.segmento_config USING btree (l
 
 
 --
+-- Name: ix_segmento_config_responsavel_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_segmento_config_responsavel_funcionario_id ON public.segmento_config USING btree (responsavel_funcionario_id);
+
+
+--
+-- Name: ix_segmento_config_template_padrao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_segmento_config_template_padrao_id ON public.segmento_config USING btree (template_padrao_id);
+
+
+--
+-- Name: ix_simulador_autorizacoes_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_simulador_autorizacoes_loja_id ON public.simulador_autorizacoes USING btree (loja_id);
+
+
+--
+-- Name: ix_simulador_log_acessos_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_simulador_log_acessos_loja_id ON public.simulador_log_acessos USING btree (loja_id);
+
+
+--
+-- Name: ix_sinal_retido_pool_ambiente_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sinal_retido_pool_ambiente_id ON public.sinal_retido USING btree (pool_ambiente_id);
+
+
+--
 -- Name: ix_sinal_retido_projeto_nome; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_sinal_retido_projeto_nome ON public.sinal_retido USING btree (projeto_nome);
+
+
+--
+-- Name: ix_solicitacoes_medicao_assinaturas_solicitacao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_solicitacoes_medicao_assinaturas_solicitacao_id ON public.solicitacoes_medicao_assinaturas USING btree (solicitacao_id);
+
+
+--
+-- Name: ix_solicitacoes_medicao_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_solicitacoes_medicao_loja_id ON public.solicitacoes_medicao USING btree (loja_id);
+
+
+--
+-- Name: ix_solicitacoes_medicao_modelo_versao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_solicitacoes_medicao_modelo_versao_id ON public.solicitacoes_medicao USING btree (modelo_versao_id);
 
 
 --
@@ -4919,10 +5699,31 @@ CREATE INDEX ix_template_mensagem_loja_id ON public.template_mensagem USING btre
 
 
 --
+-- Name: ix_terceiros_funcao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_terceiros_funcao_id ON public.terceiros USING btree (funcao_id);
+
+
+--
+-- Name: ix_terceiros_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_terceiros_loja_id ON public.terceiros USING btree (loja_id);
+
+
+--
 -- Name: ix_triagem_config_loja_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX ix_triagem_config_loja_id ON public.triagem_config USING btree (loja_id);
+
+
+--
+-- Name: ix_triagem_entradas_conversa_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_triagem_entradas_conversa_id ON public.triagem_entradas USING btree (conversa_id);
 
 
 --
@@ -4937,6 +5738,41 @@ CREATE UNIQUE INDEX ix_triagem_entradas_id_externo ON public.triagem_entradas US
 --
 
 CREATE INDEX ix_triagem_entradas_loja_id ON public.triagem_entradas USING btree (loja_id);
+
+
+--
+-- Name: ix_usuario_lojas_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_usuario_lojas_loja_id ON public.usuario_lojas USING btree (loja_id);
+
+
+--
+-- Name: ix_usuarios_funcao_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_usuarios_funcao_id ON public.usuarios USING btree (funcao_id);
+
+
+--
+-- Name: ix_usuarios_funcionario_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_usuarios_funcionario_id ON public.usuarios USING btree (funcionario_id);
+
+
+--
+-- Name: ix_usuarios_loja_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_usuarios_loja_id ON public.usuarios USING btree (loja_id);
+
+
+--
+-- Name: ix_usuarios_rede_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_usuarios_rede_id ON public.usuarios USING btree (rede_id);
 
 
 --
@@ -5635,11 +6471,163 @@ ALTER TABLE ONLY public.envios_externos
 
 
 --
+-- Name: acordo_fabrica fk_acordo_fabrica_contraparte_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.acordo_fabrica
+    ADD CONSTRAINT fk_acordo_fabrica_contraparte_id FOREIGN KEY (contraparte_id) REFERENCES public.contraparte_financeira(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: assistencia_caso fk_assistencia_caso_pool_ambiente_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistencia_caso
+    ADD CONSTRAINT fk_assistencia_caso_pool_ambiente_id FOREIGN KEY (pool_ambiente_id) REFERENCES public.pool_ambientes(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ciclo_etapas fk_ciclo_etapas_responsavel_terceiro_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ciclo_etapas
+    ADD CONSTRAINT fk_ciclo_etapas_responsavel_terceiro_id FOREIGN KEY (responsavel_terceiro_id) REFERENCES public.terceiros(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: ciclo_etapas fk_ciclo_etapas_transferencia_destino_funcionario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ciclo_etapas
+    ADD CONSTRAINT fk_ciclo_etapas_transferencia_destino_funcionario_id FOREIGN KEY (transferencia_destino_funcionario_id) REFERENCES public.funcionarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: ciclo_etapas fk_ciclo_etapas_transferencia_destino_terceiro_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ciclo_etapas
+    ADD CONSTRAINT fk_ciclo_etapas_transferencia_destino_terceiro_id FOREIGN KEY (transferencia_destino_terceiro_id) REFERENCES public.terceiros(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: ciclo_etapas fk_ciclo_etapas_transferencia_solicitada_por_usuario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ciclo_etapas
+    ADD CONSTRAINT fk_ciclo_etapas_transferencia_solicitada_por_usuario_id FOREIGN KEY (transferencia_solicitada_por_usuario_id) REFERENCES public.usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: conta fk_conta_centro_custo_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conta
+    ADD CONSTRAINT fk_conta_centro_custo_id FOREIGN KEY (centro_custo_id) REFERENCES public.centro_custo(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: conversa_mensagens fk_conversa_mensagens_destinatario_usuario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversa_mensagens
+    ADD CONSTRAINT fk_conversa_mensagens_destinatario_usuario_id FOREIGN KEY (destinatario_usuario_id) REFERENCES public.usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: conversa_mensagens fk_conversa_mensagens_transferido_para_funcionario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversa_mensagens
+    ADD CONSTRAINT fk_conversa_mensagens_transferido_para_funcionario_id FOREIGN KEY (transferido_para_funcionario_id) REFERENCES public.funcionarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: conversas fk_conversas_assunto_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversas
+    ADD CONSTRAINT fk_conversas_assunto_id FOREIGN KEY (assunto_id) REFERENCES public.assuntos(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: conversas fk_conversas_concluido_por_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversas
+    ADD CONSTRAINT fk_conversas_concluido_por_id FOREIGN KEY (concluido_por_id) REFERENCES public.usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: conversas fk_conversas_criado_por_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversas
+    ADD CONSTRAINT fk_conversas_criado_por_id FOREIGN KEY (criado_por_id) REFERENCES public.usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: conversas fk_conversas_rede_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversas
+    ADD CONSTRAINT fk_conversas_rede_id FOREIGN KEY (rede_id) REFERENCES public.redes(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: conversas fk_conversas_responsavel_usuario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversas
+    ADD CONSTRAINT fk_conversas_responsavel_usuario_id FOREIGN KEY (responsavel_usuario_id) REFERENCES public.usuarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: conversa_mensagens fk_convmsg_documento_ref; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.conversa_mensagens
     ADD CONSTRAINT fk_convmsg_documento_ref FOREIGN KEY (documento_ref_id) REFERENCES public.ciclo_documentos(id);
+
+
+--
+-- Name: envios_externos fk_envios_externos_template_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.envios_externos
+    ADD CONSTRAINT fk_envios_externos_template_id FOREIGN KEY (template_id) REFERENCES public.template_mensagem(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: envios_externos fk_envios_externos_triagem_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.envios_externos
+    ADD CONSTRAINT fk_envios_externos_triagem_id FOREIGN KEY (triagem_id) REFERENCES public.triagem_entradas(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: lojas fk_lojas_loja_mae_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.lojas
+    ADD CONSTRAINT fk_lojas_loja_mae_id FOREIGN KEY (loja_mae_id) REFERENCES public.lojas(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: orcamentos fk_orcamentos_parcela_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orcamentos
+    ADD CONSTRAINT fk_orcamentos_parcela_id FOREIGN KEY (parcela_id) REFERENCES public.parcela_projeto(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: segmento_config fk_segmento_config_responsavel_funcionario_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.segmento_config
+    ADD CONSTRAINT fk_segmento_config_responsavel_funcionario_id FOREIGN KEY (responsavel_funcionario_id) REFERENCES public.funcionarios(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -6318,5 +7306,5 @@ ALTER TABLE ONLY public.usuarios
 -- PostgreSQL database dump complete
 --
 
-\unrestrict OrwNQXOJ6y7pDzx4GhwxF9QAH083SXuY9ZRLAF8dc6wagYQH9QSXzIjo7gu7dkE
+\unrestrict SUG595tYhf5PKMiU1gE3e7k3GwTdjZzPVx1n9djW8FAwVVIUOHebThFzbcrDDOE
 

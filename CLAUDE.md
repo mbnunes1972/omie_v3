@@ -155,3 +155,27 @@ fluxo de telas do frontend (navegação, escopo/tenancy, tema claro/escuro), con
 (`docs/design/`) e simulação financeira ponta a ponta (fluxo real, não script sintético). Chamar
 proativamente antes de fechar frente/mergear área sensível, ou sob demanda ("chama a Vera"). Só reporta —
 não commita/mergeia/corrige sozinha.
+
+## Banco de dados — regras permanentes (revisao de 27/08/2026)
+
+O schema e versionado com Alembic. `docs/db/ESTADO_REVISAO.md` registra o estado.
+
+R1  Nenhum DDL fora de migration, em nenhum ambiente, nem para teste.
+    O `_migrar_colunas_pg` do database.py esta congelado: nao recebe coluna nova.
+R2  Toda coluna terminada em `_id` tem FK declarada — ou uma linha em
+    docs/db/excecoes.md explicando por que nao tem (FK externa, polimorfica,
+    ou codigo de negocio).
+R3  Toda FK tem indice na coluna filha, criado na mesma migration.
+    O PostgreSQL indexa o lado do pai automaticamente e nunca o do filho.
+R4  `docs/db/schema.sql` e `docs/db/ERD.mmd` sao regerados no mesmo commit
+    da migration que os alterou.
+R5  Migration so chega a producao depois de rodar sobre um clone real,
+    com o tempo de execucao medido.
+R6  Migracao de schema e migracao de dados nunca compartilham a mesma revisao.
+R7  `alembic stamp` NUNCA e comando de conserto. Ele declara em que ponto o
+    banco esta; declarar errado quebra tudo que vem depois. So use apos
+    verificar que o schema realmente corresponde aquela revisao.
+R8  Duas variaveis, dois consumidores: `DATABASE_URL` (com +psycopg2) para o
+    Alembic e o SQLAlchemy; `PGURL` (sem) para psql e pg_dump.
+R9  Lancamento automatico resolve centro de custo por CODIGO dentro da arvore
+    do proprio owner, nunca por id — cada loja tem sua propria arvore.

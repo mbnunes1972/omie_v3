@@ -186,8 +186,9 @@ def test_listar_centros_custo_monta_arvore(app_db):
     db = app_db.get_session(); ot, oid = "loja", 971
     raizes = mc.listar_centros_custo(db, ot, oid)
     operacional = next(r for r in raizes if r["codigo"] == "1")
+    # T3 (27/08/2026): "Produção própria" (1.1) saiu da semente — a 0004 já a removeu do banco.
     assert {f["nome"] for f in operacional["filhos"]} == {
-        "Produção própria", "Fábricas e Fornecedores", "Montagem", "Logística/Expedição",
+        "Fábricas e Fornecedores", "Montagem", "Logística/Expedição",
         "Instalações/Infraestrutura"}
     db.close()
 
@@ -283,8 +284,34 @@ def test_remover_centro_custo_com_filho_so_inativa(app_db):
     db = app_db.get_session(); ot, oid = "loja", 974
     mc.seed_centro_custo(db, ot, oid)
     ccs = _ccs(db, ot, oid)
-    out = mc.remover_centro_custo(db, ot, oid, ccs["1"].id)   # tem filhos (1.1..1.4)
+    out = mc.remover_centro_custo(db, ot, oid, ccs["1"].id)   # tem filhos (1.2..1.5)
     assert out["acao"] == "inativado"
+    db.close()
+
+
+# ── T4 (27/08/2026, revisão do banco): código protegido nunca apaga de verdade ──────────────────
+def test_remover_centro_custo_protegido_so_inativa_mesmo_childless_e_sem_uso(app_db):
+    """"1.3" (Montagem) é resolvido por CÓDIGO por migrar_classificacao_grupo5_v1 — mesmo um owner
+    NOVO, sem conta nenhuma classificada nele ainda (childless, sem uso — o caso que normalmente
+    apagaria de verdade), não pode perder o nó, senão a automação futura fica sem destino."""
+    db = app_db.get_session(); ot, oid = "loja", 975
+    mc.seed_centro_custo(db, ot, oid)   # sem seed_plano/v1 — "1.3" garantidamente childless e sem uso
+    cc = _ccs(db, ot, oid)["1.3"]
+    out = mc.remover_centro_custo(db, ot, oid, cc.id)
+    assert out["acao"] == "inativado" and out["protegido"] is True
+    cc2 = db.get(mc.CentroCusto, cc.id)
+    assert cc2 is not None and cc2.ativo == 0   # nó sobrevive, só inativado
+    db.close()
+
+
+def test_serial_centro_custo_marca_protegido(app_db):
+    db = app_db.get_session(); ot, oid = "loja", 976
+    mc.seed_centro_custo(db, ot, oid)
+    ccs = _ccs(db, ot, oid)
+    assert mc._serial_cc(ccs["1.3"])["protegido"] is True    # usado por CLASSIFICACAO_GRUPO5_V1
+    # "1" é grupo (nó-pai "Operacional"), não é código-folha — CLASSIFICACAO_GRUPO5_V1 só mapeia
+    # pra folhas, então nenhum grupo de topo é protegido.
+    assert mc._serial_cc(ccs["1"])["protegido"] is False
     db.close()
 
 
@@ -413,100 +440,11 @@ def test_migracao_classificacao_grupo5_idempotente(app_db):
     db.close()
 
 
-# ── migrar_classificacao_grupo5_v2 (correção pós-aprovação, 2026-08-08: Brindes/Ajuste de ──────
-# Provisões viram Variável — associadas à venda; Ajuste de Provisões também muda de Centro de
-# Custo, Administrativo-financeiro -> Custos Distribuídos)
-def test_migracao_classificacao_grupo5_v2_corrige_brindes_e_ajuste(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 993
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    # CLASSIFICACAO_GRUPO5_V1 já reflete o valor CORRIGIDO — simula o estado LEGADO (owner
-    # clssificado antes desta correção) sobrescrevendo pro default antigo, como está hoje nas
-    # bases já em produção/homolog.
-    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
-    contas["5.3.12"].natureza_custo = "fixo"
-    contas["5.6.10"].natureza_custo = "fixo"; contas["5.6.10"].centro_custo_id = ccs["4.3"].id
-    db.commit()
-
-    out = mc.migrar_classificacao_grupo5_v2(db)
-    assert out["corrigidos"] == 2
-    contas = _contas(db, ot, oid)
-    assert contas["5.3.12"].natureza_custo == "variavel"
-    assert contas["5.6.10"].natureza_custo == "variavel"
-    assert contas["5.6.10"].centro_custo_id == ccs["4.5"].id
-    db.close()
-
-
-def test_migracao_classificacao_grupo5_v2_nao_sobrescreve_manual(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 994
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
-    # reclassificação manual DEPOIS do v1 — v2 não pode mexer nisso
-    contas["5.3.12"].natureza_custo = "semivariavel"
-    contas["5.6.10"].natureza_custo = "fixo"; contas["5.6.10"].centro_custo_id = ccs["1.3"].id
-    db.commit()
-    mc.migrar_classificacao_grupo5_v2(db)
-    conta1 = _contas(db, ot, oid)["5.3.12"]; conta2 = _contas(db, ot, oid)["5.6.10"]
-    assert conta1.natureza_custo == "semivariavel"                 # intocado
-    assert conta2.natureza_custo == "fixo" and conta2.centro_custo_id == ccs["1.3"].id   # intocado
-    db.close()
-
-
-def test_migracao_classificacao_grupo5_v2_idempotente(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 995
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    mc.migrar_classificacao_grupo5_v2(db)
-    estado1 = {c.codigo: (c.centro_custo_id, c.natureza_custo) for c in _contas(db, ot, oid).values()}
-    mc.migrar_classificacao_grupo5_v2(db)
-    estado2 = {c.codigo: (c.centro_custo_id, c.natureza_custo) for c in _contas(db, ot, oid).values()}
-    assert estado1 == estado2
-    db.close()
-
-
-# ── migrar_classificacao_grupo5_v3 (achado do usuário 2026-08-15: Combustível é Fixo) ──────────
-def test_migracao_classificacao_grupo5_v3_corrige_combustivel(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 996
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    # Frente 1 (spec 2026-08-25): CLASSIFICACAO_GRUPO5_V1 já reflete o valor CORRIGIDO ("fixo")
-    # — v1 não deixa mais 5.2.06 no default antigo. Simula o estado LEGADO (owner classificado
-    # antes desta correção), mesmo padrão já usado no teste de v2 logo acima.
-    contas = _contas(db, ot, oid)
-    contas["5.2.06"].natureza_custo = "variavel"
-    db.commit()
-
-    # migração roda em TODOS os owners — outros testes do módulo já deixaram owners com 5.2.06
-    # em "variavel" também, então o contador GLOBAL não é necessariamente 1 (mesma pegadinha já
-    # documentada em test_migracao_classificacao_grupo5_idempotente). O que importa é o estado
-    # DESTE owner (996), checado direto abaixo.
-    out = mc.migrar_classificacao_grupo5_v3(db)
-    assert out["corrigidos"] >= 1
-    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "fixo"
-    db.close()
-
-
-def test_migracao_classificacao_grupo5_v3_nao_sobrescreve_manual(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 997
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    contas = _contas(db, ot, oid)
-    contas["5.2.06"].natureza_custo = "semivariavel"   # reclassificação manual, depois do v1
-    db.commit()
-    mc.migrar_classificacao_grupo5_v3(db)
-    assert _contas(db, ot, oid)["5.2.06"].natureza_custo == "semivariavel"   # intocado
-    db.close()
-
-
-def test_migracao_classificacao_grupo5_v3_idempotente(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 998
-    mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
-    mc.migrar_classificacao_grupo5_v1(db)
-    mc.migrar_classificacao_grupo5_v3(db)
-    out2 = mc.migrar_classificacao_grupo5_v3(db)
-    assert out2 == {"corrigidos": 0}
-    db.close()
+# ── migrar_classificacao_grupo5_v2/v3 (correções pontuais de 2026-08-08 e 2026-08-15) ──────────
+# Saíram do boot em 2026-08-25 (Frente 1) e foram apagadas em 27/08/2026 (T2 do briefing de
+# revisão do banco): já tinham cumprido o papel em todos os ambientes, e a semente
+# (CLASSIFICACAO_GRUPO5_V1/PLANO_PADRAO) nasce direto com os valores finais que elas corrigiam.
+# Os testes que só exercitavam essas duas funções foram removidos junto.
 
 
 # ── Frente 1 (spec 2026-08-25): v2/v3 saíram do BOOT — teste obrigatório da spec ────────────────

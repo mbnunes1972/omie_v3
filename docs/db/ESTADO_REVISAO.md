@@ -59,8 +59,33 @@ Todas as operações feitas foram leituras.
 
 ## Ambientes
 
-| Ambiente | Branch | Papel |
-|---|---|---|
-| localhost | `next`, `revisao/*` | onde a migration nasce; dump anonimizado |
-| VPS A | `next` | ensaio sobre clone real da produção, com tempo medido |
-| VPS B | `main` | produção; só recebe o que passou na A |
+| ambiente | onde | banco | papel |
+|---|---|---|---|
+| localhost | WSL, no Legion |  `orizon` · **PostgreSQL 18** | desenvolvimento |
+| VPS A | 167.88.33.121:8765 · `orizon-a.service` |  `orizon_integracao` · PostgreSQL 16 | **Integração** |
+| VPS B | 167.88.33.121:8766 · `orizon-b.service` | `orizon_homologacao` · PostgreSQL 16 | **Homologação** |
+| Produção | 179.197.77.9 · Hostinger srv1832321 | `orizon_producao` · PostgreSQL 16.15 | produção, sem cliente |
+
+Fluxo: localhost -> Integração -> Homologação -> Produção.
+
+**Armadilhas:**
+- A e B sao duas instancias na MESMA maquina, com o mesmo PostgreSQL 16.
+  A maquina hospeda tambem o ArchDecorPoints.
+- Nesse servidor, o banco chamado `orizon` e' o da **Integracao**, nao o de
+  producao. A producao e' outra maquina.
+- localhost roda PostgreSQL 18 e os servidores rodam 16. Dump do 18 NAO
+  restaura no 16 — clonar o desenvolvimento para os demais e' impossivel.
+  Cada banco precisa ser construido pelas migrations.
+
+**Estado em 27/08/2026:**
+
+| | Alembic | FKs | `integracoes_d4sign` |
+|---|---|---|---|
+| localhost | `0004` | 190 | sim |
+| VPS A | nenhum | 169 | nao |
+| VPS B | nenhum | 170 | nao |
+| Producao | ? | ? | ? |
+
+**Bloqueio atual:** a baseline `0001` e' vazia, entao `alembic upgrade head`
+num banco novo nao cria nada. Substitui-la por uma migration inicial gerada
+dos modelos e' a peca que falta.

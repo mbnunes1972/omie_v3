@@ -4,7 +4,8 @@
 CMV (Frete de Fábrica 5.1.02), Custo de Serviço (Montagem 5.2.01, Frete Local 5.2.08,
 Insumos Locais 5.2.09, Garantia 5.2.12, Assistência Técnica 5.2.13) e Despesas Comerciais
 (Comissão de Medidor 5.3.18, Comissão de Projeto/Executivo 5.3.19, Retenção 5.3.20).
-Da 5.6 sobra só o 5.6.10 Ajuste de Provisões. A migração RECODIFICA a mesma linha de conta
+Da 5.6 sobra só o 5.6.10 Ajustes de Reconciliação (renomeada de "Ajuste de Provisões" em
+27/08/2026, T3 da revisão do banco). A migração RECODIFICA a mesma linha de conta
 (id preservado → histórico junto) e faz merge quando o código formal está ocupado por
 duplicata antiga com movimento. Condições do usuário: sem falta de lançamentos, sem perda
 de gestão, sem erro de processamento, sem impropriedade contábil."""
@@ -29,7 +30,7 @@ def test_seed_novo_formal(app_db):
         assert contas[cod].nome == nome, cod
     assert "5.6.01" not in contas and "5.6.09" not in contas   # família suprimida
     assert contas["5.6"].nome == "Ajustes de Provisões"
-    assert contas["5.6.10"].nome == "Ajuste de Provisões"      # único sobrevivente
+    assert contas["5.6.10"].nome == "Ajustes de Reconciliação"      # único sobrevivente
 
 
 def test_eventos_reconhecimento_nas_contas_formais(app_db):

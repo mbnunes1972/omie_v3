@@ -47,6 +47,17 @@ if target_metadata is None:
     )
 
 
+# pg_stat_statements e' extensao de infra (CREATE EXTENSION), nao schema da aplicacao —
+# nao e' modelada pelo SQLAlchemy e nao deve aparecer em nenhum autogenerate/diff futuro.
+_TABELAS_DE_EXTENSAO = {"pg_stat_statements", "pg_stat_statements_info"}
+
+
+def include_object(object, name, type_, reflected, compare_to):
+    if type_ == "table" and name in _TABELAS_DE_EXTENSAO:
+        return False
+    return True
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -55,6 +66,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -72,6 +84,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
+            include_object=include_object,
         )
         with context.begin_transaction():
             context.run_migrations()

@@ -55,3 +55,44 @@ def test_dashboard_provisoes_data_driven(app_db):
     assert novo["nome"] == "Provisão Ad Hoc"          # nome vem do plano, não hardcoded
     assert novo["saldo_em_aberto"] == 0.0
     assert novo["sub"] == "Saldo provisionado em aberto"   # descrição genérica (não estava no mapa)
+
+
+# ── T6 (27/08/2026, revisão do banco): alertas das contas de escape ─────────────────────────────
+def test_alertas_contas_escape_vazio_sem_lancamento(app_db):
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 62)
+    dash = mc.dashboard_financeiro(db, "loja", 62)
+    db.close()
+    assert dash["alertas"] == []
+
+
+def test_alertas_5610_dispara_com_qualquer_lancamento(app_db):
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 63); c = _q(db, 63)
+    mc.lancar(db, "loja", 63, c("5.6.10"), c("1.1.01"), 42.0, historico="ajuste sem origem")
+    alertas = mc.alertas_contas_escape(db, "loja", 63)
+    db.close()
+    a = next(x for x in alertas if x["codigo"] == "5.6.10")
+    assert a["tipo"] == "qualquer_lancamento" and a["valor_mes"] == 42.0
+
+
+def test_alertas_5420_dispara_acima_de_1pct_do_custo_fixo_do_mes(app_db):
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 64); c = _q(db, 64)
+    aluguel = db.get(mc.Conta, c("5.4.01")); aluguel.natureza_custo = "fixo"   # 5.4.01 Aluguel
+    outras = db.get(mc.Conta, c("5.4.20")); outras.natureza_custo = "fixo"    # não conta pra si mesma no limite (mesmo prefixo 5.4, mas soma TODO fixo, incl. 5.4.20 — decisão simples: "custo fixo do mês" é bruto, sem excluir a própria escape)
+    db.commit()
+    mc.lancar(db, "loja", 64, c("5.4.01"), c("1.1.01"), 10000.0, historico="aluguel do mês")
+    mc.lancar(db, "loja", 64, c("5.4.20"), c("1.1.01"), 200.0, historico="despesa avulsa")   # > 1% de 10200
+    alertas = mc.alertas_contas_escape(db, "loja", 64)
+    db.close()
+    a = next(x for x in alertas if x["codigo"] == "5.4.20")
+    assert a["tipo"] == "limite_pct_custo_fixo" and a["valor_mes"] == 200.0
+
+
+def test_alertas_5420_nao_dispara_abaixo_de_1pct(app_db):
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 65); c = _q(db, 65)
+    aluguel = db.get(mc.Conta, c("5.4.01")); aluguel.natureza_custo = "fixo"
+    db.commit()
+    mc.lancar(db, "loja", 65, c("5.4.01"), c("1.1.01"), 10000.0, historico="aluguel do mês")
+    mc.lancar(db, "loja", 65, c("5.4.20"), c("1.1.01"), 50.0, historico="despesa avulsa")   # < 1% de 10000
+    alertas = mc.alertas_contas_escape(db, "loja", 65)
+    db.close()
+    assert not any(a["codigo"] == "5.4.20" for a in alertas)

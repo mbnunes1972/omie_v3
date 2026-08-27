@@ -45,8 +45,8 @@ Todas as operações feitas foram leituras.
 - [x] **Dia 0** — Medir, sem alterar nada
 - [x] **Dia 1** — Adotar Alembic — baseline `0001` carimbada no LOCALHOST; VPS A e B pendentes (conferir schema com diff antes de carimbar)
 - [x] **Dia 2** — As 19 FKs (`onda1_fks.sql`)
-- [ ] **Dia 3** — Índices, níveis 1 e 2 (`onda1_indices.sql`)  <-- PRÓXIMO
-- [ ] **Dia 4** — Higiene: linha órfã `orcamentos.id=53`, `VACUUM ANALYZE`, `pg_stat_statements`
+- [x] **Dia 3** — Índices, níveis 1 e 2 (`onda1_indices.sql`)
+- [ ] **Dia 4** — Higiene: linha órfã `orcamentos.id=53`, `VACUUM ANALYZE`, `pg_stat_statements`  <-- PRÓXIMO  <-- PRÓXIMO
 - [ ] **Dia 5** — Congelar: regerar ERD, `schema.sql`, escrever as regras no `CLAUDE.md`
 
 ## Onda 2 — só com a versão modular, quebra o código atual

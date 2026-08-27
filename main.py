@@ -947,6 +947,15 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
         etapa7.concluido_em   = datetime.utcnow()
         etapa7.responsavel_id = usuario_id   # None no gatilho ClickSign — coluna já é nullable
         db.commit()
+        # Materializa a Aprovação financeira I (achado do usuário 2026-08-26, navegação): "8"
+        # nunca ganhava CicloEtapa própria — diferente de "11d"/AF2, que nasce junto com "11" via
+        # SUBFASES_PE_FRACOES (mod_cronograma.py). Sem linha, a AF1 nunca aparecia como pendência
+        # em lugar nenhum (mesmo já sendo mandatória — mod_ciclo.exige_aprovacao_financeira — e o
+        # PATCH genérico já saber concluí-la) e travava silenciosamente a etapa atual do projeto.
+        # Status nasce "pendente" (default do model, mesmo padrão do cronograma).
+        if not db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo="8").first():
+            db.add(CicloEtapa(projeto_nome=nome_safe, etapa_codigo="8"))
+            db.commit()
         # Cronograma do Ciclo (Modulos_Orizon_v11): D0 = assinatura total do contrato
         # (mesmo gatilho das Provisões). Constitui data_prevista_conclusao por etapa a
         # partir do Cronograma de Projeto Padrão (Config). Fail-soft: não bloqueia a

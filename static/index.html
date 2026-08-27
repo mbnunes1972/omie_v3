@@ -19482,7 +19482,14 @@ let _cicloFichaProjeto = null;      // nome_safe — reseta a seleção ao troca
 // "13" agrupa 14/15/16 (achado do usuário 2026-08-18: "Logística e Expedição" — Produção,
 // Recebimento do Pedido, Emissão da NFe do cliente, Entrega no cliente viram sub-abas de UMA
 // aba só no espinhaço, mesmo mecanismo já usado pela PE/11).
-const _FICHA_SUBS = { '11': ['11a','11b','11c','11d','11e'], '13': ['14','15','16'], '17': ['17a'] };
+// "7" agrupa 8/9 (N3, 2026-08-26): AF1 e Solicitação de Medição não tinham aba nenhuma —
+// _fichaNumeroExibicao caía no código cru e não existia jeito de abrir o card delas pelo
+// fichário. Viram sub-abas de "Contrato", de onde as ações já eram descritas como "vivendo"
+// desde 2026-08-17 (ver _FICHA_MAE_EXPLICITA/PREDECESSOR_OVERRIDE). Só funciona porque o
+// backend agora GARANTE a linha de "8" na assinatura do contrato (_registrar_assinatura_
+// contrato, main.py) — sem isso, "8" nunca tem CicloEtapa (ao contrário de "11d"/AF2, que
+// nasce junto com "11") e a bolinha de "Contrato" travaria em "andamento" pra sempre.
+const _FICHA_SUBS = { '7': ['8','9'], '11': ['11a','11b','11c','11d','11e'], '13': ['14','15','16'], '17': ['17a'] };
 // Rótulo do GRUPO (aba/cabeçalho) quando o código é cabeça de um _FICHA_SUBS — cada sub-aba
 // individual continua mostrando seu próprio nome (ETAPAS_CICLO), intocado.
 const _FICHA_GRUPO_NOME = { '13': 'Logística e Expedição' };
@@ -19510,6 +19517,9 @@ function _etapaSatisfeita(codigo) {
 // travar o grupo — "17" (Montagem) ficava preso em "Em andamento" pra sempre em projeto sem
 // pendência nenhuma, mesmo com a própria Montagem já concluída de verdade. 14/15/16 (grupo de
 // "13") sempre têm linha desde o D0 (gerar_cronograma_projeto), então essa exceção não os afeta.
+// "8" (grupo de "7", N3 2026-08-26) não passa pelo D0 — ganha linha na ASSINATURA do contrato
+// (_registrar_assinatura_contrato, main.py) e não é toggleável (é gate financeiro de verdade,
+// não "sem ação concreta"): sem essa linha garantida, "Contrato" nunca voltaria a "concluida".
 function _statusFichario(codigo) {
   if (_FICHA_SUBS[codigo]) {
     const todas = [codigo, ..._FICHA_SUBS[codigo]];
@@ -19523,12 +19533,11 @@ function _statusFichario(codigo) {
   if (_etapaBloqueada(codigo)) return 'nao_iniciada';
   return 'andamento';
 }
-// Etapas principais com "pendência" associada fora de ETAPAS_PRINCIPAIS (achado da Vera
-// 2026-08-19): "7" (Contrato) já fecha com status concluído na 2ª assinatura, mas AF1/
-// Solicitação de Medição (botões DENTRO do card do Contrato, ver Frente 1) continuam
-// pendentes — sem isso, _fichaEtapaAtual pulava pro próximo principal (Medição, bloqueada) e
-// o usuário perdia de vista que a ação pendente de verdade ainda vive no card do Contrato.
-const _FICHA_PENDENCIAS = { '7': ['8', '9'] };
+// Etapas principais com "pendência" associada fora de ETAPAS_PRINCIPAIS, mas SEM aba própria
+// nem entrada em _FICHA_SUBS. Vazio desde que "7"/8/9 viraram grupo de verdade (N3, 2026-08-26)
+// — _statusFichario('7') já exige 8 e 9 satisfeitas pra marcar "concluida", então este mecanismo
+// ficou sem usuário; mantido pra um caso futuro parecido (pendência associada sem virar sub-aba).
+const _FICHA_PENDENCIAS = {};
 // Etapa "atual" do projeto = primeira principal não concluída (ou a última, se tudo concluído)
 // — ou uma principal já concluída, mas com pendência associada ainda em aberto (_FICHA_PENDENCIAS).
 function _fichaEtapaAtual() {
@@ -19542,8 +19551,14 @@ function _fichaEtapaAtual() {
 // Mãe explícita pra código que não segue mais o prefixo numérico (achado 2026-08-18, mesmo
 // problema resolvido no backend pro predecessor de 8/9/14/15/16): "14"/"15"/"16" não "parseiam"
 // pra "13" como "11a" parseia pra "11" — checado ANTES do fallback por prefixo, que continua
-// intocado pras sub-etapas de verdade (11a-e, 17a).
-const _FICHA_MAE_EXPLICITA = { '14':'13', '15':'13', '16':'13' };
+// intocado pras sub-etapas de verdade (11a-e, 17a). "8"/"9" entraram junto (N3, 2026-08-26).
+const _FICHA_MAE_EXPLICITA = { '8':'7', '9':'7', '14':'13', '15':'13', '16':'13' };
+// "8"/"9" tinham identidade própria (não agrupada) antes do N3 — Retenção/consulta (abaixo)
+// continuam se referindo à etapa em si, não à mãe nova "7", pra não gravar/rotular retenção de
+// obra como se fosse do Contrato.
+function _fichaMaeRetencao(codigo) {
+  return (codigo === '8' || codigo === '9') ? codigo : _fichaMae(codigo);
+}
 function _fichaMae(codigo) {
   if (_FICHA_MAE_EXPLICITA[codigo]) return _FICHA_MAE_EXPLICITA[codigo];
   const p = String(parseInt(codigo, 10)); return p === codigo ? codigo : p;
@@ -19603,7 +19618,10 @@ function _fichaRenderConteudo() {
   const st = _statusFichario(codigo);
   const mae = _fichaMae(codigo);
   const rotStatus = { nao_iniciada: 'Não iniciada', andamento: 'Em andamento', concluida: 'Concluída' }[st];
-  const aguarda = (st === 'andamento' && codigo === '7')
+  // "aguardando assinatura" é sobre o CONTRATO em si, não sobre o grupo "7" (que desde o N3
+  // inclui 8/9) — usa o status próprio de "7", não o `st` agrupado, senão passaria a aparecer
+  // também enquanto só a AF1/Solicitação de Medição estão pendentes (contrato já assinado).
+  const aguarda = (codigo === '7' && !STATUS_CONCLUSIVOS.has(dados.status) && !_etapaBloqueada('7'))
     ? ' <span style="font-size:11px;color:var(--muted);font-style:italic">(aguardando assinatura)</span>' : '';
   // Sub-abas (mini-fichário) quando a etapa selecionada — ou sua mãe — tem sub-etapas (11/17).
   let subs = '';
@@ -19632,8 +19650,10 @@ function _fichaRenderConteudo() {
   }
   // Faixa de entrega (9→16): da Solicitação de Medição até a Entrega no cliente, a data de
   // entrega fica sempre visível (previsão → entregue), global ou por fase (desmembramento).
-  const _maeN = parseInt(mae, 10);
-  const faixaEntrega = (_maeN >= 9 && _maeN <= 16) ? '<div id="entrega-faixa"></div>' : '';
+  // Ancorada no código da PRÓPRIA etapa, não na mãe — "9" precisa continuar caindo na faixa
+  // mesmo depois de virar sub-aba de "7" (N3, 2026-08-26), que não entra nela.
+  const _codN = parseInt(codigo, 10);
+  const faixaEntrega = (_codN >= 9 && _codN <= 16) ? '<div id="entrega-faixa"></div>' : '';
   // Cabeçalho com a numeração VISUAL (achado 2026-08-18) — "9 · Logística e Expedição" na
   // visão geral do grupo, ou "9 · Logística e Expedição · Recebimento do Pedido" numa sub-aba.
   const numExib = _fichaNumeroExibicao(codigo);
@@ -19659,7 +19679,9 @@ function _fichaCorpoEtapa(etapa, dados, bloqueada) {
   if (etapa.codigo === '9' || etapa.codigo === '10') corpo += _desmembramentoBloco();
   // Retenção por obra RECORRENTE (2026-08-02): acionável da Solicitação de Medição (9),
   // Medição (10), PE (11) até a Montagem (17) — não é mais um ato único da medição.
-  const _maeRet = _fichaMae(etapa.codigo);
+  // _fichaMaeRetencao (não _fichaMae) porque "9" continua sendo a identidade relevante aqui
+  // mesmo virando sub-aba de "7" (N3, 2026-08-26) — retenção de obra não é do Contrato.
+  const _maeRet = _fichaMaeRetencao(etapa.codigo);
   if (['9', '10', '11', '17'].includes(_maeRet)) corpo += _retencaoBloco(_maeRet);
   return corpo;
 }
@@ -20277,7 +20299,7 @@ let _retidoEtapaCtx = null;   // etapa do CICLO onde a retenção foi acionada (
 async function retidoAbrir(nomeSafe, etapaCtx){
   _retidoNome = nomeSafe;
   _retidoEtapaCtx = etapaCtx || (typeof _cicloEtapaAtiva !== 'undefined' && _cicloEtapaAtiva
-                                 ? _fichaMae(_cicloEtapaAtiva) : null);
+                                 ? _fichaMaeRetencao(_cicloEtapaAtiva) : null);
   document.getElementById('retido-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('modal-retido').style.display = 'flex';
   await retidoRecarregar();

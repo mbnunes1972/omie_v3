@@ -1008,7 +1008,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
       <div style="flex:1;position:relative;min-width:200px">
         <input type="text" id="proj-search" placeholder="Buscar por projeto, cliente, CPF ou parceiro..."
-               oninput="projAplicarFiltros()" class="inp" style="width:100%;box-sizing:border-box;padding-right:32px">
+               oninput="projAplicarFiltros()" autocomplete="off" class="inp" style="width:100%;box-sizing:border-box;padding-right:32px">
         <div class="search-spinner" id="proj-spinner" style="position:absolute;right:8px;top:50%;transform:translateY(-50%)"><div class="spinner"></div></div>
       </div>
       <div class="proj-status-filter-wrap">
@@ -17286,6 +17286,14 @@ window.addEventListener('beforeunload', function(ev){
 });
 
 document.addEventListener('DOMContentLoaded', function(){
+  // N5 (2026-08-26, achado do relatório de navegação): o navegador restaura o VALOR digitado
+  // no campo de busca de projetos ao recarregar (F5) — sem isso, quem digita de novo por cima
+  // (achando o campo vazio) concatena com o texto restaurado ("Teste_0820Teste_0820") e cai em
+  // "Nenhum resultado" sem causa visível. Zera aqui (roda DEPOIS da restauração nativa do
+  // navegador, ANTES de qualquer interação) pra garantir estado sempre limpo num reload de
+  // verdade — autocomplete="off" no input reduz a chance do navegador nem tentar restaurar.
+  const _ps = document.getElementById('proj-search');
+  if (_ps) _ps.value = '';
   const dz2 = document.getElementById('drop-zone-amb');
   if(dz2 && !dz2._hasDrop){
     dz2._hasDrop = true;

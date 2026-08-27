@@ -23,19 +23,23 @@ porque na origem as FKs sao verificadas.
     pg_dump "$PGURL" --data-only --column-inserts --disable-triggers \
       -t redes -t lojas -t emitente -t perfil_emissao \
       -t usuarios -t perfil_acesso -t funcoes -t usuario_lojas \
-      -t conta -t centro_custo -t periodo_contabil \
+      -t periodo_contabil \
       -t documento_tipos -t documento_modelos \
       -t integracoes_clicksign -t numero_conectado \
       -t template_mensagem -t triagem_config -t segmento_config -t assuntos \
       > docs/db/config_$(date +%Y%m%d).sql
 
-Os avisos de FK circular (redes<->emitente, conta, centro_custo, lojas) sao
-esperados: sao os 3 ciclos + auto-referencias registrados como divida de
-Onda 2. Nao impedem a restauracao com --disable-triggers.
+Os avisos de FK circular (redes<->emitente, lojas) sao esperados: sao os
+ciclos + auto-referencias registrados como divida de Onda 2. Nao impedem a
+restauracao com --disable-triggers.
 
 O arquivo config_*.sql NAO vai para o git: contem credenciais de integracao.
 
-## Quando o plano de contas virar migration
-A parte "conta" e "centro_custo" sai do dump e passa a nascer da migration
-de dado. O dump fica so com dado de instancia: redes, lojas, emitente,
-usuarios, perfis, credenciais.
+## Plano de contas e centro de custo (migration, nao dump)
+Desde a migration `c1ab3f8007c4` (docs/db/TAREFA_CENTRO_CUSTO.md), "conta" e
+"centro_custo" SAiRAM da lista de -t acima — nascem do `alembic upgrade head`
+(passo 1, Estrutura), nao do dump. O dump fica so com dado de instancia:
+redes, lojas, emitente, usuarios, perfis, credenciais. Se voce gerou um dump
+ANTES desta mudanca (com -t conta -t centro_custo), NAO restaure-o por cima
+de um banco ja migrado: os ids nao batem com o que a migration acabou de
+criar e --disable-triggers deixaria o banco com FKs invalidas em silencio.

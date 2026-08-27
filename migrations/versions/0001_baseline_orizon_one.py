@@ -1,4 +1,22 @@
-"""schema_inicial_teste3
+"""Baseline do Orizon One — schema completo, construido do zero.
+
+Substitui a cadeia 0001-0009 em 27/08/2026 (B3, colapso da baseline). Ate aqui,
+0001 era uma baseline VAZIA (pass/pass) e 0002-0009 eram ALTERs incrementais que
+pressupunham tabelas ja existentes — `alembic upgrade head` num banco novo nao
+criava nada, porque o schema real sempre nasceu por `database.init_db()`
+(create_all + `_migrar_colunas_pg`) e as migrations so' documentavam mudancas
+sobre um schema que ja existia por fora do Alembic. Isso impedia construir
+Integracao, Homologacao e Producao pelas migrations — e o clone direto do
+localhost (Postgres 18) tambem nao servia pros servidores (Postgres 16).
+
+Esta revisao e' a baseline real: TODO o schema (82 tabelas, FKs, indices,
+constraints, defaults) gerado por autogenerate contra um banco vazio e depois
+validado em 3 rodadas de comparacao coluna-a-coluna, constraint-a-constraint,
+indice-a-indice e sequencia-a-sequencia contra o localhost (revisao B1/B2 de
+27/08/2026, docs/db/TAREFA_ALINHAR_MODELOS.md e a serie de correcoes C1-C3 e
+0005-0009 que a precederam). O localhost foi stampado nesta revisao (nao
+recriado) porque o estado que 0001-0009 produziam e' idêntico, medido, ao que
+esta baseline produz — stampar so' declara uma verdade ja verificada.
 
 ATENCAO se esta migration for regerada por autogenerate: as 3 FKs abaixo tem
 use_alter=True no modelo (fecham ciclo bidirecional entre duas tabelas — ver
@@ -6,12 +24,10 @@ use_alter=True no modelo (fecham ciclo bidirecional entre duas tabelas — ver
 use_alter=True dentro do op.create_table() gerado (a constraint some do
 CREATE TABLE), mas NAO gera nenhum op.create_foreign_key() complementar pra
 recria-la depois — a constraint simplesmente desaparece do schema final,
-sem erro, sem aviso. Confirmado por comparacao coluna-a-coluna e
-constraint-a-constraint contra o localhost (revisao B1/B2 de 27/08/2026).
-Por isso as 3 foram acrescentadas A MAO no fim do upgrade() (e o
-drop_constraint correspondente no INICIO do downgrade(), antes de qualquer
-drop_table — mesma razao do use_alter: ciclo nao se resolve numa ordem so).
-Se regerar do zero, reaplique estas 3 chamadas manualmente:
+sem erro, sem aviso. Por isso as 3 foram acrescentadas A MAO no fim do
+upgrade() (e o drop_constraint correspondente no INICIO do downgrade(), antes
+de qualquer drop_table — mesma razao do use_alter: ciclo nao se resolve numa
+ordem so). Se regerar do zero, reaplique estas 3 chamadas manualmente:
 
   funcionarios.usuario_id      -> usuarios.id      (sem name explicito no
                                                       modelo; Postgres usa o
@@ -24,7 +40,7 @@ Se regerar do zero, reaplique estas 3 chamadas manualmente:
                                                       ondelete=RESTRICT, onupdate=CASCADE)
 
 Revision ID: bf43dd02888b
-Revises: 0009
+Revises: (nenhuma — esta e' a raiz da cadeia)
 Create Date: 2026-08-27 19:05:24.323346
 
 """
@@ -36,7 +52,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'bf43dd02888b'
-down_revision: Union[str, Sequence[str], None] = '0009'
+down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

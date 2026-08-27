@@ -78,3 +78,12 @@ keys/
 
 # Anexos do Orizon Chat (binários fora do git)
 COMUNICACAO/
+
+# --- higiene 27/08/2026 ---
+/*.png
+docs/db/backup/
+*.dump
+dia0_resultado.txt
+ERD.mmd
+__pycache__/
+*.pyc

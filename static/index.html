@@ -14584,8 +14584,20 @@ async function finDashboardCarregar(){
         +mini('Caixa/Bancos',_fBRL(cob.caixa))+mini('Provisões em aberto',_fBRL(cob.provisoes_abertas))
         +mini('Índice de cobertura', cob.indice==null?'—':(Number(cob.indice).toFixed(2)+'×'), (cob.indice!=null&&cob.indice<1)?'var(--warn)':'var(--accent)'))
     +'</div>';
+  // T6 (27/08/2026): alertas das contas de escape (5.4.20/5.6.10), mês corrente — ver
+  // mod_contabil.alertas_contas_escape. Sem canal de notificação push hoje; só aparece aqui,
+  // ao abrir o dashboard.
+  const alertasHtml = (d.alertas && d.alertas.length)
+    ? '<div style="margin-bottom:14px">' + d.alertas.map(a =>
+        '<div style="display:flex;align-items:center;gap:8px;background:var(--warn-soft);border:1px solid var(--warn);'
+        + 'border-radius:8px;padding:8px 14px;margin-bottom:6px;font-size:12px;color:var(--text)">'
+        + '<i class="ti ti-alert-triangle" style="color:var(--warn)"></i>'
+        + '<span><strong>'+esc(a.codigo)+' '+esc(a.nome)+':</strong> '+esc(a.mensagem)
+        + ' <span style="font-family:var(--font-mono);color:var(--muted)">('+_fBRL(a.valor_mes)+' no mês)</span></span></div>'
+      ).join('') + '</div>'
+    : '';
   // Só monitoramento (v8): a configuração de percentuais migrou p/ Config → Provisões.
-  box.innerHTML =
+  box.innerHTML = alertasHtml +
      '<div style="margin-bottom:14px">'
     +'<span style="font-size:13px;color:var(--muted)">'+d.provisoes.length+' provisões monitoradas · total em aberto <strong style="color:var(--text);font-family:var(--font-mono)">'+_fBRL(d.total_provisoes_abertas)+'</strong></span></div>'
     + grupos + apoio;
@@ -16268,12 +16280,20 @@ function _ccNode(node, nivel){
   const cod = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-right:8px">'+esc(node.codigo)+'</span>';
   const nomeStyle = 'font-weight:'+(sint?700:400)+';color:var(--text)'+(temContas?';cursor:pointer':'');
   const nomeClick = temContas ? ' onclick="_ccToggle('+node.id+')"' : '';
-  const nome = '<span style="'+nomeStyle+'"'+nomeClick+'>'+esc(node.nome)+'</span>';
+  // T4 (27/08/2026): código que a automação resolve por CÓDIGO (migrar_classificacao_grupo5_v1)
+  // — nunca pode virar exclusão de verdade (remover_centro_custo já garante isso no backend);
+  // aqui só avisa visualmente, pra não surpreender quem clicar em "apagar" esperando remoção.
+  const cadeado = node.protegido
+    ? '<i class="ti ti-lock" title="Usado pela automação — só pode ser inativado, não apagado" style="color:var(--muted);font-size:11px;margin-right:6px"></i>' : '';
+  const nome = '<span style="'+nomeStyle+'"'+nomeClick+'>'+cadeado+esc(node.nome)+'</span>';
   const total = '<span style="margin-left:8px;font-size:11px;color:var(--muted);font-family:var(--font-mono)">'+_dashBRL(node.total)+'</span>';
+  const btnRemover = node.protegido
+    ? '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\'centrocusto\','+node.id+')" title="Usado pela automação — inativa, não apaga">inativar</button>'
+    : '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\'centrocusto\','+node.id+')">inativar/apagar</button>';
   const acoes = '<span style="margin-left:auto;display:flex;gap:6px">'
     + '<button class="btn btn-ghost btn-sm" onclick="pcNovo(\'centrocusto\','+node.id+')">+ filho</button>'
     + '<button class="btn btn-ghost btn-sm" onclick="pcRenomear(\'centrocusto\','+node.id+')">renomear</button>'
-    + '<button class="btn btn-ghost btn-sm" onclick="pcRemover(\'centrocusto\','+node.id+')">inativar/apagar</button>'
+    + btnRemover
     + '</span>';
   const linha = '<div style="display:flex;align-items:center;padding:5px 10px 5px '+pad+'px;border-bottom:1px solid var(--border);font-size:12px">'+seta+cod+nome+total+acoes+'</div>';
   const contasHtml = exp ? (node.contas||[]).map(c => _ccContaLinha(c, nivel+1)).join('') : '';
@@ -16498,7 +16518,9 @@ async function pcRemover(cfgKey, id){
   const r = await fetch(cfg.removerUrlBase+id+'/remover', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body:'{}'});
   const d = await r.json().catch(()=>({}));
-  if(d.ok) showToast((d.acao === 'apagada' || d.acao === 'apagado') ? 'Item apagado' : 'Item inativado');
+  if(d.ok) showToast(d.protegido
+    ? 'Este código é usado pela automação — inativado, não apagado.'
+    : ((d.acao === 'apagada' || d.acao === 'apagado') ? 'Item apagado' : 'Item inativado'));
   _pcRefresh(cfgKey);
 }
 

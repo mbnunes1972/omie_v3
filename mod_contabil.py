@@ -153,7 +153,10 @@ PLANO_PADRAO = [
     # Família 5.6 SUPRIMIDA no formalismo (Sessão 109) — sobra só o Ajuste de Provisões,
     # destino genérico da FALTA (efetivado > provisionado) na reconciliação/Etapa 21.
     ("5.6", "Ajustes de Provisões"),
-    ("5.6.10", "Ajuste de Provisões"),   # FASE D: destino da FALTA (efetivado > provisionado)
+    # T3 (27/08/2026): renomeada de "Ajuste de Provisões" — a conta já existente no banco foi
+    # renomeada na migration 0004; a semente estava desatualizada (owner novo nasceria com o nome
+    # velho). O grupo "5.6" acima NÃO foi tocado (segue "Ajustes de Provisões" no banco também).
+    ("5.6.10", "Ajustes de Reconciliação"),   # FASE D: destino da FALTA (efetivado > provisionado)
 ]
 
 # ── Formalismo pleno (Sessão 109) — migração das bases existentes ────────────────────────────
@@ -404,6 +407,10 @@ def _pai_codigo(codigo):
 
 def _natureza(grupo):
     # Ativo(1)/Despesa(5) devedora; Passivo(2)/PL(3)/Receita(4) credora
+    # T7 (27/08/2026): Conta.natureza (aqui) e Conta.natureza_custo (NATUREZA_CUSTO, mais abaixo)
+    # são coisas SEM RELAÇÃO, apesar do nome parecido — natureza CONTÁBIL (credora|devedora, todo
+    # grupo) vs. COMPORTAMENTO do custo (fixo|variavel|semivariavel, só grupo 5). O nome parecido
+    # é herança; não renomear (~130 referências a natureza_custo, campo de API e de frontend).
     return "devedora" if grupo in (1, 5) else "credora"
 
 
@@ -646,7 +653,9 @@ def remover_conta(db, owner_tipo, owner_id, conta_id):
 # classificadas, mas a árvore em si não impõe essa restrição (validação fica no bulk-classify).
 CENTRO_CUSTO_PADRAO = [
     ("1", "Operacional"),
-    ("1.1", "Produção própria"), ("1.2", "Fábricas e Fornecedores"),
+    # "1.1 Produção própria" removida da semente (T3, 27/08/2026): a migration 0004 já a tirou
+    # do banco (owner nenhum a tem hoje) — mantê-la aqui a traria de volta pro próximo owner novo.
+    ("1.2", "Fábricas e Fornecedores"),
     ("1.3", "Montagem"), ("1.4", "Logística/Expedição"),
     ("1.5", "Instalações/Infraestrutura"),   # 2026-08-08: mudou de Suporte pra Operacional
     ("2", "Comercial"),
@@ -661,6 +670,8 @@ CENTRO_CUSTO_PADRAO = [
 ]
 
 # Natureza do custo — lista fechada (3 itens), sem tabela própria: só um slug em Conta.natureza_custo.
+# T7 (27/08/2026): não confundir com Conta.natureza (credora|devedora — ver _natureza(), acima
+# no arquivo) — mesmo nome parecido, conceitos sem relação. Não renomear (regra permanente).
 NATUREZA_CUSTO = [("fixo", "Fixo"), ("variavel", "Variável"), ("semivariavel", "Semivariável")]
 
 
@@ -694,7 +705,8 @@ def backfill_centro_custo_todos_owners(db):
 
 
 def _serial_cc(c):
-    return {"id": c.id, "codigo": c.codigo, "nome": c.nome, "pai_id": c.pai_id, "ativo": bool(c.ativo)}
+    return {"id": c.id, "codigo": c.codigo, "nome": c.nome, "pai_id": c.pai_id, "ativo": bool(c.ativo),
+            "protegido": c.codigo in CENTRO_CUSTO_PROTEGIDOS}
 
 
 def listar_centros_custo(db, owner_tipo, owner_id, incluir_inativos=False):
@@ -773,15 +785,22 @@ def editar_centro_custo(db, owner_tipo, owner_id, cc_id, nome=None, ordem=None):
 
 def remover_centro_custo(db, owner_tipo, owner_id, cc_id):
     """Folha sem filho e sem conta apontando pra ele -> apaga; senão inativa (mesma regra de
-    remover_conta — Centro de Custo não tem lançamento próprio, só é referenciado por Conta)."""
+    remover_conta — Centro de Custo não tem lançamento próprio, só é referenciado por Conta).
+    T4: código em CENTRO_CUSTO_PROTEGIDOS nunca é apagado de verdade, mesmo childless/sem uso —
+    só inativado. Protege a automação (migrar_classificacao_grupo5_v1) mesmo num owner novo, onde
+    ainda não há conta nenhuma classificada apontando pro nó."""
     c = _get_own_cc(db, owner_tipo, owner_id, cc_id)
-    if not _cc_tem_filhos(db, c) and not _cc_tem_uso(db, c):
+    protegido = c.codigo in CENTRO_CUSTO_PROTEGIDOS
+    if not protegido and not _cc_tem_filhos(db, c) and not _cc_tem_uso(db, c):
         db.delete(c)
         db.commit()
         return {"acao": "apagado", "id": cc_id}
     c.ativo = 0
     db.commit()
-    return {"acao": "inativado", "id": cc_id}
+    out = {"acao": "inativado", "id": cc_id}
+    if protegido:
+        out["protegido"] = True
+    return out
 
 
 def classificar_contas_lote(db, owner_tipo, owner_id, itens):
@@ -820,15 +839,16 @@ def classificar_contas_lote(db, owner_tipo, owner_id, itens):
 # código da conta -> (código do centro de custo, slug de natureza) — as 59 contas do grupo 5,
 # proposta aprovada por Marcelo e Juliana (Artifact de 2026-08-08, ver DEV_LOG Sessão 177).
 # Frente 1 (spec 2026-08-25, DECIDIDO): mapa atualizado com os valores FINAIS, incorporando as
-# correções que as migrações migrar_classificacao_grupo5_v2/v3 (aposentadas do boot nesta mesma
-# mudança — ver `main()`) faziam por VALOR (não por origem). Um owner novo (banco zerado) precisa
-# nascer direto com o valor certo, sem depender de v2/v3 rodarem depois. As duas correções que
-# ainda faltavam aqui: 5.2.06 Combustível → fixo (era o default antigo que v3 corrigia) e 5.5.05
-# Perdas com Acordos Financeiros → variável (decisão nova, Frente 4 #8 — nunca teve migração
-# própria). 5.3.12 (Brindes) e 5.6.10 (Ajuste de Provisões) já estavam com o valor final aqui
-# (a correção do v2 virou no-op pra owner novo há um tempo; v2 seguia necessário só pros owners
-# que já tinham sido classificados ANTES do mapa ser corrigido — todos os ambientes atuais já
-# passaram por ela, por isso é seguro aposentar).
+# correções que as migrações migrar_classificacao_grupo5_v2/v3 faziam por VALOR (não por origem).
+# Um owner novo (banco zerado) nasce direto com o valor certo, sem depender de nenhuma correção
+# rodando depois. As duas correções que ainda faltavam aqui quando o mapa foi atualizado: 5.2.06
+# Combustível → fixo (era o default antigo que v3 corrigia) e 5.5.05 Perdas com Acordos
+# Financeiros → variável (decisão nova, Frente 4 #8 — nunca teve migração própria).
+# T2 (27/08/2026, revisão do banco): v2/v3 saíram do boot em 2026-08-25 e já tinham cumprido o
+# papel em todos os ambientes — as duas funções (e os testes que só exercitavam elas) foram
+# apagadas nesta revisão junto da correção final da semente: 5.6.10 no PLANO_PADRAO ainda dizia
+# "Ajuste de Provisões" (nome antigo — a conta já existente no banco tinha virado "Ajustes de
+# Reconciliação" na 0004, mas um owner novo nasceria com o nome velho).
 CLASSIFICACAO_GRUPO5_V1 = {
     "5.1.01": ("1.2", "variavel"), "5.1.02": ("1.4", "variavel"),
     "5.2.01": ("1.3", "variavel"), "5.2.02": ("1.3", "variavel"), "5.2.03": ("1.3", "variavel"),
@@ -851,6 +871,15 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.5.01": ("4.3", "fixo"),     "5.5.02": ("4.3", "fixo"),     "5.5.03": ("4.3", "variavel"),
     "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "variavel"), "5.6.10": ("4.5", "variavel"),
 }
+
+# T4 (27/08/2026, revisão do banco): códigos de Centro de Custo que a automação resolve por
+# CÓDIGO (nunca por id — cada owner tem sua própria árvore, com ids diferentes para o mesmo
+# código; ver R9 em CLAUDE.md). migrar_classificacao_grupo5_v1 procura estes códigos em TODO
+# boot para classificar contas do grupo 5 ainda sem centro de custo — se um deles for apagado
+# (ex.: "1.3 Montagem"), a próxima conta nova/reclassificação automática do grupo fica sem
+# destino. remover_centro_custo nunca deixa um destes ser apagado de verdade (só inativado); o
+# código (diferente do nome) também nunca é editável — editar_centro_custo não aceita esse campo.
+CENTRO_CUSTO_PROTEGIDOS = frozenset(cc_cod for cc_cod, _nat in CLASSIFICACAO_GRUPO5_V1.values())
 
 
 def migrar_classificacao_grupo5_v1(db):
@@ -876,54 +905,6 @@ def migrar_classificacao_grupo5_v1(db):
                 nat_setado += 1
     db.commit()
     return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
-
-
-def migrar_classificacao_grupo5_v2(db):
-    """Correção pós-aprovação (2026-08-08, decisão do usuário): Brindes (5.3.12) e Ajuste de
-    Provisões (5.6.10) são associadas à VENDA — Variável, não Fixo; 5.6.10 também muda de Centro
-    de Custo, de Administrativo-financeiro (4.3) pra Custos Distribuídos (4.5) — é destino
-    genérico da FALTA na reconciliação (Etapa 21), pode vir de qualquer rubrica, não é um custo
-    administrativo fixo. Só corrige quem AINDA estiver no default antigo (natureza "fixo", e p/
-    5.6.10 também centro de custo ainda "4.3") — uma reclassificação manual feita depois nunca é
-    sobrescrita. Roda no boot logo depois de migrar_classificacao_grupo5_v1."""
-    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
-    corrigidos = 0
-    for ot, oid in owners:
-        contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=ot, owner_id=oid).all()}
-        ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=ot, owner_id=oid).all()}
-        brindes = contas.get("5.3.12")
-        if brindes is not None and brindes.natureza_custo == "fixo":
-            brindes.natureza_custo = "variavel"
-            corrigidos += 1
-        ajuste = contas.get("5.6.10")
-        admfin = ccs.get("4.3")
-        distrib = ccs.get("4.5")
-        if (ajuste is not None and ajuste.natureza_custo == "fixo" and distrib is not None
-                and admfin is not None and ajuste.centro_custo_id == admfin.id):
-            ajuste.natureza_custo = "variavel"
-            ajuste.centro_custo_id = distrib.id
-            corrigidos += 1
-    db.commit()
-    return {"corrigidos": corrigidos}
-
-
-def migrar_classificacao_grupo5_v3(db):
-    """Correção 2026-08-15 (achado do usuário): Combustível (5.2.06) é despesa FIXA — é dos
-    veículos da loja/montagem, não por projeto; mesmo variando de mês a mês (abastecimento não é
-    idêntico todo mês), não depende do volume de vendas, então não é "variável" no sentido da
-    classificação (associado à venda). Só corrige quem AINDA estiver no default antigo do v1
-    ("variavel"); uma reclassificação manual feita depois nunca é sobrescrita. Roda no boot logo
-    depois de migrar_classificacao_grupo5_v2."""
-    owners = db.query(Conta.owner_tipo, Conta.owner_id).distinct().all()
-    corrigidos = 0
-    for ot, oid in owners:
-        combustivel = (db.query(Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo="5.2.06")
-                         .first())
-        if combustivel is not None and combustivel.natureza_custo == "variavel":
-            combustivel.natureza_custo = "fixo"
-            corrigidos += 1
-    db.commit()
-    return {"corrigidos": corrigidos}
 
 
 def retrato_classificacao_grupo5(db, owner_tipo, owner_id):
@@ -2249,6 +2230,48 @@ def _agrupar_provisoes_por_tipo(provs):
             for t in _PROV_TIPO_ORDEM if t in grupos]
 
 
+def alertas_contas_escape(db, owner_tipo, owner_id):
+    """T6 (27/08/2026, revisão do banco): sinal de acompanhamento das duas contas de "escape" do
+    plano — "5.4.20 Outras Despesas" (balde do que ninguém sabe classificar) e "5.6.10 Ajustes de
+    Reconciliação" (só diferença sem origem identificável, desde T5). Não é notificação PUSH —
+    não existe canal pra isso hoje (sem e-mail/central de avisos); é computado sob demanda,
+    incluído no dashboard financeiro. Escopo: mês corrente (UTC), sempre — independe do período
+    que o dashboard estiver mostrando.
+    - 5.4.20: dispara se passar de 1% do custo fixo do mês (soma de débito de toda conta
+      ANALÍTICA com natureza_custo='fixo'). Limiar frouxo de propósito (decisão do briefing) —
+      apertar depois de ver o comportamento real.
+    - 5.6.10: dispara com QUALQUER lançamento no mês — por definição (T5), toda entrada aqui é
+      uma diferença sem origem identificável, não deveria ser hábito."""
+    from datetime import datetime as _dt
+    agora = _dt.utcnow()
+    ini_mes = agora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    alertas = []
+
+    c5420 = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, codigo="5.4.20").first()
+    if c5420 is not None:
+        valor_5420 = _somas_por_conta(db, owner_tipo, owner_id, [c5420.id], "debito", ini_mes, agora).get(c5420.id, 0.0)
+        fixos_ids = [c.id for c in db.query(Conta).filter_by(
+            owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica", natureza_custo="fixo").all()]
+        custo_fixo_mes = round(sum(_somas_por_conta(db, owner_tipo, owner_id, fixos_ids, "debito",
+                                                     ini_mes, agora).values()), 2)
+        limite = round(custo_fixo_mes * 0.01, 2)
+        if custo_fixo_mes > 0 and valor_5420 > limite:
+            alertas.append({"codigo": "5.4.20", "nome": c5420.nome, "tipo": "limite_pct_custo_fixo",
+                            "valor_mes": round(valor_5420, 2), "limite": limite,
+                            "custo_fixo_mes": custo_fixo_mes,
+                            "mensagem": "Outras Despesas passou de 1% do custo fixo do mês."})
+
+    c5610 = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, codigo="5.6.10").first()
+    if c5610 is not None:
+        valor_5610 = _somas_por_conta(db, owner_tipo, owner_id, [c5610.id], "debito", ini_mes, agora).get(c5610.id, 0.0)
+        if valor_5610 > 0:
+            alertas.append({"codigo": "5.6.10", "nome": c5610.nome, "tipo": "qualquer_lancamento",
+                            "valor_mes": round(valor_5610, 2),
+                            "mensagem": "Ajustes de Reconciliação recebeu lançamento este mês "
+                                        "— diferença sem origem identificável."})
+    return alertas
+
+
 def dashboard_financeiro(db, owner_tipo, owner_id, ini=None, fim=None):
     """Dashboard do Financeiro (Padrao_Design_Orizon_v4 §5 / Diagramacao_v4 §1.3): um card por
     provisão que EXISTIR no Plano de Contas (grupo GRUPO_PROVISOES), data-driven (via
@@ -2268,6 +2291,7 @@ def dashboard_financeiro(db, owner_tipo, owner_id, ini=None, fim=None):
         "dre_resumo": {"receita_liquida": d["receita_liquida"], "ebitda": d["ebitda"],
                        "lucro_liquido": d["lucro_liquido"]},
         "cobertura_caixa": {"caixa": caixa, "provisoes_abertas": total_prov, "indice": indice},
+        "alertas": alertas_contas_escape(db, owner_tipo, owner_id),   # T6: sempre do mês corrente
     }
 
 

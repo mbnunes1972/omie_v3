@@ -18555,14 +18555,15 @@ def main():
             # Classificação Centro de Custo/Natureza aprovada por Marcelo e Juliana (2026-08-08) —
             # roda DEPOIS do backfill acima (precisa da árvore de Centro de Custo já semeada).
             _mc.migrar_classificacao_grupo5_v1(_dbp)
-            # Frente 1 (spec 2026-08-25, DECIDIDO): migrar_classificacao_grupo5_v2/v3 SAÍRAM do
-            # boot — corrigiam "quem ainda estivesse no default antigo" pelo VALOR, não pela
-            # origem, então uma reclassificação manual legítima que coincidisse com esse valor
-            # seria revertida em silêncio no próximo restart (a armadilha que a spec descreve).
-            # Já rodaram em todos os ambientes e são idempotentes — cumpriram o papel. O mapa
-            # `CLASSIFICACAO_GRUPO5_V1` acima já foi atualizado com os valores finais que elas
-            # corrigiam, então um owner novo nasce certo sem depender delas. Funções mantidas em
-            # mod_contabil.py (não deletadas) só como registro histórico/uso manual excepcional.
+            # migrar_classificacao_grupo5_v2/v3 SAÍRAM do boot em 2026-08-25 (Frente 1) —
+            # corrigiam "quem ainda estivesse no default antigo" pelo VALOR, não pela origem,
+            # então uma reclassificação manual legítima que coincidisse com esse valor seria
+            # revertida em silêncio no próximo restart (a armadilha que a spec descreve). Já
+            # tinham rodado em todos os ambientes e eram idempotentes — cumpriram o papel. O mapa
+            # `CLASSIFICACAO_GRUPO5_V1` acima já incorporava os valores finais que elas corrigiam.
+            # T2 (27/08/2026): as duas funções (e os testes que só as exercitavam) foram apagadas
+            # — não sobrava nenhum uso além do histórico, e a semente (PLANO_PADRAO) já nasce com
+            # o valor final também para 5.6.10 (nome), fechando o que faltava.
             # Perfis padrão em todas as lojas + padronização de títulos (Gerencial → Gerente,
             # 2026-07-22). Idempotente.
             from auth import perfil_store as _pst

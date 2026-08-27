@@ -19489,11 +19489,9 @@ function renderCiclo() {
   _fichaRenderLombada();
   _fichaRenderConteudo();
   _fichaEfeitos(_cicloEtapaAtiva);
-  const rodape = document.createElement('div');
-  rodape.style.cssText = 'margin-top:10px;display:flex';
-  rodape.innerHTML = `
-    <button class="btn btn-ghost btn-sm" onclick="fecharCiclo()"><i class="ti ti-arrow-left"></i>Voltar</button>`;
-  panel.appendChild(rodape);
+  // N6 (2026-08-26, achado do relatório de navegação — "sete Voltar numa única tela"): este
+  // rodapé duplicava, com o mesmo onclick="fecharCiclo()", o "← Voltar" que já está no
+  // cabeçalho (acima). Removido — o do cabeçalho basta.
 }
 
 // ── Ciclo Fichário — estado e helpers (spec ciclo/2026-08-01) ─────────────────

@@ -638,7 +638,7 @@ body{overflow:hidden}
   padding: 16px;
   overflow-y: auto;
 }
-#ciclo-panel.ativo { display: flex; }
+#ciclo-panel.active { display: flex; }
 
 .ciclo-card {
   background: var(--card);
@@ -6778,6 +6778,10 @@ function goPage(n){
   const pageId = n === 9 ? 'page-09' : (n >= 10 ? 'page-'+n : 'page-0'+n);
   const navEl  = document.getElementById(navId);
   if(navEl && navEl.classList.contains('locked')) return;
+  // Unifica o vocabulário de "visível" (N1, 2026-08-26): #ciclo-panel é sub-painel de page-02
+  // com sua própria classe .active, gerida por abrirCiclo/fecharCiclo — goPage não sabia dela
+  // e podia deixá-la aberta ao trocar de página (achado P2-3, painéis empilhados após reload).
+  if (_cicloAberto) fecharCiclo();
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pageEl = document.getElementById(pageId);
   if(pageEl) pageEl.classList.add('active');
@@ -14863,7 +14867,7 @@ function _reconReloadAtivo(){
   const modal=document.getElementById('modal-recon-proj');
   const ciclo=document.getElementById('ciclo-panel');
   if(modal && modal.style.display!=='none'){ reconProjRender(); }
-  else if(ciclo && ciclo.classList.contains('ativo') && document.getElementById('concfinal-box')){ _concFinalCarregar(); }
+  else if(ciclo && ciclo.classList.contains('active') && document.getElementById('concfinal-box')){ _concFinalCarregar(); }
   else { finReconProvCarregar(); }
 }
 async function reconProvEfetivar(conta, prefixo, btn){
@@ -18975,13 +18979,13 @@ async function contatosConfEnviar(modo){
 
 function abrirCiclo() {
   _cicloAberto = true;
-  document.getElementById('ciclo-panel').classList.add('ativo');
+  document.getElementById('ciclo-panel').classList.add('active');
   carregarCiclo();
 }
 
 function fecharCiclo() {
   _cicloAberto = false;
-  document.getElementById('ciclo-panel').classList.remove('ativo');
+  document.getElementById('ciclo-panel').classList.remove('active');
 }
 
 // Concluir/Transferir (2026-08-23): rastreio de conclusão vive AQUI, no fetch — não em

@@ -3340,6 +3340,42 @@ aritmética pura, sem tocar rede/banco) sugere mais um problema de disco da VM W
 aplicação. Vale reobservar com atenção depois do restart, sem assumir que é a mesma causa do P0-2
 até confirmar.
 
+## Sessão 232 — Navegação N1–N6 (docs/superpowers/specs/_geral/2026-08-26-navegacao-diagnostico-design.md)
+
+Usuário fechou o diagnóstico de navegação (mesmo doc) com a Marcelo/Claude Cowork; **D1–D5
+(roteamento por URL, destino do "Abrir →", cabeçalho, sidebar por papel, ordem vs.
+modularização) continuam em aberto** — não tocados, por decisão explícita do doc (§4). Fiz só a
+§5 (seis frentes já decididas), uma por commit, suíte `2344 passed` verde entre cada uma:
+
+- **N1** (`5638bc8`) — `#ciclo-panel` passou a usar `.active` (igual `.page`/`.nav-item`), e
+  `goPage()` agora fecha o ciclo-panel (via `fecharCiclo()`) antes de trocar de página. Não
+  confirma sozinho a causa do P2-3 (painéis empilhados após reload) — é a correção de vocabulário
+  que o relatório apontou como mitigação provável.
+- **N2** (`f173f03`) — sub-abas do fichário e `_etapaRotulo` (modal de Retenção + histórico) agora
+  passam por `_fichaNumeroExibicao`/`_fichaTituloGrupo`, junto com a lombada.
+- **N3** (`301c8ff`) — etapas internas "8"/"9" (AF1, Solicitação de Medição) viram sub-abas de "7"
+  (Contrato), decisão tomada com o usuário depois de eu achar (e verificar contra o backend) que
+  "8" nunca tinha `CicloEtapa` própria — ao contrário de "11d"/AF2, que nasce junto com "11" via
+  `SUBFASES_PE_FRACOES`. Sem isso, o grupo nunca "concluiria". Corrigido materializando "8" na
+  assinatura do contrato (`_registrar_assinatura_contrato`, main.py) — mesmo ponto que já
+  materializa o cronograma (D0). Efeitos colaterais do agrupamento (rótulo "aguardando
+  assinatura", faixa de entrega 9→16, contexto de Retenção) corrigidos junto — ver o commit.
+- **N4** (`e72df26`) — `#page-02.active` ganhou `display:flex;flex-direction:column;flex:1 1 0`
+  (não `.content`/`.page` em geral — o relatório apontou risco de regressão nas outras telas com
+  a versão ampla; esta é a alternativa de escopo menor que o próprio relatório sugeriu).
+- **N5** (`49ecdd2`) — `#proj-search` zerado no `DOMContentLoaded` (o navegador restaurava o texto
+  digitado ao dar F5; sem perceber, o usuário digitava de novo por cima e concatenava).
+- **N6** (`390d44f`) — só a duplicata **certa** (o fichário tinha dois "← Voltar" idênticos,
+  cabeçalho e rodapé, ambos com `onclick="fecharCiclo()"`). O relatório mediu "sete Voltar numa
+  única tela" ao vivo no navegador; **sem acesso a browser real nesta sessão** (mesma limitação
+  da Sessão 231), não deu pra reconstruir os outros cinco só lendo o código — usuário decidiu
+  deixá-los em aberto pra quando houver nova medição ao vivo, em vez de eu adivinhar.
+
+**Nota de ambiente:** todo o trabalho desta sessão rodou com o cwd inicial em
+`/mnt/c/Windows/system32` (fora do repo) — o caminho real é
+`/mnt/e/2026/DESENVOLVIMENTO/orizon-manager`. Se a próxima sessão herdar o mesmo cwd errado,
+`cd` pro caminho acima antes de qualquer coisa.
+
 ## Sessão 231 — P0-1 verificado e commitado (retomada da pausa de 26/08)
 
 Retomando exatamente do ponto da pausa acima. Ambiente sem acesso a browser real nesta sessão

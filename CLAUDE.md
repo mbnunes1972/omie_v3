@@ -179,3 +179,79 @@ R8  Duas variaveis, dois consumidores: `DATABASE_URL` (com +psycopg2) para o
     Alembic e o SQLAlchemy; `PGURL` (sem) para psql e pg_dump.
 R9  Lancamento automatico resolve centro de custo por CODIGO dentro da arvore
     do proprio owner, nunca por id — cada loja tem sua propria arvore.
+R10 Toda migration que cria indice ou constraint tem declaracao
+    equivalente no modelo, no mesmo commit. Migration e modelo
+    divergentes fazem o autogenerate propor desfazer o que a
+    migration fez.
+R11 Indice, constraint ou server_default criado fora do modelo e divida
+    que o autogenerate vai propor desfazer. Toda estrutura no banco tem
+    declaracao equivalente no modelo.
+R12 Nenhum teste ou script carrega id de revisao do Alembic escrito a mao
+    (nome de migration tipo "0009", hash de candidato a baseline etc.).
+    Resolva sempre pelo ScriptDirectory (script.get_heads(),
+    get_revision(head).down_revision) — nunca uma constante mantida por
+    humano. E' a mesma doenca por tras dos 3 achados desta etapa
+    (fk_convmsg_documento_ref, ix_ciclo_etapas_responsavel_terceiro, e a
+    constante _STAMP_PONTE_PRE_B3 que tests/_schema_util.py substituiu):
+    estado duplicado em dois lugares, com um humano encarregado de manter
+    sincronizado — e ninguem lembra na hora certa.
+
+Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
+e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco
+sem nenhuma migration correspondente e sem o modelo declarar. Alguem rodou
+um ALTER COLUMN direto, fora do fluxo do Alembic, em algum momento nao
+documentado. So foi descoberto porque o autogenerate da TAREFA_ALINHAR_
+MODELOS.md acusou a divergencia (revisao de 27/08/2026). Sem R1, esse tipo
+de alteracao nao deixa rastro nenhum — nem em migration, nem em commit.
+
+Segundo caso real que justifica a R1: conversa_mensagens.documento_ref_id
+tinha a FK nomeada fk_convmsg_documento_ref no banco, sem o modelo declarar
+esse nome (ForeignKey("ciclo_documentos.id") sem `name=`). Origem rastreada
+desta vez: veio do `_migrar_colunas_pg` (DO-block com ADD CONSTRAINT
+nomeado), nao de um ALTER manual sem rastro — mas o efeito e o mesmo, porque
+`_migrar_colunas_pg` esta congelado (R1) e nunca foi replicado pro modelo.
+So apareceu ao comparar constraint-a-constraint contra uma baseline gerada
+do zero (revisao B1/B2 de 27/08/2026) — o autogenerate contra o banco
+principal nunca acusou, porque sem `name=` no modelo ele nao compara nome
+de FK, so estrutura. Renomeado na migration 0008 para o nome padrao do
+Postgres (conversa_mensagens_documento_ref_id_fkey), alinhando com o que a
+baseline gera. A entrada que recriava fk_convmsg_documento_ref saiu de
+`_migrar_colunas_pg` no mesmo commit (27/08/2026) — ela roda em todo boot
+via init_db(), e teria recriado a FK com o nome velho a cada restart,
+desfazendo a 0008 silenciosamente (o EXCEPTION duplicate_object so' pega
+nome igual, nao estrutura igual — o resultado seria uma FK duplicada, nao
+um no-op). Confirmado por tests/test_schema_boot_estavel.py, que compara
+o schema produzido por `alembic upgrade head` contra o produzido por
+`init_db()` e pegou a duplicata antes da remocao.
+
+Terceiro caso, mesma classe: `_migrar_colunas_pg` tinha `CREATE INDEX IF NOT
+EXISTS ix_ciclo_etapas_responsavel_terceiro ON ciclo_etapas
+(responsavel_terceiro_id)` — nome sem o sufixo `_id`, duplicando
+ix_ciclo_etapas_responsavel_terceiro_id (que o `index=True` do modelo ja
+gera). Confirmado via pg_index (colunas cobertas, nao nome) que as duas sao
+o mesmo indice em cima da mesma coluna. Achado tambem pelo
+test_schema_boot_estavel.py. A entrada saiu de `_migrar_colunas_pg` e a
+migration 0009 dropa a duplicata nos bancos que ja a tinham — no MESMO
+commit, senao um desfaz o outro no proximo boot.
+
+### Divida de Onda 2 — os 3 ciclos de FK bidirecional (registrado 27/08/2026)
+
+O baseline Alembic (B1/B2) so' consegue ordenar a criacao das 82 tabelas com
+`use_alter=True` em um FK de cada par abaixo, porque os 3 sao referencia
+bidirecional entre duas tabelas — quase sempre sinal de redundancia de
+modelagem, nao de necessidade real:
+
+  usuarios.funcionario_id <-> funcionarios.usuario_id
+      1:1 modelado nos dois lados. Precisa de decisao de modelagem: qual
+      lado e' a fonte de verdade.
+  redes.emitente_central_id <-> emitente.rede_id
+      redes.emitente_central_id esta 100% NULA no banco (auditoria Dia 0) —
+      candidato forte a remocao. Sem ela, o ciclo desaparece na origem.
+  orcamentos.parcela_id <-> parcela_projeto.orcamento_id
+      parcela_id foi criada pela migration 0002 sobre uma relacao que ja
+      existia no sentido inverso (parcela_projeto.orcamento_id). Avaliar se
+      as duas pontas ainda servem, ou se uma e' redundante.
+
+`use_alter=True` resolve a CONSTRUCAO (a baseline consegue criar as tabelas).
+Nao resolve a MODELAGEM — os 3 ciclos continuam sendo o que sao. Revisitar
+quando a Onda 2 chegar.

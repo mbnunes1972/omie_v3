@@ -3,7 +3,7 @@ database.py — Conexão SQLAlchemy + modelos de dados
 Orizon Manager | Dalmóbile
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Date, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Date, ForeignKey, Text, UniqueConstraint, Index, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship, validates
 from datetime import datetime
 import hashlib
@@ -57,17 +57,22 @@ class Usuario(Base):
     cpf           = Column(String(20),  nullable=True)
     whatsapp      = Column(String(20),  nullable=True)
     ativo         = Column(Integer,     default=1)
-    senha_provisoria = Column(Integer,  default=0)   # 1 = precisa trocar a senha no 1º login
-    funcionario_id = Column(Integer,    ForeignKey("funcionarios.id"), nullable=True)  # RH (Cadastro) que esta conta representa
+    # T-D (27/08/2026, alinhamento de modelos): server_default alinhado ao que
+    # _migrar_colunas_pg já grava no banco (ALTER TABLE ... DEFAULT 0) — precisa existir
+    # de verdade no Postgres pra backfillar linha antiga direto no ADD COLUMN, não só no
+    # INSERT feito pelo ORM (que é tudo que `default=` sozinho garante).
+    senha_provisoria = Column(Integer,  default=0, server_default="0")   # 1 = precisa trocar a senha no 1º login
+    funcionario_id = Column(Integer,    ForeignKey("funcionarios.id"), nullable=True, index=True)  # RH (Cadastro) que esta conta representa
     # Função (cargo) da CONTA quando não há Funcionário vinculado (Perfil-4 rev2 §2): a coluna Função
     # de Usuários da Loja usa Funcionario.funcao_id se houver vínculo, senão este funcao_id.
-    funcao_id     = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)
+    funcao_id     = Column(Integer,     ForeignKey("funcoes.id"), nullable=True, index=True)
     tema          = Column(String(10),  default="escuro")   # 'claro' | 'escuro'
     # Orizon Chat Fatia 6 (ponte WhatsApp): quando notificar o usuário no WhatsApp da empresa.
-    notificar_whatsapp = Column(String(16), default="quando_offline")  # sempre|quando_offline|nunca
+    # T-D (27/08/2026): mesmo motivo do server_default de senha_provisoria, acima.
+    notificar_whatsapp = Column(String(16), default="quando_offline", server_default="quando_offline")  # sempre|quando_offline|nunca
     criado_em     = Column(DateTime,    default=datetime.utcnow)
-    loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True)  # usuário de loja
-    rede_id       = Column(Integer,     ForeignKey("redes.id"), nullable=True)  # admin de rede (loja_id NULL)
+    loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)  # usuário de loja
+    rede_id       = Column(Integer,     ForeignKey("redes.id"), nullable=True, index=True)  # admin de rede (loja_id NULL)
     # Permissões por CONTA (2026-08-08) — só admin_rede: PerfilAcesso é por LOJA (loja_id
     # nullable=False), então não serve pra Gestor de Rede (sem loja própria). NULL = usa os
     # padrões do nível (auth.perfis.PERFIS["admin_rede"]); {} ou dict parcial = overrides,
@@ -171,7 +176,7 @@ class SimuladorAutorizacao(Base):
     __tablename__ = "simulador_autorizacoes"
 
     id                       = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id                  = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    loja_id                  = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     status                   = Column(String(10), nullable=False, default="ativa")   # pendente | ativa | revogada
     solicitado_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)  # quem pediu (super_admin)
     solicitado_em            = Column(DateTime, nullable=True)
@@ -193,7 +198,7 @@ class SimuladorLogAcesso(Base):
     id         = Column(Integer,  primary_key=True, autoincrement=True)
     evento     = Column(String(20), nullable=False)   # concessao | revogacao | abertura | levantamento
     usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    loja_id    = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    loja_id    = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
     contexto   = Column(Text,     nullable=True)
     ip         = Column(String(64), nullable=True)
     criado_em  = Column(DateTime, default=datetime.utcnow)
@@ -252,7 +257,7 @@ class Cliente(Base):
     inst_uf                = Column(String(2),   nullable=True)
     criado_em     = Column(DateTime,    default=datetime.utcnow)
     atualizado_em = Column(DateTime,    onupdate=datetime.utcnow)
-    loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
+    loja_id       = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
 
 
 class Parceiro(Base):
@@ -268,7 +273,7 @@ class Parceiro(Base):
     comissao_padrao_pct = Column(Float,        default=0.0)
     observacoes         = Column(Text,         nullable=True)
     criado_em           = Column(DateTime,     default=datetime.utcnow)
-    rede_id             = Column(Integer,      ForeignKey("redes.id"), nullable=True)
+    rede_id             = Column(Integer,      ForeignKey("redes.id"), nullable=True, index=True)
     abrangencia         = Column(String(10),   default="loja")   # loja | rede
     pix                 = Column(String(140),  nullable=True)    # chave PIX p/ pagamento de comissão (v10)
 
@@ -279,7 +284,7 @@ class Funcao(Base):
     __tablename__ = "funcoes"
 
     id        = Column(Integer,     primary_key=True, autoincrement=True)
-    loja_id   = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
+    loja_id   = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
     nome      = Column(String(80),  nullable=False)
     status    = Column(String(10),  nullable=False, default="ativo")   # ativo | inativo
     perfil_padrao = Column(String(40), nullable=True)   # slug do perfil_acesso default da função
@@ -291,7 +296,7 @@ class Funcao(Base):
     salario_fixo        = Column(Float,   nullable=True)   # parte fixa mensal da função
     beneficios_json     = Column(Text,    nullable=True)   # {"at":{"on","valor"},"va":..,"ps":..}
     comissao_json       = Column(Text,    nullable=True)   # {"por_meta","base","pct"|"faixas"} (não-consultor)
-    usa_comissao_vendas = Column(Integer, default=0)       # 1 = comissão vem do comissao_vendas da loja (Consultor)
+    usa_comissao_vendas = Column(Integer, default=0, server_default="0")       # 1 = comissão vem do comissao_vendas da loja (Consultor)
     comissao_fixa       = Column(Float,   nullable=True)   # comissão FIXA mensal isenta de encargos (férias/13º/INSS) — planejamento
     criado_em = Column(DateTime,    default=datetime.utcnow)
 
@@ -322,8 +327,8 @@ class FolhaPagamento(Base):
     __tablename__ = "folha_pagamento"
 
     id             = Column(Integer,     primary_key=True, autoincrement=True)
-    loja_id        = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
-    funcionario_id = Column(Integer,     ForeignKey("funcionarios.id"), nullable=False)
+    loja_id        = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
+    funcionario_id = Column(Integer,     ForeignKey("funcionarios.id"), nullable=False, index=True)
     competencia    = Column(String(7),   nullable=False)          # 'AAAA-MM'
     parte_fixa     = Column(Float,       nullable=True, default=0.0)
     vendas_liq     = Column(Float,       nullable=True, default=0.0)   # base da variável (valor líquido do período)
@@ -346,8 +351,8 @@ class ComissaoFolha(Base):
     __tablename__ = "comissao_folha"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    funcionario_id = Column(Integer,  ForeignKey("funcionarios.id"), nullable=False)
+    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    funcionario_id = Column(Integer,  ForeignKey("funcionarios.id"), nullable=False, index=True)
     competencia    = Column(String(7), nullable=False)          # 'AAAA-MM' = mês de concluido_em
     origem         = Column(String(10), nullable=False, default="papel")  # papel | venda
     papel          = Column(String(30), nullable=True)          # projeto_executivo|medicao|montagem|assistencia|venda
@@ -371,8 +376,8 @@ class AdiantamentoFuncionario(Base):
     competencia_abate controlam a dedução do líquido; quitado marca a baixa quando a folha é paga."""
     __tablename__ = "adiantamento_funcionario"
     id                = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    funcionario_id    = Column(Integer,  ForeignKey("funcionarios.id"), nullable=False)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    funcionario_id    = Column(Integer,  ForeignKey("funcionarios.id"), nullable=False, index=True)
     tipo              = Column(String(14), nullable=False, default="adiantamento")  # oficial|adiantamento|emprestimo
     competencia       = Column(String(7), nullable=False)          # 'AAAA-MM' concedido
     valor             = Column(Float,    nullable=True, default=0.0)
@@ -392,13 +397,13 @@ class Funcionario(Base):
     __tablename__ = "funcionarios"
 
     id                 = Column(Integer,     primary_key=True, autoincrement=True)
-    loja_id            = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
+    loja_id            = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
     nome               = Column(String(150), nullable=False)
     cpf                = Column(String(20),  nullable=True)
     telefone           = Column(String(20),  nullable=True)
     email              = Column(String(120), nullable=True)
     cargo              = Column(String(80),  nullable=True)   # legado (texto) — ver funcao_id
-    funcao_id          = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)  # → Tabela de Funções (v10)
+    funcao_id          = Column(Integer,     ForeignKey("funcoes.id"), nullable=True, index=True)  # → Tabela de Funções (v10)
     remuneracao_tipo   = Column(String(20),  nullable=True)   # fixa | fixa_variavel
     remuneracao_fixa   = Column(Float,       nullable=True)
     remuneracao_var    = Column(Float,       nullable=True)   # parte variável (se fixa_variavel)
@@ -416,7 +421,10 @@ class Funcionario(Base):
     conta        = Column(String(20),  nullable=True)
     pix          = Column(String(140), nullable=True)
     status             = Column(String(10),  nullable=False, default="ativo")   # ativo | inativo
-    usuario_id         = Column(Integer,     ForeignKey("usuarios.id"), nullable=True)  # conta de login (se houver)
+    # use_alter: fecha ciclo com Usuario.funcionario_id (1:1 modelado nos dois lados — ver
+    # nota "divida de Onda 2" em CLAUDE.md). Sem use_alter, um schema do zero (baseline
+    # Alembic) nao consegue decidir se funcionarios ou usuarios entra primeiro.
+    usuario_id         = Column(Integer,     ForeignKey("usuarios.id", use_alter=True), nullable=True)  # conta de login (se houver)
     criado_em          = Column(DateTime,    default=datetime.utcnow)
 
 
@@ -425,7 +433,7 @@ class Fornecedor(Base):
     __tablename__ = "fornecedores"
 
     id              = Column(Integer,     primary_key=True, autoincrement=True)
-    loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
+    loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
     tipo_pessoa     = Column(String(2),   nullable=False, default="pj")   # pj | pf
     nome            = Column(String(180), nullable=False)                 # razão social / nome
     cnpj_cpf        = Column(String(18),  nullable=True)
@@ -457,13 +465,13 @@ class Terceiro(Base):
     __tablename__ = "terceiros"
 
     id              = Column(Integer,     primary_key=True, autoincrement=True)
-    loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True)
+    loja_id         = Column(Integer,     ForeignKey("lojas.id"), nullable=True, index=True)
     nome            = Column(String(150), nullable=False)
     cpf             = Column(String(20),  nullable=True)
     cnpj            = Column(String(18),  nullable=True)   # contratação via MEI (achado do usuário 2026-08-17)
     telefone        = Column(String(20),  nullable=True)
     tipo_servico    = Column(String(20),  nullable=True)   # legado — ver funcao_id
-    funcao_id       = Column(Integer,     ForeignKey("funcoes.id"), nullable=True)  # → Tabela de Funções (v10)
+    funcao_id       = Column(Integer,     ForeignKey("funcoes.id"), nullable=True, index=True)  # → Tabela de Funções (v10)
     pix             = Column(String(140), nullable=True)
     dados_bancarios = Column(Text,        nullable=True)   # legado (texto livre)
     condicao        = Column(String(12),  nullable=True)   # mei | autonomo
@@ -493,7 +501,10 @@ class Rede(Base):
     id        = Column(Integer,     primary_key=True, autoincrement=True)
     nome      = Column(String(150), nullable=False)
     cnpj      = Column(String(18),  nullable=True)
-    emitente_central_id = Column(Integer, ForeignKey("emitente.id"), nullable=True)
+    # use_alter: fecha ciclo com Emitente.rede_id. Esta coluna esta 100% nula no banco
+    # (auditoria Dia 0) — e' a metade nao usada do ciclo (ver "divida de Onda 2" em
+    # CLAUDE.md). Sem use_alter, um schema do zero nao consegue ordenar redes x emitente.
+    emitente_central_id = Column(Integer, ForeignKey("emitente.id", use_alter=True), nullable=True, index=True)
     ativo     = Column(Integer,     default=1)
     criado_em = Column(DateTime,    default=datetime.utcnow)
 
@@ -503,7 +514,7 @@ class Loja(Base):
     __tablename__ = "lojas"
 
     id          = Column(Integer,     primary_key=True, autoincrement=True)
-    rede_id     = Column(Integer,     ForeignKey("redes.id"), nullable=True)  # NULL = avulsa
+    rede_id     = Column(Integer,     ForeignKey("redes.id"), nullable=True, index=True)  # NULL = avulsa
     nome        = Column(String(150), nullable=False)
     cnpj        = Column(String(18),  nullable=True)
     codigo      = Column(String(8),   nullable=True, unique=True)   # 3 letras p/ num contrato
@@ -526,7 +537,7 @@ class Loja(Base):
     # como signatária. Opcional: sem e-mail, a testemunha simplesmente não entra no envelope.
     testemunha1_email = Column(String(150), nullable=True)
     testemunha2_email = Column(String(150), nullable=True)
-    emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=True)
+    emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=True, index=True)
     ativo       = Column(Integer,  default=1)
     criado_em   = Column(DateTime, default=datetime.utcnow)
     config_financeira_json = Column(Text, nullable=True)   # config financeira da loja (JSON)
@@ -539,8 +550,8 @@ class Loja(Base):
     # Loja com mãe. loja_mae_id NULL = loja plena (comportamento idêntico ao anterior). O PDV
     # herda da mãe: rede_id (não editável), emissão fiscal (fallback do emitente) e modelos de
     # documento; razão contábil e tenancy são PRÓPRIOS (owner_id = pdv.id).
-    loja_mae_id = Column(Integer, ForeignKey("lojas.id"), nullable=True)
-    tipo        = Column(String(12), nullable=False, default="loja")   # loja | ponto_venda
+    loja_mae_id = Column(Integer, ForeignKey("lojas.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_lojas_loja_mae_id"), nullable=True, index=True)
+    tipo        = Column(String(12), nullable=False, default="loja", server_default="loja")   # loja | ponto_venda
     # Logo própria da loja (2026-08-20): só o NOME do arquivo em logos_loja/<id>/ — mesmo
     # esquema de nome de mod_documentos.guardar_staging (sha256[:16] + extensão). NULL/"" =
     # sem logo própria, cai no logo_dalmobile.png padrão (mod_contrato._resolver_logo_src).
@@ -552,8 +563,8 @@ class ParceiroLoja(Base):
     __tablename__ = "parceiro_lojas"
 
     id                  = Column(Integer, primary_key=True, autoincrement=True)
-    parceiro_id         = Column(Integer, ForeignKey("parceiros.id"), nullable=False)
-    loja_id             = Column(Integer, ForeignKey("lojas.id"),     nullable=False)
+    parceiro_id         = Column(Integer, ForeignKey("parceiros.id"), nullable=False, index=True)
+    loja_id             = Column(Integer, ForeignKey("lojas.id"),     nullable=False, index=True)
     comissao_padrao_pct = Column(Float,   default=0.0)
     ativo               = Column(Integer, default=1)
 
@@ -564,7 +575,7 @@ class UsuarioLoja(Base):
 
     id         = Column(Integer, primary_key=True, autoincrement=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    loja_id    = Column(Integer, ForeignKey("lojas.id"),    nullable=False)
+    loja_id    = Column(Integer, ForeignKey("lojas.id"),    nullable=False, index=True)
 
     __table_args__ = (UniqueConstraint("usuario_id", "loja_id", name="uq_usuario_loja"),)
 
@@ -574,7 +585,7 @@ class Projeto(Base):
     __tablename__ = "projetos_meta"
 
     nome_safe  = Column(String,   primary_key=True)
-    cliente_id = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
+    cliente_id = Column(Integer,  ForeignKey("clientes.id"), nullable=True, index=True)
     # quente | morno | frio | convertido | perdido | cancelado | em_revisao (revisado 2026-08-17:
     # cancelamento leve, pré-2ª-assinatura, tem 2 desfechos escolhidos pelo gerente — "cancelado"
     # trava tudo (ver _contrato_assinado); "em_revisao" reabre a negociação, comportamento antigo
@@ -587,16 +598,16 @@ class Projeto(Base):
     # status="cancelado" sozinho também trava (ver `_projeto_cancelado`/`_contrato_assinado` em
     # main.py), mas não é permanente como este flag; "Reabrir Orçamentos" é frente futura. Uma vez
     # 1, nunca volta a 0 — nem um novo contrato no mesmo projeto reabre a edição.
-    cancelado_definitivo = Column(Integer, default=0)
+    cancelado_definitivo = Column(Integer, default=0, server_default="0")
     parametros_json = Column(Text, nullable=True)   # parâmetros estruturais da negociação (JSON, projeto-wide)
-    loja_id        = Column(Integer,    ForeignKey("lojas.id"), nullable=True)
+    loja_id        = Column(Integer,    ForeignKey("lojas.id"), nullable=True, index=True)
     criado_por_id  = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)   # usuário que criou o projeto (escopo por projetista)
     data_entrega   = Column(DateTime,   nullable=True)   # âncora do cronograma REGRESSIVO (entrega ao cliente, def. na assinatura)
     data_inicio    = Column(DateTime,   nullable=True)   # âncora do cronograma PROGRESSIVO (início; def. assinatura + carência)
     equipe_json    = Column(Text,       nullable=True)   # Equipe do Projeto: seleções dos papéis SELETORES (medidor/finalizador/montagem[N])
     previsao_medicao = Column(DateTime, nullable=True)   # marco de medição (venda programada / obra do cliente)
-    venda_programada = Column(Integer,  default=0)        # 1 = obra do cliente controla a medição (classificação + marcador no contrato, Fatia 3)
-    folga_autorizada = Column(Integer,  default=0)        # 1 = data de entrega gravada apesar de folga NEGATIVA, sob autorização gerencial (Fatia 2)
+    venda_programada = Column(Integer,  default=0, server_default="0")        # 1 = obra do cliente controla a medição (classificação + marcador no contrato, Fatia 3)
+    folga_autorizada = Column(Integer,  default=0, server_default="0")        # 1 = data de entrega gravada apesar de folga NEGATIVA, sob autorização gerencial (Fatia 2)
     data_limite_contratual = Column(DateTime, nullable=True)  # D0 (assinatura) + prazo contratual em DIAS ÚTEIS — registrada na assinatura (Fatia 3)
 
 
@@ -604,7 +615,7 @@ class Briefing(Base):
     __tablename__ = "briefings"
 
     id                    = Column(Integer,  primary_key=True, autoincrement=True)
-    cliente_id            = Column(Integer,  ForeignKey("clientes.id"), nullable=False)
+    cliente_id            = Column(Integer,  ForeignKey("clientes.id"), nullable=False, index=True)
     projeto_nome          = Column(Text,     nullable=True)
     criado_em             = Column(DateTime, default=datetime.utcnow)
     atualizado_em         = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
@@ -669,7 +680,7 @@ class PoolAmbiente(Base):
     qa_custo_sem_venda    = Column(Integer, nullable=True)
     qa_override_por_id    = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     qa_override_motivo    = Column(String,  nullable=True)
-    renegociar_pe         = Column(Integer, default=0)   # Revisão de PE (11c): ambiente marcado p/ renegociar (Fatia venda 2026-07-21)
+    renegociar_pe         = Column(Integer, default=0, server_default="0")   # Revisão de PE (11c): ambiente marcado p/ renegociar (Fatia venda 2026-07-21)
     created_by     = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     created_at     = Column(DateTime, default=datetime.utcnow)
 
@@ -713,15 +724,19 @@ class Orcamento(Base):
     # Fatia 3 da Revisão de PE (2026-07-21): orçamento de AJUSTE pós-assinatura — só os ambientes
     # marcados "Renegociar" na 11c, base de valores = PE (arquivo_pe). Isento das travas de contrato
     # assinado nos endpoints de negociação (margens/descontos/valor); NUNCA vira o contratado.
-    complemento_pe           = Column(Integer, default=0)
+    complemento_pe           = Column(Integer, default=0, server_default="0")
     # Conciliação de PE/AF2 (spec 2026-08-14): generaliza o Complemento de "1 por projeto inteiro"
     # pra "1 por FASE" — o desmembramento libera fases independentemente, a cobrança acompanha.
     # NULL = projeto não desmembrado (fase única implícita, todo o pool).
-    parcela_id      = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
+    # use_alter: fecha ciclo com ParcelaProjeto.orcamento_id, que ja existia antes desta
+    # coluna (criada pela migration 0002 — o ciclo se fechou aqui, nao do outro lado; ver
+    # "divida de Onda 2" em CLAUDE.md). Sem use_alter, um schema do zero nao consegue
+    # ordenar orcamentos x parcela_projeto.
+    parcela_id      = Column(Integer,  ForeignKey("parcela_projeto.id", ondelete="RESTRICT", onupdate="CASCADE", use_alter=True, name="fk_orcamentos_parcela_id"), nullable=True, index=True)
     created_by      = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
     updated_at      = Column(DateTime, nullable=True)
-    loja_id         = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    loja_id         = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
 
     criador   = relationship("Usuario", foreign_keys=[created_by])
     ambientes = relationship("OrcamentoAmbiente", back_populates="orcamento",
@@ -733,7 +748,7 @@ class OrcamentoAmbiente(Base):
     __tablename__ = "orcamento_ambientes"
 
     orcamento_id     = Column(Integer, ForeignKey("orcamentos.id"),     primary_key=True)
-    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"), primary_key=True)
+    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"), primary_key=True, index=True)
     ordem            = Column(Integer, default=1)
     added_at         = Column(DateTime, default=datetime.utcnow)
     desconto_individual_pct = Column(Float, nullable=False, default=0.0, server_default="0")
@@ -765,19 +780,32 @@ class CicloEtapa(Base):
     responsavel_funcionario_id  = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
     # Fonte única da equipe (2026-07-27): o responsável da etapa pode ser um TERCEIRO (montador/
     # medidor/PE terceirizados). Exatamente um dos dois responsáveis fica preenchido.
-    responsavel_terceiro_id     = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
+    responsavel_terceiro_id     = Column(Integer, ForeignKey("terceiros.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_ciclo_etapas_responsavel_terceiro_id"), nullable=True, index=True)
     observacoes    = Column(Text,     nullable=True)
     # Transferência de responsabilidade (2026-08-23): ciclo de vida 'nenhuma' → 'pendente'
     # (destino tem login, aguarda aceite via "Receber Projeto") ou direto 'nenhuma' de novo
     # (destino sem login — aceite automático, ninguém pra confirmar). Exatamente um dos dois
     # campos de destino fica preenchido, igual ao par responsavel_funcionario_id/_terceiro_id.
-    transferencia_status                    = Column(Text, nullable=False, default="nenhuma")
-    transferencia_destino_funcionario_id    = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
-    transferencia_destino_terceiro_id       = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
-    transferencia_solicitada_por_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    transferencia_status                    = Column(Text, nullable=False, default="nenhuma", server_default="nenhuma")
+    transferencia_destino_funcionario_id    = Column(Integer, ForeignKey("funcionarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_ciclo_etapas_transferencia_destino_funcionario_id"), nullable=True, index=True)
+    transferencia_destino_terceiro_id       = Column(Integer, ForeignKey("terceiros.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_ciclo_etapas_transferencia_destino_terceiro_id"), nullable=True, index=True)
+    transferencia_solicitada_por_usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_ciclo_etapas_transferencia_solicitada_por_usuario_id"), nullable=True, index=True)
     transferencia_solicitada_em             = Column(DateTime, nullable=True)
 
-    __table_args__ = (UniqueConstraint("projeto_nome", "etapa_codigo", name="uq_ciclo_etapa"),)
+    __table_args__ = (
+        UniqueConstraint("projeto_nome", "etapa_codigo", name="uq_ciclo_etapa"),
+        # C3 (27/08/2026, alinhamento de modelos): índice antigo, nome fora da convenção
+        # ix_<tabela>_<coluna> (falta o "_id") — a 0003 nunca recriou porque
+        # responsavel_funcionario_id não estava na lista das 147 FKs sem índice do Dia 0.
+        Index("ix_ciclo_etapas_responsavel_funcionario", "responsavel_funcionario_id"),
+        # Parciais (WHERE transferencia_status='pendente') — servem à consulta de transferências
+        # pendentes; não substituem os índices completos das FKs (ix_ciclo_etapas_transferencia_
+        # destino_funcionario_id/_terceiro_id, criados pela 0002 ao lado destes).
+        Index("ix_ciclo_etapas_transf_dest_func", "transferencia_destino_funcionario_id",
+              postgresql_where=text("transferencia_status = 'pendente'")),
+        Index("ix_ciclo_etapas_transf_dest_terc", "transferencia_destino_terceiro_id",
+              postgresql_where=text("transferencia_status = 'pendente'")),
+    )
 
     responsavel = relationship("Usuario", foreign_keys=[responsavel_id])
 
@@ -788,22 +816,29 @@ class AtribuicaoAmbiente(Base):
     visibilidade escopada ao Usuário vinculado ao profissional. pool_ambiente_id NULL = 'projeto
     inteiro' (default que vale para os ambientes sem atribuição própria). PE/Medição/Assistência
     seguem 1 profissional por papel/ambiente; **Montagem aceita VÁRIOS** (2026-08-06, pedido do
-    usuário — times de montagem podem ter 2+ pessoas) — por isso a unicidade não é mais
-    `__table_args__` (SQLAlchemy não expressa "único, exceto quando papel='montagem'"): virou um
-    ÍNDICE ÚNICO PARCIAL só sobre `papel <> 'montagem'`, criado em `_migrar_colunas_pg`
-    (`uq_atribuicao_papel_ambiente`). Trocas ficam em LogAcaoGerencial (sem versionar a tabela)."""
+    usuário — times de montagem podem ter 2+ pessoas) — por isso a unicidade não é uma
+    UniqueConstraint comum: é um ÍNDICE ÚNICO PARCIAL só sobre `papel <> 'montagem'`
+    (`uq_atribuicao_papel_ambiente`, em __table_args__ abaixo — C3, 27/08/2026: SQLAlchemy EXPRESSA
+    isso sim, via Index(unique=True, postgresql_where=...); a nota anterior aqui dizia o contrário
+    e a constraint viveu anos só em _migrar_colunas_pg, invisível pro autogenerate). Trocas ficam
+    em LogAcaoGerencial (sem versionar a tabela)."""
     __tablename__ = "atribuicoes_ambiente"
 
     id               = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=False)   # isolamento F4
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)   # isolamento F4
     projeto_nome     = Column(Text,     nullable=False)                            # nome_safe
-    pool_ambiente_id = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=True)  # NULL = projeto inteiro
+    pool_ambiente_id = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=True, index=True)  # NULL = projeto inteiro
     papel            = Column(Text,     nullable=False)   # projeto_executivo|medicao|montagem|assistencia
-    funcionario_id   = Column(Integer,  ForeignKey("funcionarios.id"), nullable=True)
-    terceiro_id      = Column(Integer,  ForeignKey("terceiros.id"), nullable=True)
+    funcionario_id   = Column(Integer,  ForeignKey("funcionarios.id"), nullable=True, index=True)
+    terceiro_id      = Column(Integer,  ForeignKey("terceiros.id"), nullable=True, index=True)
     atribuido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
     atualizado_em    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("uq_atribuicao_papel_ambiente", "projeto_nome", "pool_ambiente_id", "papel",
+              unique=True, postgresql_where=text("papel <> 'montagem'")),
+    )
 
 
 class CicloLogistico(Base):
@@ -813,7 +848,7 @@ class CicloLogistico(Base):
     __tablename__ = "ciclo_logistico"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
     projeto_nome   = Column(Text,     nullable=False)                 # ref: nome_safe do projeto
     numero_pedido  = Column(Text,     nullable=True)                  # nº do pedido na fábrica
     status_atual   = Column(Text,     nullable=False, default="Pedido Enviado")
@@ -832,11 +867,11 @@ class CicloLogistico(Base):
     cte            = Column(Text, nullable=True)                      # conhecimento de transporte
     rastreio       = Column(Text, nullable=True)
     # Referências (nunca duplica): NF-e é dado do Fiscal
-    nfe_id         = Column(Integer, ForeignKey("documento_fiscal.id"), nullable=True)
+    nfe_id         = Column(Integer, ForeignKey("documento_fiscal.id"), nullable=True, index=True)
     criado_em      = Column(DateTime, nullable=True)
     criado_por_id  = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     # Desmembramento parcial (spec 2026-07-13, Fatia 2): 1 linha por parcela; NULL = projeto-wide legado.
-    parcela_id     = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
+    parcela_id     = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True, index=True)
 
 
 class CicloLogisticoTransicao(Base):
@@ -844,7 +879,7 @@ class CicloLogisticoTransicao(Base):
     __tablename__ = "ciclo_logistico_transicao"
 
     id                 = Column(Integer,  primary_key=True, autoincrement=True)
-    ciclo_logistico_id = Column(Integer,  ForeignKey("ciclo_logistico.id"), nullable=False)
+    ciclo_logistico_id = Column(Integer,  ForeignKey("ciclo_logistico.id"), nullable=False, index=True)
     de_status          = Column(Text,     nullable=True)
     para_status        = Column(Text,     nullable=False)
     usuario_id         = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
@@ -865,7 +900,7 @@ class ParcelaProjeto(Base):
     status                = Column(String(16), nullable=False, default="aguardando")  # aguardando|em_aprovacao|liquidada
     fracao_val_cont       = Column(Float,    nullable=False, default=0.0)   # congelada (#5)
     val_cont_congelado    = Column(Float,    nullable=False, default=0.0)   # congelado (#5)
-    orcamento_id          = Column(Integer,  ForeignKey("orcamentos.id"), nullable=True)
+    orcamento_id          = Column(Integer,  ForeignKey("orcamentos.id"), nullable=True, index=True)
     saldo_margem_estimado = Column(Float,    nullable=True)   # cache opcional do derivado (#9)
     criado_em             = Column(DateTime, default=datetime.utcnow)
     criado_por_id         = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
@@ -885,10 +920,10 @@ class ParcelaAmbiente(Base):
     """Membership N:N parcela ↔ ambiente do pool (#1)."""
     __tablename__ = "parcela_ambiente"
     parcela_id       = Column(Integer, ForeignKey("parcela_projeto.id"), primary_key=True)
-    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"),  primary_key=True)
+    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"),  primary_key=True, index=True)
     # Valor de contrato BRUTO do ambiente (Val_Cont rateado, não o CFO — #4/#5). Guardado na
     # confirmação p/ permitir SPLIT exato na liberação em ondas (Fatia 3) sem reler o contrato.
-    valor_ambiente   = Column(Float, nullable=False, default=0.0)
+    valor_ambiente   = Column(Float, nullable=False, default=0.0, server_default="0.0")
 
 
 class ConciliacaoPeFase(Base):
@@ -899,8 +934,8 @@ class ConciliacaoPeFase(Base):
     __tablename__ = "conciliacao_pe_fase"
     id                     = Column(Integer,  primary_key=True, autoincrement=True)
     projeto_nome           = Column(Text,     nullable=False, index=True)   # nome_safe
-    parcela_id             = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True)
-    pool_ambiente_id       = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False)
+    parcela_id             = Column(Integer,  ForeignKey("parcela_projeto.id"), nullable=True, index=True)
+    pool_ambiente_id       = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False, index=True)
     tipo_decisao           = Column(String(16), nullable=False)   # manter|absorver|cobrar|estornar
     diferenca_cfo          = Column(Float,    nullable=False, default=0.0)
     diferenca_valor_contrato = Column(Float,  nullable=False, default=0.0)
@@ -916,7 +951,7 @@ class SinalRetido(Base):
     __tablename__ = "sinal_retido"
     id                = Column(Integer, primary_key=True, autoincrement=True)
     projeto_nome      = Column(Text,    nullable=False, index=True)
-    pool_ambiente_id  = Column(Integer, ForeignKey("pool_ambientes.id"), nullable=False)
+    pool_ambiente_id  = Column(Integer, ForeignKey("pool_ambientes.id"), nullable=False, index=True)
     sinalizado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     motivo            = Column(Text,    nullable=True)
     confirmado        = Column(Integer, nullable=False, default=0)
@@ -955,7 +990,7 @@ class ArquivoPE(Base):
     __tablename__ = "arquivo_pe"
     id               = Column(Integer,  primary_key=True, autoincrement=True)
     projeto_nome     = Column(Text,     nullable=False, index=True)   # nome_safe
-    pool_ambiente_id = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False)  # a qual ambiente o PE se refere
+    pool_ambiente_id = Column(Integer,  ForeignKey("pool_ambientes.id"), nullable=False, index=True)  # a qual ambiente o PE se refere
     formato          = Column(String(10), nullable=False)   # 'xml_pe' | 'promob_pe'
     arquivo_path     = Column(Text,     nullable=True)
     valor_atualizado = Column(Float,    nullable=True)       # CFO do PE (só p/ 'xml_pe'); null = não carregado
@@ -977,9 +1012,9 @@ class AssistenciaCaso(Base):
     __tablename__ = "assistencia_caso"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    loja_id        = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
     projeto_nome   = Column(Text,     nullable=True)                 # ref: nome_safe (opcional)
-    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id"), nullable=True)
+    pool_ambiente_id = Column(Integer, ForeignKey("pool_ambientes.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_assistencia_caso_pool_ambiente_id"), nullable=True, index=True)
     data_inicio    = Column(Date,     nullable=True)
     data_fim       = Column(Date,     nullable=True)
     sub_tipo       = Column(Text,     nullable=False)                # "montagem" | "pos_conclusao"
@@ -993,7 +1028,7 @@ class AssistenciaCaso(Base):
     # 2026-08-07 (achado da Vera + revisão do usuário): "direto" = paga na hora (Caixa); "a_prazo" =
     # faturado por terceiro, cria Fornecedores a Pagar. Substitui o "Efetivar" genérico da
     # Reconciliação pra Assistência/Garantia (que arriscava duplo-lançamento do mesmo evento real).
-    forma_pagamento = Column(Text,    nullable=False, default="direto")   # "direto" | "a_prazo"
+    forma_pagamento = Column(Text,    nullable=False, default="direto", server_default="direto")   # "direto" | "a_prazo"
     # só relevante pra caso AVULSO (sem projeto) e NÃO cobrado (tipo_custo loja/fabrica): a provisão
     # é uma média estatística por projeto — sem projeto não tem o que debitar. "garantia" = despesa
     # normal (5.2.12/5.2.13); "concessao" = fora da cobertura, cortesia (5.3.21).
@@ -1009,9 +1044,9 @@ class AssistenciaExecutor(Base):
     __tablename__ = "assistencia_executores"
 
     id             = Column(Integer, primary_key=True, autoincrement=True)
-    caso_id        = Column(Integer, ForeignKey("assistencia_caso.id"), nullable=False)
-    funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
-    terceiro_id    = Column(Integer, ForeignKey("terceiros.id"), nullable=True)
+    caso_id        = Column(Integer, ForeignKey("assistencia_caso.id"), nullable=False, index=True)
+    funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True, index=True)
+    terceiro_id    = Column(Integer, ForeignKey("terceiros.id"), nullable=True, index=True)
 
 
 class AssistenciaAnexo(Base):
@@ -1019,7 +1054,7 @@ class AssistenciaAnexo(Base):
     __tablename__ = "assistencia_anexos"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    caso_id        = Column(Integer,  ForeignKey("assistencia_caso.id"), nullable=False)
+    caso_id        = Column(Integer,  ForeignKey("assistencia_caso.id"), nullable=False, index=True)
     arquivo_path   = Column(Text,     nullable=False)   # relativo a PROJETOS/<nome>/
     nome_original  = Column(Text,     nullable=False)
     enviado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
@@ -1038,9 +1073,9 @@ class Recebivel(Base):
     __tablename__ = "recebivel"
 
     id                = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     projeto_nome      = Column(Text,     nullable=False)
-    orcamento_id      = Column(Integer,  ForeignKey("orcamentos.id"), nullable=False)
+    orcamento_id      = Column(Integer,  ForeignKey("orcamentos.id"), nullable=False, index=True)
     tipo              = Column(Text,     nullable=False)   # "entrada" | "parcela" | "financiado"
     numero            = Column(Integer,  nullable=True)     # nº da parcela, quando aplicável
     forma             = Column(Text,     nullable=True)     # instrumento informativo (pix/boleto/cartao/aymore/...)
@@ -1066,7 +1101,7 @@ class ProvisaoDataPrevista(Base):
     __tablename__ = "provisao_data_prevista"
 
     id                = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    loja_id           = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     projeto_nome      = Column(Text,     nullable=False)
     codigo_conta      = Column(Text,     nullable=False)
     data_prevista     = Column(Date,     nullable=False)
@@ -1090,7 +1125,7 @@ class ProvisaoRegistro(Base):
     cust_var     = Column(Float, default=0.0)
     marg_cont    = Column(Float, default=0.0)
     decisao      = Column(String(10), nullable=True)    # 'concorda' | 'revisa' | None (venda)
-    por_id       = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    por_id       = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
     travada_em   = Column(DateTime, nullable=True)      # Fatia C (#10): versão aprovada e travada (não reedita sem Diretor)
 
@@ -1109,7 +1144,7 @@ class Conta(Base):
     grupo      = Column(Integer,    nullable=False)    # 1..5 (Ativo/Passivo/PL/Receita/Despesa)
     tipo       = Column(String(10), nullable=False)    # 'sintetica' (agrupa) | 'analitica' (folha)
     natureza   = Column(String(8),  nullable=False)    # 'devedora' | 'credora'
-    pai_id     = Column(Integer, ForeignKey("conta.id"), nullable=True)
+    pai_id     = Column(Integer, ForeignKey("conta.id"), nullable=True, index=True)
     ativa      = Column(Integer, default=1)
     ordem      = Column(Integer, default=0)
     criado_em     = Column(DateTime, default=datetime.utcnow)
@@ -1119,7 +1154,7 @@ class Conta(Base):
     # owner). natureza_custo é um slug fixo (ver NATUREZA_CUSTO em mod_contabil.py) — não precisa
     # de tabela, é lista fechada de 3. Nome deliberadamente diferente de `natureza` (devedora/
     # credora) — conceito totalmente diferente.
-    centro_custo_id = Column(Integer, ForeignKey("centro_custo.id"), nullable=True)
+    centro_custo_id = Column(Integer, ForeignKey("centro_custo.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_conta_centro_custo_id"), nullable=True, index=True)
     natureza_custo  = Column(String(16), nullable=True)
     __table_args__ = (UniqueConstraint("owner_tipo", "owner_id", "codigo", name="uq_conta_owner_codigo"),)
 
@@ -1134,7 +1169,7 @@ class CentroCusto(Base):
     owner_id   = Column(Integer,    nullable=False)
     codigo     = Column(String(20), nullable=False)   # hierárquico: '1', '1.1'
     nome       = Column(Text,       nullable=False)
-    pai_id     = Column(Integer, ForeignKey("centro_custo.id"), nullable=True)
+    pai_id     = Column(Integer, ForeignKey("centro_custo.id"), nullable=True, index=True)
     ativo      = Column(Integer, default=1)
     ordem      = Column(Integer, default=0)
     criado_em     = Column(DateTime, default=datetime.utcnow)
@@ -1150,8 +1185,8 @@ class Lancamento(Base):
     owner_tipo       = Column(String(10), nullable=False)
     owner_id         = Column(Integer,    nullable=False)
     data             = Column(DateTime,   nullable=False, default=datetime.utcnow)
-    conta_debito_id  = Column(Integer, ForeignKey("conta.id"), nullable=False)
-    conta_credito_id = Column(Integer, ForeignKey("conta.id"), nullable=False)
+    conta_debito_id  = Column(Integer, ForeignKey("conta.id"), nullable=False, index=True)
+    conta_credito_id = Column(Integer, ForeignKey("conta.id"), nullable=False, index=True)
     valor            = Column(Float,      nullable=False)
     projeto_id       = Column(String,     nullable=True)    # nome_safe (dimensão gerencial)
     origem           = Column(String(64), nullable=False, default="manual")   # 'manual' | tipo de evento
@@ -1163,6 +1198,8 @@ class Lancamento(Base):
     motivo           = Column(String(30), nullable=True)   # dimensão do reparo em garantia: 'defeito_fabrica'|'outro' (§6.2)
     ia_sugestao      = Column(Text,       nullable=True)    # snapshot da sugestão da IA de classificação (§6.3)
     criado_em        = Column(DateTime,   default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_lancamento_owner", "owner_tipo", "owner_id"),)
 
 
 class PeriodoContabil(Base):
@@ -1188,6 +1225,8 @@ class PeriodoContabil(Base):
     classificacao_snapshot_json = Column(Text, nullable=True)
     criado_em            = Column(DateTime, default=datetime.utcnow)
 
+    __table_args__ = (Index("ix_periodo_contabil_owner", "owner_tipo", "owner_id"),)
+
 
 class Contrato(Base):
     """Contrato gerado a partir do orçamento aprovado."""
@@ -1196,7 +1235,7 @@ class Contrato(Base):
     id                   = Column(Integer,  primary_key=True, autoincrement=True)
     num_contrato         = Column(Text,     nullable=True)   # LOJA-AAAA-MM-DD-SEQ
     projeto_nome         = Column(Text,     nullable=False)
-    orcamento_id         = Column(Integer,  ForeignKey("orcamentos.id"), nullable=False)
+    orcamento_id         = Column(Integer,  ForeignKey("orcamentos.id"), nullable=False, index=True)
     template_path        = Column(Text,     nullable=False, default="config/contrato_template.docx")
     pdf_path             = Column(Text,     nullable=True)
     endereco_instalacao  = Column(Text,     nullable=True)
@@ -1211,9 +1250,9 @@ class Contrato(Base):
     adendo               = Column(Text,     nullable=True)
     gerado_em            = Column(DateTime, nullable=True)
     gerado_por_id        = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    loja_id              = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
+    loja_id              = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
     loja_snapshot_json   = Column(Text,     nullable=True)   # snapshot dos dados da loja (F3)
-    modelo_versao_id     = Column(Integer, ForeignKey("documento_modelos.id"), nullable=True)
+    modelo_versao_id     = Column(Integer, ForeignKey("documento_modelos.id"), nullable=True, index=True)
     # NULL = contrato legado -> cai no contrato_template/contrato.md global.
     # Preenchido = reproduz as cláusulas daquela versão, mesmo que a loja já
     # tenha trocado o modelo. Ver docs/superpowers/specs/2026-07-15-modelos-documentos-loja-design.md D6.
@@ -1221,7 +1260,14 @@ class Contrato(Base):
     # NULL/'interno' é o mecanismo de sempre (loja+cliente clicam na tela); 'clicksign' empurra
     # o PDF pra um envelope na ClickSign e a tela interna recusa assinar aquele documento (uma
     # fonte de verdade só, ver _registrar_assinatura_contrato/_reconciliar_contrato_clicksign).
-    assinatura_canal              = Column(String(16), nullable=True)
+    # C1 (27/08/2026, alinhamento de modelos): server_default="interno" casa com o banco (aqui e
+    # em AprovacaoPE.assinatura_canal, abaixo) — mas a origem dele NÃO é rastreável em código:
+    # _migrar_colunas_pg faz só `ADD COLUMN ... VARCHAR(16)`, sem DEFAULT nenhum. Alguém rodou um
+    # ALTER COLUMN direto no banco em algum momento (fora de migration, achado da revisão de
+    # 27/08). O valor em si bate com o comentário acima (NULL/'interno' já eram equivalentes), e
+    # SolicitacaoMedicao.assinatura_canal (mesmo campo, 3ª classe) NÃO tem esse default no banco —
+    # inconsistência entre as três, não uma regra deliberada. Registrado, não corrigido aqui.
+    assinatura_canal              = Column(String(16), nullable=True, server_default="interno")
     clicksign_envelope_id         = Column(Text,     nullable=True)
     clicksign_enviado_em          = Column(DateTime, nullable=True)
     clicksign_signatarios_json    = Column(Text,     nullable=True)
@@ -1244,7 +1290,7 @@ class ContratoAssinatura(Base):
     __tablename__ = "contratos_assinaturas"
 
     id           = Column(Integer,  primary_key=True, autoincrement=True)
-    contrato_id  = Column(Integer,  ForeignKey("contratos.id"), nullable=False)
+    contrato_id  = Column(Integer,  ForeignKey("contratos.id"), nullable=False, index=True)
     parte        = Column(Text,     nullable=False)   # loja | cliente
     nome         = Column(Text,     nullable=False)
     cpf          = Column(Text,     nullable=False)
@@ -1269,16 +1315,16 @@ class Aditivo(Base):
     id                 = Column(Integer,  primary_key=True, autoincrement=True)
     num_aditivo        = Column(Text,     nullable=True)    # TA<AAAAMMDD><SEQ> (gerado 1x)
     projeto_nome       = Column(Text,     nullable=False, index=True)
-    contrato_id        = Column(Integer,  ForeignKey("contratos.id"), nullable=False)
-    orcamento_complemento_id = Column(Integer, ForeignKey("orcamentos.id"), nullable=False)
+    contrato_id        = Column(Integer,  ForeignKey("contratos.id"), nullable=False, index=True)
+    orcamento_complemento_id = Column(Integer, ForeignKey("orcamentos.id"), nullable=False, index=True)
     pdf_path           = Column(Text,     nullable=True)
     dados_json         = Column(Text,     nullable=True)    # snapshot da diferença (ambientes, valores)
     status             = Column(Text,     nullable=False, default="rascunho")
     # status: rascunho | para_assinatura | assinado_loja | assinado_cliente | assinado
     gerado_em          = Column(DateTime, nullable=True)
     gerado_por_id      = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    loja_id            = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    modelo_versao_id   = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    loja_id            = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    modelo_versao_id   = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True, index=True)
 
     assinaturas = relationship("AditivoAssinatura", back_populates="aditivo",
                                cascade="all, delete-orphan")
@@ -1289,7 +1335,7 @@ class AditivoAssinatura(Base):
     __tablename__ = "aditivos_assinaturas"
 
     id          = Column(Integer,  primary_key=True, autoincrement=True)
-    aditivo_id  = Column(Integer,  ForeignKey("aditivos.id"), nullable=False)
+    aditivo_id  = Column(Integer,  ForeignKey("aditivos.id"), nullable=False, index=True)
     parte       = Column(Text,     nullable=False)   # loja | cliente
     nome        = Column(Text,     nullable=False)
     cpf         = Column(Text,     nullable=False)
@@ -1311,17 +1357,18 @@ class AprovacaoPE(Base):
     id               = Column(Integer,  primary_key=True, autoincrement=True)
     num_aprovacao    = Column(Text,     nullable=True)    # AP<AAAAMMDD><SEQ> (gerado 1x)
     projeto_nome     = Column(Text,     nullable=False, index=True)
-    contrato_id      = Column(Integer,  ForeignKey("contratos.id"), nullable=False)
+    contrato_id      = Column(Integer,  ForeignKey("contratos.id"), nullable=False, index=True)
     pdf_path         = Column(Text,     nullable=True)
     dados_json       = Column(Text,     nullable=True)    # {"ambientes": [{id, nome}]} aprovados
     status           = Column(Text,     nullable=False, default="rascunho")
     # status: rascunho | para_assinatura | assinado_loja | assinado_cliente | assinado
     gerado_em        = Column(DateTime, nullable=True)
     gerado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True, index=True)
     # Assinatura eletrônica ClickSign (2026-08-11) — mesmo mecanismo do Contrato, ver lá.
-    assinatura_canal              = Column(String(16), nullable=True)
+    # server_default: ver a nota C1 em Contrato.assinatura_canal (origem não rastreável em código).
+    assinatura_canal              = Column(String(16), nullable=True, server_default="interno")
     clicksign_envelope_id         = Column(Text,     nullable=True)
     clicksign_enviado_em          = Column(DateTime, nullable=True)
     clicksign_signatarios_json    = Column(Text,     nullable=True)
@@ -1335,7 +1382,7 @@ class AprovacaoPEAssinatura(Base):
     __tablename__ = "aprovacoes_pe_assinaturas"
 
     id           = Column(Integer,  primary_key=True, autoincrement=True)
-    aprovacao_id = Column(Integer,  ForeignKey("aprovacoes_pe.id"), nullable=False)
+    aprovacao_id = Column(Integer,  ForeignKey("aprovacoes_pe.id"), nullable=False, index=True)
     parte        = Column(Text,     nullable=False)   # loja | cliente
     nome         = Column(Text,     nullable=False)
     cpf          = Column(Text,     nullable=False)
@@ -1362,10 +1409,13 @@ class SolicitacaoMedicao(Base):
     # status: rascunho | para_assinatura | assinado_loja | assinado_cliente | assinado
     gerado_em        = Column(DateTime, nullable=True)
     gerado_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
-    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True)
+    loja_id          = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    modelo_versao_id = Column(Integer,  ForeignKey("documento_modelos.id"), nullable=True, index=True)
     # Assinatura eletrônica ClickSign — mesmo mecanismo do Contrato/Aprovação do PE.
-    assinatura_canal              = Column(String(16), nullable=True)
+    # server_default: ver a nota C1 em Contrato.assinatura_canal — esta 3ª classe NÃO tinha o
+    # default no banco (alinhado na migration 0006, revisão de 27/08/2026, item 3 do relatório de
+    # alinhamento); campo igual às outras duas agora, sem comportamento divergente por classe.
+    assinatura_canal              = Column(String(16), nullable=True, server_default="interno")
     clicksign_envelope_id         = Column(Text,     nullable=True)
     clicksign_enviado_em          = Column(DateTime, nullable=True)
     clicksign_signatarios_json    = Column(Text,     nullable=True)
@@ -1380,7 +1430,7 @@ class SolicitacaoMedicaoAssinatura(Base):
     __tablename__ = "solicitacoes_medicao_assinaturas"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    solicitacao_id = Column(Integer,  ForeignKey("solicitacoes_medicao.id"), nullable=False)
+    solicitacao_id = Column(Integer,  ForeignKey("solicitacoes_medicao.id"), nullable=False, index=True)
     parte          = Column(Text,     nullable=False)   # loja | cliente
     nome           = Column(Text,     nullable=False)
     cpf            = Column(Text,     nullable=False)
@@ -1401,8 +1451,8 @@ class IntegracaoClickSign(Base):
     __tablename__ = "integracoes_clicksign"
 
     id                  = Column(Integer,  primary_key=True, autoincrement=True)
-    loja_id             = Column(Integer,  ForeignKey("lojas.id"), nullable=True)
-    rede_id             = Column(Integer,  ForeignKey("redes.id"), nullable=True)
+    loja_id             = Column(Integer,  ForeignKey("lojas.id"), nullable=True, index=True)
+    rede_id             = Column(Integer,  ForeignKey("redes.id"), nullable=True, index=True)
     token_sandbox_enc   = Column(Text,     nullable=True)
     token_producao_enc  = Column(Text,     nullable=True)
     webhook_secret_enc  = Column(Text,     nullable=True)
@@ -1423,7 +1473,7 @@ class Conversa(Base):
     id           = Column(Integer,  primary_key=True, autoincrement=True)
     loja_id      = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     projeto_nome = Column(Text,     nullable=True, index=True)
-    cliente_id   = Column(Integer,  ForeignKey("clientes.id"), nullable=True)
+    cliente_id   = Column(Integer,  ForeignKey("clientes.id"), nullable=True, index=True)
     # Central de Comunicação (spec 2026-07-27, Fatia 1): a Conversa deixa de ser só "do projeto".
     # tipo: projeto (a de sempre) | direct (1:1) | grupo (N) | publico (mural da loja, Fatia 2).
     # `titulo` é o nome do grupo. `criado_por_id` = quem abriu. Registros antigos = 'projeto'
@@ -1431,15 +1481,15 @@ class Conversa(Base):
     # tipo: projeto | direct | grupo | mural | forum_loja | forum_orizon (Fatia 4). mural =
     # canal de avisos por loja (gerência posta); forum_loja/forum_orizon = DEBATES (cada conversa
     # é um tópico com título+assunto). forum_orizon é CROSS-LOJA (escopo rede_id).
-    tipo          = Column(String(20), nullable=False, default="projeto")
+    tipo          = Column(String(20), nullable=False, default="projeto", server_default="projeto")
     titulo        = Column(Text,       nullable=True)
-    rede_id       = Column(Integer,    ForeignKey("redes.id"), nullable=True)   # só forum_orizon
-    criado_por_id = Column(Integer,    ForeignKey("usuarios.id"), nullable=True)
+    rede_id       = Column(Integer,    ForeignKey("redes.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_conversas_rede_id"), nullable=True, index=True)   # só forum_orizon
+    criado_por_id = Column(Integer,    ForeignKey("usuarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_conversas_criado_por_id"), nullable=True, index=True)
     # Assunto da conversa (Orizon Chat, Fatia 2): livre (Conversa Livre) | projeto (usa
     # `projeto_nome`) | custom (usa `assunto_id`). Ortogonal ao `tipo` (direct/grupo): categoriza
     # sobre O QUE se fala. Registros antigos = 'livre' (mas os do projeto herdam via projeto_nome).
-    assunto_tipo  = Column(String(12), nullable=False, default="livre")
-    assunto_id    = Column(Integer,    ForeignKey("assuntos.id"), nullable=True)
+    assunto_tipo  = Column(String(12), nullable=False, default="livre", server_default="livre")
+    assunto_id    = Column(Integer,    ForeignKey("assuntos.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_conversas_assunto_id"), nullable=True, index=True)
     # Segmento MANUAL do atendimento (revisão UX 2026-07-31 r3): a triagem INDICA
     # (segmento_sugerido) e a gerência pode tratar/trocar pelo seletor do thread. NULL = derivar
     # do tráfego externo (_atendimento_meta); preenchido = override que vence o derivado.
@@ -1449,11 +1499,11 @@ class Conversa(Base):
     # MANUAL (§6.1, sem regra automática); origem de entrada (§5 — decide a tag de fallback
     # Triagem×Avulsa quando não há segmento); status do ATENDIMENTO (§8 — concluir/reabrir,
     # global à conversa, ≠ do arquivamento pessoal em ConversaParticipante.arquivada).
-    responsavel_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
-    urgente        = Column(Integer,    nullable=False, default=0)
+    responsavel_usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_conversas_responsavel_usuario_id"), nullable=True, index=True)
+    urgente        = Column(Integer,    nullable=False, default=0, server_default="0")
     origem_entrada = Column(String(12), nullable=True)    # triagem | avulsa | NULL (legado/interna)
-    status         = Column(String(12), nullable=False, default="aberta")   # aberta | concluida
-    concluido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    status         = Column(String(12), nullable=False, default="aberta", server_default="aberta")   # aberta | concluida
+    concluido_por_id = Column(Integer,  ForeignKey("usuarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_conversas_concluido_por_id"), nullable=True, index=True)
     concluido_em   = Column(DateTime,   nullable=True)
     conclusao_obs  = Column(Text,       nullable=True)
     criado_em    = Column(DateTime, default=datetime.utcnow)
@@ -1512,8 +1562,8 @@ class ConversaParticipante(Base):
     # Membership da CONVERSA DO PROJETO (Orizon Chat, unificação 2026-07-27): a origem distingue o
     # membro DERIVADO da equipe (auto) do adicionado à mão (manual); `removido` é o tombstone da
     # remoção manual de um auto — o sync respeita ("override vence"): não readiciona.
-    origem        = Column(String(8),  nullable=False, default="manual")   # auto | manual
-    removido      = Column(Integer,    nullable=False, default=0)
+    origem        = Column(String(8),  nullable=False, default="manual", server_default="manual")   # auto | manual
+    removido      = Column(Integer,    nullable=False, default=0, server_default="0")
     adicionado_em = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1586,11 +1636,11 @@ class SegmentoConfig(Base):
     segmento          = Column(String(20), nullable=False)
     ativo             = Column(Integer, nullable=False, default=1)
     rotulo            = Column(Text, nullable=True)
-    template_padrao_id = Column(Integer, ForeignKey("template_mensagem.id"), nullable=True)
+    template_padrao_id = Column(Integer, ForeignKey("template_mensagem.id"), nullable=True, index=True)
     # r4 (2026-07-31): segmento = CANAL DE ENTRADA da triagem, com RESPONSÁVEL (Funcionario —
     # decisão 16: responsabilidade é por funcionário). Linhas com `segmento` fora do catálogo
     # base são segmentos CUSTOM da loja (criados/apagados na tela Segmentos).
-    responsavel_funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    responsavel_funcionario_id = Column(Integer, ForeignKey("funcionarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_segmento_config_responsavel_funcionario_id"), nullable=True, index=True)
     atualizado_em     = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1619,7 +1669,7 @@ class ConversaMensagem(Base):
     autor_usuario_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     # Destinatário DIRIGIDO da mensagem (F2, 2026-07-28): um membro específico. NULL = todos.
     # Marcação VISUAL — todos os membros leem; o render exibe "para <nome>".
-    destinatario_usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    destinatario_usuario_id = Column(Integer, ForeignKey("usuarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_conversa_mensagens_destinatario_usuario_id"), nullable=True, index=True)
     corpo            = Column(Text,     nullable=False)
     canal            = Column(String(20), nullable=False, default="interno")
     # Central de Comunicação (spec 2026-07-27): segmento derivado da FUNÇÃO do autor no envio
@@ -1629,18 +1679,18 @@ class ConversaMensagem(Base):
     # troca de responsabilidade gravando em CicloEtapa.responsavel_funcionario_id (o campo do
     # v12; NADA de estado paralelo). `bloqueador` nesta fatia é SÓ flag — o gate real em
     # pode_avancar() é a Fatia 3. `resolvido_em` fecha o bloqueador (Fatia 3 também).
-    natureza         = Column(String(20), nullable=False, default="interacao")   # interacao | transferencia
+    natureza         = Column(String(20), nullable=False, default="interacao", server_default="interacao")   # interacao | transferencia
     etapa_codigo     = Column(String(10), nullable=True)
-    transferido_para_funcionario_id = Column(Integer, ForeignKey("funcionarios.id"), nullable=True)
+    transferido_para_funcionario_id = Column(Integer, ForeignKey("funcionarios.id", ondelete="SET NULL", onupdate="CASCADE", name="fk_conversa_mensagens_transferido_para_funcionario_id"), nullable=True, index=True)
     # Fatia 5: FK real — o documento tramitado é um CicloDocumento do MESMO projeto
     # (validado no endpoint; a FK segura o vínculo órfão). Só vale em transferência.
-    documento_ref_id = Column(Integer,  ForeignKey("ciclo_documentos.id"), nullable=True)
-    bloqueador       = Column(Integer,  nullable=False, default=0)
+    documento_ref_id = Column(Integer,  ForeignKey("ciclo_documentos.id"), nullable=True, index=True)
+    bloqueador       = Column(Integer,  nullable=False, default=0, server_default="0")
     resolvido_em     = Column(DateTime, nullable=True)
     # Fatia 4 (modo privado, decisão 8): privada=1 → o corpo em claro NUNCA persiste (fica
     # ""), só `corpo_cifrado` (Fernet, chave ORIZON_CHAT_ENC_KEY do ambiente). Metadados
     # continuam visíveis a todos; o texto só decripta p/ quem tem `ver_mensagem_privada`.
-    privada          = Column(Integer,  nullable=False, default=0)
+    privada          = Column(Integer,  nullable=False, default=0, server_default="0")
     corpo_cifrado    = Column(Text,     nullable=True)
     # Evento inline na timeline (spec chat 2026-07-31): mensagem de SISTEMA que o render mostra
     # como faixa, não balão — triagem_vinculo | membro_entrou | membro_saiu | fase_transicao |
@@ -1681,7 +1731,7 @@ class EnvioExterno(Base):
     # RF-08 (2026-08-04): NULLABLE — a pergunta automática de TRIAGEM sai ANTES de existir
     # conversa/mensagem; nesse caso o vínculo é triagem_id.
     mensagem_id       = Column(Integer,  ForeignKey("conversa_mensagens.id"), nullable=True, index=True)
-    triagem_id        = Column(Integer,  ForeignKey("triagem_entradas.id"), nullable=True, index=True)
+    triagem_id        = Column(Integer,  ForeignKey("triagem_entradas.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_envios_externos_triagem_id"), nullable=True, index=True)
     meio              = Column(String(16), nullable=False)   # email | whatsapp
     direcao           = Column(String(10), nullable=False, default="saida")   # saida | entrada
     canal             = Column(String(20), nullable=True)    # segmento comercial|financeiro|...
@@ -1693,9 +1743,11 @@ class EnvioExterno(Base):
     id_externo_ref    = Column(Text,     nullable=True)      # id citado numa resposta (decisão 14)
     # Envio por TEMPLATE aprovado (spec 2026-08-04 §11 — ex-F3 de 28/07): aponta o template usado
     # no payload "type":"template"; NULL = texto livre/documento.
-    template_id       = Column(Integer,  ForeignKey("template_mensagem.id"), nullable=True)
+    template_id       = Column(Integer,  ForeignKey("template_mensagem.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_envios_externos_template_id"), nullable=True, index=True)
     erro              = Column(Text,     nullable=True)
     criado_em         = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_envios_externos_destinatario", "destinatario_tipo", "destinatario_id"),)
 
 
 class TriagemEntrada(Base):
@@ -1720,7 +1772,7 @@ class TriagemEntrada(Base):
     candidatos_json  = Column(Text,     nullable=True)     # [conversa_id, …] quando ambíguo
     segmento_sugerido = Column(String(20), nullable=True)  # resposta do menu de triagem automática
     nome_whatsapp    = Column(String(150), nullable=True)  # nome de perfil da Meta (fallback do lead)
-    conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=True)
+    conversa_id      = Column(Integer,  ForeignKey("conversas.id"), nullable=True, index=True)
     resolvido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     resolvido_em     = Column(DateTime, nullable=True)
     criado_em        = Column(DateTime, default=datetime.utcnow)
@@ -1762,10 +1814,10 @@ class AcordoFabrica(Base):
     # Revisão "Acordos Financeiros" (2026-07-21, feedback de teste): contraparte generalizada —
     # fábrica, EMPRESA (do grupo ou não; cada loja registra só o SEU lado, sem acerto automático)
     # ou BANCO (empréstimos). O nome é livre (ex.: "Verano", "Banco Itaú").
-    contraparte_tipo = Column(String(10), nullable=False, default="fabrica")  # fabrica|empresa|banco
+    contraparte_tipo = Column(String(10), nullable=False, default="fabrica", server_default="fabrica")  # fabrica|empresa|banco
     contraparte_nome = Column(Text,     nullable=True)
-    contraparte_id   = Column(Integer,  ForeignKey("contraparte_financeira.id"), nullable=True)
-    loja_titular_id  = Column(Integer,  ForeignKey("lojas.id"), nullable=False)
+    contraparte_id   = Column(Integer,  ForeignKey("contraparte_financeira.id", ondelete="RESTRICT", onupdate="CASCADE", name="fk_acordo_fabrica_contraparte_id"), nullable=True, index=True)
+    loja_titular_id  = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)
     conta_saldo      = Column(String(10), nullable=False)   # 1.1.08|2.1.08|1.1.09|2.1.09|2.1.10
     valor_implantado = Column(Float,    nullable=False, default=0.0)
     status           = Column(String(12), nullable=False, default="ativo")   # ativo|esgotado|encerrado
@@ -1783,8 +1835,8 @@ class AjusteFabrica(Base):
     __tablename__ = "ajuste_fabrica"
 
     id            = Column(Integer,  primary_key=True, autoincrement=True)
-    acordo_id     = Column(Integer,  ForeignKey("acordo_fabrica.id"), nullable=True)
-    loja_id       = Column(Integer,  ForeignKey("lojas.id"), nullable=False)   # quem consome
+    acordo_id     = Column(Integer,  ForeignKey("acordo_fabrica.id"), nullable=True, index=True)
+    loja_id       = Column(Integer,  ForeignKey("lojas.id"), nullable=False, index=True)   # quem consome
     descricao     = Column(Text,     nullable=True)
     tipo          = Column(String(10), nullable=False)    # desconto | acrescimo
     natureza      = Column(String(10), nullable=False, default="recorrente")   # recorrente|pontual
@@ -1824,7 +1876,7 @@ class AjusteFabricaAplicacao(Base):
     __tablename__ = "ajuste_fabrica_aplicacao"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
-    ajuste_id      = Column(Integer,  ForeignKey("ajuste_fabrica.id"), nullable=False)
+    ajuste_id      = Column(Integer,  ForeignKey("ajuste_fabrica.id"), nullable=False, index=True)
     projeto_nome   = Column(Text,     nullable=False, index=True)
     base_calculo   = Column(Float,    nullable=True)
     pct_snapshot   = Column(Float,    nullable=True)
@@ -1860,7 +1912,7 @@ class CicloRevisao(Base):
     etapa_codigo     = Column(Text,     nullable=False)
     aberta_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     aberta_em        = Column(DateTime, nullable=False, default=datetime.utcnow)
-    relatorio_doc_id = Column(Integer,  ForeignKey("ciclo_documentos.id"), nullable=True)
+    relatorio_doc_id = Column(Integer,  ForeignKey("ciclo_documentos.id"), nullable=True, index=True)
     motivo           = Column(Text,     nullable=True)
 
     aberta_por = relationship("Usuario", foreign_keys=[aberta_por_id])
@@ -1970,7 +2022,7 @@ class Emitente(Base):
     focus_token_prod_enc = Column(Text, nullable=True)
     ambiente_ativo = Column(Text, default="homologacao")
     placeholders_json = Column(Text, nullable=True)
-    rede_id = Column(Integer, ForeignKey("redes.id"), nullable=True)
+    rede_id = Column(Integer, ForeignKey("redes.id"), nullable=True, index=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1985,7 +2037,7 @@ class PerfilEmissao(Base):
     owner_tipo = Column(Text, nullable=False)   # "loja" | "rede"
     owner_id = Column(Integer, nullable=False)
     tipo_doc = Column(Text, nullable=False)      # "produto" | "servico"
-    emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=False)
+    emitente_id = Column(Integer, ForeignKey("emitente.id"), nullable=False, index=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
 
 
@@ -1999,17 +2051,17 @@ class DocumentoFiscal(Base):
     projeto_nome   = Column(Text, nullable=True)
     tipo_documento = Column(Text, default="produto")   # "produto" | "servico"
     etapa_codigo   = Column(Text, default="15")
-    loja_id        = Column(Integer, ForeignKey("lojas.id"), nullable=True)
-    emitente_id    = Column(Integer, ForeignKey("emitente.id"), nullable=True)
+    loja_id        = Column(Integer, ForeignKey("lojas.id"), nullable=True, index=True)
+    emitente_id    = Column(Integer, ForeignKey("emitente.id"), nullable=True, index=True)
     status         = Column(Text, nullable=True)
     chave_nfe      = Column(Text, nullable=True)
     numero         = Column(Text, nullable=True)
     serie          = Column(Text, nullable=True)
     mensagem_sefaz = Column(Text, nullable=True)
     erros_json     = Column(Text, nullable=True)
-    xml_doc_id     = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True)
-    danfe_doc_id   = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True)
-    fabrica_doc_id = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True)
+    xml_doc_id     = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True, index=True)
+    danfe_doc_id   = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True, index=True)
+    fabrica_doc_id = Column(Integer, ForeignKey("ciclo_documentos.id"), nullable=True, index=True)
     emitido_em     = Column(DateTime, default=datetime.utcnow)
     atualizado_em  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -2153,7 +2205,13 @@ def backfill_funcoes_todas_lojas(db):
 def _migrar_colunas_pg():
     """Postgres: ADD/DROP COLUMN idempotentes — `create_all()` não altera tabelas já
     existentes, então toda coluna nova do modelo precisa de uma linha aqui para chegar
-    aos bancos já povoados (local, VPS A/B, produção)."""
+    aos bancos já povoados (local, VPS A/B, produção).
+
+    CONGELADA em 27/08/2026 (revisão estrutural do banco, Alembic adotado — ver
+    docs/db/ESTADO_REVISAO.md e CLAUDE.md §"Banco de dados — regras permanentes", R1).
+    Mantém só o que já está aqui, para os bancos que ainda não rodaram as migrations.
+    NENHUM ADD COLUMN novo entra nesta função — schema novo é sempre uma revisão em
+    migrations/versions/, nunca DDL solto fora de migration."""
     stmts = [
         "ALTER TABLE lojas ADD COLUMN IF NOT EXISTS responsavel VARCHAR(120)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_provisoria INTEGER DEFAULT 0",
@@ -2289,13 +2347,13 @@ def _migrar_colunas_pg():
         # Orizon Chat/Meta Fatia 6: config de triagem (RF-08) — tabela nova via create_all (marcador).
         # Orizon Chat/Meta: config de segmentos (RF-02) — tabela nova via create_all (marcador).
         # Orizon Chat/Meta: número conectado por loja (RF-01) — tabela nova via create_all (marcador).
-        # Chat Fatia 5: FK do documento tramitado — bases que criaram a coluna na Fatia 2
-        # (sem constraint) ganham a FK; DO-block porque ADD CONSTRAINT não tem IF NOT EXISTS.
-        """DO $$ BEGIN
-             ALTER TABLE conversa_mensagens
-               ADD CONSTRAINT fk_convmsg_documento_ref
-               FOREIGN KEY (documento_ref_id) REFERENCES ciclo_documentos(id);
-           EXCEPTION WHEN duplicate_object THEN NULL; END $$""",
+        # Chat Fatia 5 (FK do documento tramitado, conversa_mensagens.documento_ref_id): a entrada
+        # que criava fk_convmsg_documento_ref saiu daqui em 27/08/2026 — virou constraint órfã
+        # (nome divergente do modelo, achada na comparação constraint-a-constraint da baseline
+        # Alembic) e a migration 0008 já a renomeou pro nome padrão. Manter a entrada aqui
+        # recriaria a FK antiga com o nome velho a cada boot (o EXCEPTION duplicate_object só
+        # pega nome igual, não estrutura igual — resultado seria uma segunda FK duplicada na
+        # mesma coluna). Ver CLAUDE.md.
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_codigo",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_status",
         "ALTER TABLE clientes DROP COLUMN IF EXISTS omie_sync_erro",
@@ -2398,7 +2456,10 @@ def _migrar_colunas_pg():
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_transf_dest_func ON ciclo_etapas (transferencia_destino_funcionario_id) WHERE transferencia_status = 'pendente'",
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_transf_dest_terc ON ciclo_etapas (transferencia_destino_terceiro_id) WHERE transferencia_status = 'pendente'",
         "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_funcionario ON ciclo_etapas (responsavel_funcionario_id)",
-        "CREATE INDEX IF NOT EXISTS ix_ciclo_etapas_responsavel_terceiro ON ciclo_etapas (responsavel_terceiro_id)",
+        # A entrada que criava ix_ciclo_etapas_responsavel_terceiro saiu daqui em 27/08/2026 —
+        # duplicata de ix_ciclo_etapas_responsavel_terceiro_id (mesma coluna, nome sem o sufixo
+        # "_id", confirmado via pg_index). A migration 0009 dropa a duplicata nos bancos que já
+        # a tinham; manter a entrada aqui a recriaria a cada boot. Ver CLAUDE.md.
         # Frente 2 (spec 2026-08-25, Centro de Custo/Natureza): snapshot dos relatórios no fechamento.
         "ALTER TABLE periodo_contabil ADD COLUMN IF NOT EXISTS classificacao_snapshot_json TEXT",
     ]

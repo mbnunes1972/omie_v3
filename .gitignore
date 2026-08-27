@@ -86,3 +86,5 @@ docs/db/backup/
 dia0_resultado.txt
 __pycache__/
 *.pyc
+
+.playwright-mcp/

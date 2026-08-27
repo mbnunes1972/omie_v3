@@ -11,58 +11,16 @@ Roda inteiramente contra `orizon_baseline_teste` (banco de RASCUNHO dedicado, de
 do DATABASE_URL do .env) — NUNCA o banco principal (`orizon`) nem o `orizon_test` usado
 pelo resto da suite (evita concorrencia com os outros testes, que podem rodar em
 paralelo e dependem do orizon_test ficar disponivel o tempo todo).
+
+A construcao do schema via Alembic (reset + upgrade, cobrindo tanto o mundo pos-B3
+quanto o intermediario de hoje) vive em tests/_schema_util.py — sem nenhum id de
+revisao escrito a mao aqui nem la'. Ver a regra em CLAUDE.md.
 """
 
-import os
-import re
-import subprocess
-
 import pytest
-from sqlalchemy import create_engine, inspect, text as sa_text
+from sqlalchemy import create_engine, inspect
 
-_REPO_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
-
-# PONTE TEMPORARIA, ate' a B3 substituir 0001-000N pela baseline real: hoje 0001 e' uma
-# baseline VAZIA (pass/pass) e 0002+ sao ALTERs que pressupoem tabelas ja existentes —
-# `alembic upgrade head` a partir de um banco vazio FALHA na 0002 ("relation does not
-# exist"), confirmado empiricamente ao escrever este teste. Isso e' esperado: e' o
-# problema original que motivou a B1/B2/B3 inteira, nao um bug deste teste. Ate' a B3
-# rodar, este teste stampa ate' a ultima revisao real (a mais recente que NAO e' o
-# candidato a baseline) e so' entao roda upgrade head — isolando so' o passo do
-# candidato (que faz o CREATE completo do zero), equivalente a rodar `alembic upgrade
-# head` puro depois que a B3 substituir 0001-000N. Atualizar este valor toda vez que uma
-# migration real nova entrar ANTES da B3 acontecer (ficou desatualizado uma vez, na
-# 0008->0009 — o candidato tinha que ser regerado sobre a 0009). REMOVER o stamp assim
-# que a B3 acontecer (upgrade head direto passa a funcionar sozinho).
-_STAMP_PONTE_PRE_B3 = "0009"
-
-
-def _baseline_urls():
-    """(url_alembic, url_psycopg2) de orizon_baseline_teste — nunca outro banco.
-    Deriva do DATABASE_URL do .env trocando so' o nome do banco, igual ao
-    _test_database_url() do conftest.py, mas apontando pro rascunho dedicado."""
-    env_path = os.path.join(_REPO_ROOT, ".env")
-    if not os.path.exists(env_path):
-        pytest.skip("Sem .env — nao da pra derivar orizon_baseline_teste.")
-    with open(env_path, encoding="utf-8") as f:
-        m = re.search(r"DATABASE_URL\s*=\s*['\"]?(postgresql[^'\"\s]+)", f.read())
-    if not m:
-        pytest.skip("Sem DATABASE_URL no .env — nao da pra derivar orizon_baseline_teste.")
-    alembic_url = m.group(1).rsplit("/", 1)[0] + "/orizon_baseline_teste"
-    return alembic_url, alembic_url.replace("+psycopg2", "")
-
-
-def _reset_schema(psycopg_url):
-    eng = create_engine(psycopg_url)
-    with eng.begin() as conn:
-        conn.execute(sa_text(
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-            "WHERE datname = current_database() AND pid <> pg_backend_pid() "
-            "AND usename = current_user"))
-    with eng.begin() as conn:
-        conn.execute(sa_text("DROP SCHEMA public CASCADE"))
-        conn.execute(sa_text("CREATE SCHEMA public"))
-    eng.dispose()
+from _schema_util import baseline_urls, construir_schema_do_zero, _reset_schema
 
 
 def _snapshot(psycopg_url):
@@ -104,28 +62,13 @@ def _snapshot(psycopg_url):
 
 
 def test_init_db_produz_schema_identico_a_alembic_upgrade_head():
-    alembic_url, psycopg_url = _baseline_urls()
+    try:
+        alembic_url, psycopg_url = baseline_urls()
+    except RuntimeError as e:
+        pytest.skip(str(e))
 
-    # --- lado A: `alembic upgrade head`, do zero
-    _reset_schema(psycopg_url)
-    proc = subprocess.run(
-        ["alembic", "stamp", _STAMP_PONTE_PRE_B3],
-        cwd=_REPO_ROOT,
-        env={**os.environ, "DATABASE_URL": alembic_url},
-        capture_output=True, text=True,
-    )
-    assert proc.returncode == 0, (
-        f"alembic stamp {_STAMP_PONTE_PRE_B3} falhou em orizon_baseline_teste:\n{proc.stdout}\n{proc.stderr}"
-    )
-    proc = subprocess.run(
-        ["alembic", "upgrade", "head"],
-        cwd=_REPO_ROOT,
-        env={**os.environ, "DATABASE_URL": alembic_url},
-        capture_output=True, text=True,
-    )
-    assert proc.returncode == 0, (
-        f"alembic upgrade head falhou em orizon_baseline_teste:\n{proc.stdout}\n{proc.stderr}"
-    )
+    # --- lado A: Alembic, do zero
+    construir_schema_do_zero(alembic_url, psycopg_url)
     retrato_alembic = _snapshot(psycopg_url)
 
     # --- lado B: `database.init_db()`, do zero, no MESMO banco
@@ -144,7 +87,7 @@ def test_init_db_produz_schema_identico_a_alembic_upgrade_head():
         database.ENGINE, database.Session = orig
 
     assert retrato_alembic["tabelas"] == retrato_initdb["tabelas"], (
-        "Tabelas divergem entre `alembic upgrade head` e `init_db()`:\n"
+        "Tabelas divergem entre Alembic e `init_db()`:\n"
         f"so' no alembic: {sorted(set(retrato_alembic['tabelas']) - set(retrato_initdb['tabelas']))}\n"
         f"so' no init_db: {sorted(set(retrato_initdb['tabelas']) - set(retrato_alembic['tabelas']))}"
     )
@@ -155,10 +98,10 @@ def test_init_db_produz_schema_identico_a_alembic_upgrade_head():
             a, b = retrato_alembic[dim][t], retrato_initdb[dim][t]
             if a != b:
                 divergencias.append(
-                    f"{dim}['{t}']:\n  alembic upgrade head: {a}\n  init_db():            {b}"
+                    f"{dim}['{t}']:\n  alembic:  {a}\n  init_db(): {b}"
                 )
 
     assert not divergencias, (
-        "Schema de `alembic upgrade head` diverge de `init_db()` "
+        "Schema do Alembic diverge de `init_db()` "
         "(algo fora das migrations mexeu no schema):\n\n" + "\n\n".join(divergencias)
     )

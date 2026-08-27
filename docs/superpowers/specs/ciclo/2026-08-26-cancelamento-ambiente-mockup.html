@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cancelamento de Ambiente</title>
+<!--
+  ============================================================================
+  MOCKUP — Cancelamento de Ambiente pós-contrato
+  Orizon Manager | Dalmóbile
+  Data: 2026-08-26
+  Spec companheira: docs/superpowers/specs/ciclo/2026-08-26-cancelamento-ambiente-pos-contrato-design.md
+  ============================================================================
+  Protótipo estático (HTML/CSS/JS puro, sem build, sem backend). Dados fake.
+  Serve para fechar as 4 decisões em aberto do §7 da spec ANTES de implementar.
+  Tokens inlinados a partir de design-system/orizon-tokens.css (v1.7).
+
+  REV 2 (26/08, achado do Marcelo): retirado o botao "Cancelamento" do cabecalho do
+  fichario — ele ja tem 8 botoes (incl. Auditoria Contabil e Mapa de Atribuicoes, que
+  faltavam na rev 1) e cancelamento e ato raro.
+
+  REV 3 (26/08, verificado ao vivo em localhost com o projeto Teste_0820): a rev 2 tambem
+  nao serve. No projeto parado na Solicitacao de medicao — o caso mais comum de
+  cancelamento — NAO EXISTE bloco contextual na tela: a etapa 9 nao tem aba
+  (ETAPAS_PRINCIPAIS pula 8 e 9) e a aba 6/Medicao esta "nao iniciada", cujo render e um
+  placeholder que nao chama _fichaCorpoEtapa. A casa passa a ser a VISAO GERAL: acao e
+  historico na mesma secao, superficie que sempre renderiza. Linhas reconferidas em
+  b321e06.
+  ============================================================================
+-->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --bg:#FAF8F6; --surface:#FFFFFF; --surface-2:#F5F1EC;
+  --border:#E5DFD8; --border-strong:#D3CAC0; --field-border:#B8ADA0;
+  --text:#2B2621; --text-2:#6B6259; --text-3:#948A7F;
+  --accent:#8C5230; --accent-soft:rgba(140,82,48,.12); --accent-line:#6E3F22; --accent-vivid:#B8823D;
+  --btn-primary-bg:#5C5650; --btn-primary-text:#FFFFFF; --btn-primary-border:transparent;
+  --btn-primary-shadow:0 2px 8px rgba(0,0,0,.12);
+  --ok:#1E7F4F; --ok-soft:#E3F3EA; --ok-line:#9CC7AD;
+  --warn:#8F6E2A; --warn-soft:#F7EFDC; --warn-line:#D8C08B;
+  --err:#9C4147; --err-soft:#F7E9EA; --err-line:#D8A6A9;
+  --info:#21618F; --info-soft:#E4EFF7; --info-line:#A9C3D8;
+  --cancel:#6B4423; --cancel-on:#FFFFFF;
+  --status-ok:#16A34A; --status-warn:#EAB308; --status-err:#DC2626;
+  --shadow:0 1px 3px rgba(0,0,0,.08); --shadow-md:0 4px 12px rgba(0,0,0,.10);
+  --sidebar-bg:#141312; --sidebar-text:#B5B2AD; --sidebar-text-active:#FFFFFF;
+  --sidebar-accent:#C9976D; --sidebar-border:rgba(255,255,255,.07);
+}
+[data-theme="dark"]{
+  --bg:#121111; --surface:#1A1918; --surface-2:#211F1D;
+  --border:#2B2926; --border-strong:#3B3833; --field-border:#4E4842;
+  --text:#EAE8E5; --text-2:#A9A6A2; --text-3:#78746F;
+  --accent:#A56B45; --accent-soft:rgba(83,42,20,.22); --accent-line:#532A14; --accent-vivid:#C9976D;
+  --btn-primary-bg:#1C1613; --btn-primary-text:#E7DCD0; --btn-primary-border:1px solid #532A14;
+  --btn-primary-shadow:0 6px 16px rgba(0,0,0,.65);
+  --ok:#86B394; --ok-soft:rgba(134,179,148,.12); --ok-line:#3E5C49;
+  --warn:#C2A264; --warn-soft:rgba(194,162,100,.12); --warn-line:#6B5528;
+  --err:#C08183; --err-soft:rgba(107,49,56,.20); --err-line:#6B3138;
+  --info:#8BA6BD; --info-soft:rgba(139,166,189,.12); --info-line:#3C5468;
+  --cancel:#8B5E3C; --cancel-on:#FFFFFF;
+  --status-ok:#4ADE80; --status-warn:#FACC15; --status-err:#F87171;
+  --shadow:0 1px 3px rgba(0,0,0,.35); --shadow-md:0 6px 16px rgba(0,0,0,.45);
+  --sidebar-bg:#0D0C0B; --sidebar-text:#A5A29D; --sidebar-border:rgba(255,255,255,.06);
+}
+:root{
+  --muted:var(--text-2); --card:var(--surface); --border2:var(--border-strong);
+  --font-display:"Montserrat",-apple-system,"Segoe UI",sans-serif;
+  --font-body:"Inter",-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,monospace;
+  --fs-h2:1.125rem; --fs-body:.875rem; --fs-sm:.8125rem; --fs-xs:.6875rem;
+  --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+  --radius-sm:6px; --radius:10px; --radius-lg:14px;
+  --control-h-sm:30px; --control-h:38px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:var(--fs-body);
+     line-height:1.5;-webkit-font-smoothing:antialiased}
+
+/* ── topo do mockup ───────────────────────────────────────────── */
+.mk-top{background:var(--sidebar-bg);color:var(--sidebar-text-active);padding:14px 26px;
+  display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:sticky;top:0;z-index:60;
+  border-bottom:1px solid var(--sidebar-border)}
+.mk-marca{font-family:var(--font-display);font-weight:800;font-size:17px;letter-spacing:.01em}
+.mk-marca span{color:var(--sidebar-accent)}
+.mk-sub{font-size:11px;color:var(--sidebar-text);letter-spacing:.3px}
+.mk-tabs{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap}
+.mk-tab{font-size:12px;padding:6px 13px;border-radius:999px;border:1px solid var(--sidebar-border);
+  background:transparent;color:var(--sidebar-text);cursor:pointer;font-family:var(--font-body)}
+.mk-tab.on{background:rgba(165,107,69,.20);color:#fff;border-color:var(--sidebar-accent)}
+.mk-tema{background:transparent;border:1px solid var(--sidebar-border);color:var(--sidebar-text);
+  border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:14px}
+
+.wrap{max-width:1180px;margin:0 auto;padding:26px 22px 70px}
+.mk-legenda{background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:var(--radius);padding:12px 16px;margin-bottom:20px;font-size:var(--fs-sm);color:var(--text-2)}
+.mk-legenda strong{color:var(--text)}
+h2.sec{font-family:var(--font-display);font-size:var(--fs-h2);font-weight:800;margin:26px 0 10px}
+h2.sec:first-child{margin-top:0}
+.painel{display:none}
+.painel.on{display:block}
+
+/* ── componentes espelhando static/index.html ─────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 18px;height:36px;
+  border-radius:8px;font-family:var(--font-body);font-weight:500;font-size:13px;cursor:pointer;
+  border:none;white-space:nowrap;transition:all .15s}
+.btn-ghost{background:var(--surface-2);color:var(--muted);border:1px solid var(--border);box-shadow:var(--shadow)}
+.btn-ghost:hover{color:var(--accent);border-color:var(--accent)}
+.btn-sm{height:28px;padding:0 12px;font-size:11px;border-radius:6px}
+.btn-ciclo{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);color:var(--text-2);
+  border:1px solid var(--border-strong);border-radius:8px;padding:0 14px;height:var(--control-h-sm);
+  font-size:12px;font-family:var(--font-body);cursor:pointer}
+.btn-ciclo:hover{color:var(--accent);border-color:var(--accent)}
+.btn-cancel{background:var(--cancel);color:var(--cancel-on);border-color:var(--cancel);font-weight:700}
+.btn-cancel:hover{color:var(--cancel-on);filter:brightness(1.12)}
+
+.ficha-cab{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;
+  padding-bottom:10px;border-bottom:1px solid var(--border)}
+.ficha-badge{font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.3px}
+.st-andamento{background:var(--info-soft);color:var(--info);border:1px solid var(--info-line)}
+.st-concluida{background:var(--ok-soft);color:var(--ok);border:1px solid var(--ok-line)}
+.ficha-wrap{display:flex;gap:14px;align-items:stretch}
+.ficha-lombada{width:252px;min-width:210px;display:flex;flex-direction:column;gap:4px}
+.ficha-tab{display:flex;align-items:center;gap:9px;padding:8px 11px;border:1px solid var(--border);
+  border-left:4px solid var(--border-strong);border-radius:8px;background:var(--card)}
+.ficha-tab.ativa{background:var(--surface-2);border-color:var(--accent);box-shadow:var(--shadow)}
+.ficha-tab.ok{border-left-color:var(--ok)}
+.ficha-tab.and{border-left-color:var(--info)}
+.ficha-cod{font-size:.72rem;color:var(--muted);min-width:20px;text-align:right}
+.ficha-nome{flex:1;font-size:.83rem;font-weight:500;color:var(--text);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.ficha-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.dot-ok{background:var(--ok)} .dot-and{background:var(--info-soft);border:1px solid var(--info-line)}
+.dot-off{background:var(--surface-2);border:1px solid var(--border-strong)}
+.ficha-conteudo{flex:1;min-width:0;border:1px solid var(--border);border-radius:10px;
+  background:var(--card);padding:16px 18px}
+
+.cabecalho-projeto{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.cabecalho-projeto h3{margin:0;font-family:var(--font-display);font-weight:800;font-size:1.05rem}
+.subtitulo{font-size:12px;color:var(--muted);margin:-2px 0 12px}
+
+/* modal */
+.modal-mk{background:var(--card);border:1px solid var(--border2);border-radius:14px;padding:24px;
+  max-width:720px;box-shadow:var(--shadow-md)}
+.modal-mk .mtitulo{font-family:var(--font-display);font-weight:900;font-size:16px}
+.modal-mk .mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.modal-mk .mx{color:var(--muted);font-size:20px;line-height:1;cursor:pointer}
+.mnota{font-size:11px;color:var(--muted);margin-bottom:14px}
+.mnota strong{color:var(--text)}
+.bloco{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px}
+.bloco-tit{font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px}
+.bloco-tit .ctx{color:var(--muted);font-weight:400}
+.lista{max-height:186px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;
+  padding:6px 12px;display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.lista label{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);
+  cursor:pointer;padding:4px 0}
+.lista label .val{margin-left:auto;font-family:var(--font-mono);font-size:11.5px;color:var(--text-2)}
+.lista label.off{opacity:.5;cursor:not-allowed}
+.tag{font-size:9.5px;padding:1px 6px;border-radius:999px;border:1px solid;letter-spacing:.2px}
+.tag-ret{color:var(--warn);border-color:var(--warn-line);background:var(--warn-soft)}
+.tag-liq{color:var(--ok);border-color:var(--ok-line);background:var(--ok-soft)}
+.inp{height:var(--control-h-sm);padding:0 10px;background:var(--surface);border:1px solid var(--field-border);
+  border-radius:var(--radius-sm);color:var(--text);font-size:12px;font-family:var(--font-body);width:100%}
+select.inp{cursor:pointer}
+.lbl{font-size:var(--fs-xs);color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;
+  display:block;margin-bottom:3px}
+.linha{display:grid;grid-template-columns:210px 1fr;gap:8px;margin-bottom:10px}
+.radios{display:flex;flex-direction:column;gap:5px;font-size:12px}
+.radios label{display:flex;align-items:flex-start;gap:8px;cursor:pointer}
+.radios .hint{color:var(--text-3);font-size:11px}
+.resumo{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  padding:10px 14px;margin-bottom:12px;font-size:12px}
+.resumo .lin{display:flex;justify-content:space-between;padding:2px 0}
+.resumo .lin.total{border-top:1px solid var(--border-strong);margin-top:5px;padding-top:6px;font-weight:700}
+.resumo .num{font-family:var(--font-mono)}
+.aviso{border-radius:8px;padding:10px 14px;font-size:12px;margin-bottom:12px;border:1px solid}
+.aviso-warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn)}
+.aviso-err{background:var(--err-soft);border-color:var(--err-line);color:var(--err)}
+.aviso-info{background:var(--info-soft);border-color:var(--info-line);color:var(--info)}
+.acoes{display:flex;justify-content:flex-end;gap:10px;align-items:center}
+table.tbl{width:100%;border-collapse:collapse;font-size:12px}
+table.tbl th{text-align:left;font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-3);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--border-strong)}
+table.tbl td{padding:7px 10px;border-bottom:1px solid var(--border)}
+.table-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+
+/* mapa de navegação */
+.mapa{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px}
+.cartao{border:1px solid var(--border);border-radius:var(--radius);background:var(--card);padding:16px 18px;
+  box-shadow:var(--shadow)}
+.cartao h4{font-family:var(--font-display);font-size:.95rem;font-weight:700;margin-bottom:6px}
+.cartao .eyebrow{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
+.cartao p{font-size:var(--fs-sm);color:var(--text-2);margin-bottom:6px}
+.cartao code{font-family:var(--font-mono);font-size:11px;background:var(--surface-2);
+  padding:1px 5px;border-radius:4px;color:var(--accent)}
+.cartao.destaque{border-color:var(--accent);border-left:3px solid var(--accent)}
+.dec{border:1px solid var(--border);border-left:3px solid var(--cancel);border-radius:var(--radius);
+  background:var(--card);padding:16px 18px;margin-bottom:14px}
+.dec .q{font-size:var(--fs-sm);color:var(--text-2);margin-bottom:8px}
+.dec h4{font-family:var(--font-display);font-size:.95rem;font-weight:700;margin-bottom:4px}
+.dec .r{font-size:var(--fs-sm);margin-bottom:6px}
+.dec .r b{color:var(--accent)}
+.dec .prova{font-size:11.5px;color:var(--text-3);border-top:1px dashed var(--border);padding-top:7px;margin-top:8px}
+.dec .prova code{font-family:var(--font-mono);font-size:10.5px;color:var(--text-2)}
+ul.lis{margin:0 0 8px 18px;font-size:var(--fs-sm);color:var(--text-2)}
+ul.lis li{margin-bottom:4px}
+.fluxo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin:10px 0 4px}
+.fluxo .no{border:1px solid var(--border-strong);border-radius:999px;padding:4px 12px;background:var(--surface-2)}
+.fluxo .no.hot{border-color:var(--cancel);color:var(--cancel);font-weight:700}
+.fluxo .seta{color:var(--text-3)}
+</style>
+</head>
+<body>
+
+<div class="mk-top">
+  <div>
+    <div class="mk-marca">Orizon<span>Manager</span></div>
+    <div class="mk-sub">MOCKUP · Cancelamento de ambiente pós-contrato · rev 3 · 2026-08-26</div>
+  </div>
+  <div class="mk-tabs">
+    <button class="mk-tab on" data-p="p1">1 · Navegação hoje</button>
+    <button class="mk-tab" data-p="p2">2 · Onde entra (rev 3)</button>
+    <button class="mk-tab" data-p="p3">3 · Modal (até a 11)</button>
+    <button class="mk-tab" data-p="p4">4 · Modal (produção iniciada)</button>
+    <button class="mk-tab" data-p="p5">5 · Depois da NF-e + registro</button>
+    <button class="mk-tab" data-p="p6">6 · Decisões §7</button>
+  </div>
+  <button class="mk-tema" id="btn-tema" title="Alternar tema">☾</button>
+</div>
+
+<div class="wrap">
+
+<!-- ═══════════════ 1 · NAVEGAÇÃO HOJE ═══════════════ -->
+<div class="painel on" id="p1">
+  <div class="mk-legenda">
+    <strong>Estudo da navegação atual</strong> — levantado direto de <code>static/index.html</code>,
+    <code>main.py</code> e <code>mod_contabil.py</code> (linhas citadas). Nenhuma tela nova foi
+    inventada aqui: tudo abaixo já existe e roda hoje.
+  </div>
+
+  <h2 class="sec">Os quatro pontos de "desfazer" que já existem</h2>
+  <div class="mapa">
+    <div class="cartao destaque">
+      <div class="eyebrow">precedente estrutural</div>
+      <h4>Retenção de ambiente</h4>
+      <p>Já resolve exatamente o problema de navegação do cancelamento — e resolve em
+      <strong>duas superfícies</strong>.</p>
+      <ul class="lis">
+        <li><b>Global:</b> botão no cabeçalho do fichário, sempre visível — <code>19426</code></li>
+        <li><b>Contextual:</b> bloco dentro da etapa — <code>19636</code>, só em 9, 10, 11 e 17</li>
+        <li>Os dois chamam o mesmo <code>retidoAbrir(nomeSafe, etapaCtx)</code> — <code>20243</code></li>
+        <li>Lista de checkbox por ambiente com scroll — <code>20266</code></li>
+        <li>Botão muda por perfil: gerência efetiva, medidor só sinaliza — <code>20281</code></li>
+      </ul>
+    </div>
+    <div class="cartao">
+      <div class="eyebrow">precedente de linguagem visual</div>
+      <h4>Cancelar contrato</h4>
+      <p>Cancelamento <em>total</em>. Vive em dois lugares e já usa o token <code>--cancel</code>
+      (marrom, "sério, distinto do coral de danger").</p>
+      <ul class="lis">
+        <li>Card do Contrato (etapa 7), enquanto não assinado — <code>23372</code></li>
+        <li>Card da AF1 (etapa 8) — <code>20584</code></li>
+        <li>Exige <code>pedirCredenciaisGerente</code>: login + senha redigitados — <code>22286</code></li>
+        <li>Modal de desfecho com 3 saídas — <code>_escolherDesfechoCancelamento</code>, <code>22258</code></li>
+        <li>Backend bloqueia após a NF-e (etapa 15) — <code>main.py:11434</code></li>
+      </ul>
+    </div>
+    <div class="cartao">
+      <div class="eyebrow">o motor que falta ser usado</div>
+      <h4>Devolução parcial</h4>
+      <p><code>devolver_venda(db, …, fracao, …)</code> — <code>mod_contabil.py:2006</code> — reverte
+      <strong>proporcionalmente</strong> receita diferida, impostos e cada provisão com ativo diferido.
+      Idempotente por <code>ref_base</code>.</p>
+      <div class="aviso aviso-err" style="margin:8px 0 0">
+        <strong>Achado:</strong> o endpoint <code>POST /api/orcamentos/&lt;id&gt;/devolucao</code> existe
+        (<code>main.py:11359</code>) e a função de tela <code>devolucaoRegistrar()</code> existe
+        (<code>index.html:22238</code>) — mas <b>nenhuma tela renderiza o campo <code>#dev-pct</code></b>
+        que ela lê. É código órfão: o único caminho de estorno parcial do sistema está hoje inalcançável
+        pela UI.
+      </div>
+    </div>
+    <div class="cartao">
+      <div class="eyebrow">precedente de valor</div>
+      <h4>Renegociação de ambientes (11e)</h4>
+      <p>Complemento de valor: comparação de PE, <code>Negociar Complemento</code> e
+      <strong>Termo Aditivo</strong> assinável (loja + cliente) — <code>21325</code> / <code>21413</code>.</p>
+      <p>É o irmão <em>de sinal oposto</em> do cancelamento: mesma mecânica documental, valor para cima
+      em vez de para baixo.</p>
+    </div>
+  </div>
+
+  <h2 class="sec">A trava de hoje</h2>
+  <div class="cartao">
+    <div class="fluxo">
+      <span class="no">POST /orcamentos/&lt;oid&gt;/ambientes/&lt;pid&gt;/remover</span>
+      <span class="seta">→</span>
+      <span class="no hot">if _contrato_assinado(…) → 403</span>
+    </div>
+    <p style="font-size:var(--fs-sm);color:var(--text-2);margin-top:8px">
+      <code>main.py:12169</code> — "Contrato assinado — alterações não permitidas." A remoção existente
+      é do <em>mundo do orçamento</em>: apaga o vínculo <code>OrcamentoAmbiente</code>, zera a forma de
+      pagamento e roda o motor de novo. Depois do contrato isso não pode acontecer — o valor já virou
+      provisão no razão, parcelas e comissão. Por isso cancelar depois do contrato não é "remover com a
+      trava desligada": é <strong>um evento novo</strong>, mais próximo de devolução parcial que de edição.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════ 2 · ONDE ENTRA ═══════════════ -->
+<div class="painel" id="p2">
+  <div class="mk-legenda">
+    <strong>Rev 3 (26/08, depois de ver o sistema rodando).</strong> A rev 1 punha um botão no
+    cabeçalho — grande demais. A rev 2 tirou o botão e pôs a ação no bloco da etapa — e isso
+    <b>não funciona</b>, pelo motivo provado abaixo. A casa certa é a <strong>Visão Geral</strong>:
+    sempre acessível, sem botão novo, e já é onde mora o histórico.
+  </div>
+
+  <h2 class="sec">1 · O cabeçalho fica exatamente como está</h2>
+  <div class="cartao">
+    <div class="cabecalho-projeto" style="row-gap:8px">
+      <h3>Etapas do Projeto</h3>
+      <span class="ficha-badge st-andamento">Responsável: JULIANA KAERCHER · etapa 9</span>
+      <button class="btn btn-ghost btn-sm">← Voltar</button>
+      <span style="margin-left:auto"></span>
+      <button class="btn btn-ghost btn-sm">Grupo de Acompanhamento</button>
+      <button class="btn btn-ghost btn-sm">Equipe</button>
+      <button class="btn btn-ghost btn-sm">Cronograma</button>
+      <button class="btn btn-ghost btn-sm">Auditoria Contábil</button>
+      <button class="btn btn-ghost btn-sm">Mapa de Atribuições</button>
+      <button class="btn btn-ghost btn-sm">Retenção</button>
+      <button class="btn btn-ghost btn-sm">Provisões</button>
+    </div>
+    <div class="subtitulo">📁 Teste_0820 · MARCELO BUONOCORE NUNES</div>
+    <div class="aviso aviso-warn" style="margin-bottom:0">
+      Verificado ao vivo em 26/08, a 1512px: o cabeçalho <strong>já quebra em duas linhas</strong> —
+      Mapa de Atribuições, Retenção e Provisões caem para a segunda. São oito botões. Um nono,
+      destrutivo, está fora de questão.
+    </div>
+  </div>
+
+  <h2 class="sec">2 · Por que o bloco na etapa não resolve sozinho</h2>
+  <div class="cartao destaque">
+    <p style="font-size:var(--fs-sm);color:var(--text-2);margin-bottom:10px">
+      Este é o projeto <b>Teste_0820</b>, aberto agora: contrato assinado em 20/08, parado na
+      <b>Solicitação de medição</b>. É <em>exatamente</em> o momento em que um cliente mais cancela
+      ambiente — contrato fechado, nada medido, nada produzido. E hoje, nessa tela:
+    </p>
+    <ul class="lis">
+      <li>a etapa atual é a <b>9 (Solicitação de medição)</b> — e ela <b>não tem aba na lombada</b>.
+        <code>ETAPAS_PRINCIPAIS</code> vai de <code>"4"</code> direto para <code>"7"</code> e de
+        <code>"7"</code> para <code>"10"</code>: os códigos 8 e 9 ficaram de fora, e
+        <code>_FICHA_SUBS</code> também não os adota;</li>
+      <li>a aba <b>6 · Medição</b> está “Não iniciada” — e o render de etapa não iniciada é um
+        <b>placeholder de cadeado</b> que, de propósito, <b>não chama <code>_fichaCorpoEtapa</code></b>.
+        Sem ele, não há bloco de Retenção nem haveria bloco de Cancelamento;</li>
+      <li>resultado: neste projeto <b>não existe um único bloco contextual de Retenção na tela</b>. O
+        botão do cabeçalho é o único caminho — e é por isso que ele existe.</li>
+    </ul>
+    <div class="aviso aviso-err" style="margin-bottom:0">
+      Ou seja: a rev 2 teria criado um cancelamento <strong>inalcançável justo no caso mais comum</strong>.
+      Achado meu, contra a minha própria proposta — melhor descobrir no mockup.
+    </div>
+  </div>
+
+  <h2 class="sec">3 · A casa: Visão Geral — ação e histórico juntos</h2>
+  <div class="cartao">
+    <p style="font-size:var(--fs-sm);color:var(--text-2);margin-bottom:12px">
+      A <strong>Visão Geral</strong> é a primeira aba da lombada, fixa, criada a seu pedido em 25/08.
+      Ela é a única superfície do fichário que <b>renderiza sempre</b> — <code>_fichaRenderConteudo</code>
+      desvia para <code>_visaoGeralRender()</code> antes de qualquer lógica de status
+      (<code>index.html:19675</code>). Não depende de etapa iniciada, não depende de aba existir.
+    </p>
+    <div style="border:1px solid var(--border);border-radius:10px;background:var(--card);padding:16px 18px">
+      <div style="font-weight:800;margin-bottom:4px">📊 Visão Geral do Projeto</div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Teste_0820 · MARCELO BUONOCORE NUNES</div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.9rem;color:var(--text-3)">Fases do projeto</div>
+        <div style="font-size:11.5px;color:var(--text-3);margin-top:3px">— seção existente —</div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.9rem;color:var(--text-3)">Financeiro — planejado × realizado</div>
+        <div style="font-size:11.5px;color:var(--text-3);margin-top:3px">— seção existente —</div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.9rem;color:var(--text-3)">Histórico de renegociações</div>
+        <div style="font-size:11.5px;color:var(--text-3);margin-top:3px">— seção existente (Termos Aditivos) —</div>
+      </div>
+      <div style="border-top:2px solid var(--cancel);padding-top:12px">
+        <div style="font-weight:800;font-size:.95rem;color:var(--cancel);margin-bottom:6px">
+          ✕ Cancelamento de ambientes <span style="font-size:10px;font-weight:600;background:var(--cancel);
+          color:var(--cancel-on);padding:1px 7px;border-radius:999px;vertical-align:2px">NOVO</span></div>
+        <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:8px">
+          Cancelar retira o ambiente do contrato <strong>em definitivo</strong> — estorna a parcela no
+          razão e gera crédito ao cliente. Para pausa temporária, use <strong>Retenção</strong>.
+          Exige senha de gerência.</div>
+        <button class="btn-ciclo btn-cancel" data-goto="p3">✕ Cancelar ambiente</button>
+        <div style="font-size:11px;color:var(--text-3);margin-top:10px">Nenhum cancelamento registrado
+          neste projeto. <span style="opacity:.7">(quando houver, a tabela do histórico entra aqui —
+          ver aba 5)</span></div>
+      </div>
+    </div>
+    <div class="aviso aviso-info" style="margin-top:12px;margin-bottom:0">
+      Ação e histórico no mesmo lugar tem um efeito prático: antes de cancelar mais um ambiente, quem
+      autoriza vê o que já foi cancelado neste projeto. O modal ainda grava a etapa do ciclo em que o
+      ato aconteceu — o sistema sabe qual é sem o usuário precisar navegar até ela.
+    </div>
+  </div>
+
+  <h2 class="sec">4 · Atalho contextual — opcional, não essencial</h2>
+  <div class="ficha-wrap">
+    <div class="ficha-lombada">
+      <div class="ficha-tab"><span class="ficha-dot dot-off"></span><span class="ficha-cod">📊</span><span class="ficha-nome">Visão Geral</span></div>
+      <div class="ficha-tab ok"><span class="ficha-dot dot-ok"></span><span class="ficha-cod">5</span><span class="ficha-nome">Contrato</span></div>
+      <div class="ficha-tab ativa and"><span class="ficha-dot dot-and"></span><span class="ficha-cod">6</span><span class="ficha-nome">Medição</span></div>
+      <div class="ficha-tab"><span class="ficha-dot dot-off"></span><span class="ficha-cod">7</span><span class="ficha-nome">Projeto executivo</span></div>
+      <div class="ficha-tab"><span class="ficha-dot dot-off"></span><span class="ficha-cod">8</span><span class="ficha-nome">Conferência e Implantação</span></div>
+    </div>
+    <div class="ficha-conteudo">
+      <div class="ficha-cab">
+        <span class="ficha-badge st-andamento">EM ANDAMENTO</span>
+        <span style="font-weight:800">6 · Medição</span>
+      </div>
+      <p style="font-size:var(--fs-sm);color:var(--text-2);margin-bottom:14px">
+        (conteúdo próprio da etapa — medidor, data, laudo…)
+      </p>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:6px">Ambientes podem ser
+          retidos <strong>a qualquer momento</strong> — cada retenção registra quando foi, a etapa do
+          ciclo, o motivo e a previsão de liberação.</div>
+        <button class="btn-ciclo">✋ Retenção</button>
+        <button class="btn-ciclo btn-cancel" data-goto="p3" style="margin-left:8px">✕ Cancelar ambiente</button>
+      </div>
+    </div>
+  </div>
+  <div class="cartao" style="margin-top:14px">
+    <p style="font-size:var(--fs-sm);color:var(--text-2)">
+      Nas etapas em que o bloco de Retenção <em>já</em> aparece (a etapa está em andamento ou concluída,
+      e o código-mãe é 10, 11 ou 17 — Medição, Projeto executivo, Montagem), cabe um segundo botão ao lado,
+      abrindo o mesmo modal. É conveniência, não a porta principal — e é a única parte desta proposta que
+      pode ficar para uma fatia posterior sem prejudicar nada.
+    </p>
+    <div class="fluxo" style="margin-top:10px">
+      <span class="no">antes da 2ª assinatura → Cancelar contrato (já existe)</span>
+      <span class="seta">·</span>
+      <span class="no hot">contrato assinado até antes da NF-e → Cancelar ambiente (novo)</span>
+      <span class="seta">·</span>
+      <span class="no">depois da NF-e → cancelamento fiscal (fora do ciclo)</span>
+    </div>
+  </div>
+
+  <h2 class="sec">Achado à parte — numeração e etapas sem aba</h2>
+  <div class="cartao">
+    <p style="font-size:var(--fs-sm);color:var(--text-2);margin-bottom:8px">
+      Não é do cancelamento, mas apareceu no estudo e vale reportar: a lombada mostra
+      <strong>14 etapas renumeradas de 1 a 14</strong> (<code>_fichaNumeroExibicao</code> = posição em
+      <code>ETAPAS_PRINCIPAIS</code>), enquanto o código interno é outro. Os internos <b>8</b>
+      (Aprovação financeira I) e <b>9</b> (Solicitação de medição) não estão na lista nem em
+      <code>_FICHA_SUBS</code> — não têm aba.
+    </p>
+    <ul class="lis">
+      <li>Como <code>indexOf</code> devolve <code>-1</code>, o cabeçalho imprime o <b>código cru</b>:
+        “etapa 9 — Solicitação de medição”. Só que <b>9 na lombada é Logística e Expedição</b>. Quem lê
+        o cabeçalho e procura a etapa 9 vai parar no lugar errado.</li>
+      <li>O <code>_retencaoBloco</code> é oferecido para o código-mãe <code>'9'</code> — ramo que
+        <b>nunca executa</b>, porque não há como selecionar a etapa 9.</li>
+    </ul>
+    <div style="font-size:11.5px;color:var(--text-3);border-top:1px dashed var(--border);padding-top:7px;margin-top:8px">
+      Conferido no navegador: <code>_fichaEtapaAtual()</code> → <code>"7"</code> (Contrato, já concluída),
+      enquanto <code>_cicloData['9'].status</code> → <code>"pendente"</code>. A etapa que trava o projeto
+      não tem tela.
+    </div>
+  </div>
+</div>
+
+<div class="painel" id="p3">
+  <div class="mk-legenda">
+    <strong>Cancelamento simples</strong> — até a etapa 11, nada foi produzido. O valor do ambiente volta
+    inteiro para o cliente. Mesma estrutura do <code>#modal-retido</code> (<code>index.html:3546</code>).
+  </div>
+  <div class="modal-mk">
+    <div class="mhead">
+      <div class="mtitulo">Cancelamento de ambiente</div>
+      <span class="mx">✕</span>
+    </div>
+    <div class="mnota">
+      Cancelar retira o ambiente do contrato <strong>em definitivo</strong> — a parcela dele é estornada
+      no razão e o valor vira <strong>crédito ao cliente</strong>. Não confundir com
+      <strong>Retenção</strong>, que é pausa e volta de onde parou. Cada cancelamento registra quando foi,
+      em que etapa, quais ambientes, o motivo e o destino do valor. Exige senha de Gerente
+      Adm/Financeiro ou Diretor.
+    </div>
+
+    <div class="bloco">
+      <div class="bloco-tit">Novo cancelamento <span class="ctx">— acionado na etapa 6 · Medição (código interno 10)</span></div>
+      <div class="lista">
+        <label><input type="checkbox" checked> Cozinha <span class="val">R$ 48.200,00</span></label>
+        <label><input type="checkbox"> Dormitório Casal <span class="val">R$ 31.750,00</span></label>
+        <label><input type="checkbox"> Dormitório Solteiro <span class="val">R$ 18.400,00</span></label>
+        <label><input type="checkbox"> Home Theater
+          <span class="tag tag-ret">retido</span><span class="val">R$ 22.900,00</span></label>
+        <label class="off"><input type="checkbox" disabled> Lavanderia
+          <span class="tag tag-liq">liquidada</span><span class="val">R$ 9.300,00</span></label>
+      </div>
+      <div class="linha">
+        <select class="inp">
+          <option>— motivo —</option>
+          <option selected>Desistência do cliente</option>
+          <option>Obra inviabilizou o ambiente</option>
+          <option>Erro de projeto / medição</option>
+          <option>Financeiro (inadimplência)</option>
+          <option>Substituído por outro ambiente</option>
+          <option>Outros</option>
+        </select>
+        <input class="inp" type="text" placeholder="Descrição do fato (obrigatória — o que levou ao cancelamento)"
+               value="Cliente optou por manter a cozinha existente após a reforma da laje.">
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Data do cancelamento: <strong style="color:var(--text)">26/08/2026</strong>
+        <span style="font-size:10px">(o dia do ato — não editável)</span>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <span class="lbl">Destino do valor</span>
+        <div class="radios">
+          <label><input type="radio" name="dest" checked>
+            <span>Crédito ao cliente <span class="hint">— fica em 2.1.11, abatido numa próxima compra ou baixado pela Tesouraria. <b>Padrão.</b></span></span></label>
+          <label><input type="radio" name="dest">
+            <span>Abater de Contas a Receber <span class="hint">— 2.1.11 × 1.1.02: reduz o que o cliente ainda deve.</span></span></label>
+          <label><input type="radio" name="dest">
+            <span>Devolver em dinheiro <span class="hint">— 2.1.11 × 1.1.01, exige a Tesouraria confirmar a saída.</span></span></label>
+        </div>
+      </div>
+
+      <div class="resumo">
+        <div class="lin"><span>Valor à vista do ambiente (Cozinha)</span><span class="num">R$ 48.200,00</span></div>
+        <div class="lin"><span>Custo de produção já incorrido</span><span class="num" style="color:var(--text-3)">— nada produzido até a 11</span></div>
+        <div class="lin total"><span>Crédito ao cliente</span><span class="num">R$ 48.200,00</span></div>
+      </div>
+
+      <div class="aviso aviso-info">
+        O que muda junto, automaticamente: as parcelas do ambiente são separadas e marcadas
+        <code>cancelado</code>; a provisão dele é estornada na fração
+        (<code>devolver_venda</code>); a comissão do vendedor recalcula sobre o novo valor; o ambiente
+        some do cronograma de montagem e da capacidade da equipe.
+      </div>
+
+      <div class="acoes">
+        <button class="btn-ciclo">Voltar</button>
+        <button class="btn-ciclo btn-cancel">✕ Cancelar ambientes selecionados (gerência)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 4 · MODAL PRODUÇÃO INICIADA ═══════════════ -->
+<div class="painel" id="p4">
+  <div class="mk-legenda">
+    <strong>Cancelamento com produção iniciada</strong> — etapa 12 em diante. Mesma tela, mesmo gate;
+    o que aparece a mais é <em>um bloco só</em>: quanto do custo já incorrido fica retido. Sem tela nova,
+    sem perfil novo.
+  </div>
+  <div class="modal-mk">
+    <div class="mhead">
+      <div class="mtitulo">Cancelamento de ambiente</div>
+      <span class="mx">✕</span>
+    </div>
+    <div class="mnota">
+      Cancelar retira o ambiente do contrato <strong>em definitivo</strong>. Exige senha de Gerente
+      Adm/Financeiro ou Diretor.
+    </div>
+
+    <div class="aviso aviso-warn">
+      ⚠ <strong>Produção já iniciada</strong> (etapa 8 · Conferência e Implantação do Pedido). O custo de fábrica deste ambiente já
+      foi incorrido — o crédito ao cliente sai do valor à vista <strong>menos</strong> a retenção abaixo.
+      A retenção sugerida vem do CFO do ambiente no Projeto Executivo; alterar exige justificativa.
+    </div>
+
+    <div class="bloco">
+      <div class="bloco-tit">Novo cancelamento <span class="ctx">— acionado na etapa 8 · Conferência e Implantação do Pedido (interno 12)</span></div>
+      <div class="lista">
+        <label><input type="checkbox"> Cozinha <span class="val">R$ 48.200,00</span></label>
+        <label><input type="checkbox" checked> Dormitório Solteiro <span class="val">R$ 18.400,00</span></label>
+        <label><input type="checkbox"> Home Theater <span class="val">R$ 22.900,00</span></label>
+      </div>
+      <div class="linha">
+        <select class="inp"><option selected>Obra inviabilizou o ambiente</option></select>
+        <input class="inp" type="text"
+               value="Pé-direito rebaixado pela obra; o módulo não cabe mais no vão medido.">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <span class="lbl">Custo de fábrica sugerido (CFO do PE)</span>
+          <input class="inp" value="R$ 9.860,00" disabled style="opacity:.7">
+        </div>
+        <div>
+          <span class="lbl">Retenção a aplicar (editável)</span>
+          <input class="inp" value="R$ 7.500,00" style="border-color:var(--cancel)">
+        </div>
+      </div>
+      <div style="margin-bottom:10px">
+        <span class="lbl">Justificativa da diferença <span style="color:var(--err)">obrigatória — valor alterado</span></span>
+        <input class="inp" type="text"
+               value="Frentes ainda não usinadas; fábrica reaproveita os painéis no pedido nº 4471.">
+      </div>
+
+      <div class="resumo">
+        <div class="lin"><span>Valor à vista do ambiente (Dormitório Solteiro)</span><span class="num">R$ 18.400,00</span></div>
+        <div class="lin"><span>(−) Retenção de custo incorrido</span><span class="num" style="color:var(--cancel)">R$ 7.500,00</span></div>
+        <div class="lin total"><span>Crédito ao cliente</span><span class="num">R$ 10.900,00</span></div>
+        <div class="lin" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px">
+          <span style="color:var(--text-3)">Fração estornada no razão</span>
+          <span class="num" style="color:var(--text-3)">10.900,00 ÷ 121.250,00 = 0,089897</span></div>
+      </div>
+
+      <div class="aviso aviso-info">
+        Sequência do ato: <strong>1)</strong> senha do gerente (mesma caixa de
+        <code>pedirCredenciaisGerente</code> do Cancelar contrato) → <strong>2)</strong> parcelas
+        separadas e marcadas <code>cancelado</code> → <strong>3)</strong> <code>devolver_venda(fração)</code>
+        → <strong>4)</strong> crédito em 2.1.11 → <strong>5)</strong> registro em
+        <code>LogAcaoGerencial</code> → <strong>6)</strong> Termo de Cancelamento gerado para assinatura.
+      </div>
+
+      <div class="acoes">
+        <button class="btn-ciclo">Voltar</button>
+        <button class="btn-ciclo btn-cancel">✕ Cancelar ambientes selecionados (gerência)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 5 · BLOQUEADO + HISTÓRICO ═══════════════ -->
+<div class="painel" id="p5">
+  <div class="mk-legenda">
+    <strong>Revisado em 26/08:</strong> como não há mais botão de cabeçalho, não existe “tela bloqueada”
+    a exibir — de 15 em diante o bloco de ação simplesmente <b>não é renderizado</b>, do mesmo jeito que
+    o bloco de Retenção não aparece na etapa 12. O que sobrevive é o registro, na Visão Geral.
+  </div>
+
+  <h2 class="sec">De 15 em diante — sem bloco, sem botão morto</h2>
+  <div class="ficha-wrap" style="margin-bottom:22px">
+    <div class="ficha-lombada">
+      <div class="ficha-tab"><span class="ficha-dot dot-off"></span><span class="ficha-cod">📊</span><span class="ficha-nome">Visão Geral</span></div>
+      <div class="ficha-tab ok"><span class="ficha-dot dot-ok"></span><span class="ficha-cod">8</span><span class="ficha-nome">Conferência e Implantação</span></div>
+      <div class="ficha-tab ativa and"><span class="ficha-dot dot-and"></span><span class="ficha-cod">9</span><span class="ficha-nome">Logística e Expedição</span></div>
+      <div class="ficha-tab"><span class="ficha-dot dot-off"></span><span class="ficha-cod">10</span><span class="ficha-nome">Montagem</span></div>
+    </div>
+    <div class="ficha-conteudo">
+      <div class="ficha-cab">
+        <span class="ficha-badge st-concluida">CONCLUÍDA</span>
+        <span style="font-weight:800">9 · Logística e Expedição · Faturamento</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--text-3)">interno 15</span>
+      </div>
+      <p style="font-size:var(--fs-sm);color:var(--text-2);margin-bottom:14px">
+        NF-e nº 4.418 autorizada em 12/08/2026. (conteúdo próprio da etapa)
+      </p>
+      <div class="aviso aviso-info" style="margin-bottom:0">
+        Nenhum bloco de cancelamento aqui — nem cinza, nem cadeado. A partir da NF-e, desfazer é
+        <strong>evento fiscal</strong>: cancelamento ou devolução com nota, fora do ciclo, pela
+        auditoria contábil. Um botão desabilitado só ensinaria o usuário a procurar no lugar errado.
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sec">O registro, que não morre com a etapa</h2>
+  <div class="modal-mk" style="max-width:820px">
+    <div class="mhead">
+      <div class="mtitulo">📊 Visão Geral › Histórico de cancelamentos</div>
+    </div>
+    <div class="mnota">
+      Quarta seção da Visão Geral, logo abaixo do <strong>Histórico de renegociações</strong>. Consultável
+      para sempre, inclusive depois do projeto concluído — igual ao histórico de Termos Aditivos.
+    </div>
+    <div class="table-wrap">
+      <table class="tbl">
+        <thead><tr><th>Data</th><th>Etapa do ciclo</th><th>Ambiente</th><th>Motivo</th>
+          <th style="text-align:right">Crédito gerado</th><th>Termo</th></tr></thead>
+        <tbody>
+          <tr><td>26/08/2026</td><td>6 · Medição</td><td>Cozinha</td><td>Desistência do cliente</td>
+            <td style="text-align:right;font-family:var(--font-mono)">R$ 48.200,00</td>
+            <td><span style="color:var(--ok)">✓ assinado</span></td></tr>
+          <tr style="background:var(--surface-2)"><td colspan="6" style="font-size:11.5px;color:var(--text-2)">
+            <strong style="color:var(--text)">Descrição:</strong> Cliente optou por manter a cozinha existente após a reforma da laje.
+            &nbsp;·&nbsp; <strong style="color:var(--text)">Destino:</strong> crédito ao cliente (2.1.11)
+            &nbsp;·&nbsp; <strong style="color:var(--text)">Autorizado por:</strong> Marcelo (Diretor)
+            &nbsp;·&nbsp; <strong style="color:var(--text)">Termo:</strong> TC20260826001
+          </td></tr>
+          <tr><td>18/07/2026</td><td>9 · Logística</td><td>Dormitório Solteiro</td><td>Obra inviabilizou</td>
+            <td style="text-align:right;font-family:var(--font-mono)">R$ 10.900,00</td>
+            <td><span style="color:var(--warn)">aguardando cliente</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:10px">
+      O ambiente cancelado <strong>nunca é apagado</strong> — o <code>PoolAmbiente</code> ganha
+      <code>cancelado_em</code> / <code>cancelado_por_id</code> e passa a aparecer riscado nas listas.
+      Apagar quebraria o rastro do que foi vendido, provisionado e estornado.
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ 6 · DECISÕES ═══════════════ -->
+<div class="painel" id="p6">
+  <div class="mk-legenda">
+    As quatro perguntas do <strong>§7 da spec</strong>, respondidas com o que o código já provou.
+    Cada resposta traz a evidência — não é preferência de estilo.
+  </div>
+
+  <div class="dec">
+    <h4>1 · Onde fica a tela/botão</h4>
+    <div class="q">Spec: “dentro da 11e (perto de Renegociação), ou um ponto novo mais genérico do fichário?”</div>
+    <div class="r"><b>Nenhuma das duas: a Visão Geral.</b> Ação e histórico na mesma seção nova, no
+      fim da aba que já existe. Zero botão de cabeçalho, zero aba nova, e — decisivo — funciona em
+      <b>qualquer</b> estado do projeto.</div>
+
+    <div class="aviso aviso-warn" style="margin:8px 0">
+      <strong>Terceira versão desta resposta.</strong> Rev 1: botão no cabeçalho — você apontou que é
+      mudança grande demais, e estava certo (o cabeçalho já quebra em duas linhas com 8 botões).
+      Rev 2: bloco dentro da etapa — <b>eu mesmo derrubei ao abrir o sistema</b>: no projeto parado na
+      Solicitação de medição, que é o caso mais comum de cancelamento, não existe bloco contextual
+      nenhum na tela. Rev 3 é a que sobrevive aos dois testes.
+    </div>
+
+    <div class="r"><b>Por que a Visão Geral resolve o que as outras não resolvem:</b>
+      <ul class="lis" style="margin-top:5px">
+        <li><b>Sempre renderiza.</b> <code>_fichaRenderConteudo</code> desvia para
+          <code>_visaoGeralRender()</code> antes de qualquer lógica de status — não depende de etapa
+          iniciada, nem de a etapa ter aba (os internos 8 e 9 não têm);</li>
+        <li><b>Sempre acessível.</b> É a primeira aba da lombada, fixa, em todo projeto;</li>
+        <li><b>Já é a casa do irmão.</b> O histórico de renegociações (Termos Aditivos) mora ali. Um
+          cancelamento é a renegociação de sinal contrário — fica ao lado, não em outro canto do app;</li>
+        <li><b>Ação e histórico juntos.</b> Quem vai autorizar vê primeiro o que já foi cancelado neste
+          projeto.</li>
+      </ul></div>
+
+    <div class="r">Dentro da 11e continua <b>errado</b>, por três motivos:
+      <ul class="lis" style="margin-top:5px">
+        <li>a 11e é uma subfase que <b>fecha</b>; a spec exige cancelar acima da etapa 11 — ficaria
+          inalcançável justo no caso difícil;</li>
+        <li>a 11e é <b>complemento</b> (valor para cima, orçamento novo, PE carregado). Cancelamento é
+          valor para baixo e não tem orçamento nenhum — juntar os dois confunde operações opostas;</li>
+        <li>só existe em projetos que chegaram ao Projeto Executivo. Cancelamento acontece antes disso.</li>
+      </ul></div>
+
+    <div class="r"><b>Tamanho real da mudança:</b> uma seção a mais no <code>_visaoGeralRender</code>,
+      um modal novo, e (opcional, fatia futura) um botão de atalho ao lado do de Retenção nas etapas em
+      que aquele bloco já aparece. Nada de cabeçalho, nada de lombada, nada de aba nova.</div>
+    <div class="prova">Prova: <code>index.html:19426</code> (header atual, 8 botões), <code>19640</code>
+      (<code>_retencaoBloco</code> — o padrão a copiar), <code>19636</code> (a linha que decide em quais
+      etapas ele aparece), <code>19703</code> (<code>_visaoGeralRender</code>, onde entra a 4ª seção).</div>
+  </div>
+
+  <div class="dec">
+    <h4>2 · Quem aprova acima da etapa 11</h4>
+    <div class="q">Spec: “mesmo perfil da AF2 (Gerente Adm/Fin, Diretor), ou precisa de um novo gate?”</div>
+    <div class="r"><b>Nenhum gate novo — e o gate vale desde a etapa 9, não só acima da 11.</b>
+      <code>pedirCredenciaisGerente({capacidade:'aprovar_financeiro'})</code>: login e senha
+      <em>redigitados</em>, não a sessão aberta.</div>
+    <div class="r">O motivo de valer sempre: a provisão nasce na <b>2ª assinatura do contrato</b> (etapa 7).
+      Da 9 em diante, todo cancelamento já mexe no razão — não existe faixa “inofensiva”. O que muda
+      acima da 11 não é <em>quem</em> aprova, é <em>o que a tela pede a mais</em>: a retenção de custo
+      incorrido. Um gate, uma regra, um campo condicional.</div>
+    <div class="prova">Prova: <code>index.html:22286</code> (Cancelar contrato usa credencial redigitada),
+      <code>22243</code> (devolução usa <code>capacidade:'aprovar_financeiro'</code> — e cancelar ambiente
+      <b>é</b> devolução parcial). Registrar também em <code>LogAcaoGerencial</code>, como o
+      <code>qa-override</code> faz em <code>main.py:12226</code>.</div>
+  </div>
+
+  <div class="dec">
+    <h4>3 · Ajuste manual de valor: campo livre ou fórmula?</h4>
+    <div class="q">Spec: “campo livre editado pelo aprovador, ou precisa de uma fórmula?”</div>
+    <div class="r"><b>A pergunta de negócio é uma só: quando o cliente cancela um ambiente, quanto a
+      loja devolve?</b> Nada de contabilidade ainda — é a conversa que o gerente tem com o cliente.</div>
+
+    <div class="resumo" style="margin:10px 0">
+      <div class="lin"><span><b>Até a etapa 11</b> — nada foi produzido</span>
+        <span>devolve <b>tudo</b>: R$ 18.400,00</span></div>
+      <div class="lin"><span><b>Da 12 em diante</b> — a fábrica já gastou material e hora</span>
+        <span>devolve <b>o que sobra</b> depois de reter o custo</span></div>
+    </div>
+
+    <div class="r">O ponto em aberto é só o segundo caso: <b>quanto a loja retém</b>. Três jeitos:</div>
+    <ul class="lis" style="margin-top:5px">
+      <li><b>Campo livre</b> — o gerente digita o que quiser. Rápido, mas cada gerente faz uma conta
+        diferente, e daqui a um ano ninguém sabe de onde saiu o número.</li>
+      <li><b>Fórmula fechada</b> — o sistema calcula e ninguém mexe. Consistente, mas quebra na vida
+        real: às vezes a fábrica reaproveita o painel em outro pedido, às vezes o ambiente parou na
+        chapa e quase nada foi perdido.</li>
+      <li><b style="color:var(--accent)">O meio-termo, que é o que proponho:</b> o sistema
+        <b>sugere</b>, o gerente <b>pode mudar</b>, e se mudar <b>tem que dizer por quê</b>.</li>
+    </ul>
+    <div class="r" style="margin-top:8px">A sugestão não é um número novo que alguém precise inventar:
+      é o <b>custo de fábrica daquele ambiente</b>, que o sistema já conhece do Projeto Executivo (é a
+      mesma coluna CFO da comparação de PE). Aparece preenchida, e na maioria dos casos o gerente só
+      confirma. Ficam gravados os três: <code>sugerido</code>, <code>aplicado</code> e
+      <code>justificativa</code> — é isso que dá defesa numa auditoria e resposta ao cliente.</div>
+
+    <div class="aviso aviso-info" style="margin:10px 0 0">
+      <strong>A parte que talvez tenha confundido:</strong> o gerente <b>nunca digita nada contábil</b>.
+      Ele decide um número de negócio (quanto o cliente recebe de volta). Quem traduz isso para o razão é
+      o sistema: divide o crédito pelo valor total do contrato e passa essa <b>fração</b> para o
+      <code>devolver_venda</code>, que já sabe estornar receita diferida, impostos e cada provisão na
+      proporção certa. No exemplo da aba 4: R$ 10.900 ÷ R$ 121.250 = 0,089897. Esse número aparece na
+      tela só como conferência — ninguém o edita.
+    </div>
+    <div class="prova">Prova: <code>mod_contabil.py:2006</code> (<code>devolver_venda</code> já é
+      proporcional e idempotente por <code>ref_base</code>); <code>/pe/comparacao</code> já devolve CFO por
+      ambiente; <code>qa-override</code> já é o precedente de “override + motivo obrigatório”.</div>
+  </div>
+
+  <div class="dec">
+    <h4>4 · <code>Aditivo</code> ganha campo <code>tipo</code>?</h4>
+    <div class="q">Spec: “campo <code>tipo</code> (complemento | cancelamento) ou basta inferir pelo sinal do valor?”</div>
+    <div class="r"><b>Campo <code>tipo</code> explícito — concordo com o Claude Code, e a prova é mais dura
+      do que a spec supõe.</b></div>
+    <div class="r">Inferir pelo sinal é <b>impossível</b>, não só feio:
+      <ul class="lis" style="margin-top:5px">
+        <li><code>Aditivo.modelo_versao_id</code> aponta para um <code>DocumentoModelo</code> escolhido
+          por <b>tipo</b>. Cancelamento precisa de outro documento (um distrato parcial), e
+          <code>mod_documentos.TIPOS</code> é uma whitelist — vai precisar de
+          <code>termo_cancelamento</code> lá. O sinal do valor não escolhe template.</li>
+        <li><code>GET /api/projetos/&lt;n&gt;/aditivo</code> devolve <b>o mais recente</b>
+          (<code>Aditivo.id.desc()</code>). Sem <code>tipo</code>, um cancelamento passa a ser “o aditivo”
+          do projeto e o card da 11e imprime “complemento R$ −10.900,00”. Regressão concreta, não teórica.</li>
+      </ul></div>
+    <div class="r"><b>Achado extra — a spec diz “sem migração” e isso não fecha:</b>
+      <code>Aditivo.orcamento_complemento_id</code> é <code>nullable=False</code>. Um cancelamento não tem
+      orçamento de complemento. Ou o campo vira nullable (migração), ou o cancelamento ganha
+      <b>tabela própria</b>.</div>
+    <div class="r"><b>Recomendação:</b> tabela própria <code>CancelamentoAmbiente</code>, pelo mesmo
+      argumento que o próprio comentário do <code>Aditivo</code> usa para não ser uma linha em
+      <code>contratos</code> — “uma linha em <code>contratos</code> viraria ‘o último contrato’ e quebraria
+      a trava”. Aqui é idêntico: um cancelamento em <code>aditivos</code> vira “o último aditivo” e quebra
+      a 11e.</div>
+    <div class="prova">Prova: <code>database.py:1258-1285</code> (<code>Aditivo</code>, incl. o comentário
+      sobre tabela própria e o <code>nullable=False</code>), <code>main.py:5419</code>
+      (<code>id.desc()</code>), <code>mod_documentos.py:23</code> (whitelist <code>TIPOS</code>),
+      <code>index.html:21500</code> (<code>a.dados.diferenca</code> impresso como “complemento”).</div>
+  </div>
+
+  <h2 class="sec">Duas coisas fora do §7 que apareceram no estudo</h2>
+  <div class="mapa">
+    <div class="cartao">
+      <div class="eyebrow">achado</div>
+      <h4>A devolução parcial é código órfão</h4>
+      <p><code>devolucaoRegistrar()</code> lê <code>#dev-pct</code>, que <b>não existe em lugar nenhum</b>
+      do <code>index.html</code>. O endpoint funciona; a tela sumiu quando a devolução “saiu do ciclo” e
+      nunca foi rehospedada.</p>
+      <p>Vale decidir junto: ou o Cancelamento de ambiente vira a casa dela, ou ela ganha um lugar na
+      Auditoria Contábil. Do jeito que está, existe um estorno parcial funcionando que ninguém consegue
+      acionar.</p>
+    </div>
+    <div class="cartao">
+      <div class="eyebrow">fatiamento</div>
+      <h4>Ordem sugerida das 5 fatias</h4>
+      <p>Trocar a ordem da spec: começar pela <b>tela que só lê</b> (modal + histórico, sem ação),
+      subir depois o motor. Assim você valida a navegação com dados reais antes de existir qualquer
+      caminho que mexa no razão.</p>
+      <ul class="lis">
+        <li>1 · modal + histórico, só leitura</li>
+        <li>2 · <code>CancelamentoAmbiente</code> + split de parcela</li>
+        <li>3 · <code>devolver_venda(fração)</code> + crédito 2.1.11</li>
+        <li>4 · Termo de Cancelamento (documento + assinatura)</li>
+        <li>5 · efeitos: comissão, cronograma, capacidade de montagem</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+document.querySelectorAll('.mk-tab').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.mk-tab').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.painel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById(b.dataset.p).classList.add('on');
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
+});
+document.querySelectorAll('[data-goto]').forEach(b=>{
+  b.onclick=()=>{ document.querySelector('.mk-tab[data-p="'+b.dataset.goto+'"]').click(); };
+});
+const bt=document.getElementById('btn-tema');
+bt.onclick=()=>{
+  const d=document.documentElement.getAttribute('data-theme')==='dark';
+  document.documentElement.setAttribute('data-theme', d?'light':'dark');
+  bt.textContent = d?'☾':'☀';
+};
+</script>
+</body>
+</html>

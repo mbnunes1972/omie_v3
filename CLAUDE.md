@@ -195,6 +195,20 @@ R12 Nenhum teste ou script carrega id de revisao do Alembic escrito a mao
     constante _STAMP_PONTE_PRE_B3 que tests/_schema_util.py substituiu):
     estado duplicado em dois lugares, com um humano encarregado de manter
     sincronizado — e ninguem lembra na hora certa.
+R13 Rename de conta do plano padrao (ou de no de centro de custo) vai em
+    migration, nunca numa lista _RENOMEIA_* no codigo. `seed_plano()` e
+    `seed_centro_custo()` so criam o que falta, por desenho — nunca
+    corrigem o que ja existe. Foi assim que 1.1.09/2.1.09 divergiram entre
+    rede (semeada antes do rename) e loja (semeada depois).
+R14 Decisao sobre o plano de contas expressa so no codigo (edicao de
+    `PLANO_PADRAO`, `CENTRO_CUSTO_PADRAO` ou de tabela de classificacao
+    como `CLASSIFICACAO_GRUPO5_V1`) nao alcanca owner ja semeado — mesma
+    causa da R13. Toda mudanca nessas estruturas exige migration de dado
+    no MESMO commit. `tests/test_gabarito_migration_x_seed.py` e quem
+    faz cumprir: compara o que a cadeia de migrations semeia contra o que
+    o codigo produziria para um owner novo, owner a owner, codigo a
+    codigo — encontrou 5.5.05 (natureza_custo) alem dos 2 renomes na
+    primeira rodada.
 
 Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
 e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco

@@ -88,3 +88,5 @@ __pycache__/
 *.pyc
 
 .playwright-mcp/
+
+docs/db/config_*.sql

@@ -1,6 +1,6 @@
 """mod_contabil.py — motor contábil (domínio financeiro). Sub-projeto #1: Plano de Contas.
 Fonte de verdade: Especificacao_Financeiro_Orizon_v2.docx §2/§2.1."""
-from database import get_session, Conta, CentroCusto, Loja, Lancamento, PeriodoContabil
+from database import get_session, Conta, CentroCusto, Loja, Rede, Lancamento, PeriodoContabil
 
 # Plano-padrão (codigo, nome) — pai = prefixo; tipo/natureza derivados. Ordem = ordem contábil.
 PLANO_PADRAO = [
@@ -955,6 +955,90 @@ def aplicar_gabarito_completo(db, owner_tipo, owner_id):
     return {
         "centro_custo_criado": centro_custo_criado, "conta_criada": conta_criada,
         "centro_custo_setado": cc_setado, "natureza_setado": nat_setado,
+    }
+
+
+def varrer_orfaos_gabarito(db):
+    """Remove `conta`/`centro_custo` cujo owner nao existe (mais) em `redes`/`lojas` —
+    docs/db/TAREFA_CENTRO_CUSTO_2.md item 7. `c1ab3f8007c4` grava gabarito incondicional pra
+    rede,1/loja,1/loja,3, mesmo num ambiente onde algum desses owners nao existe de verdade
+    (ex.: Integracao, so' tem loja,1) — owner e' polimorfico, sem FK que acuse a orfandade
+    sozinha. Rodar DEPOIS de `aplicar_gabarito_completo` em todo owner (scripts/
+    aplicar_gabarito.py) e' o ponto do procedimento em que a verdade sobre os owners ja esta
+    no banco (redes/lojas restauradas — passo 2 de RESTAURAR.md).
+
+    So remove o que NAO tem referencia de `lancamento` nem de outra linha de `conta`/
+    `centro_custo` que va sobreviver — orfa com movimento e' problema de DADO, nao de gabarito,
+    apagar seria pior; fica RETIDA e reportada. Converge por remocao iterativa (peeling): um
+    no so fica liberado depois que TODO filho que aponta pra ele (via `pai_id`, ou `conta.
+    centro_custo_id`) ja foi removido — mesma logica que a FK (`RESTRICT`/sem `ondelete`)
+    aplicaria linha a linha, só que decidida aqui, de uma vez, pra poder reportar o motivo.
+
+    Retorna contagem (encontrados/removidos/retidos, por tabela) e a lista dos retidos com
+    motivo — nunca lança exceção por conta/nó retido; isso e' o caminho normal, nao uma falha."""
+    owners_validos = {("rede", r.id) for r in db.query(Rede).all()} | \
+                     {("loja", l.id) for l in db.query(Loja).all()}
+
+    contas = {r.id: r for r in db.query(Conta).all()}
+    ccs = {r.id: r for r in db.query(CentroCusto).all()}
+
+    orfaos_conta = {cid for cid, r in contas.items() if (r.owner_tipo, r.owner_id) not in owners_validos}
+    orfaos_cc = {ccid for ccid, r in ccs.items() if (r.owner_tipo, r.owner_id) not in owners_validos}
+
+    lanc_refs = set()
+    for deb, cred in db.query(Lancamento.conta_debito_id, Lancamento.conta_credito_id).all():
+        lanc_refs.add(deb)
+        lanc_refs.add(cred)
+
+    deletar_conta = set(orfaos_conta)
+    deletar_cc = set(orfaos_cc)
+    mudou = True
+    while mudou:
+        mudou = False
+        for cid in list(deletar_conta):
+            if cid in lanc_refs:
+                deletar_conta.discard(cid)
+                mudou = True
+                continue
+            if any(r.pai_id == cid for oid, r in contas.items() if oid not in deletar_conta):
+                deletar_conta.discard(cid)
+                mudou = True
+        for ccid in list(deletar_cc):
+            referenciada_por_conta = any(
+                r.centro_custo_id == ccid for oid, r in contas.items() if oid not in deletar_conta)
+            referenciada_por_filho = any(
+                r.pai_id == ccid for oid, r in ccs.items() if oid not in deletar_cc)
+            if referenciada_por_conta or referenciada_por_filho:
+                deletar_cc.discard(ccid)
+                mudou = True
+
+    retidos_conta, retidos_cc = [], []
+    for cid in sorted(orfaos_conta - deletar_conta):
+        r = contas[cid]
+        motivo = "referenciada por lancamento" if cid in lanc_refs else \
+            "conta filha (pai_id) ainda existe"
+        retidos_conta.append({"id": cid, "owner_tipo": r.owner_tipo, "owner_id": r.owner_id,
+                               "codigo": r.codigo, "motivo": motivo})
+    for ccid in sorted(orfaos_cc - deletar_cc):
+        r = ccs[ccid]
+        referenciada_por_conta = any(
+            rr.centro_custo_id == ccid for oid, rr in contas.items() if oid not in deletar_conta)
+        motivo = "conta classificada nela" if referenciada_por_conta else \
+            "centro de custo filho ainda existe"
+        retidos_cc.append({"id": ccid, "owner_tipo": r.owner_tipo, "owner_id": r.owner_id,
+                            "nome": r.nome, "motivo": motivo})
+
+    if deletar_conta:
+        db.query(Conta).filter(Conta.id.in_(deletar_conta)).delete(synchronize_session=False)
+    if deletar_cc:
+        db.query(CentroCusto).filter(CentroCusto.id.in_(deletar_cc)).delete(synchronize_session=False)
+    if deletar_conta or deletar_cc:
+        db.commit()
+
+    return {
+        "encontrados_conta": len(orfaos_conta), "encontrados_centro_custo": len(orfaos_cc),
+        "removidos_conta": len(deletar_conta), "removidos_centro_custo": len(deletar_cc),
+        "retidos_conta": retidos_conta, "retidos_centro_custo": retidos_cc,
     }
 
 

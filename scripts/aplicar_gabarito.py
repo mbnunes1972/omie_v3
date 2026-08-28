@@ -12,6 +12,14 @@ docs/db/RESTAURAR.md — quando redes/lojas já existem.
 
 Idempotente (mesma função, mesma regra: só cria o que falta, só classifica o que ainda está
 NULL) — rodar de novo não duplica nem sobrescreve reclassificação manual.
+
+Depois de aplicar o gabarito, varre e remove `conta`/`centro_custo` órfã — cujo owner NÃO
+está (mais) em `redes`/`lojas` (docs/db/TAREFA_CENTRO_CUSTO_2.md item 7). `c1ab3f8007c4` grava
+gabarito incondicional pra rede,1/loja,1/loja,3; num ambiente que não tenha algum desses 3
+owners de verdade (ex.: Integração, só tem loja,1), sobram linhas órfãs sem FK que as detecte —
+este é o ponto do procedimento em que a verdade sobre os owners já está no banco (depois do
+passo 2, a restauração da configuração). Só remove o que não tem lançamento nem outra linha
+apontando pra ele; o resto fica retido e reportado (ver `mod_contabil.varrer_orfaos_gabarito`).
 """
 import os
 import sys
@@ -54,6 +62,23 @@ def main():
               "(%d centro_custo_id, %d natureza_custo)." %
               (criadas, centro_custo_criado, conta_criada, atualizadas,
                centro_custo_setado, natureza_setado))
+
+        print()
+        print("Varredura de órfãos (owner sem correspondente em redes/lojas):")
+        orf = mod_contabil.varrer_orfaos_gabarito(db)
+        for r in orf["retidos_conta"]:
+            print("  RETIDA conta %s,%s %s (id=%d): %s" %
+                  (r["owner_tipo"], r["owner_id"], r["codigo"], r["id"], r["motivo"]))
+        for r in orf["retidos_centro_custo"]:
+            print("  RETIDO centro_custo %s,%s %s (id=%d): %s" %
+                  (r["owner_tipo"], r["owner_id"], r["nome"], r["id"], r["motivo"]))
+        print("-" * 88)
+        print("Órfãos encontrados: %d conta, %d centro_custo." %
+              (orf["encontrados_conta"], orf["encontrados_centro_custo"]))
+        print("Removidos: %d conta, %d centro_custo." %
+              (orf["removidos_conta"], orf["removidos_centro_custo"]))
+        print("Retidos (reportados acima): %d conta, %d centro_custo." %
+              (len(orf["retidos_conta"]), len(orf["retidos_centro_custo"])))
     finally:
         db.close()
 

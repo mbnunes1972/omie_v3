@@ -30,12 +30,25 @@ recem-restaurado, onde a migration rodou cedo demais pra ver os owners reais.
 
 Idempotente — rodar de novo nao duplica nem sobrescreve reclassificacao manual.
 
+Depois de aplicar, o script VARRE ORFAOS: `c1ab3f8007c4` grava gabarito incondicional pra
+rede,1/loja,1/loja,3 (congelada, ver R13/CLAUDE.md) — num ambiente onde algum desses 3 nao
+existe de verdade (ex.: Integracao, so' loja,1), essas linhas ficam orfas, sem FK que acuse
+(owner e' polimorfico). O script remove o que nao tem `lancamento` nem outra linha apontando
+pra ele; o resto fica retido e reportado (orfa com movimento e' problema de dado, apagar seria
+pior). Ver `mod_contabil.varrer_orfaos_gabarito` e R16/CLAUDE.md.
+
 ## 4. Conferir
 Comparar contagens contra a origem. Se baterem, a integridade se sustenta
 porque na origem as FKs sao verificadas.
 
 Ensaio de 28/08/2026 (orizon_baseline_teste, do zero + config_20260828_0206.sql + passo 3):
 7 owners (1 rede + 6 lojas) — `conta` = 1120 (7 × 160), `centro_custo` = 112 (7 × 16).
+
+Segundo ensaio, simulando a Integracao (so' loja,1, sem rede): mesmo banco do zero + um
+recorte de configuracao com uma unica loja avulsa. Passo 3 encontrou 320 `conta`/32
+`centro_custo` orfas (o gabarito incondicional de rede,1 e loja,3, que nao existem nesse
+recorte) e removeu as 352 — nenhuma tinha lancamento. Passo 4: `conta` = 160, `centro_custo`
+= 16 — um owner, nada de orfao. Rodar o script de novo confirma idempotencia (0 orfaos).
 
 ## Gerar um dump novo
     pg_dump "$PGURL" --data-only --column-inserts --disable-triggers \

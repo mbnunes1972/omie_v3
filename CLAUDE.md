@@ -251,6 +251,16 @@ R15 Migration de dado que semeia gabarito (arvore de centro de custo, plano
       resultado de rodar a cadeia dependeria do commit atual do
       repositorio, nao da revisao sendo aplicada, e o historico deixaria
       de significar nada.
+R16 Todo semeador de gabarito (migration OU script) roda uma varredura de
+    orfaos logo depois — `mod_contabil.varrer_orfaos_gabarito`. Motivo:
+    `c1ab3f8007c4` grava gabarito incondicional pra rede,1/loja,1/loja,3
+    (congelada, nao mexe mais nela — R13), mesmo num ambiente onde algum
+    desses 3 nao existe de verdade. Owner e' polimorfico (R15) — a linha
+    orfa nao tem FK que a acuse. So remove o que nao tem `lancamento` nem
+    outra linha (`conta`/`centro_custo`) apontando pra ele; o resto fica
+    retido e reportado, nunca apagado (orfa com movimento e' problema de
+    DADO). `scripts/aplicar_gabarito.py` e `tests/test_orfaos_gabarito.py`
+    cobrem os dois lados.
 
 Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
 e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco

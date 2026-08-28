@@ -58,3 +58,45 @@ fecha a classe.
 ## Ordem
 4 primeiro (o teste vai nascer vermelho ou verde e ja diz onde estamos),
 depois 1, depois 2, depois 3. Relatorio antes de commitar.
+
+## 5. A migration de gabarito nao pode enumerar owners  (BLOQUEIA a implantacao)
+
+Medido nos servidores em 28/08/2026:
+
+    ambiente        alembic_version   owners                    nos/owner
+    localhost       bf43dd02888b      rede,1 loja,1 loja,3            16
+    integracao      NAO EXISTE        loja,1                          17
+    homologacao     NAO EXISTE        rede,1/15/16 loja,1/29..34      17
+
+Nenhum servidor tem Alembic — os tres estao como antes da revisao. Os 17
+contra 16 do localhost sao a Producao Propria, que a 0004 removeu so aqui.
+Sem duplicata em lugar nenhum: 17 nos, 17 nomes distintos, por owner.
+
+O problema: a c1ab3f8007c4 conhece tres owners fixos (rede,1 / loja,1 /
+loja,3). Na Integracao so existe loja,1 — ela criaria arvore e 160 contas
+para rede,1 e loja,3, que NAO EXISTEM ali. O owner e polimorfico
+(owner_tipo + owner_id), nao ha FK protegendo: as linhas entrariam sem
+erro, apontando para lojas inexistentes. Na Homologacao, alem disso,
+oito owners reais ficariam sem nada.
+
+### O que fazer
+A migration de gabarito NAO enumera owners. Deriva do proprio banco: para
+cada linha em `redes` e cada linha em `lojas` do ambiente de destino,
+garante arvore de centro de custo + plano de contas + classificacao.
+
+Assim ela fica correta em qualquer ambiente sem saber nada sobre ele:
+3 owners no localhost, 1 na Integracao, 10 na Homologacao.
+
+E e a MESMA funcao de gabarito do item 2: a migration chama para todos os
+owners existentes, a criacao de loja chama para o owner recem-criado. Uma
+implementacao, dois pontos de entrada.
+
+A c1ab3f8007c4 ja esta aplicada no localhost e o downgrade e irreversivel:
+isso vai em migration NOVA, que roda o gabarito derivado. No localhost ela
+nao muda nada — os 3 owners ja estao corretos — e o criterio continua sendo
+zero diferencas contra o localhost.
+
+### Teste
+Construa o banco de teste do zero, insira duas lojas e uma rede que NAO
+existem no localhost, rode a migration, e afirme que os cinco owners tem o
+gabarito completo. E o que prova que ela funciona onde a lista fixa falharia.

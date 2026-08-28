@@ -221,6 +221,37 @@ R15 Migration de dado que semeia gabarito (arvore de centro de custo, plano
     pontos de entrada. `tests/test_gabarito_migration_por_owner_dinamico.py`
     prova isso com owners sinteticos que nao existem no localhost.
 
+    A `46a93cfd591b` invoca CODIGO VIVO (`aplicar_gabarito_completo`, que le
+    `PLANO_PADRAO`/`CENTRO_CUSTO_PADRAO`/`CLASSIFICACAO_GRUPO5_V1` de
+    `mod_contabil.py` em tempo de execucao) de proposito, nao por atalho.
+    Consequencia aceita: a cadeia semeia o gabarito de HOJE (o que o codigo
+    diz no momento em que `alembic upgrade head` roda), nao o de quando
+    `46a93cfd591b` foi escrita — rodar a mesma migration em datas diferentes
+    pode semear owner novo com conteudo diferente, se `PLANO_PADRAO` tiver
+    mudado no meio.
+
+    Isso e' aceitavel pra DADO DE GABARITO e seria inaceitavel pra SCHEMA:
+    - Gabarito e' um TEMPLATE de decisao de negocio deliberadamente mutavel
+      (R14 ja estabelece isso) — o correto pra um owner que nasce amanha e'
+      a classificacao decidida ATE amanha, nao uma decisao ja revogada.
+      Congelar o gabarito na migration (como `c1ab3f8007c4` fez, por
+      necessidade — nao dava pra chamar codigo vivo antes de existir a
+      funcao) e' exatamente o que causou os 3 residuos do item 1: duas
+      copias da mesma coisa, uma trava no tempo, divergindo em silencio.
+      Chamar o codigo vivo fecha essa classe de bug pra sempre nos owners
+      novos (o `test_gabarito_migration_x_seed.py` continua cobrindo os
+      owners ja existentes/frozen — ver nota no proprio teste).
+    - Schema NAO pode fazer isso: uma migration de schema descreve o DDL
+      exato que foi aplicado NAQUELA revisao — reconstruir o historico
+      (rodar a cadeia do zero, bisectar um bug, auditar um estado
+      intermediario) tem que reproduzir o schema de ENTAO, nao o modelo
+      ATUAL. E' por isso que autogenerate congela `op.create_table(...)`
+      com colunas explicitas em vez de chamar `Base.metadata.create_all()`
+      — se uma migration de schema importasse os modelos vivos, o
+      resultado de rodar a cadeia dependeria do commit atual do
+      repositorio, nao da revisao sendo aplicada, e o historico deixaria
+      de significar nada.
+
 Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
 e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco
 sem nenhuma migration correspondente e sem o modelo declarar. Alguem rodou

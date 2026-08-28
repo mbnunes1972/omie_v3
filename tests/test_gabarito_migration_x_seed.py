@@ -17,6 +17,18 @@ produziria hoje para um owner novo:
 Isto vale mais que corrigir os defeitos individuais (item 1: nome de 1.1.09/2.1.09) — fecha a
 CLASSE: qualquer novo código futuro acrescentado só de um lado dos dois vira falha aqui, no
 mesmo dia, em vez de divergência silenciosa entre "loja reconstruída" e "loja nova".
+
+Continua sendo comparação de DUAS FONTES INDEPENDENTES mesmo depois do item 5
+(`46a93cfd591b`, que também chama código vivo — `aplicar_gabarito_completo` — de propósito,
+ver R15/CLAUDE.md): `orizon_baseline_teste` não tem dado de instância (`redes`/`lojas` nascem
+vazias), então a passada dinâmica da `46a93cfd591b` não encontra owner nenhum pra semear aqui —
+os 3 owners deste teste (rede,1/loja,1/loja,3) continuam vindo inteiramente dos valores
+LITERAIS gravados em `c1ab3f8007c4`/`ecc77df9ca32` (histórico congelado), comparados contra o
+`PLANO_PADRAO` ATUAL. Verificado com controle negativo nas duas direções (2026-08-28): código
+com conta a mais / migration com conta a mais, os dois acusam. Se um dia a função de gabarito
+passar a SOBRESCREVER owner já semeado (não só preencher o que falta) ou `orizon_baseline_teste`
+passar a ganhar dado de instância com os mesmos ids, este teste vira tautologia pros 3 owners —
+reavalie então.
 """
 
 import pytest

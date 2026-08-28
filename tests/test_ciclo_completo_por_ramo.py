@@ -83,6 +83,56 @@ def test_ciclo_completo_ramo_loja(app_db):
     db.close()
 
 
+@pytest.mark.xfail(reason="ACHADO-02: 4.1.01 fatura o Val_Cont cheio (que já inclui o custo "
+                          "financeiro) e 4.4.03 reconhece o mesmo custo financeiro de novo — "
+                          "receita total sai maior que o contrato em exatamente o valor do "
+                          "custo financeiro (ver docs/db/ACHADOS_CONTABEIS.md). Corrigido o "
+                          "achado, este teste vira verde sozinho — é o sinal pra tirar o "
+                          "xfail.", strict=True)
+def test_ramo_loja_receita_total_deveria_contar_o_custo_financeiro_uma_vez_so(app_db):
+    """ACHADO-02, em números concretos: uma venda de R$ 46.300,00 no ramo 'loja' (financiamento
+    direto), onde R$ 42.500,00 é o valor à vista (VAVO) e R$ 3.800,00 é o custo financeiro do
+    parcelamento — cust_fin = Val_Cont - VAVO = 46.300,00 - 42.500,00, a mesma fórmula de
+    main.py:746. A receita do contrato, contada uma única vez, deveria somar exatamente
+    Val_Cont: R$ 42.500,00 em Vendas (4.1.01) + R$ 3.800,00 em Receita Financeira (4.4.03) =
+    R$ 46.300,00.
+
+    Hoje `_fin_provisoes_venda_seguro` (main.py:739) fatura o Val_Cont CHEIO em 4.1.01 — os R$
+    46.300,00 inteiros, que já incluem o custo financeiro — e o ciclo completo (constituir_juros_
+    direto + apropriar_juros_loja) reconhece os mesmos R$ 3.800,00 de novo em 4.4.03. A receita
+    total apurada fecha em R$ 50.100,00: R$ 3.800,00 a mais do que o contrato vale — exatamente o
+    custo financeiro, contado duas vezes."""
+    db = app_db.get_session(); ot, oid = "loja", 6410; mc.seed_plano(db, ot, oid)
+    P = "Proj_Achado02"
+    vavo = 42500.00
+    cust_fin = 3800.00
+    val_cont = round(vavo + cust_fin, 2)   # 46300.00 — o "Val_Cont" de main.py:_fin_provisoes_venda_seguro
+
+    # venda + contrato (main.py:739-751)
+    mc.registrar_evento(db, ot, oid, "registro_venda_contrato", val_cont, projeto_id=P, ref="rv:" + P)
+    mc.registrar_evento(db, ot, oid, "constituir_juros_direto", cust_fin, projeto_id=P, ref="cj:" + P)
+
+    # NF-e (main.py:_fin_faturamento_segmentado_seguro — fatura o Val_Cont do contrato, main.py:1340-1360)
+    mc.faturar_segmento(db, ot, oid, P, "mercadoria", val_cont, ref_base="fat:" + P)
+
+    # recebimento: cliente paga o principal e os juros, por competência
+    mc.registrar_recebimento_venda(db, ot, oid, P, val_cont, ref="rec:" + P)
+    mc.apropriar_juros_loja(db, ot, oid, P, cust_fin, ref_base="jur:" + P)
+
+    receita_vendas = _saldo_projeto(db, ot, oid, "4.1.01", P)
+    receita_financeira = _saldo_projeto(db, ot, oid, "4.4.03", P)
+    receita_total_hoje = round(receita_vendas + receita_financeira, 2)
+    receita_total_esperada = round(vavo + cust_fin, 2)   # == val_cont, contado uma única vez
+
+    assert receita_total_hoje == receita_total_esperada, (
+        "receita total do contrato (4.1.01 %.2f + 4.4.03 %.2f = %.2f) deveria ser %.2f "
+        "(VAVO %.2f + cust_fin %.2f, uma vez) — distorção de R$ %.2f, exatamente o custo "
+        "financeiro contado duas vezes (ACHADO-02)"
+        % (receita_vendas, receita_financeira, receita_total_hoje, receita_total_esperada,
+           vavo, cust_fin, round(receita_total_hoje - receita_total_esperada, 2)))
+    db.close()
+
+
 # ── ramo "financeira" (Aymoré/Cartão) — ACHADO-01: provisão de custo financeiro nunca drena ──
 @pytest.mark.xfail(reason="ACHADO-01: reconhecer_custo_financeiro só baixa o ativo diferido "
                           "(1.1.06.19); a Provisão de Custo Financeiro (2.1.04.19) nunca é "

@@ -68,7 +68,13 @@ contabilização em partida dobrada (mod_contabil.py). Reproduzido em
 tests/test_ciclo_completo_por_ramo.py::test_ciclo_completo_ramo_loja: com Val_Cont=10000,
 VAVO=9000, cust_fin=1000, o teste fecha (todas as contas transitórias zeram, balancete bate) MAS
 4.1.01 fecha em 10000 E 4.4.03 fecha em 1000 — receita total reconhecida de 11000 para um
-contrato de 10000.
+contrato de 10000. Isolado em números concretos, com a afirmação explícita de quanto a receita
+DEVERIA ser, em
+tests/test_ciclo_completo_por_ramo.py::test_ramo_loja_receita_total_deveria_contar_o_custo_financeiro_uma_vez_so
+(`xfail(strict=True)`, vira verde sozinho no dia da correção): venda de R$ 46.300,00 (VAVO R$
+42.500,00 + cust_fin R$ 3.800,00) — receita apurada hoje = R$ 50.100,00 (4.1.01 R$ 46.300,00 +
+4.4.03 R$ 3.800,00) contra R$ 46.300,00 esperado. **Distorção de R$ 3.800,00 — exatamente o
+custo financeiro, contado duas vezes.**
 
 **Consequências no número final:**
 - A Receita (DRE) de todo contrato ramo "loja" com financiamento direto (cust_fin > 0) fica

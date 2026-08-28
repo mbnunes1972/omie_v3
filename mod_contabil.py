@@ -930,9 +930,13 @@ def aplicar_gabarito_completo(db, owner_tipo, owner_id):
     `/api/financeiro/centro-custo` (rede de seguranca pros owners que ja existiam antes desta
     mudanca). Deliberadamente NAO dentro de `listar_centros_custo`/`listar_contas`: essas duas
     tambem alimentam leitura pura (`relatorio_centro_custo`), que nao pode ter o efeito colateral
-    de classificar conta sozinha so' por ser chamada."""
-    seed_centro_custo(db, owner_tipo, owner_id)
-    seed_plano(db, owner_tipo, owner_id)
+    de classificar conta sozinha so' por ser chamada.
+
+    Retorna contagem de linhas criadas/atualizadas (`centro_custo_criado`, `conta_criada`,
+    `centro_custo_setado`, `natureza_setado`) — usada por scripts/aplicar_gabarito.py pra
+    reportar o que fez; os outros 2 pontos de entrada (main.py, migration) ignoram o retorno."""
+    centro_custo_criado = seed_centro_custo(db, owner_tipo, owner_id)
+    conta_criada = seed_plano(db, owner_tipo, owner_id)
     contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
     ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
     cc_setado = nat_setado = 0
@@ -948,7 +952,10 @@ def aplicar_gabarito_completo(db, owner_tipo, owner_id):
             nat_setado += 1
     if cc_setado or nat_setado:
         db.commit()
-    return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
+    return {
+        "centro_custo_criado": centro_custo_criado, "conta_criada": conta_criada,
+        "centro_custo_setado": cc_setado, "natureza_setado": nat_setado,
+    }
 
 
 def retrato_classificacao_grupo5(db, owner_tipo, owner_id):

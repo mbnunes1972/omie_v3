@@ -62,10 +62,20 @@ BEGIN
     quantas := quantas + 1;
     apagadas := apagadas + n;
 
-    seq := pg_get_serial_sequence('public.' || quote_ident(r.t), 'id');
-    IF seq IS NOT NULL THEN
-      PERFORM setval(seq, 1, false);
-    END IF;
+    -- Descobre as sequences pela dependencia real no catalogo, nao pelo nome
+    -- da coluna: pg_get_serial_sequence levanta erro em tabela sem 'id'
+    -- (juncao com chave composta, por exemplo) em vez de devolver NULL.
+    -- deptype 'a' pega serial, 'i' pega GENERATED AS IDENTITY.
+    FOR seq IN
+      SELECT quote_ident(ns.nspname) || '.' || quote_ident(cl.relname)
+      FROM pg_class cl
+      JOIN pg_namespace ns  ON ns.oid = cl.relnamespace
+      JOIN pg_depend  dep ON dep.objid = cl.oid AND dep.deptype IN ('a','i')
+      JOIN pg_class   tb  ON tb.oid = dep.refobjid
+      WHERE cl.relkind = 'S' AND ns.nspname = 'public' AND tb.relname = r.t
+    LOOP
+      EXECUTE format('SELECT setval(%L, 1, false)', seq);
+    END LOOP;
   END LOOP;
 
   RAISE NOTICE '% tabelas esvaziadas, % linhas apagadas', quantas, apagadas;

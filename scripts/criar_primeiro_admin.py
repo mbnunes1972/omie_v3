@@ -5,14 +5,17 @@ app obrigar a troca no primeiro login.
 NÃO é script de criação de usuário — é de PRIMEIRO ACESSO. Por isso se recusa a rodar se
 `usuarios` já tiver qualquer linha (ver `_conferir_base_vazia`): criar mais um super_admin, ou
 qualquer outro usuário, é a tela de administração (ou `seed.py`, que semeia contas de
-DESENVOLVIMENTO com senha hardcoded — não serve pra Produção).
+DESENVOLVIMENTO — inclusive o super_admin, também via `ORIZON_ADMIN_LOGIN`/`_SENHA` desde
+28/08/2026, mesma regra de senha provisória, mas sem a guarda de base vazia — não serve pra
+Produção reconstruída, que é este script).
 
-Só existia `seed.py` como caminho parecido antes deste script — não serve pra este caso:
-login/senha vêm hardcoded (`database._SEED_SA_LOGIN`/`_SEED_SA_SENHA`), nunca seta
-`senha_provisoria`, e não se recusa a rodar com `usuarios` já povoada (só evita duplicar o
-login). Este script cobre exatamente o caso que faltava — dado configurável, guarda de
-primeiro-acesso, senha provisória — sem duplicar a lógica de hash: usa `Usuario.set_senha()`
-(`database.py`, `_hash_senha` — "Fonte única de hashing"), nunca hash escrito à mão.
+Só existia `seed.py` como caminho parecido antes deste script — não servia pra este caso (e
+tinha o próprio problema: login/senha "sad2026"/"trocar123" hardcoded em `database.py`, sem
+`senha_provisoria`, acabaram como super_admin de verdade na Integração/Homologação via dump —
+corrigido em 28/08/2026, mas o script continua sem a guarda de base vazia que Produção precisa).
+Este script cobre o caso que faltava — dado configurável, guarda de primeiro-acesso, senha
+provisória — sem duplicar a lógica de hash: usa `Usuario.set_senha()` (`database.py`,
+`_hash_senha` — "Fonte única de hashing"), nunca hash escrito à mão.
 
 Login, nome e senha vêm por argumento OU variável de ambiente (nunca hardcoded no script nem
 commitados): --login/ORIZON_ADMIN_LOGIN, --nome/ORIZON_ADMIN_NOME (opcional), --senha/

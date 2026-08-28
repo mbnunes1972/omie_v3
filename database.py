@@ -2141,11 +2141,14 @@ _SEED_TEST2_NOME  = "Felipe Guizalberte"
 _SEED_TEST2_CPF   = "yyy.yyy.yyy-yy"
 
 # ── super_admin de bootstrap (F2 multi-tenant) ────────────────────────────────
-# Hash SHA-256 igual ao Usuario.set_senha. Senha de exemplo ("trocar123") —
-# TROCAR antes de produção. loja_id/rede_id NULL = plataforma.
+# loja_id/rede_id NULL = plataforma. Login/senha NÃO ficam aqui — achado real (28/08/2026):
+# o login+senha hardcoded que viviam nestas 2 constantes ("sad2026"/"trocar123") acabaram
+# como super_admin de verdade na Integração e na Homologação (chegaram pelo dump de
+# `usuarios`, não por alguém rodando seed.py nos servidores), com senha_provisoria=0 — uma
+# credencial de bootstrap conhecida, versionada no git, ativa em produção-adjacente sem
+# forçar troca. seed.py agora lê ORIZON_ADMIN_LOGIN/ORIZON_ADMIN_SENHA do ambiente e se
+# recusa a criar o super_admin sem as duas — nada de valor default.
 _SEED_SA_NOME  = "Administrador da Plataforma"
-_SEED_SA_LOGIN = "sad2026"
-_SEED_SA_SENHA = "trocar123"
 
 # Catálogo padrão de Funções (cargos) — semeado por loja via seed.py (Regras §7/§8).
 FUNCOES_PADRAO = [

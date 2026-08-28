@@ -5,6 +5,8 @@ Orizon Manager | Dalmóbile
 Uso: python3 seed.py
 """
 
+import os
+
 import database
 from database import init_db, get_session, Usuario, Funcao, loja_seed_id, FUNCOES_PADRAO
 
@@ -61,11 +63,20 @@ def seed():
     db = get_session()
     try:
         if not db.query(Usuario).filter_by(nivel="super_admin").first():
-            sa = Usuario(nome=database._SEED_SA_NOME, login=database._SEED_SA_LOGIN,
-                         nivel="super_admin", loja_id=None, rede_id=None)
-            sa.set_senha(database._SEED_SA_SENHA)
-            db.add(sa); db.commit()
-            print(f"  [criado]    {database._SEED_SA_LOGIN} (super_admin)")
+            login = os.environ.get("ORIZON_ADMIN_LOGIN")
+            senha = os.environ.get("ORIZON_ADMIN_SENHA")
+            if not login or not senha:
+                print("  [recusado] super_admin NAO criado: defina ORIZON_ADMIN_LOGIN e "
+                      "ORIZON_ADMIN_SENHA no ambiente. Nada de valor default -- foi um login/"
+                      "senha hardcoded aqui que virou super_admin de verdade na Integracao e "
+                      "na Homologacao (achado de 28/08/2026).")
+            else:
+                sa = Usuario(nome=database._SEED_SA_NOME, login=login,
+                             nivel="super_admin", loja_id=None, rede_id=None,
+                             senha_provisoria=1)   # mesma regra do scripts/criar_primeiro_admin.py
+                sa.set_senha(senha)
+                db.add(sa); db.commit()
+                print(f"  [criado]    {login} (super_admin, senha_provisoria=1)")
 
         loja_id = loja_seed_id(db)    # a loja seed já existe pela migração
         if loja_id is None:

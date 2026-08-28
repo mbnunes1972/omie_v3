@@ -107,3 +107,46 @@ que ser definido antes, nao improvisado com a Producao fora do ar.
 
 Confirmar tambem o diretorio e o arquivo .env do servico `orizon` em
 179.197.77.9, que ainda nao foram levantados.
+
+## Armadilhas encontradas na execucao real (28/08/2026)
+
+Quatro coisas que o ensaio no WSL nao revelou. Todas custaram tentativa.
+
+1. **pip nao instala alembic sem --no-deps.** Ele tenta trocar o
+   typing_extensions que veio do Debian, nao consegue remover o pacote do
+   sistema, e aborta a instalacao inteira — inclusive a do alembic.
+
+       pip install --break-system-packages --no-deps alembic Mako MarkupSafe
+
+   Confira depois: `python3 -c "import alembic; print(alembic.__version__)"`.
+   Servidor ficou com alembic 1.19.1 e SQLAlchemy 2.0.50 (WSL tem 2.0.51 —
+   diferenca de patch, mas e' o primeiro lugar a olhar se algo divergir).
+
+2. **Os .env usam `export`.** `grep '^DATABASE_URL='` nao acha nada. Use
+   `set -a; . /root/orizon-A.env; set +a` e leia a variavel.
+
+3. **O usuario postgres nao le dentro de /root** (modo 700). Restaurar com
+   `-f /root/arquivo.sql` da "Permission denied". Deixe o root abrir o
+   arquivo e entregar pela entrada padrao:
+
+       ... | sudo -u postgres psql -d BANCO -v ON_ERROR_STOP=1 -q
+
+4. **Dump gerado no PostgreSQL 18 nao restaura em 16 sem filtro.** O
+   pg_dump 18 escreve `SET transaction_timeout = 0;` no cabecalho, e o 16
+   recusa o parametro. Com ON_ERROR_STOP=1 aborta na primeira linha:
+
+       grep -v '^SET transaction_timeout' config_AAAAMMDD_HHMM.sql | \
+         sudo -u postgres psql -d BANCO -v ON_ERROR_STOP=1 -q
+
+   O parametro vale zero (o padrao), entao remove-lo nao muda nada.
+
+## Executado
+
+- Integracao (orizon_integracao), 28/08/2026 06:20 — reconstruida.
+  conta 1120, centro_custo 112, lojas 6, usuarios 15, redes 1, orcamentos 0.
+  0 orfaos. Numeros identicos depois do boot. HTTP 302. Head 46a93cfd591b.
+- Homologacao (orizon_homologacao), 28/08/2026 — reconstruida.
+  Mesmos numeros, 0 orfaos, identicos depois do boot. HTTP 302.
+  Os 10 owners anteriores dela foram substituidos pelos 7 do localhost,
+  conforme a decisao "mista". Backup em /root/backups/homologacao_pre_*.
+- Producao: NAO executada. Bloqueada na pergunta do primeiro usuario.

@@ -1569,6 +1569,10 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             inc = (parse_qs(urlparse(self.path).query).get("incluir_inativas") or ["0"])[0] == "1"
             try:
+                # Rede de seguranca (TAREFA_CENTRO_CUSTO_2.md #2): so' na tela mesmo, nunca em
+                # listar_contas() -- essa tambem alimenta relatorio_centro_custo (leitura pura,
+                # nao pode classificar conta como efeito colateral).
+                mod_contabil.aplicar_gabarito_completo(db, ot, oid)
                 contas = mod_contabil.listar_contas(db, ot, oid, incluir_inativas=inc)
                 self.send_json({"ok": True, "contas": contas})
             finally:
@@ -1582,6 +1586,9 @@ class Handler(BaseHTTPRequestHandler):
             usuario, db, ot, oid = ctx
             inc = (parse_qs(urlparse(self.path).query).get("incluir_inativos") or ["0"])[0] == "1"
             try:
+                # Rede de seguranca (TAREFA_CENTRO_CUSTO_2.md #2) -- mesma razao do endpoint
+                # /api/financeiro/contas, acima.
+                mod_contabil.aplicar_gabarito_completo(db, ot, oid)
                 ccs = mod_contabil.listar_centros_custo(db, ot, oid, incluir_inativos=inc)
                 self.send_json({"ok": True, "centros_custo": ccs})
             finally:
@@ -12480,6 +12487,13 @@ class Handler(BaseHTTPRequestHandler):
                     # commit próprio — não quero um commit parcial se o diretor falhar acima.
                     import seed as _seed
                     _seed.criar_funcoes_seed(db, l.id)
+                    # Gabarito completo (arvore de centro de custo + plano de contas +
+                    # classificacao do grupo 5) — docs/db/TAREFA_CENTRO_CUSTO_2.md #2: sem isto a
+                    # loja nascia com o grupo 5 em NULL ate' alguem visitar a tela de Plano de
+                    # Contas E o servidor reiniciar (migrar_classificacao_grupo5_v1 so' roda no
+                    # boot). Idempotente.
+                    import mod_contabil as _mc
+                    _mc.aplicar_gabarito_completo(db, "loja", l.id)
                     db.commit()
                     perfis.recarregar()
                     self.send_json({"ok": True, "loja": _loja_dict(l)})
@@ -12549,6 +12563,11 @@ class Handler(BaseHTTPRequestHandler):
                     # existia pra Perfis: PDV nasce em runtime, sem os 13 cargos padrão.
                     import seed as _seed
                     _seed.criar_funcoes_seed(db, pdv.id)
+                    # Gabarito completo (arvore de centro de custo + plano de contas +
+                    # classificacao do grupo 5) — mesmo achado do PDV que ja existia pra Perfis/
+                    # Funcoes: PDV nasce em runtime, sem esperar tela nem reboot do servidor.
+                    import mod_contabil as _mc
+                    _mc.aplicar_gabarito_completo(db, "loja", pdv.id)
                     db.commit()
                     perfis.recarregar()
                     self.send_json({"ok": True, "pdv": _loja_dict(pdv)})

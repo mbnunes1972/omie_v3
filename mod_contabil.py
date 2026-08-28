@@ -492,7 +492,11 @@ def _serial(c):
 
 
 def listar_contas(db, owner_tipo, owner_id, incluir_inativas=False):
-    """Árvore (lista de raízes com 'filhos'), ordenada por 'ordem'/codigo. Seed-on-first-access."""
+    """Árvore (lista de raízes com 'filhos'), ordenada por 'ordem'/codigo. Seed-on-first-access —
+    só a ÁRVORE (`seed_plano`). Classificação do grupo 5 é `aplicar_gabarito_completo`, chamada
+    nos endpoints de TELA (main.py `/api/financeiro/contas` e `/centro-custo`), não aqui: esta
+    função também é usada por relatórios de leitura pura (`relatorio_centro_custo` via
+    `listar_centros_custo`), que não podem ter o efeito colateral de classificar conta sozinhos."""
     seed_plano(db, owner_tipo, owner_id)
     q = db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
     if not incluir_inativas:
@@ -710,7 +714,9 @@ def _serial_cc(c):
 
 
 def listar_centros_custo(db, owner_tipo, owner_id, incluir_inativos=False):
-    """Árvore (lista de raízes com 'filhos'), ordenada por 'ordem'/codigo. Seed-on-first-access."""
+    """Árvore (lista de raízes com 'filhos'), ordenada por 'ordem'/codigo. Seed-on-first-access —
+    só a ÁRVORE (`seed_centro_custo`); mesma razão de `listar_contas` pra não chamar
+    `aplicar_gabarito_completo` aqui (usada por `relatorio_centro_custo`, leitura pura)."""
     seed_centro_custo(db, owner_tipo, owner_id)
     q = db.query(CentroCusto).filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
     if not incluir_inativos:
@@ -904,6 +910,44 @@ def migrar_classificacao_grupo5_v1(db):
                 conta.natureza_custo = nat
                 nat_setado += 1
     db.commit()
+    return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
+
+
+def aplicar_gabarito_completo(db, owner_tipo, owner_id):
+    """Garante, num UNICO owner, a arvore de centro de custo (`seed_centro_custo`), o plano de
+    contas (`seed_plano`) e a classificacao do grupo 5 (`CLASSIFICACAO_GRUPO5_V1`) — idempotente,
+    so' preenche o que faltar (mesma regra de `migrar_classificacao_grupo5_v1`: nunca sobrescreve
+    `centro_custo_id`/`natureza_custo` ja setado, seja pelo proprio gabarito seja por
+    reclassificacao manual).
+
+    docs/db/TAREFA_CENTRO_CUSTO_2.md item 2: antes desta funcao, a arvore e o plano tinham
+    seed-on-first-access (`listar_centros_custo`/`listar_contas`), mas a classificacao só' era
+    aplicada por `migrar_classificacao_grupo5_v1`, chamada SO no boot do servidor — uma loja
+    criada em runtime, cujo plano so' nasce quando alguem visita a tela, ficava com o grupo 5
+    inteiro em NULL ate' o proximo restart. Esta funcao roda os 3 passos juntos, chamada tanto na
+    CRIACAO da loja (main.py, `/api/admin/lojas` e `.../pdvs` — loja nasce classificada, sem
+    esperar tela nem reboot) quanto nos endpoints de TELA `/api/financeiro/contas` e
+    `/api/financeiro/centro-custo` (rede de seguranca pros owners que ja existiam antes desta
+    mudanca). Deliberadamente NAO dentro de `listar_centros_custo`/`listar_contas`: essas duas
+    tambem alimentam leitura pura (`relatorio_centro_custo`), que nao pode ter o efeito colateral
+    de classificar conta sozinha so' por ser chamada."""
+    seed_centro_custo(db, owner_tipo, owner_id)
+    seed_plano(db, owner_tipo, owner_id)
+    contas = {c.codigo: c for c in db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    ccs = {c.codigo: c for c in db.query(CentroCusto).filter_by(owner_tipo=owner_tipo, owner_id=owner_id).all()}
+    cc_setado = nat_setado = 0
+    for cod, (cc_cod, nat) in CLASSIFICACAO_GRUPO5_V1.items():
+        conta = contas.get(cod)
+        if conta is None:
+            continue
+        if conta.centro_custo_id is None and cc_cod in ccs:
+            conta.centro_custo_id = ccs[cc_cod].id
+            cc_setado += 1
+        if conta.natureza_custo is None:
+            conta.natureza_custo = nat
+            nat_setado += 1
+    if cc_setado or nat_setado:
+        db.commit()
     return {"centro_custo_setado": cc_setado, "natureza_setado": nat_setado}
 
 

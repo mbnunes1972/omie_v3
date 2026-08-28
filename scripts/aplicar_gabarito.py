@@ -20,6 +20,12 @@ owners de verdade (ex.: Integração, só tem loja,1), sobram linhas órfãs sem
 este é o ponto do procedimento em que a verdade sobre os owners já está no banco (depois do
 passo 2, a restauração da configuração). Só remove o que não tem lançamento nem outra linha
 apontando pra ele; o resto fica retido e reportado (ver `mod_contabil.varrer_orfaos_gabarito`).
+
+Semear e varrer são DUAS ETAPAS, NUNCA uma condicionada à outra — bug real de Produção
+(28/08/2026): um `return` cedo quando `redes`/`lojas` vinham vazias ("nada a fazer") pulava a
+varredura junto. É exatamente o caso em que ela mais importa: banco sem owner nenhum tem TODO
+o gabarito da `c1ab3f8007c4` (480 `conta`/48 `centro_custo`, os 3 owners fixos) órfão, e ficava
+assim pra sempre. A varredura roda sempre, mesmo quando não há owner nenhum pra semear.
 """
 import os
 import sys
@@ -35,33 +41,38 @@ def main():
         owners = [("rede", r.id) for r in db.query(Rede).all()] + \
                  [("loja", l.id) for l in db.query(Loja).all()]
 
+        # Semear e varrer são DUAS ETAPAS — nunca uma condicionada à outra (bug real de
+        # produção, 28/08/2026: um `return` cedo aqui, quando `owners` vinha vazio, pulava a
+        # varredura inteira — exatamente o caso em que ela mais importa: banco sem owner
+        # nenhum tem TODO o gabarito da c1ab3f8007c4 (480 conta/48 centro_custo, os 3 owners
+        # fixos) órfão, e ficava assim pra sempre).
         if not owners:
-            print("Nenhum owner em redes/lojas — nada a fazer (rode depois de restaurar a "
-                  "configuração; ver docs/db/RESTAURAR.md).")
-            return
+            print("Nenhum owner em redes/lojas — nada a semear (rode depois de restaurar a "
+                  "configuração; ver docs/db/RESTAURAR.md). Varredura de órfãos roda mesmo "
+                  "assim, abaixo.")
+        else:
+            centro_custo_criado = conta_criada = centro_custo_setado = natureza_setado = 0
+            for owner_tipo, owner_id in owners:
+                out = mod_contabil.aplicar_gabarito_completo(db, owner_tipo, owner_id)
+                centro_custo_criado += out["centro_custo_criado"]
+                conta_criada += out["conta_criada"]
+                centro_custo_setado += out["centro_custo_setado"]
+                natureza_setado += out["natureza_setado"]
+                print("%-4s %6d: %2d no(s) de centro_custo criado(s), %3d conta(s) criada(s), "
+                      "%2d centro_custo_id setado(s), %2d natureza_custo setado(s)" %
+                      (owner_tipo, owner_id, out["centro_custo_criado"], out["conta_criada"],
+                       out["centro_custo_setado"], out["natureza_setado"]))
 
-        centro_custo_criado = conta_criada = centro_custo_setado = natureza_setado = 0
-        for owner_tipo, owner_id in owners:
-            out = mod_contabil.aplicar_gabarito_completo(db, owner_tipo, owner_id)
-            centro_custo_criado += out["centro_custo_criado"]
-            conta_criada += out["conta_criada"]
-            centro_custo_setado += out["centro_custo_setado"]
-            natureza_setado += out["natureza_setado"]
-            print("%-4s %6d: %2d no(s) de centro_custo criado(s), %3d conta(s) criada(s), "
-                  "%2d centro_custo_id setado(s), %2d natureza_custo setado(s)" %
-                  (owner_tipo, owner_id, out["centro_custo_criado"], out["conta_criada"],
-                   out["centro_custo_setado"], out["natureza_setado"]))
-
-        criadas = centro_custo_criado + conta_criada
-        atualizadas = centro_custo_setado + natureza_setado
-        print("-" * 88)
-        print("Gabarito aplicado a %d owner(s) (%d rede(s), %d loja(s))." %
-              (len(owners), sum(1 for ot, _ in owners if ot == "rede"),
-               sum(1 for ot, _ in owners if ot == "loja")))
-        print("Linhas criadas: %d (%d centro_custo, %d conta) — linhas atualizadas: %d "
-              "(%d centro_custo_id, %d natureza_custo)." %
-              (criadas, centro_custo_criado, conta_criada, atualizadas,
-               centro_custo_setado, natureza_setado))
+            criadas = centro_custo_criado + conta_criada
+            atualizadas = centro_custo_setado + natureza_setado
+            print("-" * 88)
+            print("Gabarito aplicado a %d owner(s) (%d rede(s), %d loja(s))." %
+                  (len(owners), sum(1 for ot, _ in owners if ot == "rede"),
+                   sum(1 for ot, _ in owners if ot == "loja")))
+            print("Linhas criadas: %d (%d centro_custo, %d conta) — linhas atualizadas: %d "
+                  "(%d centro_custo_id, %d natureza_custo)." %
+                  (criadas, centro_custo_criado, conta_criada, atualizadas,
+                   centro_custo_setado, natureza_setado))
 
         print()
         print("Varredura de órfãos (owner sem correspondente em redes/lojas):")

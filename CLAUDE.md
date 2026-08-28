@@ -262,6 +262,14 @@ R16 Todo semeador de gabarito (migration OU script) roda uma varredura de
     DADO). `scripts/aplicar_gabarito.py` e `tests/test_orfaos_gabarito.py`
     cobrem os dois lados.
 
+    Bug real de Producao (28/08/2026): a varredura vivia atras de um
+    `return` cedo ("nenhum owner pra semear, nada a fazer") -- banco sem
+    NENHUM owner e' exatamente o caso em que ela mais importa (todo o
+    gabarito da c1ab3f8007c4 fica orfao). Semear e varrer sao 2 etapas,
+    nunca uma condicionada a outra -- `tests/test_aplicar_gabarito_sem_
+    owners.py` cobre esse cenario especifico (banco recem-migrado, zero
+    owners, roda o script, conta/centro_custo tem que zerar).
+
 Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
 e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco
 sem nenhuma migration correspondente e sem o modelo declarar. Alguem rodou

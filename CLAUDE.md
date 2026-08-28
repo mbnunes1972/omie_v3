@@ -209,6 +209,17 @@ R14 Decisao sobre o plano de contas expressa so no codigo (edicao de
     o codigo produziria para um owner novo, owner a owner, codigo a
     codigo — encontrou 5.5.05 (natureza_custo) alem dos 2 renomes na
     primeira rodada.
+R15 Migration de dado que semeia gabarito (arvore de centro de custo, plano
+    de contas, classificacao) NUNCA enumera owner por id fixo. Owner e'
+    polimorfico (owner_tipo+owner_id, sem FK) — uma lista fixa grava dado
+    pra owner que nao existe num ambiente e deixa de fora owner real de
+    outro, os dois em silencio (achado real: `redes`/`lojas` tem 1 owner
+    na Integracao e 10 na Homologacao, nenhum batendo com os 3 do
+    localhost). Deriva sempre de `SELECT id FROM redes`/`lojas` do proprio
+    ambiente, chamando a MESMA funcao de gabarito que a criacao de loja usa
+    (`mod_contabil.aplicar_gabarito_completo`) — uma implementacao, dois
+    pontos de entrada. `tests/test_gabarito_migration_por_owner_dinamico.py`
+    prova isso com owners sinteticos que nao existem no localhost.
 
 Caso real que justifica a R1 (nao curiosidade): contratos.assinatura_canal
 e aprovacoes_pe.assinatura_canal tinham server_default='interno' no banco

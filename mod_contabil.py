@@ -1,6 +1,10 @@
 """mod_contabil.py — motor contábil (domínio financeiro). Sub-projeto #1: Plano de Contas.
 Fonte de verdade: Especificacao_Financeiro_Orizon_v2.docx §2/§2.1."""
+import logging
+
 from database import get_session, Conta, CentroCusto, Loja, Rede, Lancamento, PeriodoContabil
+
+_LOG = logging.getLogger(__name__)
 
 # Plano-padrão (codigo, nome) — pai = prefixo; tipo/natureza derivados. Ordem = ordem contábil.
 PLANO_PADRAO = [
@@ -1815,6 +1819,31 @@ _ORIGEM_RECLASS     = "reclassificacao_provisao"
 _PROV_DESPESA_POR_ATIVO = {cred: deb for ev, (deb, cred, _h) in EVENTOS.items()
                           if ev.startswith("reconhecimento_despesa_") and ev != "reconhecimento_despesa_custo_financeiro"}
 
+# docs/db/TAREFA_PROVISOES.md item 2 — BLOQUEADO (28/08/2026), não incluir 2.1.04.19 aqui.
+# `reconhecer_custo_financeiro` só debita despesa (5.5.03/5.5.04) × credita o ativo diferido
+# (1.1.06.19) — NUNCA toca a provisão (2.1.04.19). Diferente dos outros 15, que reduzem ativo E
+# provisão juntos (via `efetivar_provisao`), aqui só o ativo drena: por isso provisão e ativo
+# saem de lockstep (achado: provisão constituída em 1000, 700 já reconhecido como despesa real →
+# provisão continua 1000, ativo cai pra 300). Tratar 2.1.04.19 como "tempo real" sem essa 2ª
+# perna faria `resolver_saldo_provisao` tentar cancelar os 1000 da provisão contra um ativo que
+# só tem 300 — ativo diferido ficaria NEGATIVO. A causa raiz (falta a perna "D provisão × C
+# recebível/caixa", equivalente à liquidação — ver ACHADO-01, docs/db/ACHADOS_CONTABEIS.md) é
+# maior que este item: a reconciliação de Contas a Receber/Caixa da venda antecipada/financiada
+# não está fechada em lugar nenhum do código. Até isso ser resolvido, este set fica VAZIO —
+# 2.1.04.19 cai no "sem destino definido" de `resolver_saldo_provisao` (item 4) e FALHA alto,
+# em vez de fingir uma rota que quebraria o razão.
+_PROV_TEMPO_REAL_ROTA_PROPRIA = set()
+
+# docs/db/TAREFA_PROVISOES.md item 3/4: destino EXPLÍCITO de variância por provisão, fora do
+# padrão "tempo real" — sobra e falta vão pra MESMA conta, sinais opostos (achado do Marcelo:
+# a rota antiga mandava sobra→4.4.02 e falta→5.6.10, inflando receita em vez de corrigir
+# dedução — os dois lados da mesma variância acabavam em contas diferentes). Se um código
+# aqui apontar pra "5.6.10", `resolver_saldo_provisao` alerta no momento da escrita (item 4) —
+# 5.6.10 só entra aqui de propósito, nunca como default de quem não tem entrada nenhuma.
+_PROV_DESTINO_VARIANCIA = {
+    "2.1.04.13": "4.3.01",   # Impostos (P4): variância é dedução de receita, não custo nem receita nova
+}
+
 
 def reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
     """Perna de despesa de uma efetivação de provisão: débito na despesa FORMAL da rubrica (5.x) ×
@@ -1990,15 +2019,37 @@ def reclassificar_recebivel_duvidoso(db, owner_tipo, owner_id, projeto_id, valor
 
 
 def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, ref, data=None):
-    """Fecha o saldo em aberto da provisão (de um projeto). Pras rubricas com despesa em tempo real
-    (`_PROV_DESPESA_POR_ATIVO` — as 15 do antigo matching pleno): CANCELA contra o ativo diferido
-    espelho (1.1.06.0X), SEM TOCAR A DRE em nenhuma direção (2026-08-07, achado do usuário) — SOBRA
-    (provisionado > efetivado) é dinheiro nunca gasto, não há despesa nenhuma a reverter, então não
-    vira "receita"; FALTA (efetivado > provisionado) já teve a despesa real reconhecida em tempo real,
-    a cada efetivação — não há nada NOVO a lançar, só o residual mecânico entre ativo e provisão a
-    zerar. Pras demais (Impostos, Custo Financeiro — rota própria, despesa não é em tempo real aqui):
-    mantido o comportamento antigo — SOBRA → Provisão × Reversão de Provisões (4.4.02, receita); FALTA
-    → Ajuste de Provisões (5.6.10, despesa) × Provisão. Zera a provisão do projeto. Idempotente por ref."""
+    """Fecha o saldo em aberto da provisão (de um projeto).
+
+    Item 1 (docs/db/TAREFA_PROVISOES.md): só aceita conta de provisão LEGÍTIMA — grupo
+    `GRUPO_PROVISOES` (2.1.04.x), exceto as em `_PROV_PAINEL_EXCLUI` (Comissão/Devolução, que
+    não são set-aside de custo — ver comentário de `_PROV_PAINEL_EXCLUI`). Qualquer outro
+    código é recusado com erro explícito, antes de tocar em qualquer lançamento.
+
+    Pras rubricas com despesa em TEMPO REAL (`_PROV_DESPESA_POR_ATIVO` — as 15 do antigo
+    matching pleno — e `_PROV_TEMPO_REAL_ROTA_PROPRIA`, item 2: Custo Financeiro, cuja despesa
+    real já é reconhecida por `reconhecer_custo_financeiro`): CANCELA contra o ativo diferido
+    espelho (1.1.06.0X / 1.1.05), SEM TOCAR A DRE em nenhuma direção (2026-08-07, achado do
+    usuário) — SOBRA (provisionado > efetivado) é dinheiro nunca gasto, não vira "receita";
+    FALTA (efetivado > provisionado) já teve a despesa real reconhecida a cada efetivação —
+    só o residual mecânico entre ativo e provisão é zerado.
+
+    Pras demais, com destino EXPLÍCITO em `_PROV_DESTINO_VARIANCIA` (item 3: Impostos → 4.3.01):
+    SOBRA e FALTA vão pra MESMA conta, sinais opostos — nunca a variância inteira numa direção
+    só e a outra ponta noutra conta (era o defeito da rota antiga: sobra em 4.4.02, falta em
+    5.6.10). Se o destino for 5.6.10 (item 4 — só de propósito, nunca por falta de
+    alternativa), alerta no log NO MOMENTO DA ESCRITA, aqui na própria função — não só o
+    alerta de saldo que já existe na tela (`alertas_contas_escape`).
+
+    Uma provisão que não tem NEM despesa em tempo real NEM destino explícito, mas chega aqui
+    com saldo a resolver, é erro — nomeando a rubrica — em vez de cair em 5.6.10 por padrão
+    (item 4: 5.6.10 deixou de ser destino implícito).
+
+    Zera a provisão do projeto. Idempotente por ref."""
+    if not (codigo_provisao or "").startswith(GRUPO_PROVISOES + ".") or codigo_provisao in _PROV_PAINEL_EXCLUI:
+        raise ValueError(
+            "resolver_saldo_provisao: %r não é conta de provisão legítima (grupo %s.x, exceto %s)"
+            % (codigo_provisao, GRUPO_PROVISOES, sorted(_PROV_PAINEL_EXCLUI)))
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
     if ja is not None:
         return ja
@@ -2008,8 +2059,9 @@ def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisa
         return None
     prov = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
     ativo_cod = _ativo_diferido_de(codigo_provisao)
-    despesa_em_tempo_real = (_PROV_DESPESA_POR_ATIVO.get(ativo_cod) is not None
-                             and _conta_existe(db, owner_tipo, owner_id, ativo_cod))
+    despesa_em_tempo_real = (
+        (_PROV_DESPESA_POR_ATIVO.get(ativo_cod) is not None or codigo_provisao in _PROV_TEMPO_REAL_ROTA_PROPRIA)
+        and _conta_existe(db, owner_tipo, owner_id, ativo_cod))
     if despesa_em_tempo_real:
         ativo = _conta_por_codigo(db, owner_tipo, owner_id, ativo_cod)
         if saldo > 0:   # sobra: nunca efetivado — cancela sem DRE (débito provisão × crédito ativo)
@@ -2021,13 +2073,28 @@ def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisa
                       origem=_ORIGEM_RESOL_FALTA,
                       historico="Cancelamento de excedente já reconhecido na efetivação (sem novo impacto no resultado)",
                       ref=ref)
-    if saldo > 0:   # sobra → receita (débito Provisão × crédito 4.4.02) — rota antiga (impostos/custo financeiro)
-        cc = _conta_por_codigo(db, owner_tipo, owner_id, "4.4.02")
-        return lancar(db, owner_tipo, owner_id, prov.id, cc.id, saldo, data=data, projeto_id=projeto_id,
-                      origem=_ORIGEM_RESOL_SOBRA, historico="Reversão de provisão (sobra → receita)", ref=ref)
-    cd = _conta_por_codigo(db, owner_tipo, owner_id, "5.6.10")   # falta → despesa (débito 5.6.10 × crédito Provisão)
-    return lancar(db, owner_tipo, owner_id, cd.id, prov.id, -saldo, data=data, projeto_id=projeto_id,
-                  origem=_ORIGEM_RESOL_FALTA, historico="Ajuste de provisão (falta → despesa)", ref=ref)
+
+    destino_cod = _PROV_DESTINO_VARIANCIA.get(codigo_provisao)
+    if destino_cod is None:
+        raise ValueError(
+            "resolver_saldo_provisao: %s tem saldo de %.2f mas nenhum destino de variância "
+            "definido (nem _PROV_TEMPO_REAL_ROTA_PROPRIA, nem _PROV_DESTINO_VARIANCIA) — "
+            "defina o destino antes de resolver; não roteia pra 5.6.10 por falta de alternativa"
+            % (codigo_provisao, saldo))
+    if destino_cod == "5.6.10":
+        _LOG.warning(
+            "resolver_saldo_provisao: %s,%s projeto=%s conta=%s saldo=%.2f — gravando em 5.6.10 "
+            "(Ajustes de Reconciliação) DE PROPÓSITO. Confirme que é diferença sem origem "
+            "identificável, não rota padrão de quem não tem destino.",
+            owner_tipo, owner_id, projeto_id, codigo_provisao, saldo)
+    destino = _conta_por_codigo(db, owner_tipo, owner_id, destino_cod)
+    if saldo > 0:   # sobra: mesma conta do destino, crédito (reduz o que foi debitado antes)
+        return lancar(db, owner_tipo, owner_id, prov.id, destino.id, saldo, data=data, projeto_id=projeto_id,
+                      origem=_ORIGEM_RESOL_SOBRA,
+                      historico="Ajuste de provisão (sobra → %s)" % destino_cod, ref=ref)
+    return lancar(db, owner_tipo, owner_id, destino.id, prov.id, -saldo, data=data, projeto_id=projeto_id,
+                  origem=_ORIGEM_RESOL_FALTA,
+                  historico="Ajuste de provisão (falta → %s)" % destino_cod, ref=ref)
 
 
 def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None):

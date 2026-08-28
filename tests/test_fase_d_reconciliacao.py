@@ -192,17 +192,24 @@ def test_provisao_projetos(app_db):
     db.close()
 
 
-def test_dre_inclui_reversao_de_provisao(app_db):
-    """A SOBRA de uma provisão SEM despesa em tempo real (rota própria — aqui Custo Financeiro) entra
-    na DRE via Outras Receitas (não fica órfã). Pras rubricas com despesa em tempo real (2026-08-07),
-    ver test_resolver_saldo_sobra_cancela_sem_receita — essas NÃO tocam a DRE."""
+def test_resolver_saldo_provisao_recusa_custo_financeiro_sem_destino(app_db):
+    """docs/db/TAREFA_PROVISOES.md item 4 (28/08/2026) mudou o esperado deste teste: a "rota
+    antiga" (sobra→4.4.02 receita, sem destino explícito) deixou de existir — `resolver_saldo_
+    provisao` agora FALHA para qualquer provisão sem destino definido, em vez de rotear por
+    padrão. Custo Financeiro (2.1.04.19) ainda não tem destino (item 2 do mesmo documento
+    segue BLOQUEADO — ver ACHADO-01, docs/db/ACHADOS_CONTABEIS.md), então cai nesse caso.
+    Teste antigo (`test_dre_inclui_reversao_de_provisao`) validava a sobra virando 4.4.02;
+    isso era exatamente o defeito que motivou o item 4."""
     db = app_db.get_session(); ot, oid = "loja", 610; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"custo_financeiro": 1000.0}, ref_base="pf:P")
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.19", 600.0, ref="ef")   # sobra 400
-    mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.19", ref="rs")
+    try:
+        mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.19", ref="rs")
+        assert False, "deveria falhar -- 2.1.04.19 sem destino de variancia definido"
+    except ValueError as e:
+        assert "2.1.04.19" in str(e)
     d = mc.dre(db, ot, oid)
-    assert d["outras_receitas"] == 400.0
-    assert d["resultado_antes_impostos"] == round(d["ebit"] + d["resultado_financeiro"] + 400.0, 2)
+    assert d["outras_receitas"] == 0.0   # nada foi lancado
     db.close()
 
 

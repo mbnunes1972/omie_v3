@@ -724,35 +724,96 @@ em 7891, 7956, 10893 e 15871 o `db.commit()` vem depois do `except` e leva a
 alteração junto. Não existe um caso em que insumo e resultado andem na mesma
 transação.
 
-### O agravante da tela
+### Medição 1 (29/08) — `_negociacao_breakdown` levanta com que entrada?
 
-Em 10893 e 10966 a resposta ainda devolve `sombra`, recalculada na hora por
-`_negociacao_breakdown`. Se o cálculo falhou na persistência mas funciona na
-leitura — ordens diferentes, sessão em estado diferente —, a tela mostra o
-número **novo** e o banco guarda o **velho**. Quem confere olhando a tela não
-vê nada.
+`docs/db/TESTE_NEGOCIACAO_VALOR_TOTAL.md`, `tests/test_negociacao_breakdown_excecoes.py`
+(11 testes). Cada candidato listado na tarefa foi **construído em banco**, não presumido:
 
-Vale medir se o mesmo vale para o contrato:
-`_ambientes_valor_para_contrato` e `_valores_contrato_por_ambiente`
-(main.py:17357, 17399) recalculam o breakdown **ao vivo** para ratear os
-ambientes, enquanto o total do contrato vem de `orc.valor_total`
-persistido. Se o persistido estiver defasado, a soma dos ambientes do
-contrato não bate com o total do contrato.
+| candidato | levanta? | produzível por usuário via endpoint real? |
+|---|---|---|
+| `parametros_json` malformado (`json.loads`, main.py:17258, sem try/except) | **SIM** — `JSONDecodeError` | NÃO — os 3 pontos de escrita reais (main.py:1289, 10889, 17677) sempre gravam `json.dumps(dict)` |
+| `complemento_pe=1` no MESMO orçamento que já é `Contrato.orcamento_id` do projeto (auto-referência) | **SIM** — `RecursionError` (achado novo, fora da lista original) | NÃO confirmado — o endpoint real de criação de complemento sempre cria um Orçamento novo e separado |
+| `forma_pagamento` malformado / `total_cliente` não numérico | não | guardado por try/except (main.py:17296-17301) |
+| ambiente sem `budget_total`/`order_total` | não | guardado (`or 0.0`) |
+| `complemento_pe` sem contrato do projeto | não | guardado (`for l in (linhas_c or [])`) |
+| complemento por fase sem `ConciliacaoPeFase` | não | guardado, resumo com totais zerados |
+| `desconto_pct` fora de 0-100 (ex.: 150) | não levanta (resultado sem sentido, mas não crasha) | — |
+| `config_financeira_json` malformado | não | guardado por try/except (main.py:17250-17254) |
+| `carga_trib` zerado como divisor | **hipótese da tarefa não se confirma** — `mod_negociacao.py:30` usa `carga_trib` só como multiplicador (`prov_imp = pct_trib * val_cont`), nunca como divisor | — |
+| `projeto_id` órfão | não | guardado |
+
+**Resposta à pergunta da tarefa:** a única exceção real é `JSONDecodeError` em `parametros_json`
+malformado, mais o `RecursionError` (achado novo). **Nenhuma das duas é alcançável por um
+usuário através dos 3 endpoints reais que escrevem `parametros_json`, nem do endpoint real de
+criação de complemento.** Pela regra que a própria tarefa definiu: o ACHADO-19 continua valendo
+(a resposta `ok` a uma falha continua errada) mas **desce de prioridade — o conserto é higiene do
+Grupo 5, não urgência do Grupo 1.** O `RecursionError` fica registrado como risco de robustez
+(uma correção manual de suporte ou migração futura poderia produzir o estado auto-referente),
+não como caminho de exploração hoje.
+
+### Medição 2 (29/08) — o que fica no banco depois de cada fail-soft
+
+`tests/test_fail_soft_medicao2.py`. Recálculo forçado a falhar via monkeypatch (Medição 1 não
+achou entrada real produzível pelo usuário para forçar a falha organicamente). Comparação
+coluna por coluna, nunca por total:
+
+| rota | o que persiste mesmo com recálculo falho | `valor_total`/sombras mudam? | resposta HTTP |
+|---|---|---|---|
+| 10966 `/margens` | `desconto_pct` novo (0→25) | não — ficam no valor anterior | `200 {"ok": true, "sombra": null, "erro_sombra": "..."}` |
+| 15655 `/descontos` | `desconto_individual_pct` novo do ambiente (0→20) | não | `200 {"ok": true, "sombra": null, "erro_sombra": "..."}` |
+| 10893 `/parametros` | `parametros_json` novo (`comissao_arq_ativa`, `comissao_arq_pct`) | não | `200 {"ok": true, "sombra": {...recalculado ao vivo...}}` — ver Medição 3 |
+| 15871 `/valor` (PATCH) | `forma_pagamento` novo | não | `200 {"ok": true}` |
+| 7891 `/pe/complemento/orcamento` | `forma_pagamento`/`negociacao_json` zerados (parte do wiring da rota) | não | `200 {"ok": true, "orcamento": {...}}` |
+
+**Não existe rota, das seis, onde insumo e resultado ficam consistentes.** Em nenhuma delas o
+`valor_total`/sombras persistidos acompanham o novo insumo quando o recálculo falha — todas
+deixam a mesma assinatura: insumo novo commitado, resultado numérico velho. Não há "modelo do
+conserto" pronto entre as seis; o conserto (transação única) precisa ser desenhado do zero.
+
+### Medição 3 (29/08) — a tela mostra o número que o banco não tem?
+
+Reproduzido: falha forçada só no recálculo, comparando o `sombra` da resposta HTTP com a linha
+persistida no banco.
+
+- **`/parametros` (10893): SIM — erro invisível confirmado.** `main.py:10893`,
+  `brk = _negociacao_breakdown(proj_orcs[0], db) if proj_orcs else None`, roda **fora e
+  incondicionalmente** do laço `try/except` que envolve `_recalcular_orcamento` — é uma segunda
+  chamada, de leitura pura, sobre o `parametros_json` **já commitado** (linha 10889, antes do
+  laço). Reproduzido com `comissao_arq_pct` mudando de 8%→15%: o banco ficou com `Cust_Ad`/`Val_Cont`
+  **inalterados** (diff vazio nas 14 colunas-sombra) enquanto a resposta trouxe
+  `"sombra": {"Com_Arq": 8100.0, "Val_Cont": 54000.0, ...}` — o número novo, calculado ao vivo, que
+  o banco não tem.
+- **`/margens` (10966): NÃO.** `main.py:10966-10970`, a chamada a `_negociacao_breakdown` está
+  **dentro** do mesmo `try` que embrulha `_recalcular_orcamento` — só é alcançada se o recálculo
+  teve sucesso. No `except`, a resposta é explicitamente `"sombra": None, "erro_sombra": str(_e)}`
+  (main.py:10973). Reproduzido: `erro_sombra` presente, `sombra` nulo. A prosa original deste
+  achado generalizava demais ao citar 10966 junto de 10893 — **medido: o agravante da tela só
+  existe em 10893.**
+- **`/descontos` (15655): NÃO**, pelo mesmo motivo e mesmo padrão de código que `/margens`
+  (confirmado no mesmo teste da Medição 2: `sombra: None, erro_sombra` presente).
+
+**Conclusão da Medição 3:** o "erro invisível" (tela mostra o novo, banco guarda o velho) é
+real, mas **restrito a uma única rota — `/parametros` (10893)** — não às duas que o achado
+original apontava. É a rota que **mais precisa** do conserto de transação única, porque hoje é a
+única onde o próprio sistema mostra ao usuário um número que nunca chegou a existir no banco.
 
 ### Pode mesmo falhar?
 
-`_negociacao_breakdown` (main.py:17239) faz `json.loads(proj.parametros_json)`
-sem try/except, chama `_complemento_diferencas*`, e roda o motor de
-`mod_negociacao`/`mod_provisoes`. Não é uma função que "nunca levanta" — e o
-próprio código tem dois `print("[CUTOVER] ...")` que só existem porque
-alguém previu a falha. Prever a falha e responder `ok` é a decisão errada.
+Sim, mas por um caminho mais estreito do que a lista original de candidatos sugeria — ver
+Medição 1 acima. A hipótese "divisão por carga tributária zerada" não se confirma no código
+atual; `mod_negociacao.py:30` usa `carga_trib` só como multiplicador.
 
 **Consequências no número final:** `valor_total` defasado alimenta contrato,
 parcelas, provisões, `Val_Cont` da NF-e e as três visões de DRE. É a raiz da
 árvore.
 
 **O que bloqueia:** confiar em qualquer margem calculada depois de uma
-alteração de desconto, parâmetro ou forma de pagamento.
+alteração de desconto, parâmetro ou forma de pagamento — em especial em
+`/parametros`, onde a tela pode mostrar um número que o banco nunca gravou.
 
 **Conserto:** insumo e recálculo na mesma transação; falha vira `ok: False`
 com rollback do conjunto. Os dois `print` viram log de erro de verdade.
+Prioridade: **Grupo 5** (higiene) para as seis rotas em geral — nenhuma exceção real e
+alcançável por usuário foi confirmada nelas — mas o caso `/parametros` (erro invisível na tela)
+justifica tratamento isolado antes das demais, dado o risco de decisão tomada sobre um número
+fantasma.

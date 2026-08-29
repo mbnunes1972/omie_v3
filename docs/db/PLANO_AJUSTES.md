@@ -191,6 +191,23 @@ contas a receber, 2.1.03. Responde "até onde posso me alavancar".
 vendas de junho, de março, de janeiro". Mostra o descasamento entre venda e
 entrega em dinheiro. Sai de graça do que já está lançado.
 
+**24-b. Tela de comparação de ambientes do PE × Projeto Vendido.**
+Pedida pelo usuário em 29/08, reconhecendo que *"não foi tratado
+anteriormente como deveria"*. Apresentar, numa tela de orçamento, os
+ambientes com diferença de valor: **valor de venda do ambiente no Projeto
+Executivo × valor do ambiente no Projeto Vendido**, calculados com **os
+mesmos parâmetros usados na venda**.
+
+É o instrumento que decide o valor do aditivo, e hoje esse valor sai de um
+cálculo sem tela. **Não depende do Grupo 1** — o motor já calcula a
+diferença por fator proporcional (`_complemento_diferencas_fase` →
+`mod_conciliacao_pe.valor_complemento_por_fator`); medir primeiro o quanto
+disso já está pronto, antes de desenhar tela nova.
+
+Frente própria: é produto, não contabilidade. Não misturar com a
+`TAREFA_ADITIVO`, que trata de faturar e cobrar o aditivo, seja qual for o
+valor que esta tela produzir.
+
 **Armadilha a evitar na tela:** as duas DREs **não são comparáveis período a
 período** — uma venda de janeiro entregue em junho aparece na Antecipada de
 janeiro e na Diferida de junho. A comparação que ensina é **por safra**.

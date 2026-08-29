@@ -440,6 +440,18 @@ geração do contrato original, antes de o aditivo existir. Aditivo de
 R$ 5.000,00 ficou preso em 2.1.06 até a Conciliação Final inclusive, e nunca
 entrou em cobrança. Deixou de ser erro de relatório: é caixa que não entra.
 
+**Regra do negócio registrada em 29/08 (dita pelo usuário, não estava escrita
+em lugar nenhum):** o aditivo cobra **diferença de valores do Projeto
+Executivo** — entre os ambientes planejados na venda e os efetivamente
+encaminhados à produção no pedido. **Não tem XML novo**; se há XML novo, é
+contrato novo e projeto novo. E ele ocorre, na maioria dos casos, **na
+aprovação do PE, antes de existir NF-e**.
+
+A terceira parte muda o conserto: com o aditivo já existente na emissão, a
+soma resolve o faturamento numa única NF-e. Mas **não** muda o lado da
+cobrança — os `Recebivel` nascem na geração do contrato, antes do PE, sempre.
+Ordem do conserto e as medições em `docs/db/TAREFA_ADITIVO.md`.
+
 ## ACHADO-13 — `faturar_segmento` pode duplicar receita se chamado 2x para o mesmo segmento (não confirmado em produção)
 
 **O que acontece:** `faturar_segmento` sempre recalcula `usa`/`resto` a

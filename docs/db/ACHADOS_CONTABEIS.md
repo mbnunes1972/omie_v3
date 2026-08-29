@@ -434,6 +434,12 @@ aditivo por caminho manual?
 
 ---
 
+**Escalada em 29/08/2026, medido no teste de ciclo:** o aditivo não é só
+não-faturado — ele **não é cobrado do cliente**. O `Recebivel` nasce da
+geração do contrato original, antes de o aditivo existir. Aditivo de
+R$ 5.000,00 ficou preso em 2.1.06 até a Conciliação Final inclusive, e nunca
+entrou em cobrança. Deixou de ser erro de relatório: é caixa que não entra.
+
 ## ACHADO-13 — `faturar_segmento` pode duplicar receita se chamado 2x para o mesmo segmento (não confirmado em produção)
 
 **O que acontece:** `faturar_segmento` sempre recalcula `usa`/`resto` a
@@ -520,3 +526,94 @@ rubricas em silêncio, sem nunca reconhecer a despesa real? Ou a DRE `real`
 deveria reconhecer, no momento da Conciliação Final, o custo cancelado
 como despesa (mesmo sem execução física confirmada), pra não subestimar
 custo?
+
+---
+
+## ACHADO-14 — "Total Flex" virou "Parcelamento Loja" e o rename não chegou · RESOLVIDO 29/08/2026
+
+Produto renomeado; código e nome da conta 2.1.05 no banco não acompanharam.
+Mesmo padrão de 1.1.09/2.1.09: rename em código não alcança base existente.
+
+Resolvido: arquivos renomeados, migration 95c7e64afc6a para o nome da conta.
+Dívida aceita: o identificador `total_flex` continua no wire do frontend, com
+alias. Sai quando alguém tocar naquela tela.
+
+---
+
+## ACHADO-16 — Provisão cancelada em silêncio na Conciliação Final torna a margem fictícia
+
+**GRAVE. Medido em 29/08/2026 pelo teste de ciclo completo das DREs.**
+
+### O que acontece
+Uma provisão constituída na venda e **nunca efetivada** é cancelada na
+Conciliação Final contra o ativo diferido — sem tocar a DRE, sem alerta, sem
+registro de que a estimativa foi descartada.
+
+### O número medido
+Projeto entregue com receita de R$ 90.000,00 e `cmv_csp` = **zero**. Lucro
+bruto de 100%. Na venda o sistema estimava R$ 42.000,00 de custo; no
+fechamento jogou a estimativa fora.
+
+O livro não está mentindo — está sendo fiel. Ninguém lançou o custo. O
+problema é que **o sistema decide sozinho que o custo não existiu.**
+
+### Por que isso importa
+Provisão que chega à conclusão sem efetivação é uma de duas coisas:
+- um custo que realmente não aconteceu — raríssimo, não se entrega móvel
+  sem comprar;
+- **um custo que aconteceu e ninguém lançou** — o caso comum.
+
+O sistema assume a primeira, em silêncio. Basta um assistente esquecer a
+nota da fábrica e o projeto fecha com margem inventada, sem nenhum sinal.
+
+### Consequências
+- Margem por projeto pode ser fictícia, sempre para cima.
+- Comparação entre lojas fica distorcida a favor de quem lança pior.
+- A variância provisão × realizado, que seria o instrumento para detectar
+  isso, é justamente o que o cancelamento apaga.
+
+### A decidir
+O cancelamento deve exigir **confirmação explícita** de quem fecha o projeto
+("declaro que este custo não ocorreu"), ou deve **recusar o fechamento** até
+a rubrica ser efetivada ou baixada com justificativa?
+
+Isso amplia o item 5 da TAREFA_PROVISOES: a fila não é só de Impostos e
+Custo Financeiro — é de **toda provisão que fecha sem efetivação**.
+
+---
+
+## ACHADO-17 — `2.1.04.12 "Retenção de Comissão de Vendas"`: o nome descreve o que o código não faz
+
+O conceito pretendido: a comissão **nasce retida**, é liberada quando paga,
+pode ficar retida parcialmente até a entrega ou por erro de projeto do
+consultor, e o **resíduo revertido em favor da empresa vira receita** que
+compensa outras despesas.
+
+O mecanismo atual é uma provisão simples: nasce na 2ª assinatura, a Folha
+resolve. Não há retenção parcial, condição de liberação nem reversão para
+receita.
+
+Não há duplicidade de saldo (medido, ACHADO-05 fechou). O problema é que
+quem lê o plano de contas acredita que a funcionalidade existe.
+
+**Consequência:** nenhuma hoje no número. A funcionalidade de retenção
+simplesmente não existe — o que é uma decisão de produto pendente, não um
+defeito contábil.
+
+**A decidir:** implementar a retenção como concebida, ou renomear a conta
+para o que ela de fato é (provisão de comissão)?
+
+---
+
+## ACHADO-18 — NF-e sem `valor_total` não lança nada, em silêncio (medição pendente)
+
+Achado ao construir o teste de ciclo das DREs. `POST /api/orcamentos/<id>/
+negociacao-preview` é só leitura; quem persiste `orc.valor_total` é
+`POST .../margens`. Sem essa chamada, `Val_Cont` nunca existe e a emissão de
+NF-e **não escritura nada, sem erro** — fail-soft no caminho do dinheiro.
+
+**Não confirmado na UI real.** Pode ser detalhe de encadeamento do teste.
+
+**A medir, antes de qualquer conserto:** a tela real consegue chegar à
+emissão sem ter passado por `margens`? Se conseguir, existe caminho pelo
+qual se emite nota e não se escritura nada — e a gravidade é alta.

@@ -185,16 +185,81 @@ lançamento do ajuste no dia a dia é quem vê a pendência. A fila aparece na
 tela dele, filtrada por loja. O gerente não precisa dela para trabalhar,
 mas o saldo em aberto deve ser visível no fechamento do projeto.
 
+## Fase 4 — resolvida em 29/08/2026, depois da investigação de origem
+
+A investigação mostrou que **três dos quatro não são defeitos**. As contas
+vieram todas juntas do seed inicial (0b86514, 09/07/2026), derivado de um
+plano de contas genérico importado de uma vez — nenhuma nasceu de
+funcionalidade sendo construída.
+
+**ACHADO-04 — remover o evento, manter a conta.** O evento `custo_financeiro`
+(5.5.03 × 2.1.05) nasceu marcado [CONFIRMAR CONTADOR] e nunca foi
+confirmado. Ele modela o Parcelamento Loja como se o dinheiro viesse de
+fora — um passivo a pagar. Pela regra do deságio, quem financia é a própria
+loja, e o deságio é receita financeira dela. O mecanismo que roda hoje
+(1.1.07 / 2.1.07 / 4.4.03) está certo; o evento adormecido está errado.
+
+Evento errado que ninguém chama é arma carregada: basta alguém achar que
+"faltava wirar". Remover. A conta 2.1.05 fica no catálogo — volta a fazer
+sentido se o Parcelamento Loja algum dia for fundeado por terceiro.
+
+**ACHADO-05 — remover o evento, medir a conta.** `pagamento_comissao` foi
+legitimamente superado: comissão hoje é paga pela Folha, com caminho
+próprio. Remover.
+
+Mas a comissão passou a usar `2.1.04.12 "Retenção de Comissão de Vendas"`,
+e **retenção e provisão são conceitos diferentes** — provisão reconhece a
+obrigação, retenção segura parte do pagamento até uma condição. Se a mesma
+conta faz as duas coisas, é a doença do ACHADO-09 outra vez. MEDIR ANTES DE
+FECHAR o 05.
+
+**ACHADO-08 — artefato da medição, não defeito.** Duas categorias estavam na
+mesma lista:
+
+- Despesa administrativa (Aluguel, Água, Energia, Salários): **são usadas**,
+  por lançamento manual. "Nunca tocada por evento" nunca foi sintoma nelas.
+- Contas de módulo (Estoques, Imobilizado, Intangível, Financiamentos de
+  Longo Prazo, Aluguéis): são plano, não sobra. Plano de contas é mapa do
+  que a empresa pretende ser. Ficam.
+
+A ação é **refinar o relatório**, não mexer nas contas: distinguir conta de
+evento de conta de lançamento manual, e marcar as de módulo como futuro
+declarado. Senão a lista acusa as mesmas quinze em toda auditoria futura.
+
+**ACHADO-10 — remover.** Mecanismo completo e funcional, substituído por
+versões mais específicas em cada fluxo. A intenção de plugar outros eventos
+nele nunca se concretizou. Deixar ali é oferecer o caminho errado a quem
+chegar depois.
+
+## ACHADO-14 — "Total Flex" virou "Parcelamento Loja" e o rename não chegou
+
+O produto mudou de nome. O código não: `mod_fin/total_flex.py`,
+`config/total_flex.json`, `tabelas_financeiras/total_flex.json`, e o nome da
+conta `2.1.05 "Financiamento Total Flex a Pagar"` — que está **no banco**,
+onde rename em código nunca chega (`seed_plano()` cria o que falta e não
+corrige o que existe).
+
+Mesmo padrão de 1.1.09/2.1.09. Conserto: rename no código, mais migration de
+dado para o nome da conta nos ambientes existentes, no mesmo commit.
+
+Consequência: nenhuma no número. Custo de não fazer: quem entra no projeto
+procura por "Parcelamento Loja" e não encontra o código que implementa.
+
+## Recalibração do tamanho
+
+Depois da investigação, a lista real de defeitos que erram número é:
+**01, 02, 03, 12, 13, 06 e o P5** — sete, dos quais dois já estão
+completamente especificados e com teste esperando virar verde.
+
+O resto é catálogo, código superado, nomenclatura e um critério de medição
+largo demais. E os defeitos reais estão concentrados em dois lugares — o
+tratamento do deságio e o caminho do aditivo — não espalhados.
+
 ## Decisões ainda abertas
 
-**As contas e mecanismos mortos da Fase 4** (ACHADO-04, 05, 08, 10).
+**`2.1.04.12` acumula provisão e retenção de comissão ao mesmo tempo?**
+Medir. Se sim, vira achado novo e o ACHADO-05 só fecha junto com ele.
 
-Antes de decidir, é preciso saber o que cada um era para ser. Pedido ao
-Claude Code: para cada conta e mecanismo morto, dizer de onde veio (commit,
-spec), o que a criou, e se existe tela ou código a meio caminho.
-
-"Remover ou implementar" só é decidível com essa informação — não a partir
-do código da conta.
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes da Fase 1 fechar.

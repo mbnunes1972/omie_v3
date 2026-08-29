@@ -20,6 +20,23 @@ def _sem_rate_limit_de_login_entre_testes():
         _auth._LOGIN_TENTATIVAS.clear()
 
 
+@pytest.fixture(autouse=True)
+def _sem_credenciais_de_canal_externo_ao_vivo(monkeypatch):
+    """P6 — hermeticidade (docs/db/TAREFA_BATERIA_CICLO.md, item 0): `chat/externo.py` lê
+    ORIZON_WA_*/ORIZON_SMTP_* direto do ambiente (`meio_configurado`); com o `.env` do
+    desenvolvedor carregado (credenciais reais de WhatsApp/SMTP), test_chat_wa e
+    test_comunicacao viravam tentativa de envio AO VIVO em vez de 'pendente_config' — a
+    suíte com dois vermelhos permanentes ensinava a ignorar vermelho. Testes que precisam
+    simular canal configurado já fazem `monkeypatch.setenv` explicitamente (ver
+    tests/test_chat_externo.py) — isso continua funcionando, pois roda DEPOIS deste
+    autouse no mesmo `monkeypatch`. Os que não fazem devem rodar como se nenhuma
+    credencial existisse, não como se o `.env` de quem roda a suíte estivesse configurado."""
+    for var in ("ORIZON_WA_TOKEN", "ORIZON_WA_PHONE_ID", "ORIZON_WA_APP_SECRET",
+                "ORIZON_WA_VERIFY_TOKEN", "ORIZON_SMTP_HOST", "ORIZON_SMTP_PORT",
+                "ORIZON_SMTP_USER", "ORIZON_SMTP_PASS", "ORIZON_SMTP_FROM"):
+        monkeypatch.delenv(var, raising=False)
+
+
 def _test_database_url():
     """URL do banco de TESTE (sempre Postgres — o SQLite saiu da suíte na faxina 2026-07-23).
 

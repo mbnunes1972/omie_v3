@@ -452,6 +452,128 @@ soma resolve o faturamento numa única NF-e. Mas **não** muda o lado da
 cobrança — os `Recebivel` nascem na geração do contrato, antes do PE, sempre.
 Ordem do conserto e as medições em `docs/db/TAREFA_ADITIVO.md`.
 
+---
+
+### Medições de docs/db/TAREFA_ADITIVO.md (29/08) — Costuras 4, 3, 1, 2 + item 0
+
+**Costura 4 — reproduzida com números (`tests/test_aditivo_costuras.py::
+test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca`, `xfail(strict=True)`):
+CONFIRMADA.** Contrato de R$ 88.888,89 (VAVA, 1 ambiente, comissão de arquiteto 10%
+repassada). Revisão 1 do PE (venda R$ 84.000): complemento = R$ 4.444,44 → aditivo #1
+assinado → 2.1.06 creditado em R$ 4.444,44 (exato). Revisão 2 do MESMO ambiente,
+DEPOIS do aditivo #1 assinado (venda R$ 90.000): `POST /pe/complemento/orcamento`
+**reaproveita o MESMO `Orcamento`** que o aditivo #1 já referencia (get-or-create por
+`projeto_id + complemento_pe=1 + parcela_id=None` — main.py:7863-7867) e sobrescreve
+`valor_total` para R$ 11.111,11 — a diferença cheia contra a MESMA linha de base do
+contrato original, não incremental sobre o que o aditivo #1 já cobriu.
+`POST /api/projetos/<nome>/aditivo` com `{"novo": true}` cria o aditivo #2, com um
+`aditivo.id` novo (portanto um `ref` novo em `registrar_evento`) apontando para esse
+MESMO orçamento. Assinar o aditivo #2 credita 2.1.06 de novo pelo `valor_total`
+ATUAL (R$ 11.111,11) — **total creditado pelos dois aditivos = R$ 15.555,55, quando a
+diferença final real (revisão 2 já supera e substitui a revisão 1) é R$ 11.111,11**.
+Os R$ 4.444,44 da revisão 1 foram cobrados duas vezes. Confirma as duas hipóteses da
+tarefa juntas: (1) o upload de PE sobrescreve `valor_venda` sem checar aditivo já
+assinado, e (2) `_complemento_diferencas`/`_pe_fator_contexto` sempre comparam contra
+o `Contrato.orcamento_id`, nunca contra "contrato + aditivos já assinados". **Nada
+impede — nem `renegociar_pe` nem a criação do aditivo #2 são bloqueados pelo aditivo
+#1 já assinado.** A linha que a tarefa pede ("depois da assinatura do aditivo, a
+diferença já virou lançamento — mudança é evento contábil, não sobrescrita") não
+existe hoje em código nenhum.
+
+**Costura 3 — vale em 100% dos casos. Medido: a tela NÃO coleta forma de pagamento do
+aditivo. Decisão de produto formulada abaixo — não escolhida por conta própria (regra
+da tarefa).** `POST /api/projetos/<nome>/aditivo/assinar` (main.py:9083-9138) só
+recebe `parte`, `nome`, `cpf` — nenhum campo de pagamento, nem no corpo da
+requisição nem em nenhum lugar antes dele no fluxo de assinatura. `_materializar_
+recebiveis_venda_seguro` (main.py:812) tem um único chamador (main.py:13865, na
+geração do CONTRATO), antes de o aditivo existir — mecanicamente alcançável para o
+orçamento do aditivo (guarda de idempotência é por `orcamento_id`), mas **ninguém a
+chama para `orcamento_complemento_id`**. Pergunta para decisão, com as opções que o
+código já suporta:
+- (a) A assinatura do aditivo passa a coletar forma de pagamento (novo campo na tela
+  de assinatura) e chama `_materializar_recebiveis_venda_seguro` com o
+  `orc_aj`/`pagamento_json` recebido — cria `Recebivel`s próprios do aditivo, com a
+  MESMA mecânica do contrato.
+- (b) O valor do aditivo é somado ao PRÓXIMO recebível em aberto do contrato original
+  (ajusta um `Recebivel.valor_previsto` existente) — não cria linha nova, mas exige
+  decidir qual parcela recebe o acréscimo.
+- (c) Terceiro mecanismo fora deste código (cobrança manual, boleto avulso) — o
+  aditivo nunca vira `Recebivel`, só o registro contábil (2.1.06/provisões) que já
+  existe hoje.
+Nenhuma das três está implementada; sem escolha do usuário, nenhuma foi presumida.
+
+**Costura 1 — consumidores e predicado, medidos.** `_valores_segmentados_do_projeto`
+tem **3 chamadores**: `_fin_faturamento_segmentado_seguro` (main.py:1331, credita o
+razão), NF-e produto (main.py:14816, rescala os itens da fábrica para o total
+Mercadoria) e NFS-e (main.py:14927, valor do serviço). Nenhum dos três usa o campo
+`cfo` que a função já devolve — o docstring de `_fin_faturamento_segmentado_seguro`
+promete reconhecer "CMV = CFO congelado... ref `cmv:<projeto>`", mas não existe
+nenhum `registrar_evento`/lançamento com esse ref em código nenhum — **a promessa do
+docstring não tem implementação**; achado isolado, à parte de qualquer soma futura.
+Predicado: `complemento_pe=1` **não distingue** aditivo (legado, `parcela_id=None`)
+de complemento por fase (`parcela_id=<id>`) — só `parcela_id` distingue. Risco
+concreto: `POST /api/projetos/<nome>/aditivo` (main.py:8945-8947) filtra por
+`parcela_id` **só se a requisição enviar essa chave**; sem ela, a query pega **o
+`complemento_pe=1` de MAIOR id do projeto**, seja ele o legado ou de qualquer fase —
+se as duas rotas de complemento coexistirem no mesmo projeto (nada as impede), o
+aditivo pode amarrar no orçamento errado por ordem de criação, não por regra de
+negócio. Se a soma da Costura 1 for implementada, o predicado precisa ser explícito
+(ex.: enumerar exatamente quais `orcamento_id`s entram, não inferir por `parcela_id`
+sozinho) — hoje a distinção está só na cabeça de quem escreveu o endpoint de aditivo,
+como a tarefa antecipou. `cfo`: cada orçamento de complemento já tem seu próprio
+`.cfo` recém-calculado, e `_fin_provisoes_venda_seguro` (chamado na assinatura do
+aditivo) JÁ reconhece esse `cfo` como provisão `custo_fabrica` própria — somar `cfo`
+de contrato+aditivos em `_valores_segmentados_do_projeto` não duplicaria nada, desde
+que a soma leia o mesmo conjunto de orçamentos usado para a soma do `val_cont`. `seg`:
+não medido além do código-fonte — a segmentação vem de `Projeto.parametros_json`
+(live, não de um snapshot por orçamento); um aditivo assinado depois de uma mudança
+de parâmetro herdaria a segmentação ATUAL do projeto no momento da NF-e, não a que
+valia quando o aditivo foi negociado — mesma classe de risco que o ACHADO-19 already
+descreve para `parametros_json`, não uma novidade desta tarefa. `orc`: nenhum
+consumidor externo de `_valores_segmentados_do_projeto` usa a chave `orc` do retorno
+além da própria função (`round(float(getattr(orc, "cfo", 0)...`); pode virar uma
+lista sem quebrar consumidor nenhum hoje.
+
+**Costura 2 — teste de regressão escrito e ANTES de qualquer conserto
+(`tests/test_aditivo_costuras.py::test_costura2_reemissao_nao_duplica_o_ja_faturado`,
+`xfail(strict=True)`): a regressão que a tarefa temia É REAL, e pior do que a
+suspeita original. `faturar_segmento` decide o split usa/resto (quanto sai de 2.1.06
+"adiantado" vs. quanto vira `1.1.02` "a receber") pelo saldo ATUAL da conta — mas
+**usa+resto sempre soma o `valor` recebido por inteiro, creditado em 4.1.01/4.2.01**.
+O split não tem nenhuma noção de "quanto desta receita já foi reconhecido antes" —
+só decide QUAL conta de contrapartida absorve o débito. Reproduzido: contrato
+R$ 88.888,89 (100% mercadoria), fechamento credita 2.1.06, 1ª NF-e fatura R$ 88.888,89
+(drena 2.1.06 a zero). Aditivo assinado (+R$ 4.444,44 em 2.1.06). Simulada a soma da
+Costura 1 (monkeypatch em `_valores_segmentados_do_projeto`, SEM implementá-la de
+verdade) devolvendo R$ 93.333,33 (88.888,89+4.444,44). 2ª NF-e: **4.1.01 fecha em
+R$ 182.222,22** (R$ 88.888,89 da 1ª + R$ 93.333,33 da 2ª) — não em R$ 93.333,33, que
+seria o correto. **Isto não é exclusivo da soma da Costura 1**: já é verdade HOJE,
+sem nenhuma soma, para qualquer segundo documento fiscal emitido pro mesmo segmento
+do mesmo projeto — é o MESMO mecanismo do ACHADO-13, agora confirmado com números no
+contexto do aditivo. **Conclusão prática: não dá pra somar a Costura 1 sem antes (ou
+junto) consertar `faturar_segmento` para ser delta-aware na conta de RECEITA, não só
+no split do débito** — exatamente a ordem que a tarefa pediu para não inverter.
+
+**Item 0 — divergência dos dois mecanismos, medida.** Os dois estão **simultaneamente
+vivos na UI hoje** (static/index.html): o legado (checkbox "Renegociar" + upload de
+XML `finalidade=complemento`, linhas 21489/21637/21689 — tela 11c/comparação de
+venda) e o novo por fase (`peConciliacaoDecidir`/`peConciliacaoGerarComplemento`,
+linhas 22045-22088 — tela AF2/`ConciliacaoPeFase`) — não são um substituindo o outro
+na tela, coexistem. A regra "XML novo ⇒ projeto novo" **está escrita em código, não
+só no desenho**: toda rota que cria/sobrescreve/renomeia um `PoolAmbiente` (a criação
+via XML "do pool", i.e. um AMBIENTE NOVO — main.py:11875, 11960, 12042, 12084) checa
+`_contrato_assinado(nome_safe, db)` e recusa com 403 "Contrato assinado — alterações
+não permitidas" — a mesma trava, msm texto, em toda rota de pool. O `ArquivoPE`
+(upload de PE/complemento, `xml_pe`/`xml_compl`) foi desenhado para não esbarrar
+nessa trava (correto — ele não cria `PoolAmbiente`), então a fronteira é real, não
+coincidência de ordem de tela. **Não medido** (fora do escopo — exigiria consultar
+dado real dos 4 ambientes, não pedido nesta tarefa): quantos projetos em produção
+ainda têm `ArquivoPE.formato='xml_compl'` gravado (dependência real do legado). **O
+que quebra se `finalidade=complemento` parar de gravar:** nada crasha —
+`_complemento_diferencas` já trata `compl_carregado=False` como estado normal
+("PE não carregado" na tela); o legado ficaria mostrando zero para todo ambiente
+marcado, sem erro. Nenhum outro código lê `formato="xml_compl"` além dessa função.
+
 ## ACHADO-13 — `faturar_segmento` pode duplicar receita se chamado 2x para o mesmo segmento (não confirmado em produção)
 
 **O que acontece:** `faturar_segmento` sempre recalcula `usa`/`resto` a

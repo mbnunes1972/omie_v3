@@ -348,3 +348,78 @@ desatualizada, não afeta o lançamento gravado.
 
 **Decisão necessária:** nenhuma — ajustar o docstring é conserto trivial,
 não requer decisão.
+
+---
+
+## ACHADO-12 — Aditivo contratual: a receita constituída nunca é faturada
+
+**O que acontece:** um aditivo assinado (`POST /api/projetos/<nome>/aditivo/assinar`,
+main.py:9106-9165) cria um `Orcamento` separado (`complemento_pe=1`, valor da
+diferença) e, na 2ª assinatura, chama `_fin_provisoes_venda_seguro` (o mesmo
+wiring do fechamento original) — isso corretamente constitui a Receita a
+Realizar (2.1.06) e as provisões (as 17 rubricas) pela diferença. Mas a NF-e
+(`_fin_faturamento_segmentado_seguro` → `_valores_segmentados_do_projeto`,
+main.py:1315-1336) resolve o Val_Cont a faturar sempre a partir do único
+`Contrato` do projeto (main.py:13824 é o ÚNICO ponto de criação de
+`Contrato` em todo o código) — nenhum aditivo cria ou atualiza esse
+registro. A segmentação de NF-e nem sabe que o aditivo existe.
+
+**Evidência:** main.py:9159-9161 (aditivo só cria `Orcamento`, nunca
+`Contrato`); main.py:1315-1336 (`_valores_segmentados_do_projeto` lê
+`Contrato.orcamento_id` → `Orcamento.valor_total`, sempre o original);
+main.py:13824 (confirmado por grep: único `Contrato(` do código).
+tests/test_complemento_pe_e2e.py:222-234 valida que o aditivo grava
+lançamentos (idempotência do wiring), mas nenhum teste hoje verifica
+`faturar_segmento`/4.1.01 contra o valor do aditivo.
+
+**Consequências no número final:**
+- Para um aditivo de R$ X, o R$ X inteiro fica constituído em Receita a
+  Realizar (2.1.06) e NUNCA vira receita faturada (4.1.01/4.2.01) — 100% do
+  valor do aditivo, não uma fração ou um arredondamento.
+- Qualquer projeto com aditivo fecha com 2.1.06 aberto para sempre — contraria
+  diretamente a invariante "contas transitórias zeradas no fechamento"
+  (docs/db/TAREFA_BATERIA_CICLO.md, invariante 2) e é o motivo dos cenários
+  `tem_aditivo=True` da bateria de ciclo completo terem que ficar `xfail`.
+- As provisões de custo do aditivo (constituídas corretamente) seguem seu
+  próprio caminho de resolução normalmente — o problema é ISOLADO ao lado da
+  receita, não contamina o lado do custo.
+
+**O que bloqueia:** a matriz de docs/db/TAREFA_BATERIA_CICLO.md — todo
+cenário com `tem_aditivo=True` fica `xfail(strict=True)` citando este achado.
+
+**Decisão necessária:** a NF-e do aditivo deveria ser emitida vinculando-se a
+um novo `Contrato` próprio, ou `_valores_segmentados_do_projeto` deveria somar
+o Val_Cont de TODOS os orçamentos `complemento_pe=1` do projeto (original +
+aditivos) ao resolver o que falta faturar? Alguma dessas é o desenho
+pretendido, ou existe um terceiro mecanismo (fora deste código) que fatura o
+aditivo por caminho manual?
+
+---
+
+## ACHADO-13 — `faturar_segmento` pode duplicar receita se chamado 2x para o mesmo segmento (não confirmado em produção)
+
+**O que acontece:** `faturar_segmento` sempre recalcula `usa`/`resto` a
+partir do saldo ATUAL de 2.1.06 do projeto (não de um valor incremental
+próprio do documento) a cada chamada. Se dois documentos fiscais forem
+emitidos para o MESMO segmento do MESMO projeto (duas NF-e's de
+"mercadoria", por exemplo), a segunda chamada, com 2.1.06 já drenado a zero
+pela primeira, lançaria o valor segmentado inteiro de novo como "a
+receber"/receita — um duplo-reconhecimento independente do caso do
+aditivo (ACHADO-12).
+
+**Evidência:** mod_contabil.py:1449-1479 (`faturar_segmento`) — `usa =
+min(saldo_adiantamento_projeto(...), valor)`; sem esse saldo, todo o
+`valor` cai no `resto` (`faturamento_%s_a_receber`), incondicionalmente.
+
+**Consequências no número final:** não medidas — não confirmei se o fluxo
+de negócio permite duas NF-e's do mesmo segmento por projeto na prática
+(pode ser que cada segmento só receba UM documento fiscal por design, o que
+tornaria isto inatingível). Achado de baixa confiança, registrado para
+constar.
+
+**O que bloqueia:** nada, até confirmação.
+
+**Decisão necessária:** o fluxo permite emitir mais de uma NF-e de
+mercadoria (ou de serviço) para o mesmo projeto? Se sim, `faturar_segmento`
+precisa de um controle por documento (não só por segmento) antes de ser
+chamado de novo nesse cenário.

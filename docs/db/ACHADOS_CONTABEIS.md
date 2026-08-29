@@ -572,10 +572,45 @@ nota da fábrica e o projeto fecha com margem inventada, sem nenhum sinal.
 - A variância provisão × realizado, que seria o instrumento para detectar
   isso, é justamente o que o cancelamento apaga.
 
-### A decidir
-O cancelamento deve exigir **confirmação explícita** de quem fecha o projeto
-("declaro que este custo não ocorreu"), ou deve **recusar o fechamento** até
-a rubrica ser efetivada ou baixada com justificativa?
+### DECIDIDO 29/08/2026 — recusar o fechamento; toda provisão é resolvida antes
+
+**A Conciliação Final não fecha o projeto enquanto houver provisão em
+aberto.** Não existe cancelamento silencioso, e não existe cancelamento
+confirmado com um clique: cada rubrica aberta precisa de um **veredito
+nomeado** de uma pessoa, e o veredito é uma resposta a uma pergunta
+específica, não um "OK".
+
+Os quatro vereditos possíveis, e o que cada um faz no livro:
+
+| veredito | quando | efeito |
+|---|---|---|
+| **efetivada** | o documento real chegou pelo valor previsto | nada a fazer; já lançado |
+| **encerrada com valor menor** | o documento real chegou por menos | o realizado vira custo; **o resíduo reverte o custo** (a margem melhora, e isso é honesto — foi superprovisionado) |
+| **não se aplica** | a rubrica não incide neste projeto | o saldo reverte o custo integralmente; exige motivo escrito |
+| **ainda vai chegar** | a despesa existe e o documento não chegou | **não resolve — o projeto não fecha** |
+
+O quarto veredito é o que faz esta decisão funcionar sem virar pressão para
+chutar. Ninguém é obrigado a inventar um valor para encerrar: a pessoa pode
+dizer "ainda vai chegar", e o projeto fica honestamente aberto.
+
+**A pergunta que a disciplina exige** (formulada pelo usuário ao decidir):
+*ainda há despesa a realizar?* O sistema não consegue distinguir
+"superprovisionado" de "a nota ainda não chegou" — os dois têm a mesma
+aparência no banco. Só uma pessoa que olhou o pedido sabe. É por isso que a
+resolução é obrigatória e é humana.
+
+**Não confundir com o ACHADO-01.** Aqui o resíduo reverte custo porque a
+despesa é futura e não veio, ou veio menor — é correção de estimativa. No
+custo financeiro o deságio já foi retido na origem, não há pagamento futuro,
+e o acerto da provisão é puro balanço. Mecânicas diferentes; aplicar a regra
+de um no outro reintroduz o erro que o ACHADO-01 registra.
+
+**O risco que esta decisão aceita, e o contra-controle.** Projetos vão ficar
+abertos, e a pressão será para marcar "não se aplica" só para encerrar. A
+reversão de resíduo **melhora** a margem — então um projeto que fecha com
+reversão grande é exatamente o que se quer olhar. Relatório de controle:
+projetos encerrados por reversão, ordenados pelo valor revertido, com o
+motivo escrito ao lado. Sem esse relatório, a decisão vira uma formalidade.
 
 Isso amplia o item 5 da TAREFA_PROVISOES: a fila não é só de Impostos e
 Custo Financeiro — é de **toda provisão que fecha sem efetivação**.

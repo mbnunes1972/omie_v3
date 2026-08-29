@@ -57,8 +57,18 @@ Medido: projeto com receita de 90.000 e custo zero. A Conciliação Final
 descarta a estimativa em vez de questioná-la. Basta esquecer uma nota da
 fábrica para o projeto fechar com margem inventada.
 
-A decidir: o cancelamento exige confirmação explícita de quem fecha, ou
-recusa o fechamento até a rubrica ser efetivada ou baixada com justificativa?
+**DECIDIDO em 29/08: recusa o fechamento.** Toda provisão aberta precisa de
+um veredito nomeado antes de o projeto fechar — *efetivada* / *encerrada com
+valor menor* / *não se aplica* / *ainda vai chegar*. O quarto não resolve: o
+projeto fica aberto, e é isso que impede a decisão de virar pressão para
+chutar valor. Resíduo de provisão superestimada **reverte custo** (correção
+de estimativa) — regra que **não** vale para o custo financeiro, ver
+ACHADO-01.
+
+Vem junto, senão a decisão vira formalidade: **relatório de projetos
+encerrados por reversão**, ordenado pelo valor revertido, com o motivo
+escrito ao lado. A reversão melhora a margem — logo é exatamente o que se
+quer olhar.
 
 **3. ACHADO-18 — guarda de `valor_total > 0`. DECIDIDO em 29/08: entra.**
 Medido: o ponto de entrada examinado não alcança o fail-soft, mas por
@@ -233,13 +243,13 @@ alguém tocar naquela tela.
 - Exportação Excel como foto; nada persistido no banco.
 - `projeto_id` vira FK.
 - Guarda explícita de `valor_total > 0` antes de contrato e de NF-e.
+- Conciliação Final não fecha com provisão em aberto; veredito nomeado por
+  rubrica, e "ainda vai chegar" mantém o projeto aberto.
 
 ## Decisões ainda abertas
 
-1. **ACHADO-16**: o cancelamento de provisão não efetivada exige confirmação
-   explícita, ou recusa o fechamento?
-2. **ACHADO-17**: implementar a retenção de comissão, ou renomear a conta?
-3. **Política de reconhecimento da Diferida** — confirmar que é na entrega
+1. **ACHADO-17**: implementar a retenção de comissão, ou renomear a conta?
+2. **Política de reconhecimento da Diferida** — confirmar que é na entrega
    (a venda é contrato, não resultado).
 
 ## Medições pendentes

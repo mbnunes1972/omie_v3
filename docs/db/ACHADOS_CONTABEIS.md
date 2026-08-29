@@ -259,29 +259,58 @@ que contornam toda a lógica de negócio das rotas dedicadas?
 
 ---
 
-## ACHADO-08 — Contas do PLANO_PADRAO nunca tocadas por nenhum evento
+## ACHADO-08 — Contas do PLANO_PADRAO nunca tocadas por nenhum evento (refinado em 2026-08-29)
 
-**O que acontece:** 1.1.03 (Estoques), 1.1.04 (Adiantamentos a
-Fornecedores), 1.2.1.01-04 (Imobilizado), 1.2.2 (Intangível), 2.1.02
-(Obrigações Trabalhistas), 2.2.01 (Financiamentos de Longo Prazo), 4.2.02
-(Prestação de Serviços para Terceiros), 4.4.01 (Receita de Aluguéis) e a
-maior parte das famílias 5.2/5.3/5.4/5.5.01 nunca aparecem como D ou C de
-evento nenhum nem de site direto de `lancar`.
+**Origem comum:** todas as contas abaixo nasceram juntas no seed inicial
+(commit `0b86514`, 09/07/2026, "Plano de Contas — modelo Conta + seed
+padrão (99 contas)"), derivado de `Especificacao_Financeiro_Orizon_v2.docx`
+§2/§2.1 — a spec (`docs/superpowers/specs/financeiro/2026-07-09-plano-de-
+contas-design.md`) descreve o seed como "as ~70 analíticas do Pontta" e o
+enquadra explicitamente como "ponto de partida, ajustável com o contador".
+Um plano de contas completo foi importado de uma vez — nenhuma dessas
+contas nasceu de uma funcionalidade sendo construída conta-por-conta. A
+investigação de origem (2026-08-29) não encontrou nenhuma tabela de banco
+(`Veiculo`, `Imobilizado`, `Estoque`, `ContratoAluguel`, etc.), tela ou
+endpoint correspondente a nenhuma delas.
 
-**Evidência:** cross-referência completa em
-docs/db/AUDITORIA_MAPA_CONTABIL.md, Parte 2, categoria 4.
+O primeiro relatório (2026-08-28) tratava a lista como uma coisa só. Ela
+não é — **"nunca tocada por evento" significa coisas diferentes conforme
+o tipo de conta**, e a categoria decide se isso é sintoma ou é esperado.
 
-**Consequências no número final:** nenhuma esperada — são, com alta
-confiança, contas de lançamento manual (`despesa_avulsa`/
-`/api/financeiro/lancamentos`) para módulos que ainda não têm motor próprio
-(estoque, imobilizado, folha trabalhista formal). Não é bug; é
-funcionalidade não implementada ou fora do escopo automático.
+### Contas de evento (módulo declarado, ainda não construído)
+1.1.03 (Estoques), 1.1.04 (Adiantamentos a Fornecedores), 1.2.1.01-04
+(Imobilizado — Informática/Veículos/Obras/Show Room), 1.2.2 (Intangível),
+2.1.02 (Obrigações Trabalhistas formal), 2.2.01 (Financiamentos de Longo
+Prazo), 4.2.02 (Prestação de Serviços a Terceiros), 4.4.01 (Receita de
+Aluguéis).
+
+Estas são contas que, num módulo automático de verdade (controle de
+estoque, ativo fixo, folha trabalhista formal, financiamento de longo
+prazo), SERIAM movidas por evento — hoje não são porque o módulo em si não
+existe, não porque o evento foi esquecido. É o plano de contas funcionando
+como **mapa do que a empresa pretende ser**, não sobra de código. Ficam no
+catálogo como futuro declarado; "nunca tocada" volta a ser sinal relevante
+no dia em que o módulo correspondente for desenhado — vale conferir contra
+esta lista antes de desenhar qualquer um deles.
+
+### Contas de lançamento manual (usadas — por lançamento manual, não por evento)
+A maior parte das famílias 5.2.*/5.3.*/5.4.*/5.5.01 (Aluguel, Água,
+Energia, Salários Administrativos, Combustível, Manutenção etc.) fazem
+parte do mesmo template importado, mas são o tipo de conta que uma
+operação real usa via `despesa_avulsa`/`/api/financeiro/lancamentos` — o
+funcionário lança a despesa manualmente quando ela acontece, não existe
+nem deveria existir um evento automático que a debite sozinho. "Nunca
+tocada por evento" aqui não é sintoma nenhum — é o desenho correto para
+despesa de escritório. Excluí-las da lista de vigilância.
+
+**Consequências no número final:** nenhuma nos dois grupos.
 
 **O que bloqueia:** nada.
 
-**Decisão necessária:** nenhuma — item informativo, listado para constar
-no mapa. Se algum desses módulos estiver no roadmap, vale conferir contra
-esta lista antes de desenhar o motor novo.
+**Decisão necessária:** nenhuma para o grupo de lançamento manual (fora da
+lista de vigilância a partir de agora). Para o grupo de módulo declarado:
+nenhuma decisão pendente — permanecem no catálogo como futuro declarado;
+a decisão relevante (implementar o módulo) é de roadmap, não de auditoria.
 
 ---
 

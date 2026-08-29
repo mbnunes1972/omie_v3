@@ -137,11 +137,15 @@ a do ativo move só a fração ainda aberta. Ver Parte 2, categoria 3.
 - `Recebivel.valor_previsto` (mod_contabil.py:1064): valor de face, só reconciliado para ramo "loja" via `apropriar_juros_loja`. Ramos "financeira"/"loja_antecipacao" não têm reconciliação do valor de face nenhuma — é a raiz do ACHADO-01.
 - `_materializar_recebiveis_venda_seguro` (main.py:834): materializa `Recebivel` sem lançamento nenhum — puro dado, sem contrapartida contábil no momento da criação (esperado; a reconciliação é o problema, não a criação).
 
-**4. Conta do PLANO_PADRAO que nenhum evento toca**
-1.1.03, 1.1.04, 1.2.1.01-04, 1.2.2, 2.1.02, 2.1.04.04, 2.1.05, 2.2.01, 4.2.02,
-4.4.01, e a maior parte de 5.2.*/5.3.*/5.4.*/5.5.01 (manual/despesa_avulsa
-presumido, não é bug — mas nunca confirmado contra o gabarito de contas
-usadas na prática).
+**4. Conta do PLANO_PADRAO que nenhum evento toca** — refinado em
+docs/db/ACHADOS_CONTABEIS.md, ACHADO-08 (2026-08-29), em duas categorias
+distintas: contas de módulo declarado, ainda não construído (1.1.03,
+1.1.04, 1.2.1.01-04, 1.2.2, 2.1.02, 2.2.01, 4.2.02, 4.4.01 — ficam no
+catálogo como futuro, "nunca tocada" é esperado) e contas de lançamento
+manual (a maior parte de 5.2.*/5.3.*/5.4.*/5.5.01 — usadas de propósito
+via `despesa_avulsa`, "nunca tocada por evento" não é sintoma nelas, fora
+da vigilância a partir de agora). 2.1.04.04 (Devolução) e 2.1.05 (Total
+Flex/Parcelamento Loja) são casos à parte, já tratados em ACHADO-05/04.
 
 **5. Evento que grava em conta fora do PLANO_PADRAO**
 Nenhum encontrado. Todo código de D/C em `EVENTOS` e todo `_conta_por_codigo`

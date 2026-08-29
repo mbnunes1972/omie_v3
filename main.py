@@ -664,28 +664,6 @@ def _parse_fim_dia_cheio(s):
     return _dt.combine(d.date(), _dt.max.time())
 
 
-def _fin_evento_seguro(loja_id, tipo_evento, valor, projeto_id, ref):
-    """Wiring evento→lançamento a partir de um fluxo de negócio (contrato/NF-e).
-    **Fail-soft e isolado**: usa sessão própria e NUNCA levanta — contabilidade não pode abortar o
-    fluxo. **Idempotente** por `ref`. Só dispara se o módulo financeiro está ativo na loja."""
-    try:
-        if not loja_id or valor is None or float(valor) <= 0:
-            return
-        import mod_contabil, mod_tenancy
-        db = get_session()
-        try:
-            loja = db.get(Loja, loja_id)
-            if loja is None or not mod_tenancy.modulo_ativo(loja, "financeiro"):
-                return
-            ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
-            mod_contabil.registrar_evento(db, ot, oid, tipo_evento, float(valor),
-                                          projeto_id=projeto_id, ref=ref)
-        finally:
-            db.close()
-    except Exception as e:
-        logging.getLogger(__name__).warning("wiring financeiro (%s, ref=%s) falhou: %s", tipo_evento, ref, e)
-
-
 def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
     """Auto-constitui TODAS as provisões rastreadas no fechamento da venda (v6 §6.4 + FASE B2.4/B2.5), a
     partir do breakdown do motor (`_negociacao_breakdown` → `mod_provisoes`): montagem/garantia/assist +
@@ -741,7 +719,7 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
             mod_contabil.constituir_provisoes_fechamento(db, ot, oid, projeto_id, valores, ref_base)
             # Custo financeiro = Val_Cont − VAVO. Ramo pela forma de pagamento (Fatia B / spec §3.4):
             #  - financeira (Aymoré/Cartão): DESPESA financeira diferida (provisão, rota própria);
-            #  - loja (Venda Programada/Total Flex, capital próprio): RECEITA financeira a apropriar (sem despesa).
+            #  - loja (Venda Programada/Parcelamento Loja, capital próprio): RECEITA financeira a apropriar (sem despesa).
             # (O box de override loja×financeira na AF1 entra na etapa B.2.)
             cust_fin = round(float(getattr(orc2, "valor_total", 0) or 0) - float(d.get("VAVO") or 0), 2)
             if cust_fin > 0:
@@ -1340,7 +1318,7 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
     """Wiring do faturamento SEGMENTADO (FASE B2). O valor do segmento vem do ORÇAMENTO DO CONTRATO
     (`Val_Cont × segmentação efetiva`, congelada na assinatura), NÃO do valor de face do documento
     fiscal. No segmento 'mercadoria' também reconhece o CMV = **CFO** congelado (1× por projeto, ref
-    `cmv:<projeto>`). **Fail-soft/isolado/idempotente**, como `_fin_evento_seguro`."""
+    `cmv:<projeto>`). **Fail-soft/isolado/idempotente**, como os demais wirings `_fin_*_seguro`."""
     try:
         if not loja_id or segmento not in ("mercadoria", "servico"):
             return
@@ -10326,7 +10304,7 @@ class Handler(BaseHTTPRequestHandler):
             if _auto_ok or (senha and senha == senha_correta):
                 taxa_cfg = None
                 try:
-                    import mod_fin.total_flex as _tf_mod
+                    import mod_fin.parcelamento_loja as _tf_mod
                     c = _tf_mod._cfg()
                     taxa_cfg = round(c["taxa_juros_mensal"] * 100, 4)
                 except Exception:

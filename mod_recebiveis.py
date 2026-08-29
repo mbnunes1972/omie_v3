@@ -12,9 +12,9 @@ Dois ramos de comportamento, pelo campo `tipo` do JSON (`'avista'|'vp'|'tf'|'aym
 strings do frontend, static/index.html:7942-8794; NÃO confundir com os códigos de
 `mod_fin.ramo_financiamento`, que usam nomes diferentes):
 
-  - **avista/loja** (à vista, Venda Programada, Total Flex): o cliente paga a LOJA diretamente, por
+  - **avista/loja** (à vista, Venda Programada, Parcelamento Loja): o cliente paga a LOJA diretamente, por
     parcela — 1 recebível por linha real do plano (entrada + cada parcela), valor e data exatamente
-    como capturados. Para Total Flex a parcela mistura capital+juros (não há split persistido) — o
+    como capturados. Para Parcelamento Loja a parcela mistura capital+juros (não há split persistido) — o
     valor de face é usado como previsto por ora (decisão do usuário 2026-08-07); a confirmação em
     `mod_contabil.registrar_recebimento_venda` capa ao saldo real em aberto, então nunca estoura a
     contabilidade mesmo com um previsto otimista.

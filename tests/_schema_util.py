@@ -40,6 +40,23 @@ def _head_e_pai():
     return heads[0], head_rev.down_revision
 
 
+def _revisao_por_doc(trecho):
+    """Acha a revisao cujo `doc` (1a linha da docstring da migration) contem `trecho`, e
+    retorna (revisao, down_revision dela). Existe pra testes que precisam ancorar num PASSO
+    ESPECIFICO da cadeia (nao só "o head atual") sem hardcodar o id — o head pode crescer com
+    migrations novas depois (ex.: 95c7e64afc6a apos 46a93cfd591b), e o teste continua achando
+    o passo certo pelo conteudo, nao pela posicao."""
+    script = _script_directory()
+    achadas = [rev for rev in script.walk_revisions() if trecho in (rev.doc or "")]
+    if len(achadas) != 1:
+        raise RuntimeError(
+            f"Esperava exatamente 1 revisao com {trecho!r} no doc, achei {len(achadas)}: "
+            f"{[r.revision for r in achadas]}."
+        )
+    rev = achadas[0]
+    return rev.revision, rev.down_revision
+
+
 def _reset_schema(psycopg_url):
     eng = create_engine(psycopg_url)
     with eng.begin() as conn:

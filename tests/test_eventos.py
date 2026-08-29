@@ -34,15 +34,25 @@ def test_fechamento_venda_3_provisoes_independentes(app_db):
     db.close()
 
 
-def test_evento_comissao_e_execucoes(app_db):
+def test_evento_execucoes(app_db):
+    """ACHADO-05 (docs/db/PLANO_AJUSTES.md, 2026-08-29): "pagamento_comissao" foi removido de
+    EVENTOS — nunca foi chamado em produção, superado pelo caminho da Folha (2.1.04.12). Este
+    teste testava esse evento; segue cobrindo as execuções, que continuam vivas."""
     db = app_db.get_session(); c = _q(db)
-    l1 = mc.registrar_evento(db, "loja", 1, "pagamento_comissao", 50.0, projeto_id="Proj_D")
-    assert l1["conta_debito_id"] == c("2.1.04.01") and l1["conta_credito_id"] == c("1.1.01")
     l2 = mc.registrar_evento(db, "loja", 1, "execucao_montagem", 20.0, projeto_id="Proj_D")
     assert l2["conta_debito_id"] == c("2.1.04.02") and l2["conta_credito_id"] == c("1.1.01")
     l3 = mc.registrar_evento(db, "loja", 1, "execucao_reparo_garantia", 10.0, projeto_id="Proj_D")
     assert l3["conta_debito_id"] == c("2.1.04.03") and l3["conta_credito_id"] == c("1.1.01")
     db.close()
+
+
+def test_eventos_mortos_removidos_por_decisao():
+    """ACHADO-04/05 (docs/db/PLANO_AJUSTES.md, 2026-08-29): "custo_financeiro" (5.5.03×2.1.05,
+    nunca confirmado pelo contador, modelava o Parcelamento Loja como financiamento de terceiro)
+    e "pagamento_comissao" (2.1.04.01×1.1.01, nunca chamado em produção) foram removidos de
+    EVENTOS — não é esquecimento, é decisão registrada."""
+    assert "custo_financeiro" not in mc.EVENTOS
+    assert "pagamento_comissao" not in mc.EVENTOS
 
 
 def test_evento_desconhecido_rejeitado(app_db):

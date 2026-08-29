@@ -147,12 +147,19 @@ def test_pdv_user_bloqueado_na_folha(http_client_factory, pdv, pdv_user):
 
 
 def test_wiring_de_eventos_do_pdv_continua(app_db, pdv):
-    """O que se esconde é a TELA: lançamentos no razão do PDV seguem normais."""
-    import main as _main, mod_contabil
-    _main._fin_evento_seguro(pdv["id"], "faturamento", 111.0, "Proj_PDV_Wiring", "pdvwire:1")
+    """O que se esconde é a TELA: lançamentos no razão do PDV seguem normais.
+
+    ACHADO-10 (docs/db/PLANO_AJUSTES.md, 2026-08-29): usava `main._fin_evento_seguro`, removida
+    por ser código morto (substituída por wirings específicos por fluxo). O que este teste
+    precisa provar não é essa função — é que o razão aceita lançamento pro owner do PDV
+    normalmente; chama `registrar_evento` direto, como qualquer wiring específico faria."""
+    import mod_contabil
     db = app_db.get_session()
     try:
-        lans = mod_contabil.listar_lancamentos(db, "loja", pdv["id"], projeto_id="Proj_PDV_Wiring")
+        ot, oid = mod_contabil.resolver_owner(db, {"loja_id": pdv["id"], "rede_id": None})
+        mod_contabil.registrar_evento(db, ot, oid, "faturamento", 111.0,
+                                      projeto_id="Proj_PDV_Wiring", ref="pdvwire:1")
+        lans = mod_contabil.listar_lancamentos(db, ot, oid, projeto_id="Proj_PDV_Wiring")
         assert len(lans) == 1 and lans[0]["ref"] == "pdvwire:1"
     finally:
         db.close()

@@ -9,10 +9,18 @@ import os, json
 
 _TABELAS_DIR = os.path.join(os.path.dirname(__file__), "..", "tabelas_financeiras")
 
+# ACHADO-14: o produto "total_flex" virou "Parcelamento Loja" e o ARQUIVO acompanhou
+# (tabelas_financeiras/parcelamento_loja.json) — mas o `codigo` de fio (frontend/API,
+# static/index.html, `/api/fin/total_flex/*`) continua 'total_flex' de propósito: é
+# contrato de wire estabelecido, fora do escopo deste rename. Este alias é só o de-para
+# codigo→arquivo; não mexe em qual `codigo` o sistema fala para fora.
+_ARQUIVO_POR_CODIGO = {"total_flex": "parcelamento_loja"}
+
 
 def _carregar(codigo: str) -> dict:
-    """Lê tabelas_financeiras/<codigo>.json. Mantido para compatibilidade."""
-    path = os.path.join(_TABELAS_DIR, f"{codigo}.json")
+    """Lê tabelas_financeiras/<arquivo>.json (ver _ARQUIVO_POR_CODIGO). Mantido para compatibilidade."""
+    arquivo = _ARQUIVO_POR_CODIGO.get(codigo, codigo)
+    path = os.path.join(_TABELAS_DIR, f"{arquivo}.json")
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -62,7 +70,7 @@ def carregar_faixas(codigo: str) -> list:
                 for i in range(1, int(tab.get("parcelas_max", 12)) + 1)]
 
     if tipo == "flex":
-        # custo_pct=0: o painel Total Flex gerencia o total direto
+        # custo_pct=0: o painel Parcelamento Loja gerencia o total direto
         p_min = int(tab.get("parcelas_min", 2))
         p_max = int(tab.get("parcelas_max", 12))
         return [{"parcelas": i, "custo_pct": 0.0, "label": f"{i}x"}
@@ -77,7 +85,13 @@ def listar_modalidades() -> list:
     (reusava o painel de cartao_credito) — removido daqui (não aparece mais no dropdown), mas o
     código 'cartao_credito_x' continua em `_TIPO_POR_CODIGO`/o dict `nomes` abaixo, de propósito:
     orçamentos antigos que já tenham esse código salvo (produção, não visto em dev) continuam
-    classificados certo em `ramo_financiamento` — só a escolha NOVA que some."""
+    classificados certo em `ramo_financiamento` — só a escolha NOVA que some.
+
+    ACHADO-14 (2026-08-29): o produto atrás do código 'total_flex' virou "Parcelamento Loja" —
+    o ARQUIVO acompanhou (config/parcelamento_loja.json, tabelas_financeiras/
+    parcelamento_loja.json, ver `_ARQUIVO_POR_CODIGO`), mas o `codigo` 'total_flex' continua
+    sendo o de fio (frontend/API — static/index.html e `/api/fin/total_flex/*` falam esse
+    código), fora do escopo deste rename."""
     codigos = ['a_vista', 'aymore', 'cartao_credito', 'venda_programada', 'total_flex']
     resultado = []
     for codigo in codigos:
@@ -112,7 +126,7 @@ _RAMO_POR_TIPO = {
     'avista': 'avista',                    # sem financiamento (Cust_Fin = 0)
     'financiamento_externo': 'financeira', # Aymoré/Cartão — despesa financeira absorvida pela loja
     'programado': 'loja',                  # Venda Programada — financiamento direto (capital próprio)
-    'flex': 'loja',                        # Total Flex — financiamento direto (capital próprio)
+    'flex': 'loja',                        # Parcelamento Loja — financiamento direto (capital próprio)
 }
 
 
@@ -131,7 +145,7 @@ def ramo_financiamento(codigo: str) -> str:
 from .aymore           import calcular as calcular_aymore
 from .cartao           import calcular as calcular_cartao
 from .venda_programada import calcular as calcular_venda_programada
-from .total_flex       import calcular as calcular_total_flex
-from .total_flex       import inicializar as tf_inicializar
-from .total_flex       import recalcular  as tf_recalcular
+from .parcelamento_loja import calcular as calcular_total_flex
+from .parcelamento_loja import inicializar as tf_inicializar
+from .parcelamento_loja import recalcular  as tf_recalcular
 from .base             import validar_plano_pagamento

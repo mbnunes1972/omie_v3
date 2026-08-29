@@ -210,7 +210,6 @@ _EVENTOS_FECH = {
     "fechamento_venda_impostos":            ("1.1.05", "2.1.04.13"),   # B2.6: ativo diferido × provisão
     "faturamento_impostos_deducao":         ("4.3.01", "1.1.05"),
     "faturamento_impostos_obrigacao":       ("2.1.04.13", "2.1.03"),
-    "custo_financeiro":                     ("5.5.03", "2.1.05"),
 }
 
 
@@ -283,10 +282,11 @@ def test_constituir_fechamento_idempotente(app_db):
     db.close()
 
 
-def test_custo_financeiro(app_db):
-    db = app_db.get_session(); ot, oid = "loja", 403; mc.seed_plano(db, ot, oid)
-    s = lambda cod: mc.saldo_conta(db, ot, oid, db.query(mc.Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo=cod).first().id)
-    mc.registrar_evento(db, ot, oid, "custo_financeiro", 14880.15, projeto_id="P", ref="cfin:P")
-    assert s("5.5.03") == 14880.15                  # despesa financeira
-    assert s("2.1.05") == 14880.15                  # financiamento total flex a pagar
-    db.close()
+def test_custo_financeiro_removido_por_decisao():
+    """ACHADO-04 (docs/db/PLANO_AJUSTES.md, 2026-08-29): o evento "custo_financeiro" (5.5.03×
+    2.1.05) modelava o Parcelamento Loja como financiamento de terceiro — contraria a regra do
+    deságio (quem financia é a própria loja, é receita financeira dela). Removido; o mecanismo
+    certo é `_RAMO_CFIN_EVENTO` (fechamento_venda_custo_financeiro / constituir_juros_direto). A
+    conta 2.1.05 segue no catálogo (PLANO_PADRAO)."""
+    assert "custo_financeiro" not in mc.EVENTOS
+    assert any(cod == "2.1.05" for cod, _nome in mc.PLANO_PADRAO)

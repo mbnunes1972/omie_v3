@@ -47,7 +47,7 @@ def linha_parcela(num: int, data: datetime, valor: float) -> dict:
 
 def validar_plano_pagamento(plano):
     """Valida o plano de pagamento a persistir (dict do forma_pagamento JSON do orçamento).
-    Nenhuma parcela nem a entrada pode ser negativa — um plano Total Flex recalculado sobre
+    Nenhuma parcela nem a entrada pode ser negativa — um plano Parcelamento Loja recalculado sobre
     um total defasado (ex.: ambiente removido do orçamento) fecha a última parcela negativa,
     e isso nunca deve chegar ao banco. Retorna mensagem de erro, ou None se o plano é válido
     (None/sem lista de parcelas = formatos legados, aceitos)."""

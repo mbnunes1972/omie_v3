@@ -1,17 +1,18 @@
 """
-mod_fin/total_flex.py — Total Flex: parcelamento livre, juros compostos por dias reais
+mod_fin/parcelamento_loja.py — Parcelamento Loja (nome antigo "Total Flex", ACHADO-14):
+parcelamento livre, juros compostos por dias reais
 
 Regras:
   - Parcelas 1..n-1: valor digitado livremente pelo consultor
   - Parcela n (última): fecha automaticamente o saldo devedor + juros do periodo
   - Juros compostos calculados pelos dias reais entre datas
-  - Taxa lida exclusivamente do config/total_flex.json — nunca exposta ao frontend
+  - Taxa lida exclusivamente do config/parcelamento_loja.json — nunca exposta ao frontend
 """
 import os, json, calendar
 from datetime import timedelta, date as _date
 from .base import parse_data, pmt as _pmt_coef, linha_contrato, linha_entrada
 
-_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "total_flex.json")
+_CFG_PATH = os.path.join(os.path.dirname(__file__), "..", "config", "parcelamento_loja.json")
 
 
 def _cfg() -> dict:

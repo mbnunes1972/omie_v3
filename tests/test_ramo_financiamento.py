@@ -13,6 +13,9 @@ def test_aymore_e_cartao_sao_financeira():
 
 
 def test_venda_programada_e_total_flex_sao_loja():
+    """"total_flex" é o código de fio do produto "Parcelamento Loja" (ACHADO-14: o nome do
+    produto mudou, o arquivo de tabela acompanhou — ver mod_fin.__init__._ARQUIVO_POR_CODIGO —
+    mas o código continua 'total_flex', contrato de wire com o frontend)."""
     assert mod_fin.ramo_financiamento("venda_programada") == "loja"
     assert mod_fin.ramo_financiamento("total_flex") == "loja"
 

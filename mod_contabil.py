@@ -72,7 +72,9 @@ PLANO_PADRAO = [
                                                             # da loja (diretores/gerentes) — mesmo mecanismo das
                                                             # demais (constituída no contrato, efetivada/resolvida
                                                             # via Reconciliação, despesa formal em 5.3.03).
-    ("2.1.05", "Financiamento Total Flex a Pagar"),
+    ("2.1.05", "Financiamento Parcelamento Loja a Pagar"),   # ACHADO-14: renomeado de "Total
+    # Flex" — o produto virou "Parcelamento Loja" (mod_fin/__init__.py) mas o nome desta conta
+    # nunca acompanhou. Rename em migration própria (R13/R14), não em lista no código.
     ("2.1.06", "Receita a Realizar"),   # FASE D2: recebe o Val_Cont cheio no contrato (era "Adiantamento de Clientes")
     ("2.1.07", "Receita Financeira a Apropriar"),   # FASE B: ramo LOJA — juros diferidos, realizados por parcela
     # Ajustes Excepcionais de Fábrica (spec 2026-07-21)
@@ -1318,12 +1320,24 @@ EVENTOS = {
     "fechamento_venda_impostos":            ("1.1.05", "2.1.04.13", "Provisão de Impostos — reserva no contrato (ativo diferido)"),
     "faturamento_impostos_deducao":         ("4.3.01", "1.1.05",    "Impostos — dedução da receita na emissão (baixa do ativo diferido)"),
     "faturamento_impostos_obrigacao":       ("2.1.04.13", "2.1.03", "Impostos — efetivação da obrigação fiscal na emissão"),
-    # Custo financeiro (Total Flex): despesa financeira × Financiamento a Pagar  [CONFIRMAR CONTADOR]
-    "custo_financeiro":                     ("5.5.03", "2.1.05",    "Custo Financeiro (antecipação de recebíveis — Total Flex)"),
+    # ACHADO-04 (docs/db/PLANO_AJUSTES.md): o evento "custo_financeiro" (5.5.03×2.1.05) nasceu
+    # marcado [CONFIRMAR CONTADOR] e nunca foi confirmado nem chamado em produção — modelava o
+    # Parcelamento Loja como financiamento de terceiro (passivo a pagar). Pela regra do deságio
+    # (quem financia é a própria loja → receita financeira dela), removido em 2026-08-29. O
+    # mecanismo certo é `_RAMO_CFIN_EVENTO`/`fechamento_venda_custo_financeiro`
+    # (1.1.06.19×2.1.04.19, ramo financeira) e `constituir_juros_direto` (1.1.07×2.1.07, ramo
+    # loja) — nenhum dos dois usa 2.1.05. A conta 2.1.05 fica no catálogo (PLANO_PADRAO): volta a
+    # fazer sentido se o Parcelamento Loja/Total Flex algum dia for fundeado por terceiro.
     # Ciclo de caixa
     "faturamento":                  ("1.1.02", "4.1.01",    "Faturamento (NF-e emitida)"),
     "recebimento":                  ("1.1.01", "1.1.02",    "Recebimento do cliente"),
-    "pagamento_comissao":           ("2.1.04.01", "1.1.01",  "Pagamento de comissão (baixa da provisão)"),
+    # ACHADO-05 (docs/db/PLANO_AJUSTES.md): o evento "pagamento_comissao" (2.1.04.01×1.1.01) era
+    # uma das 5 regras fundacionais do motor (.docx §5), mas nunca foi chamado em produção — só
+    # por teste. Superado pelo caminho da Folha (mod_folha.pagar, comissão de venda via
+    # 2.1.04.12/efetivar_provisao). Removido em 2026-08-29; medição confirmou que 2.1.04.12 não
+    # acumula dois conceitos (é resolução única da provisão constituída na assinatura — ver
+    # mod_folha.py:6-13). A conta 2.1.04.01 fica no catálogo (PLANO_PADRAO), pelo mesmo motivo do
+    # 2.1.05 acima.
     # Execução — reverte a provisão respectiva: Provisão (2.1.04.x) × Caixa/Fornecedor
     "execucao_montagem":            ("2.1.04.02", "1.1.01",  "Execução da montagem (baixa da provisão)"),
     "execucao_assistencia":         ("2.1.04.05", "1.1.01",  "Execução de assistência técnica (baixa da provisão)"),
@@ -1335,7 +1349,7 @@ EVENTOS = {
     # FASE D2: contrato registra a venda CHEIA (Val_Cont) em Receita a Realizar (passivo) contra Contas a
     # Receber (ativo); a NF-e depois debita 2.1.06 × 4.1.01/4.2.01 (fato gerador). Não toca a DRE.
     "registro_venda_contrato":      ("1.1.02", "2.1.06",    "Registro da venda no contrato — Receita a Realizar"),
-    # Recebimento (entrada + parcelas Total Flex/Aymoré) abate Contas a Receber, não a Receita a Realizar.
+    # Recebimento (entrada + parcelas Parcelamento Loja/Aymoré) abate Contas a Receber, não a Receita a Realizar.
     "recebimento_venda":            ("1.1.01", "1.1.02",    "Recebimento do cliente (abate Contas a Receber)"),
     # Não-recebimento (2026-08-07): o cliente não pagou na data prevista — duas contrapartidas.
     # Reclassificação (dúvida sobre o recebimento, SEM tocar a DRE — troca de ativo por ativo, não é
@@ -1974,7 +1988,7 @@ def registrar_recebimento_venda(db, owner_tipo, owner_id, projeto_id, valor, ref
     chave morta em EVENTOS, nada disparava a baixa de Contas a Receber). Débito Caixa/Bancos (1.1.01) ×
     crédito Contas a Receber (1.1.02), CAPADO ao saldo em aberto de 1.1.02 do projeto — mesmo idiom de
     `reconhecer_custo_financeiro`/`apropriar_juros_loja`, protege o razão mesmo quando `valor` vem de um
-    previsto só estimado (caso do Total Flex, que mistura capital+juros na parcela). Não mexe na
+    previsto só estimado (caso do Parcelamento Loja, antigo Total Flex, que mistura capital+juros na parcela). Não mexe na
     apropriação de juros do ramo loja (`apropriar_juros_loja`, conta 1.1.07 à parte) — só a perna de
     capital. `duvidoso=True` (2026-08-07, não-recebimento): o recebível já foi reclassificado pra
     Recebíveis Duvidosos (`reclassificar_recebivel_duvidoso`) — credita 1.1.10 em vez de 1.1.02
@@ -2348,7 +2362,10 @@ _PROV_VENDA = {   # chave -> (evento de constituição, código da conta de Prov
 # valendo — mas por exclusão explícita, não por lista fixa das 3.
 GRUPO_PROVISOES = "2.1.04"
 _PROV_PAINEL_EXCLUI = {
-    "2.1.04.01",   # Comissão — despesa de venda; baixa via pagamento_comissao, não é set-aside de custo
+    # ACHADO-05: o evento pagamento_comissao (que baixava esta conta) foi removido em 2026-08-29
+    # — nunca foi chamado em produção. A comissão de venda real usa 2.1.04.12 (mod_folha.py). A
+    # conta 2.1.04.01 segue no catálogo mas sem mecanismo algum hoje — não é set-aside de custo.
+    "2.1.04.01",
     "2.1.04.04",   # Devolução — sem evento/percentual de constituição hoje (saldo sempre 0)
 }
 # Descrição opcional por conta (enriquece o card; cai num texto genérico se a conta não estiver aqui):

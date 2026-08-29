@@ -16,7 +16,7 @@ os 3 fixos que `c1ab3f8007c4` já conhecia.
 import pytest
 from sqlalchemy import create_engine, text
 
-from _schema_util import baseline_urls, _reset_schema, _alembic, _head_e_pai
+from _schema_util import baseline_urls, _reset_schema, _alembic, _revisao_por_doc
 import mod_contabil as mc
 
 
@@ -52,14 +52,18 @@ def test_migration_deriva_owners_do_banco_nao_de_lista_fixa():
 
     _reset_schema(psycopg_url)
 
-    head, pai_do_head = _head_e_pai()
-    if pai_do_head is None:
-        pytest.skip("head sem down_revision — nao ha revisao anterior pra parar antes do gabarito "
-                    "dinamico (a cadeia mudou; ajuste este teste pra achar a revisao certa).")
+    # Ancora pelo CONTEUDO da migration (doc = 1a linha da docstring), nao pela posicao no
+    # grafo (R12/CLAUDE.md: nunca hardcodar id de revisao) — assim uma migration nova
+    # acrescentada DEPOIS do gabarito dinamico (ex.: 95c7e64afc6a) nao desloca o "antes" deste
+    # teste pra dentro dela mesma.
+    _gabarito_dinamico, pai_do_gabarito = _revisao_por_doc("gabarito completo por owner do banco")
+    if pai_do_gabarito is None:
+        pytest.skip("migration do gabarito dinamico sem down_revision — nao ha revisao anterior "
+                    "pra parar antes dela (a cadeia mudou; ajuste este teste).")
 
     # sobe ate UMA REVISAO ANTES do gabarito dinamico -- ainda so' os 3 owners fixos existem
-    proc = _alembic(["upgrade", pai_do_head], alembic_url)
-    assert proc.returncode == 0, f"upgrade ate {pai_do_head} falhou:\n{proc.stdout}\n{proc.stderr}"
+    proc = _alembic(["upgrade", pai_do_gabarito], alembic_url)
+    assert proc.returncode == 0, f"upgrade ate {pai_do_gabarito} falhou:\n{proc.stdout}\n{proc.stderr}"
 
     # owners que NAO existem no localhost, inseridos direto nas tabelas de instancia
     eng = create_engine(psycopg_url)

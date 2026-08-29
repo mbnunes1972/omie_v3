@@ -1068,7 +1068,7 @@ class Recebivel(Base):
     financiado por Cartão/Aymoré) — materializada uma vez na geração do contrato
     (`mod_recebiveis.materializar`), confirmada manualmente (mesmo padrão de `efetivar_provisao`) via
     `mod_contabil.registrar_recebimento_venda`, que capa ao saldo real em aberto de `1.1.02` — protege
-    o razão mesmo quando `valor_previsto` é só uma estimativa de face (caso do Total Flex, que mistura
+    o razão mesmo quando `valor_previsto` é só uma estimativa de face (caso do Parcelamento Loja, antigo Total Flex, que mistura
     capital+juros na parcela; a apropriação do juros em si é separada, `apropriar_juros_loja`)."""
     __tablename__ = "recebivel"
 

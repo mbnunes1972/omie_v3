@@ -6,6 +6,21 @@ no ACHADO-18, agora sabendo o que o ACHADO-19 mostrou.
 **Não conserte nada nesta tarefa.** É medição. Todo conserto sai daqui com
 número na mão.
 
+## Situação em 29/08/2026
+
+**Medições 1, 2 e 3: feitas.** Resultado completo no ACHADO-19. Em resumo: o
+motor levanta por dois caminhos apenas (`parametros_json` malformado e
+complemento auto-referente — ACHADO-20), nenhum alcançável por usuário; as
+seis rotas deixam todas a mesma assinatura (insumo novo commitado, número
+velho); e o "erro invisível" da tela existe em **uma** rota só, `/parametros`,
+não nas duas que a prosa original apontava. Pela regra desta tarefa, o
+ACHADO-19 desceu para o Grupo 5, com três consertos de causa baratos no lugar
+da reescrita das seis transações.
+
+**Medições 4, 5 e 6: não iniciadas, e agora sem urgência.** A 6 continua
+valendo por si — é a pergunta do ACHADO-18 pelo outro lado. A 5 vale como
+ferramenta permanente de conferência, não como diagnóstico deste achado.
+
 ---
 
 ## O que já está medido (não refaça)

@@ -679,7 +679,7 @@ zero.
 
 ---
 
-## ACHADO-19 — seis dos nove caminhos que gravam `valor_total` engolem a falha e respondem "ok" · GRAVE
+## ACHADO-19 — seis dos nove caminhos que gravam `valor_total` engolem a falha e respondem "ok" · MEDIDO 29/08/2026: REBAIXADO PARA GRUPO 5, COM UMA EXCEÇÃO
 
 **Este achado reabre o ACHADO-18.** A medição de 29/08 concluiu "não
 alcançável hoje" olhando UM ponto de entrada (`POST
@@ -803,9 +803,11 @@ Sim, mas por um caminho mais estreito do que a lista original de candidatos suge
 Medição 1 acima. A hipótese "divisão por carga tributária zerada" não se confirma no código
 atual; `mod_negociacao.py:30` usa `carga_trib` só como multiplicador.
 
-**Consequências no número final:** `valor_total` defasado alimenta contrato,
-parcelas, provisões, `Val_Cont` da NF-e e as três visões de DRE. É a raiz da
-árvore.
+**Consequências no número final:** `valor_total` defasado alimentaria
+contrato, parcelas, provisões, `Val_Cont` da NF-e e as três visões de DRE —
+seria a raiz da árvore **se a falha acontecesse**. A Medição 1 mostrou que
+hoje ela não acontece por caminho de usuário. O que sobra de real é o caso
+`/parametros`, onde a tela mostra um número que o banco não tem.
 
 **O que bloqueia:** confiar em qualquer margem calculada depois de uma
 alteração de desconto, parâmetro ou forma de pagamento — em especial em
@@ -817,3 +819,69 @@ Prioridade: **Grupo 5** (higiene) para as seis rotas em geral — nenhuma exceç
 alcançável por usuário foi confirmada nelas — mas o caso `/parametros` (erro invisível na tela)
 justifica tratamento isolado antes das demais, dado o risco de decisão tomada sobre um número
 fantasma.
+
+### DECIDIDO 29/08/2026 — rebaixa, mas fecha as duas coincidências
+
+O rebaixamento é aceito, e a prosa original deste achado estava errada em um
+ponto medido: generalizava o "agravante da tela" para `/margens`, que não
+tem o problema. Corrigido acima pela Medição 3.
+
+Fica, porém, uma tensão que não deve ser varrida para debaixo do tapete. O
+argumento que rebaixa o ACHADO-19 — "nenhum caminho de usuário produz a
+exceção hoje" — é o **mesmo** argumento que o ACHADO-18 rejeitou seis
+parágrafos acima, com o princípio de que proteção acidental não é proteção.
+A diferença não é de princípio, é de **preço**:
+
+- No ACHADO-18 a guarda custava uma linha. Barata: entra.
+- No ACHADO-19 o conserto é reescrever a transação de seis rotas. Caro: sem
+  falha alcançável, espera.
+
+Mas há um terceiro caminho, que é o que fica decidido: **em vez de blindar
+as seis rotas contra uma exceção, eliminar as duas exceções.** São três
+consertos baratos, todos no Grupo 5, todos fechando causa em vez de sintoma:
+
+1. **`json.loads(proj.parametros_json)` ganha try/except** (main.py:17258).
+   Seis linhas acima, `config_financeira_json` já tem o dele
+   (main.py:17250-17254): a mesma função trata os dois JSONs de forma
+   diferente, e ninguém decidiu isso — é resíduo. Falhar com nome e cair no
+   default, como o vizinho já faz.
+2. **Guarda de auto-referência no complemento** — ver ACHADO-20.
+3. **`/parametros` (10893) deixa de exibir o que não gravou.** Uma linha: a
+   segunda chamada a `_negociacao_breakdown` passa para dentro do `try`, ou
+   a resposta devolve `sombra: None` quando algum recálculo do laço falhou,
+   igual ao que `/margens` já faz. É o único dos seis casos onde o sistema
+   mostra ao usuário um número que nunca existiu no banco.
+
+Feitos esses três, o fail-soft das seis rotas continua sendo desenho errado
+— mas sem nada para engolir. A reescrita da transação fica registrada como
+dívida do Grupo 5, para quando alguma rota precisar mudar por outro motivo.
+
+---
+
+## ACHADO-20 — complemento de PE auto-referente entra em recursão infinita
+
+Achado pela Vera na Medição 1 do ACHADO-19, fora da lista de candidatos da
+tarefa.
+
+Um `Orcamento` com `complemento_pe = 1` que seja, ele próprio, o
+`Contrato.orcamento_id` do projeto faz `_negociacao_breakdown` chamar
+`_complemento_diferencas` que volta a pedir o breakdown do mesmo orçamento:
+`RecursionError`. Não há guarda de ciclo.
+
+**Alcançável hoje?** Não pelo endpoint real de criação de complemento, que
+sempre cria um `Orcamento` novo e separado. Ou seja: mais uma proteção que
+vem do desenho, não de uma verificação.
+
+**Por que registrar mesmo assim:** os caminhos que produziriam o estado
+auto-referente não são exóticos — correção manual de suporte no banco,
+migração futura, importação. E o modo de falha é pior que uma exceção comum:
+estouro de pilha atravessa `except Exception` em algumas versões, derruba a
+requisição inteira e não deixa mensagem útil.
+
+**Conserto:** guarda explícita de ciclo em `_complemento_diferencas` /
+`_complemento_diferencas_fase` — se o orçamento do complemento for o
+orçamento do contrato, recusa com erro nomeado em vez de recorrer.
+
+**Consequências no número final:** nenhuma hoje.
+
+**Grupo:** 5, junto com os outros dois consertos de causa do ACHADO-19.

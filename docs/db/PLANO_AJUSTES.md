@@ -1,7 +1,7 @@
 # Plano de ajustes — consolidado
 
 Reescrito em 29/08/2026, depois do teste de ciclo das DREs. Substitui as
-versões anteriores. Reúne os 19 achados contábeis, as pendências da
+versões anteriores. Reúne os 20 achados contábeis, as pendências da
 TAREFA_PROVISOES, o desenho das visões de DRE e a dívida de banco.
 
 **Situação:** nenhum cliente real no sistema; os quatro ambientes estão
@@ -41,18 +41,6 @@ resultado possível.
 ---
 
 ## GRUPO 1 — receita e margem · bloqueia usar o sistema para decidir
-
-**0. ACHADO-19 — seis rotas respondem "ok" a um recálculo que falhou.**
-Novo em 29/08, e é a raiz da árvore: `valor_total` e as 14 sombras do motor
-alimentam contrato, parcelas, provisões, NF-e e as três DREs. Seis dos nove
-chamadores de `_recalcular_orcamento` engolem a exceção e commitam a entrada
-do usuário assim mesmo — o banco fica com desconto novo e valor velho, e a
-tela ainda mostra o novo. Vem antes dos outros cinco itens deste grupo:
-não adianta consertar o que se faz com o número enquanto o número pode
-estar defasado em silêncio.
-
-Conserto: insumo e recálculo na mesma transação; falha vira `ok: False`.
-Medição antes do conserto — `docs/db/TESTE_NEGOCIACAO_VALOR_TOTAL.md`.
 
 **1. ACHADO-12 — aditivo não vira receita E não é cobrado.**
 Escalado em 29/08: o `Recebivel` nasce do contrato original, antes do
@@ -211,6 +199,22 @@ janeiro e na Diferida de junho. A comparação que ensina é **por safra**.
     qualquer um que rode `systemctl cat` lê a senha.
 30. Rotacionar o `sad2026` no localhost, Integração e Homologação.
 
+**ACHADO-19 e ACHADO-20 — medidos em 29/08 e rebaixados para cá.** As seis
+rotas que respondem `ok` a um recálculo que falhou continuam sendo desenho
+errado, mas a Medição 1 não achou exceção alcançável por usuário. Em vez de
+blindar as seis rotas, fecham-se as duas causas, que são baratas:
+
+31. `json.loads(proj.parametros_json)` ganha try/except (main.py:17258) —
+    o `config_financeira_json`, seis linhas acima, já tem o dele.
+32. Guarda de ciclo no complemento auto-referente (ACHADO-20).
+33. `/parametros` (10893) deixa de devolver `sombra` recalculada ao vivo
+    quando o recálculo do laço falhou. **É o único dos seis casos em que o
+    sistema mostra um número que nunca existiu no banco** — faça este
+    primeiro, é uma linha.
+
+Dívida registrada, sem item: reescrever as seis rotas para insumo e
+recálculo na mesma transação, quando alguma delas mudar por outro motivo.
+
 Dívida com condição, não item: o alias `total_flex` no frontend sai quando
 alguém tocar naquela tela.
 
@@ -240,16 +244,15 @@ alguém tocar naquela tela.
 
 ## Medições pendentes
 
-- **ACHADO-19** — as seis medições de
-  `docs/db/TESTE_NEGOCIACAO_VALOR_TOTAL.md`: o motor levanta com que
-  entrada; o que fica no banco depois de cada fail-soft; a tela mostra o
-  número que o banco não tem; o contrato bate consigo mesmo; quantos
-  orçamentos já estão defasados nos quatro ambientes; existe caminho até o
-  contrato sem nunca ter persistido.
+- **ACHADO-19** — medições 1, 2 e 3 feitas em 29/08 (resultado no achado;
+  rebaixado para o Grupo 5). Restam, agora sem urgência: **4** o contrato
+  bate consigo mesmo; **5** quantos orçamentos já estão defasados nos quatro
+  ambientes; **6** existe caminho até o contrato sem nunca ter persistido.
+  A **6** vale por si — é a pergunta do ACHADO-18 pelo outro lado.
 - **ACHADO-06** — a conferência do pedido pode deixar ativo e provisão
   divergentes?
 
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes do Grupo 1. Os
-sete achados dele afetam diretamente o valor da venda, a cobrança e a margem.
+seis achados dele afetam diretamente o valor da venda, a cobrança e a margem.

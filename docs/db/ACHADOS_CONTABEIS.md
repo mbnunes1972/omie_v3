@@ -399,7 +399,16 @@ registro. A segmentação de NF-e nem sabe que o aditivo existe.
 main.py:13824 (confirmado por grep: único `Contrato(` do código).
 tests/test_complemento_pe_e2e.py:222-234 valida que o aditivo grava
 lançamentos (idempotência do wiring), mas nenhum teste hoje verifica
-`faturar_segmento`/4.1.01 contra o valor do aditivo.
+`faturar_segmento`/4.1.01 contra o valor do aditivo. **Confirmado de novo,
+com números concretos, em `tests/test_dre_ciclo_completo_e2e.py`**
+(docs/db/TESTE_DRE_CICLO.md): aditivo de R$ 5.000,00 sobre contrato de
+R$ 90.000,00 — 2.1.06 fica em R$ 5.000,00 (nunca zera) do marco da emissão
+da NF-e de serviço até a Conciliação Final (etapa 21) inclusive; 1.1.02
+fecha o ciclo em R$ 5.000,00 também (o recebimento só cobre os
+`Recebivel` do contrato original — materializados na geração do
+contrato, antes do aditivo existir — nunca há `Recebivel` para o valor do
+aditivo, então nem o caminho de recebimento tem como cobrar esse
+resíduo). Ver docs/db/RELATORIO_DRE_CICLO.md, marcos `6b` a `8`.
 
 **Consequências no número final:**
 - Para um aditivo de R$ X, o R$ X inteiro fica constituído em Receita a
@@ -452,3 +461,62 @@ constar.
 mercadoria (ou de serviço) para o mesmo projeto? Se sim, `faturar_segmento`
 precisa de um controle por documento (não só por segmento) antes de ser
 chamado de novo nesse cenário.
+
+---
+
+## ACHADO-15 — `real` e `competencia_estimada` divergem quando o projeto fecha sem efetivação
+
+**O que acontece:** se um projeto chega à Conciliação Final (etapa 21) sem
+que as rubricas de custo "matching pleno" (montagem, custo de fábrica,
+frete etc.) tenham sido efetivadas (`efetivar_provisao`), a DRE `real()`
+nunca reconhece esse custo — `conciliar_final`/`resolver_saldo_provisao`
+cancela a provisão contra o ativo diferido sem tocar a DRE (por desenho,
+FASE D2). `dre_simulada('competencia_estimada')`, por outro lado, sempre
+mostra o valor CONSTITUÍDO (a estimativa da venda) como custo,
+independente de ter sido efetivado ou resolvido depois — as duas visões
+nunca reconciliam nesse cenário. Isso responde à pergunta central de
+docs/db/TESTE_DRE_CICLO.md: **elas não batem, e a diferença é medida e
+estrutural, não um bug pontual.**
+
+**Evidência:** `tests/test_dre_ciclo_completo_e2e.py::test_ciclo_completo_tres_visoes_dre`
+— no marco `6a_nfe_produto_emitida` (repete em todos os marcos seguintes
+até a conclusão do projeto): `real["cmv_csp"] == 0.00` vs
+`dre_simulada('competencia_estimada')["cmv_csp"] == 42000.00` (CFO =
+R$ 40.000,00 + demais rubricas de custo padrão da provisão), com receita
+IDÊNTICA nas duas visões (R$ 58.500,00) no mesmo período — ver
+docs/db/RELATORIO_DRE_CICLO.md para a tabela completa, marco a marco.
+mod_contabil.py:2940-2945 (`constituido = total_lancado(...,"credito",...,
+excluir_origens={_ORIGEM_RESOL_FALTA}) - total_lancado(...,"debito",...,
+origens={_ORIGEM_RECLASS})`) nunca subtrai a baixa de
+`_ORIGEM_RESOL_SOBRA` (o cancelamento que `resolver_saldo_provisao` grava
+quando a provisão nunca foi efetivada) — por isso o "constituído"
+permanece com o valor cheio mesmo depois do projeto fechar com a provisão
+cancelada.
+
+**Consequências no número final:**
+- Toda vez que um projeto FECHA (etapa 21) sem que TODAS as rubricas
+  operacionais tenham passado por `efetivar_provisao`, a DRE `real` relata
+  lucro bruto/EBITDA/lucro líquido INFLADOS pelo custo nunca reconhecido
+  (no cenário medido: R$ 42.000,00 de diferença sobre R$ 58.500,00 de
+  receita — quase 72% de sobrestimativa de lucro bruto).
+- `competencia_estimada`, que deveria ser uma aproximação de `real`, na
+  prática é a única visão que reflete o custo estimado da venda — mas
+  também nunca é corrigida quando a provisão é formalmente cancelada (o
+  "constituído" ignora a baixa de sobra), então nem ela reflete com
+  precisão o que aconteceu de fato depois do fechamento.
+- Nenhuma das duas visões avisa o usuário que o ciclo fechou com custo
+  pendurado — silencioso, no mesmo padrão dos ACHADO-01/12.
+
+**O que bloqueia:** decidir o rename/consolidação de `real`/
+`competencia_estimada` (o objetivo original de docs/db/TESTE_DRE_CICLO.md)
+— elas não são a mesma coisa hoje, e a causa é estrutural (timing de
+efetivação), não um bug pontual fácil de corrigir sem decisão de negócio.
+
+**Decisão necessária:** a Conciliação Final deveria FORÇAR (ou pelo menos
+avisar) que as rubricas operacionais sejam efetivadas antes de fechar o
+projeto — hoje ela só trata Impostos/Custo Financeiro com cuidado (item 5
+de TAREFA_PROVISOES.md, já decidido: avisar+listar), mas resolve as outras
+rubricas em silêncio, sem nunca reconhecer a despesa real? Ou a DRE `real`
+deveria reconhecer, no momento da Conciliação Final, o custo cancelado
+como despesa (mesmo sem execução física confirmada), pra não subestimar
+custo?

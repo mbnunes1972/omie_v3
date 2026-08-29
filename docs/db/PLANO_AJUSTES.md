@@ -167,13 +167,34 @@ Não muda número; evita susto.
 
 ---
 
+## Decisões tomadas em 29/08/2026
+
+**ACHADO-13 — refaturar não é permitido.** Um segmento é faturado uma vez,
+sempre. `faturar_segmento` deve recusar a segunda chamada para o mesmo
+segmento, com erro explícito. Correção exige **cancelar o faturamento
+anterior primeiro**, num ato explícito que estorna a receita e fica no
+histórico. Isso transforma o ACHADO-13 de "talvez duplique" em "não pode
+duplicar, por construção" — e sobe para a Fase 1, porque a guarda é barata
+e o risco é receita dobrada.
+
+Verificar se já existe cancelamento de faturamento no sistema. Se não
+existir, ele é parte deste conserto — sem ele, não há caminho de correção.
+
+**Item 5 — a fila é do assistente administrativo da loja.** Quem já faz o
+lançamento do ajuste no dia a dia é quem vê a pendência. A fila aparece na
+tela dele, filtrada por loja. O gerente não precisa dela para trabalhar,
+mas o saldo em aberto deve ser visível no fechamento do projeto.
+
 ## Decisões ainda abertas
 
-1. **ACHADO-13**: o fluxo permite emitir duas vezes para o mesmo segmento?
-   (medir antes de decidir)
-2. **Item 5**: quem é o dono da fila de provisões em aberto na operação?
-3. **Fase 4**: as contas e mecanismos mortos — remover ou implementar?
+**As contas e mecanismos mortos da Fase 4** (ACHADO-04, 05, 08, 10).
 
+Antes de decidir, é preciso saber o que cada um era para ser. Pedido ao
+Claude Code: para cada conta e mecanismo morto, dizer de onde veio (commit,
+spec), o que a criou, e se existe tela ou código a meio caminho.
+
+"Remover ou implementar" só é decidível com essa informação — não a partir
+do código da conta.
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes da Fase 1 fechar.

@@ -1,7 +1,7 @@
 # Plano de ajustes — consolidado
 
 Reescrito em 29/08/2026, depois do teste de ciclo das DREs. Substitui as
-versões anteriores. Reúne os 20 achados contábeis, as pendências da
+versões anteriores. Reúne os 22 achados contábeis, as pendências da
 TAREFA_PROVISOES, o desenho das visões de DRE e a dívida de banco.
 
 **Situação:** nenhum cliente real no sistema; os quatro ambientes estão
@@ -42,10 +42,44 @@ resultado possível.
 
 ## GRUPO 1 — receita e margem · bloqueia usar o sistema para decidir
 
+**0-a. ACHADO-13 — `faturar_segmento` não é delta-aware na receita.**
+Mecanismo confirmado com números em 29/08: a receita é creditada pelo valor
+cheio a cada chamada. **Vem antes do ACHADO-12** — somar contrato+aditivos
+sem isto transforma um defeito raro em defeito de todo projeto com aditivo.
+
+**0-b. ACHADO-21 — aditivo cobrado duas vezes quando há revisão de PE depois
+da assinatura.** Medido: R$ 15.555,55 cobrados onde o correto era
+R$ 11.111,11, e o valor pelo qual o cliente assinou o primeiro aditivo deixa
+de existir no sistema. Único achado da auditoria que tira dinheiro a mais de
+quem comprou. Conserto: orçamento de complemento vira imutável depois da
+assinatura; revisão seguinte gera orçamento novo, calculado contra contrato +
+aditivos já assinados.
+
+**0-c. ACHADO-22 — CMV prometido na emissão nunca foi implementado.**
+Verificar primeiro a hipótese de que este é o primeiro buraco da divergência
+medida no ACHADO-15/16 — se for, a correção do 15 muda de lugar.
+
 **1. ACHADO-12 — aditivo não vira receita E não é cobrado.**
 Escalado em 29/08: o `Recebivel` nasce do contrato original, antes do
 aditivo existir. Aditivo vendido, executado, nunca faturado nem cobrado.
 É caixa que não entra.
+
+**Cobrança decidida em 29/08: recebíveis próprios.** A assinatura do aditivo
+passa a coletar forma de pagamento e chama
+`_materializar_recebiveis_venda_seguro` para o orçamento do complemento — a
+guarda de idempotência já é por `orcamento_id`, então nada toca nos
+recebíveis do contrato. Dois efeitos que vêm de graça e um cuidado:
+
+- O aditivo passa a ter **custo financeiro próprio**: `_ramo_financeiro_efetivo`
+  lê `orc.forma_pagamento`, então a regra do deságio (quem fica com ele decide
+  se é receita ou custo) se aplica ao aditivo sem código novo.
+- O aditivo passa a aparecer na carteira e no relatório de endividamento pelo
+  que de fato é.
+- **Cuidado:** o recálculo do complemento zera `forma_pagamento`
+  (main.py:7885-7891, "calculada em cima do VBVO antigo"). Com a forma de
+  pagamento coletada na assinatura, um recálculo posterior a apagaria — o que
+  a imutabilidade pós-assinatura do ACHADO-21 já impede. **Os dois consertos
+  dependem um do outro; não implemente este sem aquele.**
 
 Desenho decidido: o Aditivo continua entidade própria (rastreabilidade);
 uma função única responde "valor do projeto" = contrato + aditivos; o
@@ -262,6 +296,8 @@ alguém tocar naquela tela.
 - Guarda explícita de `valor_total > 0` antes de contrato e de NF-e.
 - Conciliação Final não fecha com provisão em aberto; veredito nomeado por
   rubrica, e "ainda vai chegar" mantém o projeto aberto.
+- Aditivo tem **recebíveis próprios**: a assinatura coleta forma de pagamento
+  e materializa `Recebivel` com a mesma mecânica do contrato.
 
 ## Decisões ainda abertas
 
@@ -282,4 +318,4 @@ alguém tocar naquela tela.
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes do Grupo 1. Os
-seis achados dele afetam diretamente o valor da venda, a cobrança e a margem.
+nove achados dele afetam diretamente o valor da venda, a cobrança e a margem.

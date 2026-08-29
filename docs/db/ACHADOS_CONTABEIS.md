@@ -574,7 +574,21 @@ que quebra se `finalidade=complemento` parar de gravar:** nada crasha —
 ("PE não carregado" na tela); o legado ficaria mostrando zero para todo ambiente
 marcado, sem erro. Nenhum outro código lê `formato="xml_compl"` além dessa função.
 
-## ACHADO-13 — `faturar_segmento` pode duplicar receita se chamado 2x para o mesmo segmento (não confirmado em produção)
+## ACHADO-13 — `faturar_segmento` duplica receita se chamado 2x para o mesmo segmento · MECANISMO CONFIRMADO COM NÚMEROS 29/08
+
+**Escalado.** Deixou de ser "não confirmado". A Costura 2 da
+`TAREFA_ADITIVO` reproduziu: o split usa/resto decide apenas **qual conta
+absorve o débito** — a receita em 4.1.01/4.2.01 é creditada pelo **valor
+cheio a cada chamada**, sem nenhuma noção de quanto já foi reconhecido.
+Segunda emissão para o mesmo segmento do mesmo projeto: 4.1.01 fechou em
+R$ 182.222,22 onde o correto era R$ 93.333,33. O que continua não medido é a
+frequência em produção, não o mecanismo.
+
+**Consequência de ordem:** a soma do ACHADO-12 (contrato + aditivos) **não
+pode** ser implementada antes disto. Somar sem tornar `faturar_segmento`
+delta-aware na conta de receita transforma um defeito raro em defeito de
+todo projeto com aditivo.
+
 
 **O que acontece:** `faturar_segmento` sempre recalcula `usa`/`resto` a
 partir do saldo ATUAL de 2.1.06 do projeto (não de um valor incremental
@@ -1054,3 +1068,91 @@ orçamento do contrato, recusa com erro nomeado em vez de recorrer.
 **Consequências no número final:** nenhuma hoje.
 
 **Grupo:** 5, junto com os outros dois consertos de causa do ACHADO-19.
+
+---
+
+## ACHADO-21 — revisão de PE depois do aditivo assinado cobra a mesma diferença duas vezes · GRAVE · GRUPO 1
+
+Medido pela Vera na Costura 4 de `docs/db/TAREFA_ADITIVO.md`, reproduzido com
+números em `tests/test_aditivo_costuras.py`. Os detalhes da medição estão na
+seção do ACHADO-12; esta entrada existe porque o defeito **não é** o do
+ACHADO-12 e não deve ser resolvido junto com ele.
+
+- **ACHADO-12:** o aditivo não é faturado nem cobrado. Dinheiro que não entra.
+- **ACHADO-21:** o aditivo é cobrado **duas vezes**. Dinheiro cobrado a mais
+  do cliente.
+
+São defeitos opostos, no mesmo lugar do código, e o conserto de um pode
+mascarar o outro.
+
+**O número:** contrato R$ 88.888,89. Revisão 1 → aditivo #1 de R$ 4.444,44,
+assinado, 2.1.06 creditado. Revisão 2 → o endpoint **reaproveita o mesmo
+`Orcamento`** (get-or-create por `projeto_id + complemento_pe=1 +
+parcela_id=None`, main.py:7863-7867) e sobrescreve `valor_total` para
+R$ 11.111,11 — a diferença cheia contra a linha de base do **contrato**,
+não o incremento. Aditivo #2 assinado credita os R$ 11.111,11 inteiros.
+Total cobrado R$ 15.555,55; correto R$ 11.111,11. Nada bloqueia a sequência.
+
+### O agravante que os números não mostram
+
+A cobrança em dobro é a metade visível. A outra metade é que **o registro do
+que foi assinado é destruído**: aditivo #1 e aditivo #2 apontam para o mesmo
+`Orcamento`, cujo `valor_total` agora vale R$ 11.111,11. Não existe mais, em
+lugar nenhum da entidade, o valor pelo qual o aditivo #1 foi assinado. O
+cliente assinou um documento cujo valor o sistema já não sabe reproduzir.
+
+Sobra um rastro só no livro — e ele é o diagnóstico: **a soma dos créditos de
+2.1.06 do projeto não bate com o `valor_total` do orçamento de complemento.**
+R$ 15.555,55 lançados contra R$ 11.111,11 registrados. Serve como conferência
+enquanto o conserto não vem.
+
+### Por que aconteceu
+
+Um `Orcamento` que já foi base de evento contábil continuou mutável. É a
+mesma doença do ACHADO-16 (o sistema reescreve em silêncio um número já
+escriturado) e do ACHADO-19 (insumo commitado sem o resultado que dele
+depende). Aqui ela é mais cara porque atravessa a assinatura do cliente.
+
+**Conserto — a linha que falta:** antes da aprovação do cliente, revisão de
+PE é sobrescrita livre; **depois da assinatura do aditivo, o orçamento de
+complemento é imutável** e a revisão seguinte gera um novo orçamento, cuja
+diferença é calculada contra **contrato + aditivos já assinados**, nunca
+contra o contrato sozinho.
+
+**O que bloqueia:** cobrar aditivo de cliente real. Este é o único achado da
+auditoria que tira dinheiro a mais de quem comprou.
+
+---
+
+## ACHADO-22 — o CMV prometido na emissão da NF-e nunca foi implementado
+
+Achado pela Vera na Costura 1, registrado lá como "isolado". **Não é
+isolado** — ver abaixo.
+
+O docstring de `_fin_faturamento_segmentado_seguro` (main.py:1318-1321)
+promete: *"No segmento 'mercadoria' também reconhece o CMV = CFO congelado
+(1× por projeto, ref `cmv:<projeto>`)"*. Medido: **não existe nenhum
+lançamento com esse `ref` em código nenhum.** `_valores_segmentados_do_projeto`
+calcula e devolve `cfo`, e os três consumidores da função ignoram o campo.
+
+### A conexão com o ACHADO-15/16 — hipótese a verificar
+
+O teste de ciclo das DREs mediu a primeira divergência entre `real` e
+`competencia_estimada` **exatamente na emissão da NF-e**, com `cmv_csp`
+valendo **0 contra 42.000**, receita idêntica dos dois lados. Atribuímos isso
+à Conciliação Final que cancela a provisão não efetivada (ACHADO-16).
+
+Mas o marco da divergência é a emissão, não o fechamento. Se o
+reconhecimento do CMV na emissão nunca existiu, ele é o **primeiro** buraco, e
+o cancelamento no fechamento é o **segundo** — dois mecanismos independentes
+que deixam o mesmo custo fora do resultado, o que explica por que as duas
+visões divergem na emissão e **nunca mais reconciliam**.
+
+**Verificar antes de aceitar:** rodar o ciclo e conferir se o `cmv_csp` da
+DRE Diferida passa a bater ao implementar só o reconhecimento na emissão,
+sem tocar no fechamento. Se passar, o ACHADO-16 continua sendo defeito de
+desenho, mas deixa de ser a causa do número medido — e a correção do
+ACHADO-15 muda de lugar.
+
+**Grupo:** 1. Custo que não chega ao resultado é margem inventada, e é o
+mesmo sintoma que abriu esta auditoria.

@@ -605,15 +605,48 @@ para o que ela de fato é (provisão de comissão)?
 
 ---
 
-## ACHADO-18 — NF-e sem `valor_total` não lança nada, em silêncio (medição pendente)
+## ACHADO-18 — NF-e sem `valor_total` não lança nada, em silêncio · MEDIDO 29/08/2026: NÃO ALCANÇÁVEL HOJE
 
-Achado ao construir o teste de ciclo das DREs. `POST /api/orcamentos/<id>/
-negociacao-preview` é só leitura; quem persiste `orc.valor_total` é
-`POST .../margens`. Sem essa chamada, `Val_Cont` nunca existe e a emissão de
-NF-e **não escritura nada, sem erro** — fail-soft no caminho do dinheiro.
+**Resposta direta:** a UI/API real **não alcança** o cenário do fail-soft
+silencioso. Mas o motivo importa mais que a resposta — ver abaixo.
 
-**Não confirmado na UI real.** Pode ser detalhe de encadeamento do teste.
+### O que impede, hoje
+Não é uma validação explícita de `valor_total > 0`. É um fato mecânico: o
+único caminho real pelo qual um ambiente com valor passa a integrar um
+orçamento — `POST /orcamentos/<oid>/ambientes/<pid>` (main.py:12229-12285),
+e as variações de sobrescrita/nova-versão de XML do mesmo pool
+(main.py:11875, 11957) — já chama `_recalcular_orcamento` (que persiste
+`valor_total`) **na mesma requisição, sem try/except ao redor**
+(main.py:12278): se o recálculo falhar, a requisição inteira falha
+(`db.rollback()`) e nada é anexado. Não existe caminho de duplicar/clonar
+orçamento que copie o vínculo de ambiente sem recalcular (grep confirma:
+nenhuma ocorrência de "duplicar"/"clonar" em main.py). A geração de
+contrato também exige "ao menos um ambiente" (main.py:13729-13736) — mas
+essa checagem é de PRESENÇA de ambiente, não de `valor_total`.
 
-**A medir, antes de qualquer conserto:** a tela real consegue chegar à
-emissão sem ter passado por `margens`? Se conseguir, existe caminho pelo
-qual se emite nota e não se escritura nada — e a gravidade é alta.
+**Medido e confirmado com testes** (`tests/test_failsoft_nfe_medicao.py`):
+anexar um ambiente ao orçamento pelo endpoint real persiste `valor_total`
+na mesma chamada; gerar contrato de um orçamento sem nenhum ambiente é
+recusado (400, "ambiente").
+
+### Por que isso não fecha o caso
+A pergunta do próprio ACHADO era "é ordem de tela ou é validação
+deliberada?" — e a resposta é **ordem de tela, não validação**. Nenhum
+código verifica `valor_total > 0` em lugar nenhum do caminho
+contrato→assinatura→NF-e; o que impede hoje é a COINCIDÊNCIA de que o
+único jeito de dar valor a um orçamento já recalcula no mesmo golpe. Um
+redesenho futuro que anexe ambiente por outro caminho (importação em lote,
+API de integração, correção manual de banco por suporte) reabriria o
+fail-soft silencioso sem que nenhum teste ou validação acuse — porque não
+há guarda, só sorte de desenho.
+
+**Consequências no número final:** nenhuma hoje — não é alcançável por
+nenhum caminho conhecido.
+
+**O que bloqueia:** nada.
+
+**Decisão necessária:** vale adicionar uma validação EXPLÍCITA de
+`valor_total > 0` antes de gerar contrato e antes de emitir NF-e — não
+porque o caminho atual falhe, mas porque hoje a proteção é acidental
+(nenhum teste passaria a falhar com essa validação a mais; ela só se torna
+visível se algum caminho futuro tentar contornar a coincidência atual)?

@@ -1,7 +1,7 @@
 # Plano de ajustes — consolidado
 
 Reescrito em 29/08/2026, depois do teste de ciclo das DREs. Substitui as
-versões anteriores. Reúne os 18 achados contábeis, as pendências da
+versões anteriores. Reúne os 19 achados contábeis, as pendências da
 TAREFA_PROVISOES, o desenho das visões de DRE e a dívida de banco.
 
 **Situação:** nenhum cliente real no sistema; os quatro ambientes estão
@@ -42,6 +42,18 @@ resultado possível.
 
 ## GRUPO 1 — receita e margem · bloqueia usar o sistema para decidir
 
+**0. ACHADO-19 — seis rotas respondem "ok" a um recálculo que falhou.**
+Novo em 29/08, e é a raiz da árvore: `valor_total` e as 14 sombras do motor
+alimentam contrato, parcelas, provisões, NF-e e as três DREs. Seis dos nove
+chamadores de `_recalcular_orcamento` engolem a exceção e commitam a entrada
+do usuário assim mesmo — o banco fica com desconto novo e valor velho, e a
+tela ainda mostra o novo. Vem antes dos outros cinco itens deste grupo:
+não adianta consertar o que se faz com o número enquanto o número pode
+estar defasado em silêncio.
+
+Conserto: insumo e recálculo na mesma transação; falha vira `ok: False`.
+Medição antes do conserto — `docs/db/TESTE_NEGOCIACAO_VALOR_TOTAL.md`.
+
 **1. ACHADO-12 — aditivo não vira receita E não é cobrado.**
 Escalado em 29/08: o `Recebivel` nasce do contrato original, antes do
 aditivo existir. Aditivo vendido, executado, nunca faturado nem cobrado.
@@ -60,9 +72,12 @@ fábrica para o projeto fechar com margem inventada.
 A decidir: o cancelamento exige confirmação explícita de quem fecha, ou
 recusa o fechamento até a rubrica ser efetivada ou baixada com justificativa?
 
-**3. ACHADO-18 — medir o fail-soft da NF-e.** Sem `valor_total` persistido,
-a emissão não escritura nada e não reclama. Medir se a UI real alcança esse
-estado. Barato, e decide se há um segundo caminho para número zerado.
+**3. ACHADO-18 — guarda de `valor_total > 0`. DECIDIDO em 29/08: entra.**
+Medido: o ponto de entrada examinado não alcança o fail-soft, mas por
+coincidência de desenho, não por validação. E o ACHADO-19 mostrou seis
+outras rotas que alcançam. A guarda entra na geração de contrato e na
+emissão de NF-e, recusando com mensagem. É a segunda linha; a primeira é o
+item 0. Proteção acidental não é proteção.
 
 **4. ACHADO-02 — receita financeira contada duas vezes no ramo loja.**
 Medido: R$ 3.800 em R$ 46.300. Decidido: `4.1.01` recebe o VAVO, `4.4.03`
@@ -213,6 +228,7 @@ alguém tocar naquela tela.
 - DREs: Diferida escriturada, Antecipada lida, `competencia_estimada` sai.
 - Exportação Excel como foto; nada persistido no banco.
 - `projeto_id` vira FK.
+- Guarda explícita de `valor_total > 0` antes de contrato e de NF-e.
 
 ## Decisões ainda abertas
 
@@ -224,11 +240,16 @@ alguém tocar naquela tela.
 
 ## Medições pendentes
 
-- **ACHADO-18** — a UI real alcança a emissão sem passar por `margens`?
+- **ACHADO-19** — as seis medições de
+  `docs/db/TESTE_NEGOCIACAO_VALOR_TOTAL.md`: o motor levanta com que
+  entrada; o que fica no banco depois de cada fail-soft; a tela mostra o
+  número que o banco não tem; o contrato bate consigo mesmo; quantos
+  orçamentos já estão defasados nos quatro ambientes; existe caminho até o
+  contrato sem nunca ter persistido.
 - **ACHADO-06** — a conferência do pedido pode deixar ativo e provisão
   divergentes?
 
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes do Grupo 1. Os
-seis achados dele afetam diretamente o valor da venda, a cobrança e a margem.
+sete achados dele afetam diretamente o valor da venda, a cobrança e a margem.

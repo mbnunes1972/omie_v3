@@ -650,3 +650,109 @@ nenhum caminho conhecido.
 porque o caminho atual falhe, mas porque hoje a proteção é acidental
 (nenhum teste passaria a falhar com essa validação a mais; ela só se torna
 visível se algum caminho futuro tentar contornar a coincidência atual)?
+
+### DECIDIDO 29/08/2026 — sim, e por um motivo diferente do que a pergunta supunha
+
+A validação entra. Não como cinto de segurança para um cenário improvável:
+o ACHADO-19, escrito logo abaixo, mostra que o fail-soft **é alcançável**,
+por seis rotas reais, e que a medição desta seção examinou o único ponto de
+entrada que não tem o problema.
+
+O que fica decidido, na ordem:
+
+1. **`valor_total > 0` vira guarda explícita** na geração de contrato e na
+   emissão de NF-e. Recusa com mensagem, `ok: False`. Hoje nenhum teste
+   muda de cor com isso — é exatamente o sinal de que a guarda é barata.
+2. **A guarda é a segunda linha, não a primeira.** A primeira é o
+   ACHADO-19: enquanto seis rotas responderem `ok` a um recálculo que
+   falhou, a guarda só transforma "escritura errado" em "recusa no fim do
+   caminho", depois de o vendedor ter fechado a venda.
+3. **A checagem de presença de ambiente (main.py:13729) fica**, e passa a
+   ser acompanhada da checagem de valor. Presença e valor são perguntas
+   diferentes e as duas importam.
+
+O princípio, para não reabrir a discussão: **proteção acidental não é
+proteção — é uma coincidência que ninguém documentou e que o próximo
+redesenho desfaz sem avisar.** O custo de escrever a guarda é uma linha; o
+custo de descobrir que ela faltava é uma nota fiscal emitida sobre valor
+zero.
+
+---
+
+## ACHADO-19 — seis dos nove caminhos que gravam `valor_total` engolem a falha e respondem "ok" · GRAVE
+
+**Este achado reabre o ACHADO-18.** A medição de 29/08 concluiu "não
+alcançável hoje" olhando UM ponto de entrada (`POST
+/orcamentos/<oid>/ambientes/<pid>`, que de fato não tem try/except). Mas
+`_recalcular_orcamento` — a única função que persiste `orc.valor_total` e as
+14 colunas-sombra do motor (main.py:17337) — é chamada de **nove** lugares.
+Em **seis** deles a exceção é engolida e a resposta ao cliente é `ok: True`.
+
+### Os nove chamadores
+
+**Falham alto (corretos) — respondem `ok: False`:**
+
+| linha | rota |
+|---|---|
+| 11932 | sobrescrita de XML do pool |
+| 12184 | `POST /orcamentos/<id>/ambientes/<pid>` — remover ambiente |
+| 12278 | `POST /orcamentos/<id>/ambientes/<pid>` — adicionar ambiente |
+
+**Falham baixo (fail-soft) — respondem `ok: True`:**
+
+| linha | rota | o que fica commitado mesmo assim |
+|---|---|---|
+| 7891  | `/api/projetos/<n>/pe/complemento/orcamento` | `forma_pagamento = None`, `negociacao_json = None` |
+| 7956  | `/api/projetos/<n>/pe/complemento/fase/<f>`  | inclusão/exclusão de ambientes do orçamento |
+| 10893 | `/api/projetos/<n>/parametros`               | o `parametros_json` novo, por orçamento |
+| 10966 | `/api/orcamentos/<id>/margens`               | `desconto_pct` novo |
+| 15655 | `/api/orcamentos/<id>/descontos`             | `desconto_individual_pct` de cada ambiente |
+| 15871 | `/orcamentos/<id>/valor` (PATCH)             | `forma_pagamento`, `negociacao_json` |
+
+### Por que é pior que o ACHADO-18
+
+O ACHADO-18 descrevia um `valor_total` **ausente** — a NF-e não escritura
+nada, e o vazio é pelo menos detectável. Aqui o `valor_total` fica
+**presente e plausível**: é o número da negociação anterior, sobrevivendo a
+uma mudança de insumo que foi gravada. O banco guarda um desconto novo e um
+valor calculado sobre o desconto velho, e nada na tela diz isso.
+
+Em cinco dos seis casos a entrada do usuário é commitada **antes** ou
+**depois** do recálculo falho, nunca junto: em 10966 e 15655 o `db.commit()`
+do desconto já aconteceu e o `db.rollback()` seguinte só desfaz o recálculo;
+em 7891, 7956, 10893 e 15871 o `db.commit()` vem depois do `except` e leva a
+alteração junto. Não existe um caso em que insumo e resultado andem na mesma
+transação.
+
+### O agravante da tela
+
+Em 10893 e 10966 a resposta ainda devolve `sombra`, recalculada na hora por
+`_negociacao_breakdown`. Se o cálculo falhou na persistência mas funciona na
+leitura — ordens diferentes, sessão em estado diferente —, a tela mostra o
+número **novo** e o banco guarda o **velho**. Quem confere olhando a tela não
+vê nada.
+
+Vale medir se o mesmo vale para o contrato:
+`_ambientes_valor_para_contrato` e `_valores_contrato_por_ambiente`
+(main.py:17357, 17399) recalculam o breakdown **ao vivo** para ratear os
+ambientes, enquanto o total do contrato vem de `orc.valor_total`
+persistido. Se o persistido estiver defasado, a soma dos ambientes do
+contrato não bate com o total do contrato.
+
+### Pode mesmo falhar?
+
+`_negociacao_breakdown` (main.py:17239) faz `json.loads(proj.parametros_json)`
+sem try/except, chama `_complemento_diferencas*`, e roda o motor de
+`mod_negociacao`/`mod_provisoes`. Não é uma função que "nunca levanta" — e o
+próprio código tem dois `print("[CUTOVER] ...")` que só existem porque
+alguém previu a falha. Prever a falha e responder `ok` é a decisão errada.
+
+**Consequências no número final:** `valor_total` defasado alimenta contrato,
+parcelas, provisões, `Val_Cont` da NF-e e as três visões de DRE. É a raiz da
+árvore.
+
+**O que bloqueia:** confiar em qualquer margem calculada depois de uma
+alteração de desconto, parâmetro ou forma de pagamento.
+
+**Conserto:** insumo e recálculo na mesma transação; falha vira `ok: False`
+com rollback do conjunto. Os dois `print` viram log de erro de verdade.

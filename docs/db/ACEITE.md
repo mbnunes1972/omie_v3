@@ -47,7 +47,7 @@ não depois.
 | 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (strict) | **provado** |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
-| 16 | provisão cancelada em silêncio → margem fictícia | — | **SEM PROVA — e é o mais grave da auditoria** |
+| 16 | provisão cancelada em silêncio → margem fictícia | em construção — `docs/db/TAREFA_TESTE_ACHADO16.md` (passo 1 do roteiro) | prova do **fechamento recusado**; o aceite dos vereditos nasce com a implementação (passo 8) |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
 | 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (guarda do comportamento atual) | medido; guarda decidida, **não implementada** |
 | 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` | medido; **conserto sem teste** |

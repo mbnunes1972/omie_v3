@@ -32,11 +32,13 @@ deixa de ter resposta rápida.
 | 2 · teste do ACHADO-03 | **feito** — `b194f0a` |
 | 3 · citação da costura 4 | **feito** — `b194f0a` (e a da costura 2, achada no caminho) |
 | 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
-| 5 · ACHADO-13 delta-aware | **em execução** |
+| 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
 | 6 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
+(A partir do passo 5 isso deixa de valer por desenho — é o primeiro
+conserto.)
 
 **O contador de progresso:**
 
@@ -44,8 +46,8 @@ deixa de ter resposta rápida.
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **16** (linhas, não testes — serve como tendência, não como precisão).
-No fim da Fase 4 tem que ser zero.
+Hoje **15** (era 16 — o ACHADO-13 saiu). Linhas, não testes — serve como
+tendência, não como precisão. No fim da Fase 4 tem que ser zero.
 
 ## Quando aparece achado novo no meio de um passo
 

@@ -85,6 +85,22 @@ verificação completa é uma coisa só: **rodar a suíte e não sobrar nenhum
 xfail citando achado do Grupo 1.** Se sobrar, o conserto não fechou; se algum
 XPASS quebrar a suíte, o conserto fechou e o marcador está velho.
 
+## Um padrão que apareceu três vezes
+
+Todo conserto até agora quebrou pelo menos um teste vizinho que **codificava
+o defeito como correto**: `test_cancelar_nfe_estorna_faturamento` (passo 5),
+`test_aditivo_lista_api` (passo 6), `test_custos_adicionais_provisao`
+(passo 8).
+
+Não é descuido de quem escreveu — é o efeito natural de escrever teste sobre
+comportamento observado. Mas cria uma armadilha: **um teste verde não
+significa comportamento certo, significa comportamento estável.**
+
+A regra, então: quando um conserto quebra um teste vizinho, há duas
+hipóteses — o conserto está errado, ou o teste codificava o defeito. **Diga
+qual, e por quê.** Nunca conserte o teste para ele continuar verde sem
+responder isso.
+
 ## Manutenção
 
 Toda vez que um achado entrar, sair ou ganhar teste, esta tabela muda no

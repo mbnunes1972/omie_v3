@@ -36,7 +36,8 @@ deixa de ter resposta rápida.
 | 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
 | 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
 | 8 · ACHADO-16, vereditos da Conciliação Final | **feito** — `28be877` |
-| 9 em diante | não iniciados |
+| 9 · ACHADO-18, guarda de `valor_total` | tarefa escrita |
+| 10 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -103,12 +104,33 @@ antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
 8. **ACHADO-16** — vereditos da Conciliação Final + relatório de reversões.
    `docs/db/TAREFA_ACHADO16.md`.
 9. **ACHADO-18** — guarda `valor_total > 0` antes de contrato e NF-e.
-10. **ACHADO-02** — VAVO em 4.1.01, custo financeiro em 4.4.03.
-11. **ACHADO-03** — ramo por tabela, não por `if`.
-11-b. **ACHADO-23** — segmentação não congelada trava a AF1, que consegue
-   congelar ali mesmo. Decidido em 30/08.
+   `docs/db/TAREFA_ACHADO18.md`.
+10. **ACHADO-02 + ACHADO-03, juntos.** *Fundidos em 30/08:* os dois vivem em
+    `_fin_provisoes_venda_seguro` e são a mesma decisão — o que o ramo faz com
+    o `cust_fin`. O 02 é a consequência (receita financeira contada duas
+    vezes), o 03 é o roteador ambíguo que a produz. Consertar um sem o outro
+    é arrumar o efeito e deixar a causa escolhendo sozinha.
+11. **ACHADO-23** — segmentação não congelada trava a AF1, que consegue
+    congelar ali mesmo. Decidido em 30/08.
 
 **Marco:** rodar a suíte. Nenhum xfail citando achado da Fase 1 pode sobrar.
+
+## Pendência de implantação
+
+A partir do passo 8 o roteiro passou a gerar **migration**
+(`e031f6ad9c80`, tabela `veredictos_provisao`), aplicada só no localhost.
+Integração, Homologação e Produção estão atrás.
+
+**Não implantar a cada passo.** As migrations se acumulam e vão juntas **no
+fim da Fase 1**, com `docs/db/confirmar.sh` rodado em cada ambiente e
+`docs/db/IMPLANTAR.md` como procedimento. O risco real aqui não é a demora —
+é esquecer. Toda migration nova entra nesta lista no mesmo passo que a criou.
+
+**Pendentes:** `e031f6ad9c80`.
+
+**Lembrete que já custou um susto:** tabela nova precisa entrar no manifesto
+de `modulos.py`. O passo 8 descobriu isso por acidente; o `periodo_fechado`
+da Fase 3 vai passar pelo mesmo lugar.
 
 ## FASE 2 — custo e fechamento
 12. **ACHADO-01** — a perna de liquidação da provisão.

@@ -563,7 +563,8 @@ def test_aditivo_da_fase_assinatura_completa_constitui_provisao(http_client_fact
                       {"parte": "loja", "nome": "Rep Loja", "cpf": "111.444.777-35"})
     assert st == 200 and body["status"] == "assinado_loja", body
     st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
-                      {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05"})
+                      {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05",
+                       "forma_pagamento": json.dumps({"tipo": "avista", "total_cliente": 0})})
     assert st == 200 and body["status"] == "assinado", body
 
     import mod_contabil

@@ -1314,6 +1314,31 @@ def _valores_segmentados_do_projeto(db, loja_id, projeto_nome):
             "cfo": round(float(getattr(orc, "cfo", 0) or 0), 2), "orc": orc}
 
 
+def valor_contratado_do_projeto(db, nome_safe):
+    """Fonte ÚNICA de "quanto já foi contratado" neste projeto (docs/db/TAREFA_ACHADO21.md, 6-a):
+    Val_Cont do orçamento do Contrato + Val_Cont de cada orçamento de complemento cujo Aditivo
+    está TOTALMENTE assinado (`Aditivo.status == "assinado"` — as duas partes; rascunho,
+    "para_assinatura" e assinatura parcial de uma só parte NÃO contam). O critério de "assinado"
+    fica explícito aqui, não inferido por quem chama.
+
+    Usada pelo ACHADO-21 (calcular a diferença de uma revisão de PE nova contra o que já foi
+    contratado, não contra o contrato sozinho) e pelo ACHADO-12/passo 7 (somar contrato +
+    aditivos para faturar). Extração pura — sem mudar comportamento nenhum de quem ainda não a
+    chama. Retorna 0.0 se o projeto não tem contrato."""
+    contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                  .order_by(Contrato.id.desc()).first())
+    if contrato is None:
+        return 0.0
+    orc_ct = db.get(Orcamento, contrato.orcamento_id)
+    total = round(float(getattr(orc_ct, "valor_total", 0) or 0), 2)
+    aditivos_assinados = (db.query(Aditivo)
+                            .filter_by(projeto_nome=nome_safe, status="assinado").all())
+    for adt in aditivos_assinados:
+        orc_aj = db.get(Orcamento, adt.orcamento_complemento_id)
+        total += round(float(getattr(orc_aj, "valor_total", 0) or 0), 2)
+    return round(total, 2)
+
+
 def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc):
     """Wiring do faturamento SEGMENTADO (FASE B2). O valor do segmento vem do ORÇAMENTO DO CONTRATO
     (`Val_Cont × segmentação efetiva`, congelada na assinatura), NÃO do valor de face do documento
@@ -2435,7 +2460,7 @@ class Handler(BaseHTTPRequestHandler):
                 for _l in linhas:
                     _l["pool_ambiente_id"] = _id_por_nome.get(_l["ambiente"])
 
-                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct, ja_contratado = \
                     _pe_fator_contexto(db, nome)
                 markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
 
@@ -2458,6 +2483,13 @@ class Handler(BaseHTTPRequestHandler):
                         fase_id = None
                     d = decisoes.get(pid)
                     pa_l = pa_por_id.get(pid)
+                    # NÃO usa `ja_contratado` aqui: `diferenca_valor_contrato_estimada` usa
+                    # `vava_contratado` como fator (numerador da razão à vista/bruto) E como
+                    # base de subtração no MESMO parâmetro — diferente de
+                    # `_complemento_diferencas[_fase]`, que já separa os dois papéis. Substituir
+                    # por `ja_contratado` aqui infuenciaria o FATOR também, não só a subtração —
+                    # fora do escopo desta tarefa (ACHADO-21 mira o Complemento de fato, não a
+                    # prévia da AF2; ver docs/db/TAREFA_ACHADO21.md, "não mexer" + passo 7).
                     _l["diferenca_valor_contrato"] = _mconc.diferenca_valor_contrato_estimada(
                         diferenca_cfo=_l["diferenca"], markup=markup, valor_venda_pe=venda_por_pid.get(pid),
                         vava_contratado=vava_ct.get(pid, 0.0),
@@ -7667,7 +7699,7 @@ class Handler(BaseHTTPRequestHandler):
                 if arq is None or arq.valor_atualizado is None:
                     self.send_json({"ok": False, "erro": "PE não carregado para este ambiente"}, code=400); return
                 diferenca_cfo = round(float(arq.valor_atualizado) - float(pa.order_total or 0.0), 2)
-                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct = \
+                orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct, _ja_contratado = \
                     _pe_fator_contexto(db, nome)
                 markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
                 dvc = _mconc.diferenca_valor_contrato_estimada(
@@ -7863,6 +7895,15 @@ class Handler(BaseHTTPRequestHandler):
                 # 2026-08-14, endpoint /pe/complemento/fase/<id> abaixo) — mecanismos distintos.
                 orc = (db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1, parcela_id=None)
                          .order_by(Orcamento.id.desc()).first())
+                # ACHADO-21 (docs/db/TAREFA_ACHADO21.md, 6-b): antes da assinatura do aditivo,
+                # revisão é sobrescrita livre — é o modelo de trabalho. Depois da assinatura
+                # completa, a diferença já virou lançamento contábil, e mudança passa a ser
+                # EVENTO NOVO (orçamento novo), nunca sobrescrita — senão o valor pelo qual o
+                # cliente assinou o aditivo deixa de existir, e a próxima revisão cobra a mesma
+                # diferença de novo (medido com números na Costura 4).
+                if orc is not None and db.query(Aditivo).filter_by(
+                        orcamento_complemento_id=orc.id, status="assinado").first() is not None:
+                    orc = None
                 if orc is None:
                     maior = max([o.ordem or 0 for o in
                                  db.query(Orcamento).filter_by(projeto_id=nome).all()] or [0])
@@ -9100,6 +9141,7 @@ class Handler(BaseHTTPRequestHandler):
                 parte = (req.get("parte") or "").strip()
                 nome_ass = (req.get("nome") or "").strip()
                 cpf = (req.get("cpf") or "").strip()
+                forma_pagamento_str = req.get("forma_pagamento")
                 if parte not in ("loja", "cliente"):
                     self.send_json({"ok": False, "erro": "parte deve ser 'loja' ou 'cliente'"},
                                    code=400); return
@@ -9114,6 +9156,33 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": "Termo aditivo já assinado."}, code=400); return
                 if any(a.parte == parte for a in aditivo.assinaturas):
                     self.send_json({"ok": False, "erro": "Esta parte já assinou."}, code=400); return
+                partes_ja = {a.parte for a in aditivo.assinaturas}
+                completa_agora = {"loja", "cliente"}.issubset(partes_ja | {parte})
+                # ACHADO-21, 6-c (docs/db/TAREFA_ACHADO21.md): a assinatura que COMPLETA o aditivo
+                # (as duas partes) precisa da forma de pagamento — sem ela não dá pra materializar
+                # os recebíveis, e o aditivo ficaria constituído (2.1.06) sem nunca ser cobrado do
+                # cliente, o mesmo defeito que o ACHADO-12 media. Não inventa default: se a tela
+                # não coletou, recusa aqui, com mensagem clara.
+                if completa_agora and not forma_pagamento_str:
+                    self.send_json({"ok": False, "erro": "Informe a forma de pagamento do "
+                                    "aditivo antes de concluir a assinatura."}, code=400); return
+                orc_aj = db.get(Orcamento, aditivo.orcamento_complemento_id)
+                if completa_agora and orc_aj is not None:
+                    # ACHADO-21, 6-c: a forma de pagamento só chega agora — recalcula ANTES de
+                    # marcar o aditivo como assinado, pra Cust_Fin (se a forma escolhida for
+                    # financiada) entrar no valor constituído, igual ao contrato principal (que
+                    # também só sabe a forma de pagamento na assinatura). A diferença NEGOCIADA
+                    # (VAVA) não muda — só o que se soma a ela por causa de COMO o cliente decide
+                    # pagar. Tem que rodar ANTES de `aditivo.status` virar "assinado": depois
+                    # disso, `_pe_fator_contexto` passaria a contar ESTE PRÓPRIO aditivo na soma
+                    # de "já contratado" ao recalcular o mesmo orçamento — subtrairia ele de si
+                    # mesmo e zeraria a diferença (achado ao testar).
+                    orc_aj.forma_pagamento = forma_pagamento_str
+                    try:
+                        _recalcular_orcamento(orc_aj, db)
+                    except Exception as _e:
+                        print("[ADITIVO-ASSINAR] recálculo com forma_pagamento falhou:", _e)
+                    db.commit()
                 # ALIAS obrigatório: import não-aliased tornaria calcular_hash_assinatura local
                 # ao do_POST inteiro e quebraria o handler de assinatura do CONTRATO acima
                 from mod_contrato import calcular_hash_assinatura as _cha
@@ -9133,10 +9202,14 @@ class Handler(BaseHTTPRequestHandler):
                 # razão). Mesmo mecanismo/contas do fechamento da venda original (2026-08-12), na
                 # 2ª assinatura completa: sem gate de Aprovação Financeira própria (AF1/AF2 já
                 # correram antes da 11e) — decisão do usuário, mesmo padrão do contrato principal.
-                if aditivo.status == "assinado":
-                    orc_aj = db.get(Orcamento, aditivo.orcamento_complemento_id)
-                    if orc_aj is not None:
-                        _fin_provisoes_venda_seguro(orc_aj, nome, "prov:aditivo:" + str(aditivo.id))
+                if aditivo.status == "assinado" and orc_aj is not None:
+                    _fin_provisoes_venda_seguro(orc_aj, nome, "prov:aditivo:" + str(aditivo.id))
+                    # Recebíveis PRÓPRIOS do aditivo — guarda de idempotência já é por
+                    # orcamento_id, então nada toca nos recebíveis do contrato.
+                    _materializar_recebiveis_venda_seguro(
+                        orc_aj, nome, loja_id, datetime.utcnow(),
+                        "receb:aditivo:" + str(aditivo.id),
+                        pagamento_json_str=forma_pagamento_str)
                 self.send_json({"ok": True, "status": aditivo.status})
             finally:
                 db.close()
@@ -16704,7 +16777,7 @@ def _pool_ambiente_dict(pa) -> dict:
     }
 
 
-def _complemento_diferencas(db, nome_safe):
+def _complemento_diferencas(db, nome_safe, excluir_orcamento_id=None):
     """Correção da Fatia 3 (2026-07-21): diferenças por ambiente MARCADO para complemento —
         à_vista_complemento_i = venda_XML_complemento_i × (VAVA_contratado_i / VBVA_contratado_i)
         diferença_i           = à_vista_complemento_i − VAVA_contratado_i
@@ -16716,20 +16789,25 @@ def _complemento_diferencas(db, nome_safe):
     O Custo Especial fica naturalmente FORA (não está no VAVA por ambiente — coerente com a
     definição dele: não acompanha ambiente). O percentual único p = Cust_Ad/VAVO segue no resumo
     como INFORMAÇÃO (exibido no Apoio à negociação); fallback do fator se VBVA contratado = 0.
+
+    ACHADO-21 (docs/db/TAREFA_ACHADO21.md, 6-b): a diferença é calculada contra o que já foi
+    CONTRATADO (contrato + aditivos já assinados, via `_pe_fator_contexto`), não contra o
+    contrato sozinho — senão a mesma diferença de uma revisão anterior (já virada aditivo
+    assinado) seria cobrada de novo. O fator à vista/bruto continua vindo só do contrato puro.
+
+    `excluir_orcamento_id`: quando esta função está sendo chamada para recomputar o breakdown do
+    PRÓPRIO orçamento de um aditivo já assinado (main.py:17239, `_negociacao_breakdown` passa
+    `orc.id` aqui) — sem isto, `_pe_fator_contexto` incluiria a diferença DELE MESMO na soma de
+    "já contratado", subtraindo o aditivo de si próprio e zerando o resultado (achado ao medir o
+    custo financeiro do aditivo, 6-c).
+
     Retorna (linhas, resumo) ou (None, erro_str). linhas só dos ambientes marcados."""
-    ct = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
-            .order_by(Contrato.id.desc()).first())
-    orc_ct = db.get(Orcamento, ct.orcamento_id) if ct else None
+    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct, ja_contratado = \
+        _pe_fator_contexto(db, nome_safe, excluir_orcamento_id=excluir_orcamento_id)
     if orc_ct is None:
         return None, "Projeto sem contrato para comparar."
-    d_ct = _negociacao_breakdown(orc_ct, db)
-    vava_ct = {a.get("id"): float(a.get("VAVA", 0.0)) for a in d_ct.get("ambientes", [])}
-    vavo_ct = float(d_ct.get("VAVO") or 0.0)
-    cad_ct = float(d_ct.get("Cust_Ad") or 0.0)
-    fator_ca = (vavo_ct / (vavo_ct - cad_ct)) if (vavo_ct - cad_ct) > 0 else 1.0
-    d_orc_ct = float(orc_ct.desconto_pct or 0.0) / 100.0
-    d_amb_ct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0) / 100.0
-                for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
+    d_orc_ct = d_orc_pct / 100.0
+    d_amb_ct = {k: v / 100.0 for k, v in d_amb_pct.items()}
     compls = {a.pool_ambiente_id: a for a in
               db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_compl").all()}
     linhas = []
@@ -16738,7 +16816,8 @@ def _complemento_diferencas(db, nome_safe):
         if not pa.renegociar_pe:
             continue
         nome_amb = pa.nome_exibicao or pa.nome
-        vc = round(vava_ct.get(pa.id, 0.0), 2)
+        vc = round(vava_ct.get(pa.id, 0.0), 2)                # PURO do contrato — fator à vista/bruto
+        vc_base = round(ja_contratado.get(pa.id, vc), 2)      # contrato + aditivos assinados
         vbva_c = float(pa.budget_total or 0.0)
         a = compls.get(pa.id)
         carregado = a is not None and a.valor_venda is not None
@@ -16749,17 +16828,17 @@ def _complemento_diferencas(db, nome_safe):
             else:   # fallback (ambiente contratado sem valor): fator único aproximado
                 va_compl = round(float(a.valor_venda) * (1 - d_orc_ct)
                                  * (1 - d_amb_ct.get(pa.id, 0.0)) * fator_ca, 2)
-            dif = round(va_compl - vc, 2)
+            dif = round(va_compl - vc_base, 2)
             cfo_dif = round(float(a.valor_atualizado or 0.0) - float(pa.order_total or 0.0), 2)
         linhas.append({"pool_ambiente_id": pa.id, "ambiente": nome_amb,
-                       "vava_contratado": vc, "vava_complemento": va_compl,
+                       "vava_contratado": vc_base, "vava_complemento": va_compl,
                        "diferenca": dif, "cfo_diferenca": cfo_dif,
                        "compl_carregado": carregado})
     carregadas = [l for l in linhas if l["compl_carregado"]]
     resumo = {
         "pct_custos_adicionais": round((cad_ct / vavo_ct * 100.0) if vavo_ct else 0.0, 4),
         "fator_ca": round(fator_ca, 6),
-        "desc_global_pct": float(orc_ct.desconto_pct or 0.0),
+        "desc_global_pct": d_orc_pct,
         "total_contratado": round(sum(l["vava_contratado"] for l in carregadas), 2),
         "total_complemento": round(sum(l["vava_complemento"] for l in carregadas), 2),
         "total_diferenca": round(sum(l["diferenca"] for l in carregadas), 2),
@@ -16768,41 +16847,84 @@ def _complemento_diferencas(db, nome_safe):
     return linhas, resumo
 
 
-def _pe_fator_contexto(db, nome_safe):
+def _pe_fator_contexto(db, nome_safe, excluir_orcamento_id=None):
     """Contexto do fator VAVA/VBVA por ambiente contratado — compartilhado entre a Conciliação de
-    PE/AF2 (decisão) e o Complemento de Projeto de fato (`_complemento_diferencas_fase`), pra
-    garantir que os dois momentos usem exatamente a mesma conta (achado do usuário 2026-08-15: o
-    valor mostrado na decisão divergia do valor cobrado no Complemento).
+    PE/AF2 (decisão) e o Complemento de Projeto de fato (`_complemento_diferencas`/
+    `_complemento_diferencas_fase`), pra garantir que os dois momentos usem exatamente a mesma
+    conta (achado do usuário 2026-08-15: o valor mostrado na decisão divergia do valor cobrado no
+    Complemento).
+
+    `excluir_orcamento_id`: exclui da soma de `ja_contratado_por_ambiente` o aditivo cujo
+    `orcamento_complemento_id` for este — usado quando quem chama está recomputando o breakdown
+    do PRÓPRIO orçamento desse aditivo (senão ele se subtrairia de si mesmo).
     Retorna `(orc_ct, vava_por_ambiente, fator_ca, desconto_orc_pct, desconto_amb_pct_por_ambiente,
-    vavo_ct, cad_ct)` — os dois `_pct` já em PERCENTUAL (0-100), formato que
-    `valor_complemento_por_fator` espera; os dois últimos crus, pro resumo do Complemento.
-    `(None, {}, 1.0, 0.0, {}, 0.0, 0.0)` se o projeto não tem contrato."""
+    vavo_ct, cad_ct, ja_contratado_por_ambiente)` — os dois `_pct` já em PERCENTUAL (0-100),
+    formato que `valor_complemento_por_fator` espera; os dois seguintes crus, pro resumo do
+    Complemento.
+
+    `ja_contratado_por_ambiente` (ACHADO-21, docs/db/TAREFA_ACHADO21.md 6-b): `vava_por_ambiente`
+    (o fator à vista/bruto continua vindo SÓ do contrato — a estrutura de desconto/custos
+    adicionais negociada não muda por causa de um aditivo) mais a diferença já registrada em
+    CADA aditivo TOTALMENTE assinado do projeto, por ambiente. É contra ISTO — não contra
+    `vava_por_ambiente` sozinho — que a diferença de uma revisão de PE NOVA precisa ser
+    calculada: sem isto, a mesma diferença já cobrada por um aditivo anterior seria cobrada de
+    novo a cada revisão seguinte (medido com números na Costura 4/ACHADO-21).
+
+    A diferença de cada aditivo assinado vem de `Aditivo.dados_json["ambientes"]` — o SNAPSHOT
+    congelado no momento em que o Termo Aditivo foi gerado (main.py, `dados["ambientes"] =
+    linhas_amb`), não de recomputar `_negociacao_breakdown(orc_aj, db)` ao vivo: o orçamento do
+    aditivo tem `complemento_pe=1`, e `_negociacao_breakdown` para esse tipo de orçamento chama de
+    volta `_complemento_diferencas`/esta própria função — recomputar ao vivo aqui criaria
+    recursão infinita a cada aditivo assinado (não só no caso auto-referente do ACHADO-20). Ler o
+    snapshot também é o correto pelo princípio do 6-b: depois de assinado, o número é imutável —
+    não deve derivar de um recálculo que poderia divergir do que o cliente assinou.
+    `(None, {}, 1.0, 0.0, {}, 0.0, 0.0, {})` se o projeto não tem contrato."""
     ct = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
             .order_by(Contrato.id.desc()).first())
     orc_ct = db.get(Orcamento, ct.orcamento_id) if ct else None
     if orc_ct is None:
-        return None, {}, 1.0, 0.0, {}, 0.0, 0.0
+        return None, {}, 1.0, 0.0, {}, 0.0, 0.0, {}
     d_ct = _negociacao_breakdown(orc_ct, db)
     vava_ct = {a.get("id"): float(a.get("VAVA", 0.0)) for a in d_ct.get("ambientes", [])}
+    ja_contratado = dict(vava_ct)
+    for adt in (db.query(Aditivo).filter_by(projeto_nome=nome_safe, status="assinado").all()):
+        if excluir_orcamento_id is not None and adt.orcamento_complemento_id == excluir_orcamento_id:
+            continue
+        try:
+            dados_adt = json.loads(adt.dados_json) if adt.dados_json else {}
+        except Exception:
+            dados_adt = {}
+        for a in dados_adt.get("ambientes", []):
+            aid = a.get("pool_ambiente_id")
+            if aid is not None:
+                ja_contratado[aid] = round(ja_contratado.get(aid, 0.0) + float(a.get("diferenca", 0.0)), 2)
     vavo_ct = float(d_ct.get("VAVO") or 0.0)
     cad_ct = float(d_ct.get("Cust_Ad") or 0.0)
     fator_ca = (vavo_ct / (vavo_ct - cad_ct)) if (vavo_ct - cad_ct) > 0 else 1.0
     d_orc_pct = float(orc_ct.desconto_pct or 0.0)
     d_amb_pct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0)
                 for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
-    return orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct
+    return orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct, ja_contratado
 
 
-def _complemento_diferencas_fase(db, nome_safe, parcela_id):
+def _complemento_diferencas_fase(db, nome_safe, parcela_id, excluir_orcamento_id=None):
     """Complemento de Projeto POR FASE (spec 2026-08-14) — generaliza `_complemento_diferencas`:
     ambiente entra pela decisão 'cobrar' registrada em `ConciliacaoPeFase` (AF2/11d), não mais
     pela flag manual `renegociar_pe` da 11c; o valor de venda vem DIRETO do XML de PE
     (`ArquivoPE.formato='xml_pe'`), sem exigir o 3º upload `xml_compl` que o mecanismo legado
     pedia. Mesma fórmula (fator proporcional VAVA/VBVA do ambiente contratado), agora em
     `mod_conciliacao_pe.valor_complemento_por_fator`. `parcela_id=None` = projeto não
-    desmembrado (fase única implícita). Retorna (linhas, resumo) ou (None, erro_str)."""
+    desmembrado (fase única implícita).
+
+    ACHADO-21 (docs/db/TAREFA_ACHADO21.md, 6-b): a diferença é calculada contra o que já foi
+    CONTRATADO (contrato + aditivos já assinados, via `_pe_fator_contexto`), não contra o
+    contrato sozinho — mesmo motivo/mecanismo de `_complemento_diferencas`. `excluir_orcamento_id`:
+    ver docstring de `_complemento_diferencas`.
+
+    Retorna (linhas, resumo) ou (None, erro_str)."""
     import mod_conciliacao_pe as _mconc
-    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct = _pe_fator_contexto(db, nome_safe)
+    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct, ja_contratado = \
+        _pe_fator_contexto(db, nome_safe, excluir_orcamento_id=excluir_orcamento_id)
     if orc_ct is None:
         return None, "Projeto sem contrato para comparar."
     decisoes = (db.query(ConciliacaoPeFase)
@@ -16818,15 +16940,16 @@ def _complemento_diferencas_fase(db, nome_safe, parcela_id):
         if pa is None or arq is None or arq.valor_venda is None:
             continue
         nome_amb = pa.nome_exibicao or pa.nome
-        vc = round(vava_ct.get(pa.id, 0.0), 2)
+        vc = round(vava_ct.get(pa.id, 0.0), 2)                # PURO do contrato — fator à vista/bruto
+        vc_base = round(ja_contratado.get(pa.id, vc), 2)      # contrato + aditivos assinados
         vbva_c = float(pa.budget_total or 0.0)
         va_compl = _mconc.valor_complemento_por_fator(
             valor_venda_pe=arq.valor_venda, vava_contratado=vc, vbva_contratado=vbva_c,
             fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
             desconto_amb_pct=d_amb_pct.get(pa.id, 0.0))
         linhas.append({"pool_ambiente_id": pa.id, "ambiente": nome_amb,
-                       "vava_contratado": vc, "vava_complemento": va_compl,
-                       "diferenca": round(va_compl - vc, 2),
+                       "vava_contratado": vc_base, "vava_complemento": va_compl,
+                       "diferenca": round(va_compl - vc_base, 2),
                        "cfo_diferenca": d.diferenca_cfo, "compl_carregado": True})
     resumo = {
         "pct_custos_adicionais": round((cad_ct / vavo_ct * 100.0) if vavo_ct else 0.0, 4),
@@ -17269,9 +17392,10 @@ def _negociacao_breakdown(orc, db, vbva_override=None):
         # pra _complemento_diferencas_fase (decisão 'cobrar' da AF2 + XML de PE direto, sem
         # xml_compl). parcela_id NULL preserva o mecanismo legado (11c/renegociar_pe) intocado.
         if getattr(orc, "parcela_id", None) is not None:
-            linhas_c, _res = _complemento_diferencas_fase(db, orc.projeto_id, orc.parcela_id)
+            linhas_c, _res = _complemento_diferencas_fase(db, orc.projeto_id, orc.parcela_id,
+                                                          excluir_orcamento_id=orc.id)
         else:
-            linhas_c, _res = _complemento_diferencas(db, orc.projeto_id)
+            linhas_c, _res = _complemento_diferencas(db, orc.projeto_id, excluir_orcamento_id=orc.id)
         for l in (linhas_c or []):
             if l["compl_carregado"]:
                 compl_diff[l["pool_ambiente_id"]] = l["diferenca"]

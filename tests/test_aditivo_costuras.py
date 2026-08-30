@@ -24,10 +24,17 @@ def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 
 
-def _setup(app_db, seed):
+def _setup(app_db, seed, qual="l1"):
     """Mesmo setup de tests/test_complemento_pe_e2e.py::_setup: contrato assinado, 1 ambiente de
-    80k com comissão de arquiteto 10% repassada (VAVA contratado = 80.000/0,9 = 88.888,89)."""
-    oid = seed["orcamento_l1_id"]
+    80k com comissão de arquiteto 10% repassada (VAVA contratado = 80.000/0,9 = 88.888,89).
+    Idempotente: `seed`/`app_db` são module-scoped e mais de um teste deste arquivo chama
+    `_setup` sobre o MESMO `oid` — sem essa guarda, cada chamada extra duplicava o ambiente
+    "Cozinha" no mesmo orçamento, dobrando o VAVO (achado ao rodar o arquivo inteiro junto).
+    `qual` ("l1"/"l2") escolhe QUAL projeto do seed usar — a Costura 4 assina aditivos de
+    verdade no projeto, então a Costura 2 usa o OUTRO projeto (l2) pra não herdar esse estado
+    (achado ao rodar o arquivo inteiro junto, depois do ACHADO-21 passar a ler aditivos
+    assinados na mesma conta/ambiente)."""
+    oid = seed["orcamento_l%s_id" % qual[1]]
     db = app_db.get_session()
     orc = db.get(app_db.Orcamento, oid)
     nome = orc.projeto_id
@@ -35,16 +42,21 @@ def _setup(app_db, seed):
     proj.parametros_json = json.dumps({"incluir_custos": True, "comissao_arq_ativa": True,
                                        "comissao_arq_pct": 10.0, "carga_trib": 0.0,
                                        "pct_mercadoria": 100.0, "pct_servico": 0.0})
-    pa = app_db.PoolAmbiente(nome="Cozinha", nome_exibicao="Cozinha", xml_path="fake/coz.xml",
-                             ambientes_json="{}", projeto_id=nome,
-                             budget_total=80000.0, order_total=30000.0)
-    db.add(pa); db.flush()
-    db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=1))
+    ja = (db.query(app_db.PoolAmbiente).filter_by(projeto_id=nome, nome="Cozinha").first())
+    if ja is not None:
+        pa = ja
+    else:
+        pa = app_db.PoolAmbiente(nome="Cozinha", nome_exibicao="Cozinha", xml_path="fake/coz.xml",
+                                 ambientes_json="{}", projeto_id=nome,
+                                 budget_total=80000.0, order_total=30000.0)
+        db.add(pa); db.flush()
+        db.add(app_db.OrcamentoAmbiente(orcamento_id=oid, pool_ambiente_id=pa.id, ordem=1))
     pa.renegociar_pe = 1
     ct = (db.query(app_db.Contrato).filter_by(projeto_nome=nome)
             .order_by(app_db.Contrato.id.desc()).first())
-    db.add(app_db.ContratoAssinatura(contrato_id=ct.id, parte="loja", nome="Loja",
-                                     cpf="000.000.000-00", hash_sha256="x"))
+    if not db.query(app_db.ContratoAssinatura).filter_by(contrato_id=ct.id, parte="loja").first():
+        db.add(app_db.ContratoAssinatura(contrato_id=ct.id, parte="loja", nome="Loja",
+                                         cpf="000.000.000-00", hash_sha256="x"))
     db.commit()
     pid = pa.id
     db.close()
@@ -68,47 +80,73 @@ def _upsert_compl(app_db, nome, pid, venda, cfo=30000.0):
     db.commit(); db.close()
 
 
-def _criar_modelo_aditivo(app_db, seed):
+def _criar_modelo_aditivo(app_db, seed, loja_id=None):
     import mod_documentos
     db = app_db.get_session()
-    mv = mod_documentos.criar_versao(db, seed["loja1_id"], "termo_aditivo",
+    mv = mod_documentos.criar_versao(db, loja_id or seed["loja1_id"], "termo_aditivo",
                                      "# TERMO ADITIVO [NUM_ADITIVO]\n1. [AMBIENTES_COMPLEMENTO]\n"
                                      "2. Complemento: [VALOR_COMPLEMENTO].\n", "t.md", None)
     mod_documentos.ativar(db, mv.id)
     db.close()
 
 
-def _assinar_aditivo_completo(c, nome):
+def _assinar_aditivo_completo(c, nome, forma_pagamento=None):
+    """ACHADO-21, 6-c: a assinatura que completa (2ª parte) exige forma_pagamento — sem
+    default inventado (a tela recusa se não coletar). Passa à vista/entrada 0 por padrão do
+    teste, só na 2ª chamada (a 1ª nunca completa sozinha)."""
+    fp = forma_pagamento or json.dumps({"tipo": "avista", "total_cliente": 0})
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
-        st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
-                          {"parte": parte, "nome": quem, "cpf": "111.444.777-35"})
+        corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
+        if parte == "cliente":
+            corpo["forma_pagamento"] = fp
+        st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar", corpo)
         assert st == 200, body
     assert body["status"] == "assinado"
     return body
 
 
-def _saldo_2106_credor(app_db, seed, nome):
+def _saldo_2106_credor(app_db, seed, nome, loja_id=None):
     import mod_contabil
     db = app_db.get_session()
-    ator = {"loja_id": seed["loja1_id"], "rede_id": None}
+    ator = {"loja_id": loja_id or seed["loja1_id"], "rede_id": None}
     ot, oid = mod_contabil.resolver_owner(db, ator)
+    mod_contabil.seed_plano(db, ot, oid)   # 1ª chamada pode acontecer antes de qualquer lançamento
     v = mod_contabil.total_lancado(db, ot, oid, "2.1.06", "credito", projeto_id=nome)
     db.close()
     return round(v, 2)
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-21/Costura 4 (medido 29/08): revisão de PE após "
-                    "aditivo assinado duplica a cobrança — vira verde sozinho no dia da correção.")
-def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, http_client_factory):
+def test_costura4_revisao_apos_aditivo_assinado_nao_duplica_cobranca(app_db, seed, http_client_factory):
+    """ACHADO-21 (docs/db/TAREFA_ACHADO21.md, passo 6 do ROTEIRO): CONSERTADO — as duas metades do
+    6-b. (1) `POST /pe/complemento/orcamento` não reaproveita mais o orçamento de complemento que
+    já tem aditivo assinado — a revisão seguinte cria um orçamento NOVO, e o valor pelo qual o
+    cliente assinou o 1º aditivo continua legível, intocado, no orçamento dele. (2) A diferença do
+    orçamento novo é calculada contra `valor_contratado_do_projeto` (contrato + aditivos já
+    assinados), não contra o contrato sozinho — por isso a revisão 2 cobra só o INCREMENTO real,
+    não a diferença cheia de novo."""
     nome, pid, oid = _setup(app_db, seed)
     c = _login(http_client_factory, "dir_l1")
     _criar_modelo_aditivo(app_db, seed)
+
+    # valor_contratado_do_projeto lê valor_total PERSISTIDO do contrato (não recomputa ao vivo) —
+    # _setup não recalcula/persiste esse valor (o resto do arquivo trabalha via breakdown ao
+    # vivo), então sem isto o contrato entraria com 0,0 na conferência final deste teste. Roda
+    # também o wiring de fechamento da venda ORIGINAL (credita 2.1.06 pelos 88.888,89 do
+    # contrato) — sem isso a conferência final só veria a parte dos aditivos, não o projeto
+    # inteiro (contrato + aditivos, que é exatamente o que a aceite #3 do 6-b pede).
+    import main as _main
+    db = app_db.get_session()
+    orc_ct_setup = db.get(app_db.Orcamento, oid)
+    _main._recalcular_orcamento(orc_ct_setup, db)
+    db.commit()
+    _main._fin_provisoes_venda_seguro(orc_ct_setup, nome, "prov:venda-original-teste:" + nome)
+    db.close()
 
     # ── revisão 1: venda=84.000 → diferença = 84.000/0,9 − 88.888,89 = 4.444,44 ──────────────
     _upsert_compl(app_db, nome, pid, venda=84000.0, cfo=32000.0)
     st, body = c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
     assert st == 200 and body["ok"], body
-    aj_id = body["orcamento"]["id"]
+    aj1_id = body["orcamento"]["id"]
     assert abs(body["orcamento"]["valor_total"] - 4444.44) < 0.05, body["orcamento"]["valor_total"]
 
     st, body = c.post(f"/api/projetos/{nome}/aditivo", {})
@@ -121,15 +159,28 @@ def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, h
     assert abs((depois_ad1 - antes) - 4444.44) < 0.05, (
         "1º aditivo deveria creditar 2.1.06 em 4.444,44 — %r" % (depois_ad1 - antes))
 
-    # ── revisão 2 do MESMO ambiente, DEPOIS do aditivo assinado: venda=90.000 → nova diferença
-    #    (contra a MESMA base do contrato) = 90.000/0,9 − 88.888,89 = 11.111,11 ─────────────────
+    # ── revisão 2 do MESMO ambiente, DEPOIS do aditivo assinado: venda=90.000 → à vista =
+    #    90.000/0,9 = 100.000,00. Contra o CONTRATO sozinho (88.888,89) daria 11.111,11 de novo
+    #    (o defeito). Contra valor_contratado_do_projeto (88.888,89 + 4.444,44 = 93.333,33), o
+    #    incremento real é 100.000,00 − 93.333,33 = 6.666,67. ──────────────────────────────────
     _upsert_compl(app_db, nome, pid, venda=90000.0, cfo=34000.0)
     st, body = c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
     assert st == 200 and body["ok"], body
-    assert body["orcamento"]["id"] == aj_id, (
-        "get-or-create tem que reaproveitar o MESMO Orcamento que o 1º aditivo já assinou — "
-        "se criou um novo, a premissa da Costura 4 mudou")
-    assert abs(body["orcamento"]["valor_total"] - 11111.11) < 0.05, body["orcamento"]["valor_total"]
+    aj2_id = body["orcamento"]["id"]
+    assert aj2_id != aj1_id, (
+        "6-b, metade 1: a revisão depois do aditivo assinado tem que criar um Orcamento NOVO, "
+        "não reaproveitar o que o 1º aditivo já assinou")
+    assert abs(body["orcamento"]["valor_total"] - 6666.67) < 0.05, (
+        "6-b, metade 2: a diferença do orçamento novo tem que ser calculada contra "
+        "valor_contratado_do_projeto (93.333,33), não contra o contrato sozinho (o que daria "
+        "11.111,11 de novo) — valor obtido: %r" % body["orcamento"]["valor_total"])
+
+    # o valor do aditivo #1 continua legível no orçamento dele — imutável (6-b, linha de desenho)
+    db = app_db.get_session()
+    valor_aj1_depois = db.get(app_db.Orcamento, aj1_id).valor_total
+    db.close()
+    assert abs(valor_aj1_depois - 4444.44) < 0.05, (
+        "o valor pelo qual o cliente assinou o aditivo #1 não pode ter mudado — %r" % valor_aj1_depois)
 
     st, body = c.post(f"/api/projetos/{nome}/aditivo", {"novo": True})
     assert st == 200 and body["ok"], body
@@ -139,14 +190,24 @@ def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, h
     _assinar_aditivo_completo(c, nome)
     depois_ad2 = _saldo_2106_credor(app_db, seed, nome)
 
-    # Comportamento CORRETO seria: 2.1.06 total creditado por aditivos = 11.111,11 (a diferença
-    # final, que já supera e substitui a da revisão 1) — nunca 4.444,44 + 11.111,11 = 15.555,55.
-    total_creditado_aditivos = depois_ad2 - antes
+    total_creditado_aditivos = round(depois_ad2 - antes, 2)
     assert abs(total_creditado_aditivos - 11111.11) < 0.05, (
-        "duplo-lançamento confirmado com números: 2.1.06 recebeu %.2f pelos dois aditivos juntos "
-        "(4.444,44 do 1º + 11.111,11 do 2º = 15.555,55), quando a diferença final real é só "
-        "11.111,11 — a diferença do 1º aditivo (4.444,44) foi cobrada duas vezes."
+        "2.1.06 tem que fechar em 11.111,11 pelos dois aditivos juntos (4.444,44 + 6.666,67) — "
+        "a diferença final real, sem duplicar o que o 1º aditivo já cobrou: %r"
         % total_creditado_aditivos)
+
+    # aceite #3 do 6-b (docs/db/TAREFA_ACHADO21.md): a conferência do ACHADO-21 fecha — soma dos
+    # créditos de 2.1.06 do projeto inteiro (contrato + os dois aditivos assinados) ==
+    # valor_contratado_do_projeto. Antes do 6-b isto divergia (o 2º aditivo cobrava 11.111,11 de
+    # novo em vez de 6.666,67, então a soma de 2.1.06 batia SÓ com a soma bruta das duas
+    # cobranças, não com o que o projeto realmente vale).
+    db = app_db.get_session()
+    v_contratado = _main.valor_contratado_do_projeto(db, nome)
+    db.close()
+    assert abs(v_contratado - (88888.89 + 4444.44 + 6666.67)) < 0.05, v_contratado
+    assert abs(depois_ad2 - v_contratado) < 0.05, (
+        "soma dos créditos de 2.1.06 do projeto (%.2f) tem que bater com "
+        "valor_contratado_do_projeto (%.2f)" % (depois_ad2, v_contratado))
 
 
 def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_factory, monkeypatch):
@@ -156,10 +217,16 @@ def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_
     significar "o total que deve estar reconhecido"). Simula o que a Costura 1 faria (somar
     aditivo ao Val_Cont segmentado) via monkeypatch em `_valores_segmentados_do_projeto` — SEM
     implementar a soma de verdade (fora do escopo desta tarefa, ver ACHADO-12/passo 7) — e
-    confirma que a 2ª NF-e pós-aditivo fatura só o incremento, não o total somado de novo."""
+    confirma que a 2ª NF-e pós-aditivo fatura só o incremento, não o total somado de novo.
+
+    Usa o projeto da LOJA 2 (`qual="l2"`), nunca tocado pela Costura 4 — que assina aditivos DE
+    VERDADE no projeto da loja 1 (`seed`/`app_db` são module-scoped, e depois do ACHADO-21 a
+    diferença de complemento passa a somar aditivos já assinados NA MESMA conta/ambiente;
+    compartilhar o projeto faria este teste herdar o estado que a Costura 4 deixou)."""
     import main
-    nome, pid, oid = _setup(app_db, seed)
-    c = _login(http_client_factory, "dir_l1")
+    nome, pid, oid = _setup(app_db, seed, qual="l2")
+    c = _login(http_client_factory, "dir_l2")
+    loja_id = seed["loja2_id"]
 
     # oid já é o orçamento do CONTRATO ASSINADO — /margens está travado (403) por desenho
     # (test_complemento_pe_e2e.py:103-104). Recalcula direto, como o motor faria antes da
@@ -176,7 +243,7 @@ def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_
     assert val_cont_original > 0
 
     import mod_contabil
-    ator = {"loja_id": seed["loja1_id"], "rede_id": None}
+    ator = {"loja_id": loja_id, "rede_id": None}
     db = app_db.get_session()
     ot, owner_id = mod_contabil.resolver_owner(db, ator)
     saldo_2106_pre = mod_contabil.saldo_adiantamento_projeto(db, ot, owner_id, nome)
@@ -186,7 +253,7 @@ def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_
         % saldo_2106_pre)
 
     # 1ª "NF-e" (mercadoria) pelo Val_Cont original — chama o wiring real de faturamento.
-    main._fin_faturamento_segmentado_seguro(seed["loja1_id"], nome, "mercadoria", "NFE-teste-1")
+    main._fin_faturamento_segmentado_seguro(loja_id, nome, "mercadoria", "NFE-teste-1")
     faturado_1 = mod_contabil.total_lancado(app_db.get_session(), ot, owner_id, "4.1.01",
                                             "credito", projeto_id=nome)
     assert abs(faturado_1 - val_cont_original) < 0.05, faturado_1
@@ -196,7 +263,7 @@ def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_
 
     # Aditivo assinado depois da 1ª NF-e: soma R$ 4.444,44 a mais, via o MESMO wiring
     # (_fin_provisoes_venda_seguro credita 2.1.06 de novo pelo valor do aditivo).
-    _criar_modelo_aditivo(app_db, seed)
+    _criar_modelo_aditivo(app_db, seed, loja_id)
     _upsert_compl(app_db, nome, pid, venda=84000.0, cfo=32000.0)
     st, body = c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
     assert st == 200 and body["ok"], body
@@ -221,7 +288,7 @@ def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_
     monkeypatch.setattr(main, "_valores_segmentados_do_projeto", _somado)
 
     # 2ª NF-e (mesma REF-base de documento diferente — outro número de nota).
-    main._fin_faturamento_segmentado_seguro(seed["loja1_id"], nome, "mercadoria", "NFE-teste-2")
+    main._fin_faturamento_segmentado_seguro(loja_id, nome, "mercadoria", "NFE-teste-2")
 
     faturado_total = mod_contabil.total_lancado(app_db.get_session(), ot, owner_id, "4.1.01",
                                                 "credito", projeto_id=nome)

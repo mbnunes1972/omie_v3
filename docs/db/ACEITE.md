@@ -52,7 +52,7 @@ não depois.
 | 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18::test_gerar_contrato_recusa_valor_total_zero` e `::test_emitir_nfe_recusa_valor_total_zero` (strict, estado construído direto no banco com pré-condição afirmada, controle negativo confirmado nos dois) | **provado** |
 | 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_parametros_json_malformado_cai_no_default` e `::test_parametros_nao_devolve_sombra_com_recalculo_falho` (strict, controle negativo confirmado nos dois — cobrem 2 das 3 causas; o conserto das 4 rotas restantes segue sem aceite) | parcialmente **provado** |
 | 20 | recursão no complemento auto-referente | `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_complemento_auto_referente_recusado_com_erro_nomeado` (strict, controle negativo confirmado) | **provado** |
-| 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (strict, citação corrigida em 30/08) | **provado** |
+| 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (`xfail` removido no commit do conserto, 30/08) + `test_valor_contratado_do_projeto`, `test_aditivo_recebiveis_e_custo_financeiro` | **CONSERTADO** — passo 6 do ROTEIRO (6-a/6-b/6-c) |
 | 22 | docstring do CMV descreve mecanismo extinto | — | documental, Grupo 5 |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 

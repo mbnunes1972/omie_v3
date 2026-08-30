@@ -320,7 +320,8 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
     marco("5b_aditivo_assinatura_loja")
 
     st, b = c.post("/api/projetos/%s/aditivo/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05"})
+                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05",
+                    "forma_pagamento": json.dumps({"tipo": "avista", "total_cliente": 0})})
     assert st == 200 and b["status"] == "assinado", b
     marco("5c_aditivo_assinatura_cliente_provisoes_constituidas")
 

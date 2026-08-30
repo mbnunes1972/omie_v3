@@ -3,6 +3,8 @@
 (achado do usuário 2026-08-25, Visão Geral do Projeto). O endpoint singular existente
 (.../aditivo/pdf) só serve o mais recente; a Visão Geral precisa baixar o PDF de QUALQUER
 renegociação do histórico, não só a última."""
+import json
+
 from tests.test_aditivo_wizard_e2e import _setup, _upsert_compl, _login
 
 
@@ -17,12 +19,18 @@ def test_pdf_por_id_de_cada_renegociacao(http_client_factory, seed, app_db):
     assert st == 200 and body["ok"], body
     primeiro_id = body["aditivo"]["id"]
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
-        c.post(f"/api/projetos/{nome}/aditivo/assinar", {"parte": parte, "nome": quem, "cpf": "111.444.777-35"})
+        corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
+        if parte == "cliente":
+            corpo["forma_pagamento"] = json.dumps({"tipo": "avista", "total_cliente": 0})
+        st_ass, body_ass = c.post(f"/api/projetos/{nome}/aditivo/assinar", corpo)
+        assert st_ass == 200 and body_ass["status"] in ("assinado_loja", "assinado"), body_ass
 
+    # ACHADO-21/6-b: aditivo #1 já assinado — "Negociar Complemento" de novo cria Orcamento NOVO.
     c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
     st, body = c.post(f"/api/projetos/{nome}/aditivo", {"novo": True})
     assert st == 200 and body["ok"], body
     segundo_id = body["aditivo"]["id"]
+    assert segundo_id != primeiro_id
 
     st1, raw1 = c.get(f"/api/projetos/{nome}/aditivo/{primeiro_id}/pdf")
     st2, raw2 = c.get(f"/api/projetos/{nome}/aditivo/{segundo_id}/pdf")

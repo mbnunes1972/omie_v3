@@ -2,9 +2,13 @@
 """GET /api/projetos/<nome>/aditivos (plural) — histórico COMPLETO de renegociações (achado do
 usuário 2026-08-25, Visão Geral do Projeto): o endpoint singular /aditivo só devolve o mais
 recente. Prova principal: a 2ª renegociação (novo aditivo) não corrompe o snapshot de condição de
-pagamento da 1ª — o risco real que existia antes do forma_pagamento_snapshot em dados_json (11e
-"Negociar Complemento" reaproveita o MESMO Orcamento entre rodadas e zera forma_pagamento a cada
-abertura)."""
+pagamento da 1ª — o risco real que existia antes do forma_pagamento_snapshot em dados_json.
+
+Atualizado pelo ACHADO-21 (docs/db/TAREFA_ACHADO21.md, 6-b, 30/08): "Negociar Complemento" NÃO
+reaproveita mais o orçamento que já tem aditivo assinado — a rodada 2 cria um Orcamento NOVO, e o
+da rodada 1 fica imutável (nunca mais zerado). A prova do docstring acima fica ainda mais direta:
+não é mais "o snapshot sobrevive a um zeramento do MESMO orçamento", é "o orçamento da rodada 1
+nem é tocado de novo"."""
 import json
 import os
 
@@ -36,23 +40,28 @@ def test_lista_aditivos_preserva_forma_pagamento_de_cada_renegociacao(http_clien
     assert body["aditivo"]["dados"]["forma_pagamento_snapshot"]["entrada_valor"] == 14444.44
 
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
-        st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
-                          {"parte": parte, "nome": quem, "cpf": "111.444.777-35"})
+        corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
+        if parte == "cliente":
+            corpo["forma_pagamento"] = json.dumps(plano_1)
+        st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar", corpo)
         assert st == 200, body
 
-    # Rodada 2: "Negociar Complemento" de novo — get-or-create REAPROVEITA o orçamento e ZERA
-    # forma_pagamento (comportamento real do endpoint, não simulado aqui).
+    # Rodada 2: "Negociar Complemento" de novo — ACHADO-21/6-b: já tem aditivo assinado, então
+    # NÃO reaproveita mais — cria um Orcamento NOVO, e o da rodada 1 fica intocado.
     st, body = c.post(f"/api/projetos/{nome}/pe/complemento/orcamento", {})
     assert st == 200 and body["ok"], body
+    orc_id2 = body["orcamento"]["id"]
+    assert orc_id2 != orc_id, "6-b: rodada 2 pós-assinatura tem que criar Orcamento novo"
     db = app_db.get_session()
-    assert db.get(app_db.Orcamento, orc_id).forma_pagamento is None   # confirma que zerou
+    assert db.get(app_db.Orcamento, orc_id).forma_pagamento == json.dumps(plano_1), (
+        "o orçamento da rodada 1 (já assinado) não pode ser tocado pela rodada 2")
     db.close()
 
-    # Novo plano, BEM diferente do primeiro — parcelado, sem entrada.
+    # Novo plano, BEM diferente do primeiro — parcelado, sem entrada. Grava no orçamento NOVO.
     plano_2 = {"nome_forma": "Cartão", "tipo": "cartao", "entrada_forma": "", "entrada_data": "",
                "entrada_valor": 0.0, "parcelas": [{"valor": 4814.81}] * 3}
     db = app_db.get_session()
-    db.get(app_db.Orcamento, orc_id).forma_pagamento = json.dumps(plano_2)
+    db.get(app_db.Orcamento, orc_id2).forma_pagamento = json.dumps(plano_2)
     db.commit(); db.close()
 
     st, body = c.post(f"/api/projetos/{nome}/aditivo", {"novo": True})

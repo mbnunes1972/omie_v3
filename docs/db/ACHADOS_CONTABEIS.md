@@ -1086,9 +1086,41 @@ orçamento do contrato, recusa com erro nomeado em vez de recorrer.
 
 ---
 
-## ACHADO-21 — revisão de PE depois do aditivo assinado cobra a mesma diferença duas vezes · GRAVE · GRUPO 1
+## ACHADO-21 — revisão de PE depois do aditivo assinado cobra a mesma diferença duas vezes · RESOLVIDO 30/08/2026
 
-Medido pela Vera na Costura 4 de `docs/db/TAREFA_ADITIVO.md`, reproduzido com
+**RESOLVIDO (docs/db/TAREFA_ACHADO21.md, passo 6 do ROTEIRO).** Três partes:
+
+- **6-a** — extraída `valor_contratado_do_projeto(db, nome_safe)` (main.py):
+  contrato + Val_Cont de cada Aditivo com `status == "assinado"` (as duas
+  partes; rascunho/parcial não conta). Fonte única, testada isoladamente em
+  `tests/test_valor_contratado_do_projeto.py`, sem mudar comportamento de
+  quem ainda não a chamava.
+- **6-b** — as duas metades obrigatórias: (1) `POST /pe/complemento/
+  orcamento` não reaproveita mais um orçamento de complemento que já tem
+  Aditivo assinado — a revisão seguinte cria um `Orcamento` NOVO; (2) a
+  diferença do orçamento novo passa a ser calculada contra
+  `_pe_fator_contexto`'s `ja_contratado_por_ambiente` (contrato + aditivos
+  já assinados, lido do snapshot `Aditivo.dados_json`, não recomputado ao
+  vivo — recomputar ao vivo criaria recursão infinita, um aditivo se
+  subtraindo de si mesmo — achado ao medir o 6-c). Reproduzido com os
+  mesmos números do achado original: revisão 2 agora cobra R$ 6.666,67 (o
+  incremento real), não R$ 11.111,11 de novo — total pelos dois aditivos
+  fecha em R$ 11.111,11, batendo com `valor_contratado_do_projeto`.
+- **6-c** — a assinatura que completa o aditivo (2ª parte) agora exige
+  `forma_pagamento` no corpo — recusa com mensagem clara se ausente, nenhum
+  default inventado — e chama `_materializar_recebiveis_venda_seguro` para
+  o orçamento do COMPLEMENTO (guarda de idempotência por `orcamento_id`;
+  recebíveis do contrato nunca tocados). **Consequência medida, não
+  surpresa:** com forma de pagamento financiada, o aditivo passa a ter
+  Cust_Fin próprio — medido em `tests/test_aditivo_recebiveis_e_custo_
+  financeiro.py`: diferença negociada R$ 4.444,44, total financiado
+  R$ 4.888,88 → Cust_Fin R$ 444,44, reconhecido na mesma provisão/conta do
+  ramo financeiro do contrato principal (`_ramo_financeiro_efetivo`).
+
+`tests/test_aditivo_costuras.py::test_costura4_...` perdeu o `xfail` no
+mesmo commit do conserto.
+
+**Histórico da medição (antes do conserto):** Medido pela Vera na Costura 4 de `docs/db/TAREFA_ADITIVO.md`, reproduzido com
 números em `tests/test_aditivo_costuras.py`. Os detalhes da medição estão na
 seção do ACHADO-12; esta entrada existe porque o defeito **não é** o do
 ACHADO-12 e não deve ser resolvido junto com ele.

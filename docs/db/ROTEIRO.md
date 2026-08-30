@@ -34,7 +34,8 @@ deixa de ter resposta rápida.
 | 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
 | 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
 | 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
-| 7 em diante | não iniciados |
+| 7 · ACHADO-12, soma contrato+aditivos | tarefa escrita |
+| 8 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -94,7 +95,9 @@ antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
    *Ajustado em 30/08: o predicado explícito e a segmentação congelada saíram
    daqui para o passo 7 — são sobre a soma para faturar, não sobre
    imutabilidade.*
-7. **ACHADO-12** — soma contrato + aditivos em `_valores_segmentados_do_projeto`.
+7. **ACHADO-12** — soma contrato + aditivos em `_valores_segmentados_do_projeto`,
+   mais a seleção explícita do orçamento no `POST /aditivo` e a medição da
+   segmentação congelada. `docs/db/TAREFA_ACHADO12.md`.
 8. **ACHADO-16** — vereditos da Conciliação Final + relatório de reversões.
 9. **ACHADO-18** — guarda `valor_total > 0` antes de contrato e NF-e.
 10. **ACHADO-02** — VAVO em 4.1.01, custo financeiro em 4.4.03.

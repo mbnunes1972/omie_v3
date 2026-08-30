@@ -13,7 +13,7 @@ limpos e implantados. Todo conserto aqui custa código, não migração de dado
 
 ---
 
-## As três regras que organizam quase tudo
+## As quatro regras que organizam quase tudo
 
 **1. Quem fica com o deságio decide se ele é receita ou custo.**
 Terceiro financiou (banco, financeira, cartão): o deságio saiu da loja, é
@@ -25,7 +25,18 @@ Todo evento lança uma vez. As visões de resultado são CONSULTAS sobre o
 mesmo livro, nunca contabilidades paralelas. Duas visões que divergem por
 terem lógica própria produzem divergência indistinguível de bug.
 
-**3. Nome tem que descrever comportamento.**
+**3. O que já virou fato contábil se lê de onde foi congelado — não se
+recalcula.**
+Acrescentada em 30/08 depois de a mesma doença aparecer três vezes, por
+caminhos independentes: o orçamento assinado que era sobrescrito pela
+revisão seguinte (ACHADO-21); a Antecipada que leria o saldo da conta em vez
+do constituído, fazendo a safra de janeiro encolher sozinha; e o aditivo
+assinado que, ao ser recalculado ao vivo, se subtraía de si mesmo e zerava o
+próprio valor (achado no passo 6). Recalcular um valor já escriturado faz o
+passado mudar quando o presente muda. Snapshot congelado (`Aditivo.dados_json`),
+lançamento com data, posição constituída — essas são as fontes; o motor não é.
+
+**4. Nome tem que descrever comportamento.**
 Cinco achados desta auditoria são a mesma doença: conta ou mecanismo cujo
 nome promete o que o código não faz (Total Flex, Retenção de Comissão,
 DRE "Real", 5.3.01, 2.1.05). Renomear sem medir só troca a confusão de

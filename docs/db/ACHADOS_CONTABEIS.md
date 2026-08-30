@@ -1124,35 +1124,62 @@ auditoria que tira dinheiro a mais de quem comprou.
 
 ---
 
-## ACHADO-22 — o CMV prometido na emissão da NF-e nunca foi implementado
+## ACHADO-22 — docstring promete um mecanismo que VOCÊ MESMO mandou extinguir · GRUPO 5
 
-Achado pela Vera na Costura 1, registrado lá como "isolado". **Não é
-isolado** — ver abaixo.
+**Esta entrada foi reescrita em 29/08.** A primeira versão afirmava que o
+reconhecimento do CMV na emissão "nunca foi implementado" e levantava a
+hipótese de que esse seria o primeiro buraco da divergência medida no
+ACHADO-15/16. **A hipótese está errada.** O registro do erro fica aqui de
+propósito.
+
+### O que a medição da Vera achou, e que continua verdade
 
 O docstring de `_fin_faturamento_segmentado_seguro` (main.py:1318-1321)
 promete: *"No segmento 'mercadoria' também reconhece o CMV = CFO congelado
-(1× por projeto, ref `cmv:<projeto>`)"*. Medido: **não existe nenhum
-lançamento com esse `ref` em código nenhum.** `_valores_segmentados_do_projeto`
-calcula e devolve `cfo`, e os três consumidores da função ignoram o campo.
+(1× por projeto, ref `cmv:<projeto>`)"*. Não existe nenhum lançamento com
+esse `ref` em código nenhum.
 
-### A conexão com o ACHADO-15/16 — hipótese a verificar
+### O que eu não tinha verificado
 
-O teste de ciclo das DREs mediu a primeira divergência entre `real` e
-`competencia_estimada` **exatamente na emissão da NF-e**, com `cmv_csp`
-valendo **0 contra 42.000**, receita idêntica dos dois lados. Atribuímos isso
-à Conciliação Final que cancela a provisão não efetivada (ACHADO-16).
+O mecanismo existiu e **foi extinto por decisão sua**, registrada no próprio
+código (mod_contabil.py:1826-1832):
 
-Mas o marco da divergência é a emissão, não o fechamento. Se o
-reconhecimento do CMV na emissão nunca existiu, ele é o **primeiro** buraco, e
-o cancelamento no fechamento é o **segundo** — dois mecanismos independentes
-que deixam o mesmo custo fora do resultado, o que explica por que as duas
-visões divergem na emissão e **nunca mais reconciliam**.
+> *"2026-08-07 (achado do usuário): despesa na COMPETÊNCIA REAL da
+> efetivação, não mais estimada de uma vez na NF-e (extinto o antigo
+> 'matching pleno', `reconhecer_despesas_nfe`/`_MATCHING_NFE` — as despesas
+> de projeto de móveis planejados ocorrem espalhadas ao longo do ciclo,
+> muitas depois da própria NF-e, que só sai no fim, na entrega)."*
 
-**Verificar antes de aceitar:** rodar o ciclo e conferir se o `cmv_csp` da
-DRE Diferida passa a bater ao implementar só o reconhecimento na emissão,
-sem tocar no fechamento. Se passar, o ACHADO-16 continua sendo defeito de
-desenho, mas deixa de ser a causa do número medido — e a correção do
-ACHADO-15 muda de lugar.
+O reconhecimento hoje acontece em `reconhecer_despesa_efetivacao`
+(mod_contabil.py:1862), chamado por `efetivar_provisao`: débito na despesa
+formal da rubrica × crédito no ativo diferido espelho. Para o CMV de fábrica,
+`5.1.01 × 1.1.06.06` — o evento existe e está ligado.
 
-**Grupo:** 1. Custo que não chega ao resultado é margem inventada, e é o
-mesmo sintoma que abriu esta auditoria.
+**Portanto:** o `cmv_csp` valer 0 na emissão da NF-e **é o comportamento
+correto e desejado**. Na emissão a provisão ainda não foi efetivada, então
+não há custo a reconhecer. A divergência naquele marco é de desenho, não
+defeito.
+
+### O que sobra de achado
+
+Um docstring que descreve um mecanismo extinto há três semanas, no ponto do
+código onde alguém vai procurar como o CMV é reconhecido. É a quinta
+ocorrência da regra 3 do plano — nome/documentação que não descreve
+comportamento — e a mais perigosa delas, porque induziu exatamente o erro que
+esta entrada registra. **Conserto: apagar a promessa do docstring e apontar
+para `reconhecer_despesa_efetivacao`.** Grupo 5.
+
+### O que isto reforça no ACHADO-16
+
+Se a **única** porta pela qual o custo entra no resultado é a efetivação da
+provisão, então uma provisão que nunca é efetivada é custo que nunca existe
+na DRE — não por falha de rota, mas por ausência do evento que a dispara.
+A decisão do ACHADO-16 (o projeto não fecha com provisão em aberto) deixa de
+ser prudência e passa a ser a única coisa que garante que o custo chegue ao
+resultado.
+
+Com uma precisão a mais para quem implementar: o veredito *"encerrada com
+valor menor"* tem **duas** pernas — efetivar a provisão pelo valor real (é
+isso que reconhece o custo, via `reconhecer_despesa_efetivacao`) e só então
+reverter o resíduo. Reverter sem efetivar reproduz o ACHADO-16 com outro
+nome.

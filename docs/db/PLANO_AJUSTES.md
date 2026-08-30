@@ -55,9 +55,21 @@ quem comprou. Conserto: orçamento de complemento vira imutável depois da
 assinatura; revisão seguinte gera orçamento novo, calculado contra contrato +
 aditivos já assinados.
 
-**0-c. ACHADO-22 — CMV prometido na emissão nunca foi implementado.**
-Verificar primeiro a hipótese de que este é o primeiro buraco da divergência
-medida no ACHADO-15/16 — se for, a correção do 15 muda de lugar.
+**0-d. Três pontas soltas da medição do aditivo**, medidas mas ainda sem
+dono:
+- **Predicado do aditivo**: `POST /api/projetos/<n>/aditivo` filtra por
+  `parcela_id` só se a requisição enviar a chave; sem ela pega o
+  `complemento_pe=1` de **maior id** do projeto. Nada impede as duas rotas de
+  complemento coexistirem no mesmo projeto — então o aditivo pode amarrar no
+  orçamento errado por ordem de criação. Vai junto com a soma do ACHADO-12:
+  o conjunto de orçamentos precisa ser explícito, não inferido.
+- **Segmentação herdada**: a segmentação vem de `Projeto.parametros_json`
+  ao vivo. Um aditivo assinado depois de uma mudança de parâmetro é faturado
+  com a segmentação ATUAL, não com a que valia quando foi negociado. Mesma
+  classe do ACHADO-19; muda o número entre Mercadoria e Serviço.
+- **Não medido**: quantos projetos em produção têm `ArquivoPE.formato =
+  'xml_compl'` gravado — a dependência real do mecanismo legado. Exige
+  consultar os quatro ambientes. Decide o custo de aposentar o legado.
 
 **1. ACHADO-12 — aditivo não vira receita E não é cobrado.**
 Escalado em 29/08: o `Recebivel` nasce do contrato original, antes do
@@ -205,6 +217,20 @@ as duas bases corretamente e por safra.
 Cuidado do rename: rótulo muda livre; o **identificador do wire** só muda se
 nada o persistir. Verificar antes, como no caso `total_flex`.
 
+**19-a. A Antecipada lê o CONSTITUÍDO, não o saldo. DECIDIDO 29/08.**
+A pergunta da Antecipada é sobre o passado ("qual foi o custo da safra de
+janeiro?"), e saldo de conta é fotografia do presente. Lendo saldo, o ativo
+diferido drena conforme as provisões são efetivadas e o custo da safra de
+janeiro **encolhe sozinho** nos meses seguintes — margem de janeiro subindo
+sem ninguém lançar nada em janeiro. A Antecipada soma os **débitos que
+entraram** no ativo diferido para os projetos daquela safra; esse número é
+estável para sempre. Não exige coluna nova: o lançamento já carrega
+`projeto_id` e `data`.
+
+Vale para todas as rubricas, não só o CMV. **Escrever isto no código que
+montar a Antecipada, não só aqui** — é invisível até os relatórios de três
+meses atrás começarem a mudar sozinhos.
+
 **19. DRE Antecipada como leitura**, nunca lançada. Lê as posições
 constituídas na venda: provisões (despesa antecipada) e receita diferida
 (receita antecipada). Nenhum lançamento novo.
@@ -259,6 +285,10 @@ janeiro e na Diferida de junho. A comparação que ensina é **por safra**.
 29. Produção: `Environment=` na unidade systemd → `/root/orizon.env`. Hoje
     qualquer um que rode `systemctl cat` lê a senha.
 30. Rotacionar o `sad2026` no localhost, Integração e Homologação.
+31-a. ACHADO-22 — apagar do docstring de `_fin_faturamento_segmentado_seguro`
+    a promessa do "matching pleno" extinto em 07/08, e apontar para
+    `reconhecer_despesa_efetivacao`. É onde alguém vai procurar como o CMV é
+    reconhecido, e a promessa velha já induziu um erro de análise.
 
 **ACHADO-19 e ACHADO-20 — medidos em 29/08 e rebaixados para cá.** As seis
 rotas que respondem `ok` a um recálculo que falhou continuam sendo desenho
@@ -296,6 +326,7 @@ alguém tocar naquela tela.
 - Guarda explícita de `valor_total > 0` antes de contrato e de NF-e.
 - Conciliação Final não fecha com provisão em aberto; veredito nomeado por
   rubrica, e "ainda vai chegar" mantém o projeto aberto.
+- Antecipada lê o constituído (débitos do período), nunca o saldo da conta.
 - Aditivo tem **recebíveis próprios**: a assinatura coleta forma de pagamento
   e materializa `Recebivel` com a mesma mecânica do contrato.
 
@@ -318,4 +349,4 @@ alguém tocar naquela tela.
 ## O que NÃO fazer
 
 Não emitir nota nem apurar margem para cliente real antes do Grupo 1. Os
-nove achados dele afetam diretamente o valor da venda, a cobrança e a margem.
+oito achados dele afetam diretamente o valor da venda, a cobrança e a margem.

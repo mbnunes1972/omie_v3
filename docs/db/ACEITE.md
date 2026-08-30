@@ -49,7 +49,7 @@ não depois.
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
 | 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16.py` (recusa sem veredito + `encerrada_valor_menor` reconhecendo custo real antes de reverter, via HTTP) + `test_fase_d2_conciliacao_final.py` (sem veredito recusa, sobra+falta com veredito, `nao_se_aplica` sem motivo recusa, `ainda_vai_chegar` mantém aberto, custo financeiro fora da regra, idempotência) + `test_relatorio_projetos_encerrados_por_reversao.py` (ordenação por valor revertido, motivo, endpoint) | **CONSERTADO** — passo 8 do ROTEIRO |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
-| 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18::test_gerar_contrato_recusa_valor_total_zero` e `::test_emitir_nfe_recusa_valor_total_zero` (strict, estado construído direto no banco com pré-condição afirmada, controle negativo confirmado nos dois) | **provado** |
+| 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18.py` (recusa em contrato e NF-e, `xfail` removido no commit do conserto, 30/08 + `test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerado`, o caso do total contratado) | **CONSERTADO** — passo 9 do ROTEIRO |
 | 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_parametros_json_malformado_cai_no_default` e `::test_parametros_nao_devolve_sombra_com_recalculo_falho` (strict, controle negativo confirmado nos dois — cobrem 2 das 3 causas; o conserto das 4 rotas restantes segue sem aceite) | parcialmente **provado** |
 | 20 | recursão no complemento auto-referente | `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_complemento_auto_referente_recusado_com_erro_nomeado` (strict, controle negativo confirmado) | **provado** |
 | 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (`xfail` removido no commit do conserto, 30/08) + `test_valor_contratado_do_projeto`, `test_aditivo_recebiveis_e_custo_financeiro` | **CONSERTADO** — passo 6 do ROTEIRO (6-a/6-b/6-c) |
@@ -68,13 +68,14 @@ não depois.
 2. ~~ACHADO-03 não tem xfail próprio~~ **Resolvido (30/08)** —
    `test_aceite_achado03.py` reproduz a divergência com números (ramo
    "loja_antecipacao" cai no evento errado), controle negativo confirmado.
-3. ~~ACHADO-19 e 18 têm testes de MEDIÇÃO, não de aceite~~ **Parcialmente
-   resolvido (30/08)** — `test_aceite_achado18.py` (2 aceites: contrato e
-   NF-e) e `test_aceite_achado19_20.py` (2 das 3 causas do 19: `parametros_
-   json` malformado e `/parametros` sem `sombra`; a 3ª causa do 19 —
-   `complemento_pe`/ACHADO-20 — também provada no mesmo arquivo) escritos,
-   `xfail(strict=True)`, controle negativo confirmado em todos. Falta aceite
-   para as 4 rotas restantes do ACHADO-19 (das 6 originais).
+3. ~~ACHADO-19 e 18 têm testes de MEDIÇÃO, não de aceite~~ **18 CONSERTADO
+   (30/08, passo 9)** — a guarda de `valor_total`/total contratado entrou em
+   contrato e NF-e, os dois `xfail(strict=True)` do passo 4 saíram.
+   **19 parcialmente resolvido (30/08)** — `test_aceite_achado19_20.py` (2
+   das 3 causas: `parametros_json` malformado e `/parametros` sem `sombra`;
+   a 3ª causa — `complemento_pe`/ACHADO-20 — também provada no mesmo
+   arquivo), `xfail(strict=True)`, controle negativo confirmado em todos.
+   Falta aceite para as 4 rotas restantes do ACHADO-19 (das 6 originais).
 4. ~~ACHADO-21 usa a citação do 12~~ **Corrigido (30/08)** — citação trocada
    para ACHADO-21 em `test_costura4_...`; `test_costura2_...` também estava
    citando o 12 por engano e foi corrigida para ACHADO-13.

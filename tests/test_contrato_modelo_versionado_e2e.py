@@ -45,6 +45,9 @@ def dados_l1(app_db, seed):
         oa = app_db.OrcamentoAmbiente(orcamento_id=seed["orcamento_l1_id"],
                                       pool_ambiente_id=pool.id, ordem=1)
         db.add(oa)
+        # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): gerar contrato exige valor_total > 0.
+        orc = db.get(app_db.Orcamento, seed["orcamento_l1_id"])
+        orc.valor_total = 1000.0
         db.commit()
     finally:
         db.close()

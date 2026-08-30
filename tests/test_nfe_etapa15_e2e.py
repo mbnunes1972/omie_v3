@@ -93,6 +93,15 @@ def _reset15(app_db, proj):
            .filter(app_db.ConversaMensagem.documento_ref_id.in_(ids))
            .update({"documento_ref_id": None}, synchronize_session=False))
     db.query(app_db.CicloDocumento).filter_by(projeto_nome=proj, etapa_codigo="15").delete()
+    # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): emitir-nfe agora recusa projeto sem valor
+    # contratado. A maioria dos testes deste arquivo testa OUTRA coisa (emitente, idempotência,
+    # IE...) e nunca dá valor ao orçamento — dá aqui, uma vez só, sem sobrescrever o que um teste
+    # já tiver fixado explicitamente (ex.: test_face_fiscal_alinhada_a_segmentacao).
+    contrato = db.query(app_db.Contrato).filter_by(projeto_nome=proj).order_by(app_db.Contrato.id.desc()).first()
+    if contrato is not None:
+        orc = db.get(app_db.Orcamento, contrato.orcamento_id)
+        if orc is not None and not (orc.valor_total or 0) > 0:
+            orc.valor_total = 100000.0
     db.commit(); db.close()
 
 
@@ -610,16 +619,25 @@ def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, 
     proj = seed["projeto_l2"]
     _reset15(app_db, proj); _perfil(app_db, seed["loja2_id"])
     # O wiring segmentado lê Val_Cont/CFO do orçamento do contrato (loja default 65/35 sem override).
+    # ACHADO-13 (faturar_segmento delta-aware, docs/db/TAREFA_ACHADO13.md): `seed` é module-scoped e
+    # o passo 9 (ACHADO-18) passou a exigir valor_total>0 pra emitir — outros testes deste arquivo
+    # agora emitem de verdade e já reconhecem parte da mercadoria. Não basta fixar valor_total num
+    # absoluto: o Val_Cont precisa ser INCREMENTADO o bastante pra gerar +65.000,00 de mercadoria
+    # AINDA NÃO reconhecida, senão esta rodada teria delta zero (mesmo padrão de
+    # test_cancelar_nfe_estorna_faturamento, abaixo).
+    incremento_merc_alvo = 65000.0
+    val_cont_incremento = round(incremento_merc_alvo / 0.65, 2)   # 65/35 default da loja
     dbx = app_db.get_session()
     orc = dbx.get(app_db.Orcamento, seed["orcamento_l2_id"])
-    orc.valor_total = 100000.0; orc.cfo = 40000.0
+    orc.valor_total = round((orc.valor_total or 0) + val_cont_incremento, 2)
+    orc.cfo = 40000.0
     dbx.commit(); dbx.close()
     # FASE D2: simula o contrato assinado — registra a venda cheia e constitui a provisão de fábrica (=CFO).
     # É pré-requisito do matching: o CMV só é reconhecido na NF-e se o ativo diferido 1.1.06.06 existir.
     import mod_contabil as _mc
     ddb = app_db.get_session()
     _ot, _oid = _mc.resolver_owner(ddb, {"loja_id": seed["loja2_id"], "rede_id": None})
-    _mc.registrar_evento(ddb, _ot, _oid, "registro_venda_contrato", 100000.0, projeto_id=proj, ref="venda:" + proj)
+    _mc.registrar_evento(ddb, _ot, _oid, "registro_venda_contrato", val_cont_incremento, projeto_id=proj, ref="venda:" + proj)
     _mc.constituir_provisoes_fechamento(ddb, _ot, _oid, proj, {"custo_fabrica": 40000.0}, ref_base="pf:" + proj)
     ddb.commit(); ddb.close()
     c = _login(http_client_factory, "dir_l2")

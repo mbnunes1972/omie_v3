@@ -1,11 +1,16 @@
-"""docs/db/TAREFA_FASE0.md, Passo 4 do ROTEIRO — os aceites do ACHADO-18.
+"""docs/db/TAREFA_FASE0.md (passo 4) + docs/db/TAREFA_ACHADO18.md (passo 9) — os aceites do
+ACHADO-18.
 
-NÃO CONSERTA NADA. A medição (`tests/test_failsoft_nfe_medicao.py`) já provou que o gate de
-`/contrato` é "tem ambiente", não "valor_total > 0" — e que a NF-e nem olha pra Val_Cont antes
-de autorizar. Estes dois aceites constroem o estado que a medição disse ser mecanicamente
-inalcançável pelos caminhos normais (anexar ambiente pela HTTP sempre recalcula valor_total na
-mesma requisição) — DIRETO NO BANCO — e afirmam que o estado existe ANTES de exercitar a rota,
-para que um setup que silenciosamente recalculasse não fizesse o teste passar por engano."""
+Os aceites escritos no passo 4 construíam o estado que a medição (`tests/test_failsoft_nfe_
+medicao.py`) disse ser mecanicamente inalcançável pelos caminhos normais (anexar ambiente pela
+HTTP sempre recalcula valor_total na mesma requisição) — DIRETO NO BANCO — e afirmavam que o
+estado existia ANTES de exercitar a rota, para que um setup que silenciosamente recalculasse não
+fizesse o teste passar por engano. O passo 9 acrescentou a guarda explícita de valor_total > 0
+em `/contrato`, `/emitir-nfe` e `/emitir-nfse` (main.py) — os dois `xfail(strict=True)` saíram
+neste commit. A guarda de NF-e/NFS-e lê o TOTAL CONTRATADO (`valor_contratado_do_projeto` —
+contrato + aditivos assinados, ACHADO-12), não só o valor_total do orçamento do contrato:
+`test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerado` prova que um
+contrato zerado com aditivo assinado positivo NÃO é recusado."""
 import json
 import os
 import urllib.request
@@ -37,10 +42,6 @@ def _anexar_ambiente_direto_no_banco(app_db, seed, oid, projeto_id, budget=90000
     db.close()
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-18 (docs/db/ACEITE.md): gerar contrato para "
-                    "orçamento com ambiente porém valor_total nulo/zero deveria ser RECUSADO — "
-                    "hoje o gate de main.py:13729-13736 só checa 'tem ambiente', nunca "
-                    "valor_total>0, e o contrato é gerado normalmente.")
 def test_gerar_contrato_recusa_valor_total_zero(app_db, seed, http_client_factory):
     oid = seed["orcamento_l1_id"]
     nome = seed["projeto_l1"]
@@ -138,11 +139,6 @@ def _upload_xml(c, proj, data):
         return e.code, json.loads(e.read() or b"{}")
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-18 (docs/db/ACEITE.md): emitir NF-e para um "
-                    "projeto cujo Val_Cont (Contrato -> Orcamento.valor_total) é nulo/zero "
-                    "deveria ser RECUSADO — hoje `_valores_segmentados_do_projeto` devolve None "
-                    "nesse caso, e a rota emite mesmo assim, sem rescalar pelo Val_Cont e sem "
-                    "recusar.")
 def test_emitir_nfe_recusa_valor_total_zero(app_db, seed, http_client_factory, monkeypatch, projetos_dir):
     monkeypatch.setattr(nfe_emissao, "_emissor_para", lambda db, eid: _FakeEmissor())
     nome = seed["projeto_l2"]
@@ -168,6 +164,40 @@ def test_emitir_nfe_recusa_valor_total_zero(app_db, seed, http_client_factory, m
     assert not (st == 200 and body.get("ok") and body.get("status") == "autorizado"), (
         "emissão de NF-e deveria ser RECUSADA com Val_Cont nulo/zero — resposta hoje: "
         "st=%r body=%r" % (st, body))
+
+
+def test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerado(
+        app_db, seed, http_client_factory, monkeypatch, projetos_dir):
+    """Detalhe que mudou desde a medição (docs/db/TAREFA_ACHADO18.md): a guarda lê o TOTAL
+    CONTRATADO (contrato + aditivos assinados, `valor_contratado_do_projeto` — ACHADO-12), não só
+    o valor_total do orçamento do contrato. Um contrato zerado com aditivo assinado positivo NÃO
+    é recusado."""
+    monkeypatch.setattr(nfe_emissao, "_emissor_para", lambda db, eid: _FakeEmissor())
+    nome = seed["projeto_l2"]
+    oid = seed["orcamento_l2_id"]
+    _perfil(app_db, seed["loja2_id"])
+
+    db = app_db.get_session()
+    contrato = db.query(app_db.Contrato).filter_by(projeto_nome=nome).first()
+    assert contrato is not None and contrato.orcamento_id == oid
+    valor_total_antes = db.get(app_db.Orcamento, oid).valor_total
+    assert valor_total_antes in (None, 0, 0.0), "pré-condição: orçamento do contrato zerado"
+
+    orc_complemento = app_db.Orcamento(projeto_id=nome, nome="Complemento", valor_total=5000.0)
+    db.add(orc_complemento); db.flush()
+    db.add(app_db.Aditivo(projeto_nome=nome, contrato_id=contrato.id,
+                          orcamento_complemento_id=orc_complemento.id, status="assinado"))
+    db.commit(); db.close()
+
+    c = _login(http_client_factory, "dir_l2")
+    st_up, up = _upload_xml(c, nome, _fixture_xml())
+    assert st_up == 200 and up.get("documento_id"), up
+
+    st, body = _post(c, f"/api/projetos/{nome}/ciclo/15/emitir-nfe",
+                     {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
+    assert st == 200 and body.get("ok") and body.get("status") == "autorizado", (
+        "emissão de NF-e NÃO deveria ser recusada — contrato zerado, mas aditivo assinado "
+        "positivo cobre o total contratado: st=%r body=%r" % (st, body))
 
 
 def _post(c, path, body):

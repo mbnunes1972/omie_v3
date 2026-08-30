@@ -908,7 +908,39 @@ para o que ela de fato é (provisão de comissão)?
 
 ---
 
-## ACHADO-18 — NF-e sem `valor_total` não lança nada, em silêncio · MEDIDO 29/08/2026: NÃO ALCANÇÁVEL HOJE
+## ACHADO-18 — NF-e sem `valor_total` não lança nada, em silêncio · RESOLVIDO 30/08/2026
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO18.md, passo 9 do ROTEIRO).** Guarda
+explícita de `valor_total > 0`, recusa com mensagem, em `POST /api/projetos/
+<nome>/contrato` e `POST /api/projetos/<nome>/ciclo/15/emitir-nfe` (main.py).
+A guarda **lê, não recalcula** — a mesma disciplina de "presença de
+ambiente" que já existia para contrato, agora acompanhada da checagem de
+valor (as duas perguntas são diferentes e as duas importam, como o DECIDIDO
+abaixo já previa).
+
+Detalhe que mudou desde a medição (ACHADO-12/passo 7 somou contrato +
+aditivos assinados na receita): a guarda de NF-e lê o **total contratado**
+(`valor_contratado_do_projeto`), não só o `valor_total` do orçamento do
+contrato — um contrato zerado com aditivo assinado positivo não é recusado.
+A guarda de contrato, ao contrário, olha só o `valor_total` do orçamento
+sendo contratado (aditivos ainda não existem nesse momento — nascem depois
+do primeiro contrato). NFS-e não ganhou a guarda: seu valor é manual
+(`valor_servico`, informado pelo operador na emissão), já guardado por
+`valor <= 0` — aplicar a regra do Val_Cont ali quebraria o desenho.
+
+Os dois `xfail(strict=True)` do passo 4
+(`test_gerar_contrato_recusa_valor_total_zero`,
+`test_emitir_nfe_recusa_valor_total_zero`) saíram neste commit.
+`test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerado`
+prova o caso novo do detalhe acima. Vários testes pré-existentes
+construíam orçamento com ambiente vinculado direto no banco (sem passar pelo
+recálculo real) e por isso tinham `valor_total` nulo/zero — deram esse valor
+a si mesmos (`_setup_cenario`, `_reset15`, e alguns testes individuais),
+matching o que um projeto real teria.
+
+---
+
+**Histórico da medição (antes do conserto):**
 
 **Resposta direta:** a UI/API real **não alcança** o cenário do fail-soft
 silencioso. Mas o motivo importa mais que a resposta — ver abaixo.

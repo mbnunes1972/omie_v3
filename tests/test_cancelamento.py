@@ -218,6 +218,8 @@ def test_gerar_contrato_apos_cancelamento_leve_usa_orcamento_correto(
     db.add(app_db.OrcamentoAmbiente(orcamento_id=orc2.id, pool_ambiente_id=pa2.id,
                                     desconto_individual_pct=0.0))
     orc2.desconto_pct = 0.0
+    # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): gerar contrato agora exige valor_total > 0.
+    orc2.valor_total = 50000.0
     orc2.forma_pagamento = _json.dumps({
         "tipo": "avista", "nome_forma": "A Vista", "entrada_valor": 5000,
         "entrada_data": "2026-08-01", "entrada_forma": "pix", "total_cliente": 50000.0,

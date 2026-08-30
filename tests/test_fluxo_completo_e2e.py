@@ -62,6 +62,11 @@ def _setup_cenario(app_db, seed):
 
         orc = db.get(app_db.Orcamento, seed["orcamento_l1_id"])
         orc.desconto_pct = 0.0
+        # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): gerar contrato agora exige valor_total >
+        # 0 — o cenário direto no banco (idempotente, sem passar pelo recálculo real) precisa dar
+        # esse valor ele mesmo, como um projeto real teria.
+        if not (orc.valor_total or 0) > 0:
+            orc.valor_total = 90000.0
         orc.forma_pagamento = json.dumps({
             "tipo": "avista", "nome_forma": "A Vista", "entrada_valor": 10000,
             "entrada_data": "2026-07-01", "entrada_forma": "pix", "total_cliente": 90000.0,

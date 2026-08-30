@@ -13852,6 +13852,15 @@ class Handler(BaseHTTPRequestHandler):
                                     "(com ambientes) antes de aprovar.",
                         }, code=400)
                         return
+                    # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): valor_total > 0 explícito —
+                    # presença de ambiente e valor são perguntas diferentes. Guarda lê, não recalcula.
+                    if not (orcamento_dict.get("valor_total") or 0) > 0:
+                        self.send_json({
+                            "ok": False,
+                            "erro": "O orçamento tem valor_total nulo ou zero — não é possível "
+                                    "gerar contrato.",
+                        }, code=400)
+                        return
                     # Signatário alternativo: substitui o cadastro só para este contrato.
                     _override = req.get("signatario_override")
                     if isinstance(_override, dict) and _override.get("nome"):
@@ -14897,6 +14906,14 @@ class Handler(BaseHTTPRequestHandler):
                     projeto = _projeto_da_loja(db, nome_safe, loja_id)
                     if projeto is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    # ACHADO-18 (docs/db/TAREFA_ACHADO18.md, passo 9): valor_total > 0 explícito —
+                    # lê o TOTAL CONTRATADO (contrato + aditivos assinados, ACHADO-12), não só o
+                    # valor_total do orçamento do contrato: um contrato zerado com aditivo assinado
+                    # positivo não deve ser recusado.
+                    if valor_contratado_do_projeto(db, nome_safe) <= 0:
+                        self.send_json({"ok": False,
+                            "erro": "Projeto sem valor contratado (contrato + aditivos assinados) — "
+                                    "não é possível emitir NF-e."}, code=400); return
                     try:
                         emitente = mod_fiscal.resolver_emitente(db, loja, "produto")
                     except ValueError as e:

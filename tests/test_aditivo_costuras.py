@@ -97,7 +97,7 @@ def _saldo_2106_credor(app_db, seed, nome):
     return round(v, 2)
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-12/Costura 4 (medido 29/08): revisão de PE após "
+@pytest.mark.xfail(strict=True, reason="ACHADO-21/Costura 4 (medido 29/08): revisão de PE após "
                     "aditivo assinado duplica a cobrança — vira verde sozinho no dia da correção.")
 def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, http_client_factory):
     nome, pid, oid = _setup(app_db, seed)
@@ -149,7 +149,7 @@ def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, h
         % total_creditado_aditivos)
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-12/Costura 2 (medido 29/08): CONFIRMADA a regressão "
+@pytest.mark.xfail(strict=True, reason="ACHADO-13/Costura 2 (medido 29/08): CONFIRMADA a regressão "
                     "que a própria tarefa previu. faturar_segmento faz o split usa/resto (2.1.06 x "
                     "1.1.02) pelo saldo ATUAL da conta — mas usa+resto SEMPRE soma o `valor` "
                     "recebido inteiro em 4.1.01/4.2.01 (a conta de RECEITA), sem nenhuma noção de "

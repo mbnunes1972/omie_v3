@@ -34,7 +34,7 @@ não depois.
 |---|---|---|---|
 | 01 | provisão de custo financeiro nunca liquidada | `test_ciclo_completo_por_ramo` (2 xfails strict), `test_bateria_ciclo` (cenários com custo financeiro), `test_fase_d_reconciliacao`, `test_provisoes_impostos_custo_financeiro` | **provado** |
 | 02 | receita financeira contada duas vezes no ramo loja | `test_bateria_ciclo` (`_XFAILS`, ramo loja) | **provado** |
-| 03 | ramo roteado por `if` num lugar e por tabela em outro | citado em comentário de `test_bateria_ciclo`, **sem xfail próprio** | **SEM PROVA** |
+| 03 | ramo roteado por `if` num lugar e por tabela em outro | `test_aceite_achado03::test_ramo_loja_antecipacao_diverge_do_dict_canonico` (strict, divergência reproduzida com `ramo_financeiro="loja_antecipacao"` — controle negativo confirmado) | **provado** |
 | 04 | — resolvido | `test_eventos`, `test_fase_b2_eventos` | fechado |
 | 05 | — resolvido | `test_eventos`, `test_partida_dobrada` | fechado |
 | 06 | reclassificação de Outros Fornecedores | — | **SEM PROVA** (medir antes) |
@@ -49,10 +49,10 @@ não depois.
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
 | 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16::test_conciliacao_final_recusa_com_provisao_nunca_efetivada` (strict — aceite da recusa) + `test_aceite_achado16::test_mecanismo_hoje_cancela_saldo_sem_tocar_5101` (medição do mecanismo, verde hoje e depois) | **provado (a recusa)** — controle negativo confirmado (XPASS quebrou a suíte); o aceite dos vereditos (efetivada/encerrada com valor menor/não se aplica/ainda vai chegar) nasce com a implementação do passo 8, cobrindo a regra das duas pernas (efetivar pelo valor real, só então reverter o resíduo) |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
-| 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (guarda do comportamento atual) | medido; guarda decidida, **não implementada** |
-| 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` | medido; **conserto sem teste** |
-| 20 | recursão no complemento auto-referente | `test_negociacao_breakdown_excecoes` | medido |
-| 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (strict, hoje citando o 12) | **provado** — corrigir a citação para ACHADO-21 |
+| 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18::test_gerar_contrato_recusa_valor_total_zero` e `::test_emitir_nfe_recusa_valor_total_zero` (strict, estado construído direto no banco com pré-condição afirmada, controle negativo confirmado nos dois) | **provado** |
+| 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_parametros_json_malformado_cai_no_default` e `::test_parametros_nao_devolve_sombra_com_recalculo_falho` (strict, controle negativo confirmado nos dois — cobrem 2 das 3 causas; o conserto das 4 rotas restantes segue sem aceite) | parcialmente **provado** |
+| 20 | recursão no complemento auto-referente | `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_complemento_auto_referente_recusado_com_erro_nomeado` (strict, controle negativo confirmado) | **provado** |
+| 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (strict, citação corrigida em 30/08) | **provado** |
 | 22 | docstring do CMV descreve mecanismo extinto | — | documental, Grupo 5 |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 
@@ -66,13 +66,19 @@ não depois.
    prova a recusa do fechamento (`xfail(strict=True)`, controle negativo
    confirmado) e mede o mecanismo de cancelamento silencioso (verde hoje e
    depois). Falta só o teste dos vereditos, que nasce com o passo 8.
-2. **ACHADO-03 não tem xfail próprio**, só menção em comentário.
-3. **ACHADO-19 e 18 têm testes de MEDIÇÃO, não de aceite.** Os testes provam
-   o que o sistema faz hoje; nenhum vira verde quando o conserto entrar. Para
-   esses dois, o aceite precisa ser escrito junto com o conserto.
-4. **ACHADO-21 usa a citação do 12.** Mesmo teste, achado errado no motivo —
-   quando o 12 for consertado alguém vai remover o marcador achando que
-   fechou os dois.
+2. ~~ACHADO-03 não tem xfail próprio~~ **Resolvido (30/08)** —
+   `test_aceite_achado03.py` reproduz a divergência com números (ramo
+   "loja_antecipacao" cai no evento errado), controle negativo confirmado.
+3. ~~ACHADO-19 e 18 têm testes de MEDIÇÃO, não de aceite~~ **Parcialmente
+   resolvido (30/08)** — `test_aceite_achado18.py` (2 aceites: contrato e
+   NF-e) e `test_aceite_achado19_20.py` (2 das 3 causas do 19: `parametros_
+   json` malformado e `/parametros` sem `sombra`; a 3ª causa do 19 —
+   `complemento_pe`/ACHADO-20 — também provada no mesmo arquivo) escritos,
+   `xfail(strict=True)`, controle negativo confirmado em todos. Falta aceite
+   para as 4 rotas restantes do ACHADO-19 (das 6 originais).
+4. ~~ACHADO-21 usa a citação do 12~~ **Corrigido (30/08)** — citação trocada
+   para ACHADO-21 em `test_costura4_...`; `test_costura2_...` também estava
+   citando o 12 por engano e foi corrigida para ACHADO-13.
 
 **O que fazer com isso:** antes de consertar qualquer item do Grupo 1,
 escrever o `xfail(strict=True)` que o prova. Depois do Grupo 1 inteiro, a

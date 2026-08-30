@@ -1291,3 +1291,81 @@ valor menor"* tem **duas** pernas — efetivar a provisão pelo valor real (é
 isso que reconhece o custo, via `reconhecer_despesa_efetivacao`) e só então
 reverter o resíduo. Reverter sem efetivar reproduz o ACHADO-16 com outro
 nome.
+
+---
+
+## ACHADO-23 — o congelamento da segmentação é fail-soft, e a assinatura completa mesmo assim
+
+Medido pela Vera no passo 7 (`docs/db/TAREFA_ACHADO12.md`, ponto 3), que
+pedia só a medição da segmentação. Achado novo — entra na fila pela regra do
+roteiro, não é consertado dentro do passo.
+
+### O mecanismo existe e funciona
+
+`_congelar_segmentacao_no_projeto` (main.py) grava a segmentação efetiva no
+`parametros_json` do projeto na assinatura, e o override do projeto sempre
+vence o default da loja. **Medido:** congelado em 100% mercadoria, loja
+alterada depois para 30/70, o projeto continuou faturando os mesmos
+R$ 88.888,89 em mercadoria. Em operação normal não há problema.
+
+### Mas o chamador engole as duas falhas
+
+```python
+try:
+    if _congelar_segmentacao_no_projeto(db, loja_id, nome_safe) is not None:
+        db.commit()
+except Exception as _eseg:
+    db.rollback()
+    print("[SEGMENTACAO] congelar na assinatura falhou:", _eseg)
+```
+
+Dois caminhos silenciosos, e nos dois **a assinatura completa**:
+
+1. retorno `None` (loja ou projeto ausente) — não commita, não reclama;
+2. exceção — rollback, um `print`, e segue.
+
+O projeto passa a viver do default da loja **ao vivo, para sempre**.
+
+### O número
+
+Medido sem o congelamento: mercadoria a 65% = R$ 57.777,78; loja alterada
+para 20% depois de "assinado"; virou R$ 17.777,78. **R$ 40.000,00 de
+diferença na face fiscal do mesmo contrato, sem ninguém tocar no projeto.**
+
+### O que isto é
+
+A mesma doença do ACHADO-19: um `print` onde deveria haver erro, e a
+operação seguindo como se nada tivesse acontecido. Só que aqui o valor
+afetado é o que vai na nota fiscal do cliente.
+
+Projeto legado não é preocupação — a base está limpa, não existe projeto
+anterior ao mecanismo. **O risco é inteiramente o caminho de falha.**
+
+### DECIDIDO 30/08/2026 — a trava vai para a AF1
+
+**A assinatura completa normalmente.** A conferência da segmentação passa a
+ser condição da **Aprovação Financeira (AF1)**: sem segmentação congelada, a
+AF1 não aprova.
+
+Três opções foram oferecidas (recusar a assinatura / bloquear a NF-e / deixar
+como está) e o usuário propôs uma quarta, melhor que as três:
+
+- **Não trava a venda** com o cliente na frente, no ato da assinatura.
+- **Não espera a NF-e**, que é perto da entrega — onde o atraso custa mais.
+- Cai numa etapa que **já existe e já é obrigatória**
+  (`mod_ciclo.exige_aprovacao_financeira`), criada na mesma assinatura que
+  congela.
+- Quem senta nela é o perfil que **consegue resolver** — e a segmentação
+  Mercadoria × Serviço é um dos números que ele revisa de qualquer jeito. Ela
+  estava sendo congelada num lugar onde ninguém olhava.
+- **O caminho de reparo não precisa ser inventado:** é a própria AF1.
+
+Fica no conserto, além disso:
+1. A pendência diz **o que** falhou, com o projeto identificado — quem lê é
+   quem vai resolver.
+2. A AF1 consegue **disparar o congelamento** ali mesmo, não só recusar.
+3. O `print` vira log de erro de verdade. Hoje ninguém fica sabendo, nem
+   depois.
+
+**Consequências no número final:** nenhuma em operação normal; até
+R$ 40.000 num contrato de R$ 88.888,89 se a falha ocorrer.

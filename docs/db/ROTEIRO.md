@@ -35,7 +35,8 @@ deixa de ter resposta rápida.
 | 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
 | 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
 | 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
-| 8 em diante | não iniciados |
+| 8 · ACHADO-16, vereditos da Conciliação Final | tarefa escrita |
+| 9 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -99,9 +100,12 @@ antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
    mais a seleção explícita do orçamento no `POST /aditivo` e a medição da
    segmentação congelada. `docs/db/TAREFA_ACHADO12.md`.
 8. **ACHADO-16** — vereditos da Conciliação Final + relatório de reversões.
+   `docs/db/TAREFA_ACHADO16.md`.
 9. **ACHADO-18** — guarda `valor_total > 0` antes de contrato e NF-e.
 10. **ACHADO-02** — VAVO em 4.1.01, custo financeiro em 4.4.03.
 11. **ACHADO-03** — ramo por tabela, não por `if`.
+11-b. **ACHADO-23** — segmentação não congelada trava a AF1, que consegue
+   congelar ali mesmo. Decidido em 30/08.
 
 **Marco:** rodar a suíte. Nenhum xfail citando achado da Fase 1 pode sobrar.
 

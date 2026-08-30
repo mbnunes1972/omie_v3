@@ -4,7 +4,7 @@
 > porquê e o agrupamento; o roteiro é a fila.
 
 Reescrito em 29/08/2026, depois do teste de ciclo das DREs. Substitui as
-versões anteriores. Reúne os 22 achados contábeis, as pendências da
+versões anteriores. Reúne os 23 achados contábeis, as pendências da
 TAREFA_PROVISOES, o desenho das visões de DRE e a dívida de banco.
 
 **Situação:** nenhum cliente real no sistema; os quatro ambientes estão
@@ -342,6 +342,8 @@ alguém tocar naquela tela.
 - Conciliação Final não fecha com provisão em aberto; veredito nomeado por
   rubrica, e "ainda vai chegar" mantém o projeto aberto.
 - Antecipada lê o constituído (débitos do período), nunca o saldo da conta.
+- Segmentação não congelada trava a **AF1**, não a assinatura nem a NF-e
+  (ACHADO-23), e a AF1 consegue congelar ali mesmo.
 - Aditivo tem **recebíveis próprios**: a assinatura coleta forma de pagamento
   e materializa `Recebivel` com a mesma mecânica do contrato.
 

@@ -33,7 +33,7 @@ deixa de ter resposta rápida.
 | 3 · citação da costura 4 | **feito** — `b194f0a` (e a da costura 2, achada no caminho) |
 | 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
 | 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
-| 6 · ACHADO-21 + recebíveis do aditivo | tarefa escrita |
+| 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
 | 7 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -47,7 +47,7 @@ conserto.)
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **15** (era 16 — o ACHADO-13 saiu). Linhas, não testes — serve como
+Hoje **14** (era 15 — o ACHADO-21 saiu). Linhas, não testes — serve como
 tendência, não como precisão. No fim da Fase 4 tem que ser zero.
 
 ## Quando aparece achado novo no meio de um passo

@@ -2,7 +2,8 @@
 Fonte de verdade: Especificacao_Financeiro_Orizon_v2.docx §2/§2.1."""
 import logging
 
-from database import get_session, Conta, CentroCusto, Loja, Rede, Lancamento, PeriodoContabil
+from database import (get_session, Conta, CentroCusto, Loja, Rede, Lancamento, PeriodoContabil,
+                      VeredictoProvisao)
 
 _LOG = logging.getLogger(__name__)
 
@@ -2175,32 +2176,178 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
                        "resolvido_liquido": t("resolvido_liquido"), "saldo_aberto": t("saldo_aberto")}}
 
 
-def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base):
-    """FASE D2 — Conciliação Final (etapa 21): resolve à força TODO saldo remanescente das provisões de
-    custo do projeto (as 10 rubricas). Sobra (provisionado > efetivado) → 4.4.02 (receita); falta →
-    5.6.10 (despesa). Zera as pendências. FORA da conciliação (não força — mas ficam visíveis e
-    editáveis via efetivar_provisao/resolver_saldo_provisao na tela, achado 2026-08-07):
-    - Impostos (2.1.04.13): rota própria DE VERDADE — efetivar_impostos_segmento fecha a conta
-      sozinha a cada NF-e emitida.
-    - Custo Financeiro (2.1.04.19): rota PARCIAL — reconhecer_custo_financeiro (Fatia B) só baixa
-      o ATIVO diferido (1.1.06.19); a provisão (2.1.04.19) em si não tem fechamento automático,
-      sobrevive até alguém efetivar/resolver manualmente (venda financiada = dinheiro real).
-    Idempotente por ref (ref_base:<codigo>). Retorna {codigo: saldo_resolvido} (positivo=sobra,
-    negativo=falta)."""
+_VEREDITOS_VALIDOS = {"efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"}
+
+
+def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, veredito, ref,
+                               valor_efetivado=None, motivo=None, decidido_por_id=None, data=None,
+                               forma_pagamento="a_prazo"):
+    """Resolve o saldo aberto de uma provisão por um VEREDITO NOMEADO (ACHADO-16, docs/db/
+    TAREFA_ACHADO16.md, passo 8) — nunca mais o cancelamento silencioso que `resolver_saldo_
+    provisao` fazia sozinho quando chamado direto pela Conciliação Final. Registra o veredito em
+    `VeredictoProvisao` (quem decidiu, quando, com qual motivo) e aplica o efeito certo no livro:
+
+    - **"efetivada"** — só para FALTA (saldo < 0, efetivado > provisionado): a despesa real já
+      foi reconhecida A CADA EFETIVAÇÃO ao longo do projeto; só falta o residual MECÂNICO entre
+      ativo e provisão, que `resolver_saldo_provisao` já cancela sem tocar a DRE (essa metade do
+      desenho original continua certa — o achado era só a SOBRA nunca efetivada).
+    - **"encerrada_valor_menor"** — só para SOBRA (saldo > 0): DUAS pernas, nesta ordem —
+      (1) `efetivar_provisao(valor_efetivado)` reconhece o custo REAL (5.x × ativo diferido, e
+      debita a própria provisão); (2) só então, se sobrar resíduo, `resolver_saldo_provisao`
+      reverte o QUE FALTOU (a sobra genuína, sem tocar a DRE de novo). Reverter sem efetivar
+      primeiro reproduziria o ACHADO-16 com outro nome.
+    - **"nao_se_aplica"** — só para SOBRA: reverte o saldo INTEIRO como sobra (nenhuma despesa
+      reconhecida — a rubrica nunca incidiu neste projeto). Exige `motivo` escrito; recusa sem
+      ele.
+    - **"ainda_vai_chegar"** — não resolve nada no livro. Ainda assim fica registrado (quem disse
+      "ainda vai chegar" e quando) — é decisão, não silêncio. Quem chama (`conciliar_final`) é
+      quem decide que isto barra o fechamento do projeto.
+
+    Custo Financeiro (2.1.04.19) e Impostos (2.1.04.13) são RECUSADOS aqui — não seguem a regra
+    de reversão (ACHADO-01: o deságio já foi retido na origem, não há despesa futura; aplicar a
+    regra de custo neles reintroduz o erro que o ACHADO-01 registra). Idempotente por `ref`."""
+    if not (codigo_provisao or "").startswith(GRUPO_PROVISOES + ".") or codigo_provisao in _PROV_PAINEL_EXCLUI:
+        raise ValueError(
+            "resolver_veredito_provisao: %r não é conta de provisão legítima (grupo %s.x, exceto %s)"
+            % (codigo_provisao, GRUPO_PROVISOES, sorted(_PROV_PAINEL_EXCLUI)))
+    if codigo_provisao in ("2.1.04.13", "2.1.04.19"):
+        raise ValueError(
+            "resolver_veredito_provisao: %s não segue a regra de veredito/reversão (ACHADO-01) — "
+            "impostos e custo financeiro têm rota própria, fora da Conciliação Final." % codigo_provisao)
+    if veredito not in _VEREDITOS_VALIDOS:
+        raise ValueError("veredito inválido: %r (válidos: %s)" % (veredito, sorted(_VEREDITOS_VALIDOS)))
+    existente = (db.query(VeredictoProvisao)
+                   .filter_by(owner_tipo=owner_tipo, owner_id=owner_id, ref=ref).first())
+    if existente is not None:
+        return existente
     seed_plano(db, owner_tipo, owner_id)
-    excluir = _PROV_PAINEL_EXCLUI | {"2.1.04.13", "2.1.04.19"}   # ver docstring — nem toda "rota própria" fecha a provisão sozinha
+    saldo = round(_mov(db, owner_tipo, owner_id, codigo_provisao, "credor", None, None, projeto_id=projeto_id), 2)
+
+    valor_ef, valor_rev = None, None
+    if veredito == "ainda_vai_chegar":
+        pass   # não toca o livro — quem chama decide que isto barra o fechamento
+    elif veredito == "efetivada":
+        if saldo > 0.005:
+            raise ValueError(
+                "%s tem SOBRA de %.2f (não FALTA) — 'efetivada' só vale quando o efetivado já "
+                "supera o provisionado; escolha 'encerrada_valor_menor' ou 'nao_se_aplica'."
+                % (codigo_provisao, saldo))
+        resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
+                               ref=ref + ":residual", data=data)
+    elif veredito in ("encerrada_valor_menor", "nao_se_aplica"):
+        if saldo < -0.005:
+            raise ValueError(
+                "%s está em FALTA (%.2f) — '%s' só vale para SOBRA (provisionado > efetivado); "
+                "o veredito certo aqui é 'efetivada'." % (codigo_provisao, saldo, veredito))
+        if veredito == "nao_se_aplica":
+            if not (motivo or "").strip():
+                raise ValueError("veredito 'nao_se_aplica' exige motivo escrito.")
+            resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
+                                   ref=ref + ":reverte", data=data)
+            valor_ef, valor_rev = 0.0, saldo
+        else:
+            # valor_efetivado == 0 é válido: cobre a rubrica que já foi efetivada mais cedo NO
+            # PROJETO (fora desta chamada) e chega aqui só com o resíduo a reverter — não exige
+            # reinventar um valor novo pra "confirmar" o que o livro já tem. `efetivar_provisao`
+            # já no-opa sozinho pra valor<=0 (idempotência dela mesma), então não precisa de
+            # guarda extra aqui além do teto do saldo aberto.
+            valor_efetivado = round(float(valor_efetivado or 0), 2)
+            if valor_efetivado < 0 or valor_efetivado > saldo + 0.005:
+                raise ValueError(
+                    "valor_efetivado precisa ser >= 0 e <= saldo aberto (%.2f) — recebido %r"
+                    % (saldo, valor_efetivado))
+            efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor_efetivado,
+                              ref=ref + ":efetiva", data=data, forma_pagamento=forma_pagamento)
+            residual = round(saldo - valor_efetivado, 2)
+            if residual > 0.005:
+                resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
+                                       ref=ref + ":reverte", data=data)
+            valor_ef, valor_rev = valor_efetivado, (residual if residual > 0.005 else 0.0)
+
+    v = VeredictoProvisao(owner_tipo=owner_tipo, owner_id=owner_id, projeto_nome=projeto_id,
+                         codigo_provisao=codigo_provisao, veredito=veredito,
+                         valor_provisionado=saldo, valor_efetivado=valor_ef,
+                         valor_revertido=valor_rev, motivo=motivo,
+                         decidido_por_id=decidido_por_id, ref=ref)
+    if data is not None:
+        v.decidido_em = data
+    db.add(v)
+    db.flush()
+    return v
+
+
+def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, decidido_por_id=None, data=None):
+    """FASE D2 — Conciliação Final (etapa 21). ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8):
+    não fecha mais o projeto com provisão em aberto sem decisão — cada rubrica de custo do
+    projeto (as 15 de matching pleno; Impostos e Custo Financeiro ficam de fora, rota própria)
+    que tiver saldo aberto exige um veredito em `vereditos` ({codigo: {"veredito":,
+    "valor_efetivado":, "motivo":, "forma_pagamento":}}).
+
+    RECUSA (`ValueError`, tudo ou nada — nada é commitado, quem chama já faz rollback no
+    `except`) em dois casos, ANTES de tocar qualquer lançamento:
+    - falta veredito para alguma rubrica aberta;
+    - alguma rubrica recebeu 'ainda_vai_chegar' — o projeto continua honestamente aberto.
+
+    Idempotente por ref (`ref_base:<codigo>`). Retorna {codigo: {"veredito":, "valor_efetivado":,
+    "valor_revertido":}} — descreve O QUE aconteceu, não só o saldo residual (a API não
+    responde mais `{"resolvido": {...}}` sem dizer qual veredito foi dado, por quem)."""
+    seed_plano(db, owner_tipo, owner_id)
+    excluir = _PROV_PAINEL_EXCLUI | {"2.1.04.13", "2.1.04.19"}   # ACHADO-01 — rota própria, fora da regra de veredito
     contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
               .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
-    out = {}
+    abertas = []
     for c in contas:
         if c.codigo in excluir:
             continue
         saldo = round(_mov(db, owner_tipo, owner_id, c.codigo, "credor", None, None, projeto_id=projeto_id), 2)
-        if abs(saldo) < 0.005:
-            continue
-        lan = resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, c.codigo, ref=ref_base + ":" + c.codigo)
-        if lan is not None:
-            out[c.codigo] = saldo
+        if abs(saldo) >= 0.005:
+            abertas.append(c.codigo)
+
+    vereditos = vereditos or {}
+    faltando = sorted(cod for cod in abertas if cod not in vereditos)
+    if faltando:
+        raise ValueError(
+            "Conciliação Final recusada: falta veredito para %s — toda provisão em aberto "
+            "precisa de um veredito nomeado antes do projeto fechar." % ", ".join(faltando))
+    ainda_vai_chegar = sorted(cod for cod in abertas if vereditos[cod].get("veredito") == "ainda_vai_chegar")
+    if ainda_vai_chegar:
+        raise ValueError(
+            "Conciliação Final recusada: %s ainda vai chegar — o projeto continua aberto até a "
+            "despesa real ser lançada." % ", ".join(ainda_vai_chegar))
+
+    out = {}
+    for cod in abertas:
+        info = vereditos[cod]
+        v = resolver_veredito_provisao(
+            db, owner_tipo, owner_id, projeto_id, cod, info["veredito"], ref=ref_base + ":" + cod,
+            valor_efetivado=info.get("valor_efetivado"), motivo=info.get("motivo"),
+            decidido_por_id=decidido_por_id, data=data,
+            forma_pagamento=info.get("forma_pagamento") or "a_prazo")
+        out[cod] = {"veredito": v.veredito, "valor_efetivado": v.valor_efetivado,
+                   "valor_revertido": v.valor_revertido}
+    return out
+
+
+def relatorio_projetos_encerrados_por_reversao(db, owner_tipo, owner_id):
+    """Controle contra o veredito virar formalidade (ACHADO-16, docs/db/TAREFA_ACHADO16.md, passo
+    8): reversão de resíduo MELHORA a margem — um projeto que fecha com reversão grande é
+    exatamente o que se quer olhar. Lista, por projeto, o total revertido ('encerrada_valor_menor'
+    + 'nao_se_aplica') e os motivos ao lado, ordenado do MAIOR valor revertido pro menor."""
+    linhas = (db.query(VeredictoProvisao)
+                .filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
+                .filter(VeredictoProvisao.veredito.in_(("encerrada_valor_menor", "nao_se_aplica")))
+                .order_by(VeredictoProvisao.projeto_nome, VeredictoProvisao.id).all())
+    por_projeto = {}
+    for v in linhas:
+        p = por_projeto.setdefault(v.projeto_nome, {"projeto_nome": v.projeto_nome,
+                                                     "valor_revertido_total": 0.0, "rubricas": []})
+        revertido = round(float(v.valor_revertido or 0), 2)
+        p["valor_revertido_total"] = round(p["valor_revertido_total"] + revertido, 2)
+        p["rubricas"].append({"codigo_provisao": v.codigo_provisao, "veredito": v.veredito,
+                              "valor_efetivado": v.valor_efetivado, "valor_revertido": revertido,
+                              "motivo": v.motivo, "decidido_por_id": v.decidido_por_id,
+                              "decidido_em": v.decidido_em.strftime("%Y-%m-%d %H:%M") if v.decidido_em else None})
+    out = sorted(por_projeto.values(), key=lambda p: p["valor_revertido_total"], reverse=True)
     return out
 
 

@@ -764,7 +764,51 @@ alias. Sai quando alguém tocar naquela tela.
 
 ---
 
-## ACHADO-16 — Provisão cancelada em silêncio na Conciliação Final torna a margem fictícia
+## ACHADO-16 — Provisão cancelada em silêncio na Conciliação Final torna a margem fictícia · RESOLVIDO 30/08/2026
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO16.md, passo 8 do ROTEIRO).** O maior
+conserto da auditoria — muda fluxo, não só número. `conciliar_final` não
+resolve mais saldo de provisão sozinha: toda rubrica aberta (grupo `2.1.04.x`,
+exceto Impostos e Custo Financeiro) exige um **veredito nomeado**
+(`resolver_veredito_provisao`, nova tabela `VeredictoProvisao` — quem
+decidiu, quando, com qual motivo), e a chamada é recusada, tudo ou nada, se
+faltar veredito para qualquer rubrica em aberto ou se alguma vier
+`ainda_vai_chegar`.
+
+- **A regra das duas pernas** (`encerrada_valor_menor`): efetiva pelo valor
+  real via `efetivar_provisao` (é isto que reconhece o custo em 5.1.01 — a
+  única porta pela qual custo entra na DRE) e **só então** reverte o resíduo
+  via `resolver_saldo_provisao`. Reverter sem efetivar reproduziria o
+  ACHADO-16 com outro nome. `valor_efetivado=0` é válido e comum: cobre a
+  rubrica já efetivada mais cedo no projeto, chegando aqui só com o resíduo
+  a reverter.
+- **`não se aplica`** reverte o saldo integralmente, mas exige `motivo`
+  escrito — recusado sem ele.
+- **`ainda vai chegar`** não resolve nada; o projeto continua aberto.
+- **Custo financeiro (2.1.04.19) não segue a regra de reversão** — guarda do
+  ACHADO-01, tanto em `conciliar_final` (nunca pede veredito para ele) quanto
+  em `resolver_veredito_provisao` (recusa explícita se chamado com ele).
+- **O relatório** `relatorio_projetos_encerrados_por_reversao` (+ endpoint
+  `GET /api/financeiro/projetos-encerrados-por-reversao`) veio no mesmo
+  commit, não depois: projetos encerrados por `encerrada_valor_menor`/`nao_
+  se_aplica`, ordenados pelo valor revertido (maior primeiro), motivo ao
+  lado — o contra-controle para a reversão não virar formalidade.
+- A resposta de `POST /api/projetos/<nome>/ciclo/21/conciliar` trocou a
+  chave `"resolvido"` por `"vereditos"` (veredito + valor_efetivado +
+  valor_revertido por rubrica) — a palavra "resolvido" não cabia mais para
+  uma decisão nomeada.
+
+`tests/test_aceite_achado16.py::test_conciliacao_final_recusa_com_provisao_
+nunca_efetivada` perdeu o `xfail(strict=True)` do passo 1 neste commit — a
+recusa é agora o comportamento correto, não mais um bug pendente. O teste de
+medição do mecanismo antigo (`test_mecanismo_hoje_cancela_saldo_sem_tocar_
+5101`) foi **reescrito**, não consertado para continuar verde: o mecanismo
+que ele documentava (cancelar sem tocar 5.1.01 incondicionalmente) não existe
+mais — o novo teste prova, no mesmo cenário motivador do achado, que
+`encerrada_valor_menor` reconhece o custo real (5.1.01) antes de reverter o
+resíduo genuíno, as duas pernas verificadas separadamente.
+
+**Histórico da medição (antes do conserto):**
 
 **GRAVE. Medido em 29/08/2026 pelo teste de ciclo completo das DREs.**
 

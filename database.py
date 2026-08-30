@@ -1228,6 +1228,38 @@ class PeriodoContabil(Base):
     __table_args__ = (Index("ix_periodo_contabil_owner", "owner_tipo", "owner_id"),)
 
 
+class VeredictoProvisao(Base):
+    """Veredito NOMEADO sobre o saldo aberto de uma provisão na Conciliação Final (ACHADO-16,
+    docs/db/TAREFA_ACHADO16.md, passo 8) — substitui o cancelamento silencioso que
+    `resolver_saldo_provisao` fazia sozinho. Toda rubrica que chega à Conciliação Final com
+    saldo aberto exige um destes quatro, escolhido por uma pessoa: 'efetivada' (FALTA — a
+    despesa real já foi reconhecida a cada efetivação, só falta o residual mecânico),
+    'encerrada_valor_menor' (SOBRA — efetiva pelo valor real e reverte o resíduo, DUAS pernas),
+    'nao_se_aplica' (SOBRA — reverte o saldo inteiro; exige `motivo`) ou 'ainda_vai_chegar' (não
+    resolve nada — o projeto não fecha). Fica registrado quem decidiu e quando: é o rastro que
+    sustenta o relatório de "projetos encerrados por reversão" (o contra-controle de que
+    `nao_se_aplica`/`encerrada_valor_menor` não viram só um jeito de encerrar sem olhar)."""
+    __tablename__ = "veredictos_provisao"
+
+    id                 = Column(Integer,  primary_key=True, autoincrement=True)
+    owner_tipo         = Column(String(10), nullable=False)
+    owner_id           = Column(Integer,  nullable=False)
+    projeto_nome       = Column(Text,     nullable=False)
+    codigo_provisao    = Column(Text,     nullable=False)
+    veredito           = Column(Text,     nullable=False)
+    valor_provisionado = Column(Float,    nullable=False)
+    valor_efetivado    = Column(Float,    nullable=True)
+    valor_revertido    = Column(Float,    nullable=True)
+    motivo             = Column(Text,     nullable=True)
+    decidido_por_id    = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+    decidido_em        = Column(DateTime, default=datetime.utcnow)
+    ref                = Column(String(80), nullable=True)   # idempotência, mesmo padrão de Lancamento.ref
+
+    decidido_por = relationship("Usuario", foreign_keys=[decidido_por_id])
+
+    __table_args__ = (Index("ix_veredictos_provisao_owner_projeto", "owner_tipo", "owner_id", "projeto_nome"),)
+
+
 class Contrato(Base):
     """Contrato gerado a partir do orçamento aprovado."""
     __tablename__ = "contratos"

@@ -57,17 +57,27 @@ def test_ajuste_delta_af_funciona_para_os_novos(app_db):
     db.close()
 
 
-def test_cust_esp_nunca_efetivado_conciliacao_cancela_sem_dre(app_db):
-    # Custo Especial percorre o ciclo completo: constituição no contrato → nunca efetivado →
-    # conciliação final CANCELA o saldo (ativo × provisão) sem tocar a DRE em nenhuma direção
-    # (2026-08-07 — antes, com o matching pleno na NF-e, a despesa nascia estimada cedo e a sobra
-    # virava receita).
+def test_cust_esp_nunca_efetivado_exige_veredito_e_nao_se_aplica_cancela_sem_dre(app_db):
+    # ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8): até 2026-08-30, uma rubrica nunca efetivada
+    # era cancelada em silêncio na Conciliação Final — "nada foi gasto" aplicado a um saldo que podia
+    # muito bem ser "foi gasto e ninguém lançou" (o próprio ACHADO-16). Agora a conciliação recusa sem
+    # um veredito nomeado; só com 'nao_se_aplica' (+ motivo escrito, confirmando que a rubrica não
+    # incidiu) o saldo reverte por decisão explícita de alguém — não mais por omissão.
     db = app_db.get_session(); ot, oid = "loja", 953; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"cust_esp": 120.0}, ref_base="pf:P")
-    out = mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P")
-    assert out.get("2.1.04.20") == 120.0         # saldo resolvido (cancelado)
+
+    import pytest
+    with pytest.raises(ValueError, match="falta veredito"):
+        mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P", vereditos={})
+    assert _s(db, ot, oid, "2.1.04.20") == 120.0   # recusa não toca nada
+
+    out = mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P", vereditos={
+        "2.1.04.20": {"veredito": "nao_se_aplica", "motivo": "orçamento incluiu Custo Especial; obra não usou"},
+    })
+    assert out["2.1.04.20"]["veredito"] == "nao_se_aplica"
+    assert out["2.1.04.20"]["valor_revertido"] == 120.0
     assert _s(db, ot, oid, "2.1.04.20") == 0.0
     assert _s(db, ot, oid, "1.1.06.20") == 0.0    # ativo cancelado junto
-    assert _s(db, ot, oid, "5.3.17") == 0.0       # despesa NUNCA reconhecida — nada foi gasto
+    assert _s(db, ot, oid, "5.3.17") == 0.0       # despesa NUNCA reconhecida — confirmado que não incidiu
     assert _s(db, ot, oid, "4.4.02") == 0.0       # e não vira receita tampouco
     db.close()

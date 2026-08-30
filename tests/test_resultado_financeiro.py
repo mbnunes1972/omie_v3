@@ -132,7 +132,7 @@ def test_custo_financeiro_fora_da_conciliacao_final(app_db):
     # ser resolvida à força na Conciliação Final como "sobra" → viraria receita fictícia em 4.4.02.
     db = app_db.get_session(); ot, oid = "loja", 973; mc.seed_plano(db, ot, oid)
     mc.registrar_evento(db, ot, oid, "fechamento_venda_custo_financeiro", 1000.0, projeto_id="P", ref="cf:P")
-    out = mc.conciliar_final(db, ot, oid, "P", ref_base="conc:P")
+    out = mc.conciliar_final(db, ot, oid, "P", ref_base="conc:P", vereditos={})
     assert "2.1.04.19" not in out                   # fora da conciliação (como impostos)
     assert _s(db, ot, oid, "2.1.04.19") == 1000.0    # provisão intacta (aguarda o custo real)
     assert _s(db, ot, oid, "4.4.02") == 0.0          # SEM receita fictícia
@@ -182,7 +182,7 @@ def test_antecipacao_ponta_a_ponta_sem_receita_ficticia(app_db):
     db = app_db.get_session(); ot, oid = "loja", 978; mc.seed_plano(db, ot, oid)
     mc.registrar_evento(db, ot, oid, "fechamento_venda_custo_financeiro", 1000.0, projeto_id="P", ref="cf:P")
     mc.reconhecer_custo_financeiro(db, ot, oid, "P", "loja_antecipacao", 1000.0, ref="ant:P")
-    mc.conciliar_final(db, ot, oid, "P", ref_base="conc:P")
+    mc.conciliar_final(db, ot, oid, "P", ref_base="conc:P", vereditos={})
     assert _s(db, ot, oid, "5.5.03") == 1000.0     # despesa reconhecida (DRE)
     assert _s(db, ot, oid, "4.4.02") == 0.0        # SEM receita fictícia
     assert _s(db, ot, oid, "2.1.04.19") == 1000.0  # provisão (a pagar ao banco) segue aberta

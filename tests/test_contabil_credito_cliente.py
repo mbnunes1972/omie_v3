@@ -112,7 +112,7 @@ def test_conciliacao_final_nao_varre_credito_a_clientes(app_db):
     mc.registrar_credito_cliente(db, ot, oid, projeto_id="ProjF", valor=777.0, ref="est:ProjF:1")
     assert mc.saldo_credito_cliente(db, ot, oid, "ProjF") == 777.0
 
-    resolvido = mc.conciliar_final(db, ot, oid, "ProjF", ref_base="cf:ProjF")
+    resolvido = mc.conciliar_final(db, ot, oid, "ProjF", ref_base="cf:ProjF", vereditos={})
 
     assert "2.1.11" not in resolvido                      # não foi tocada pela varredura
     assert mc.saldo_credito_cliente(db, ot, oid, "ProjF") == 777.0   # saldo sobrevive intacto

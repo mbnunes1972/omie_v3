@@ -47,7 +47,7 @@ não depois.
 | 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (`xfail` removido no commit do conserto, 30/08) + `test_mov_credor_liquido_estorno` (medição do ponto 2, líquido de estornos) | **CONSERTADO** — primeiro conserto da jornada |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
-| 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16::test_conciliacao_final_recusa_com_provisao_nunca_efetivada` (strict — aceite da recusa) + `test_aceite_achado16::test_mecanismo_hoje_cancela_saldo_sem_tocar_5101` (medição do mecanismo, verde hoje e depois) | **provado (a recusa)** — controle negativo confirmado (XPASS quebrou a suíte); o aceite dos vereditos (efetivada/encerrada com valor menor/não se aplica/ainda vai chegar) nasce com a implementação do passo 8, cobrindo a regra das duas pernas (efetivar pelo valor real, só então reverter o resíduo) |
+| 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16.py` (recusa sem veredito + `encerrada_valor_menor` reconhecendo custo real antes de reverter, via HTTP) + `test_fase_d2_conciliacao_final.py` (sem veredito recusa, sobra+falta com veredito, `nao_se_aplica` sem motivo recusa, `ainda_vai_chegar` mantém aberto, custo financeiro fora da regra, idempotência) + `test_relatorio_projetos_encerrados_por_reversao.py` (ordenação por valor revertido, motivo, endpoint) | **CONSERTADO** — passo 8 do ROTEIRO |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
 | 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18::test_gerar_contrato_recusa_valor_total_zero` e `::test_emitir_nfe_recusa_valor_total_zero` (strict, estado construído direto no banco com pré-condição afirmada, controle negativo confirmado nos dois) | **provado** |
 | 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_parametros_json_malformado_cai_no_default` e `::test_parametros_nao_devolve_sombra_com_recalculo_falho` (strict, controle negativo confirmado nos dois — cobrem 2 das 3 causas; o conserto das 4 rotas restantes segue sem aceite) | parcialmente **provado** |
@@ -62,10 +62,9 @@ não depois.
 
 **Os quatro buracos que importam:**
 
-1. ~~ACHADO-16 não tem teste.~~ **Resolvido (30/08)** — `test_aceite_achado16.py`
-   prova a recusa do fechamento (`xfail(strict=True)`, controle negativo
-   confirmado) e mede o mecanismo de cancelamento silencioso (verde hoje e
-   depois). Falta só o teste dos vereditos, que nasce com o passo 8.
+1. ~~ACHADO-16 não tem teste.~~ **CONSERTADO (30/08, passo 8)** — a Conciliação
+   Final recusa sem veredito nomeado; os quatro vereditos e o relatório de
+   reversões estão implementados e provados (ver índice acima).
 2. ~~ACHADO-03 não tem xfail próprio~~ **Resolvido (30/08)** —
    `test_aceite_achado03.py` reproduz a divergência com números (ramo
    "loja_antecipacao" cai no evento errado), controle negativo confirmado.

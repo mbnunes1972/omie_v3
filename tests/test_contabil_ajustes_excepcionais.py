@@ -106,7 +106,7 @@ def test_exemplo_loja3_ciclo_completo_sem_sobra_falta(http_client_factory, seed,
     assert _s(db, ot, oid, "5.1.01") == 104500.0
     mc.registrar_evento(db, ot, oid, "pagamento_fabrica", 104500.0, projeto_id=nome,
                         ref="pag:" + nome)
-    out = mc.conciliar_final(db, ot, oid, nome, ref_base="cf:" + nome)
+    out = mc.conciliar_final(db, ot, oid, nome, ref_base="cf:" + nome, vereditos={})
     assert "2.1.04.06" not in out, out
     assert _s(db, ot, oid, "2.1.04.06") == 0.0
     db.commit(); db.close()

@@ -2296,6 +2296,22 @@ class Handler(BaseHTTPRequestHandler):
                 db.close()
             return
 
+        if path == "/api/financeiro/projetos-encerrados-por-reversao":
+            # ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8): o contra-controle do veredito
+            # nomeado — reversão de resíduo MELHORA a margem, então um projeto que fecha com
+            # reversão grande é exatamente o que se quer olhar. Sem este relatório a decisão vira
+            # formalidade em três meses.
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                self.send_json({"ok": True, "projetos":
+                                mod_contabil.relatorio_projetos_encerrados_por_reversao(db, ot, oid)})
+            finally:
+                db.close()
+            return
+
         if path == "/api/financeiro/margem-projeto":
             # Visão Geral do Projeto (Etapas do Projeto → aba Visão Geral, achado do usuário
             # 2026-08-25): margem real + totais de reconciliação de UM projeto, num round-trip só —
@@ -10068,8 +10084,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         m = re.match(r'^/api/projetos/([^/]+)/ciclo/21/conciliar$', path)
         if m:
-            # FASE D2 — Conciliação Final (etapa 21): resolve todo saldo remanescente das provisões do
-            # projeto (sobra→4.4.02 / falta→5.6.10) e ENCERRA o projeto (status "Concluído"). Gate financeiro.
+            # FASE D2 — Conciliação Final (etapa 21). ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo
+            # 8): não resolve mais saldo de provisão sozinha — cada rubrica aberta exige um
+            # veredito NOMEADO no corpo ({"vereditos": {"<codigo>": {"veredito":, "valor_efetivado":,
+            # "motivo":, "forma_pagamento":}}}); sem veredito para alguma rubrica aberta, ou com
+            # 'ainda_vai_chegar' em qualquer uma, `conciliar_final` recusa (ValueError) e nada é
+            # commitado — o projeto continua aberto. ENCERRA o projeto (status "Concluído") só
+            # quando toda rubrica foi resolvida. Gate financeiro.
             from urllib.parse import unquote as _unquote
             nome_safe = _unquote(m.group(1))
             ctx = _contabil_ctx(self, exige_edicao=True)
@@ -10077,6 +10098,8 @@ class Handler(BaseHTTPRequestHandler):
             import mod_contabil
             usuario, db, ot, oid = ctx
             try:
+                req = json.loads(body or b'{}')
+                vereditos = req.get("vereditos") or {}
                 # achado de auditoria 2026-08-13: usava usuario.get("loja_id") cru — sempre None
                 # pra admin_rede/super_admin (que não têm loja_id PRÓPRIO, só a loja ATIVA via
                 # X-Loja-Ativa, já corretamente resolvida em `oid` por _contabil_ctx) — 404
@@ -10106,11 +10129,13 @@ class Handler(BaseHTTPRequestHandler):
                     nome_ant = mod_ciclo.ETAPA_NOME.get(ant, ant)
                     self.send_json({"ok": False, "erro": "Conclua a etapa anterior (%s) antes da "
                                     "Conciliação Final." % nome_ant}, code=409); return
-                resolvido = mod_contabil.conciliar_final(db, ot, oid, nome_safe, ref_base="cf:" + nome_safe)
+                vereditos_aplicados = mod_contabil.conciliar_final(
+                    db, ot, oid, nome_safe, ref_base="cf:" + nome_safe, vereditos=vereditos,
+                    decidido_por_id=usuario.get("id"))
                 _set_etapa_status(db, nome_safe, "21", "concluido", usuario.get("id"))
                 db.commit()
                 upsert_projeto_status(nome_safe, "concluido")   # status novo, distinto de "fechado" (sessão própria)
-                self.send_json({"ok": True, "resolvido": resolvido, "status": "concluido"})
+                self.send_json({"ok": True, "vereditos": vereditos_aplicados, "status": "concluido"})
             except ValueError as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:

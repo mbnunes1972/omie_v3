@@ -108,7 +108,7 @@ MODULOS = {
                                 "acordo_fabrica", "ajuste_fabrica", "ajuste_fabrica_aplicacao",
                                 "acordo_movimento", "contraparte_financeira", "recebivel",
                                 "provisao_data_prevista", "simulador_autorizacoes", "simulador_log_acessos",
-                                "conciliacao_pe_fase"],
+                                "conciliacao_pe_fase", "veredictos_provisao"],
                     "rotas": ["/api/provisoes", "/api/financeiro/contas", "/api/financeiro/lancamentos",
                               "/api/financeiro/eventos", "/api/financeiro/dre", "/api/financeiro/projetos-dre",
                               "/api/financeiro/reconciliar", "/api/financeiro/periodos", "/api/financeiro/balanco",

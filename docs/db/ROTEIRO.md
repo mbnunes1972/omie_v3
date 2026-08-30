@@ -34,7 +34,7 @@ deixa de ter resposta rápida.
 | 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
 | 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
 | 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
-| 7 · ACHADO-12, soma contrato+aditivos | tarefa escrita |
+| 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
 | 8 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -48,7 +48,7 @@ conserto.)
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **14** (era 15 — o ACHADO-21 saiu). Linhas, não testes — serve como
+Hoje **13** (era 14 — o ACHADO-12 saiu). Linhas, não testes — serve como
 tendência, não como precisão. No fim da Fase 4 tem que ser zero.
 
 ## Quando aparece achado novo no meio de um passo

@@ -1,0 +1,98 @@
+# Roteiro — a ordem linear de executar tudo
+
+Criado em 29/08/2026 a pedido do usuário: *"precisamos criar um formato
+linear de implementar tudo."* Este arquivo é a **fila**. Um item por vez, de
+cima para baixo.
+
+## Os quatro documentos e o que cada um responde
+
+| documento | responde |
+|---|---|
+| `ACHADOS_CONTABEIS.md` | **o que está errado** — 22 achados, com medição |
+| `DESENVOLVIMENTOS.md` | **o que não existe** — ausências, separadas dos defeitos |
+| `ACEITE.md` | **como saber que consertou** — teste por achado |
+| `TAREFA_*.md` | **como consertar** — um por frente, escrito na hora de fazer |
+| `PLANO_AJUSTES.md` | **por quê e em que ordem** — regras, decisões, agrupamento |
+| este arquivo | **o que fazer agora** |
+
+**Por que "como consertar" não traz código pronto:** um documento com código
+envelhece no primeiro commit e vira uma terceira fonte de verdade. A tarefa
+diz o que muda, onde e sob qual regra; o código nasce no commit, e quem
+garante o resultado é o teste da etapa anterior — não o texto.
+
+## A regra de cada passo
+
+**Teste primeiro, sempre.** O `xfail(strict=True)` que descreve o erro entra
+antes do conserto. Quando o conserto entra, o teste passa, o `strict` quebra
+a suíte no XPASS e obriga a remover o marcador. É o que impede consertar em
+silêncio e o que impede declarar consertado sem prova.
+
+---
+
+## FASE 0 — a rede, antes de tocar em número
+Nada aqui muda comportamento. É barato e é o que torna o resto verificável.
+
+1. **Teste do ACHADO-16.** O mais grave da auditoria não tem prova nenhuma
+   hoje. Projeto que fecha com provisão não efetivada → margem fictícia.
+2. **Teste do ACHADO-03.** Hoje só existe menção em comentário.
+3. **Corrigir a citação** do teste da costura 4: cita ACHADO-12, é ACHADO-21.
+4. **Testes de aceite para 18 e 19.** Os de hoje são de medição — provam o
+   presente, não viram verdes com o conserto.
+
+## FASE 1 — o número da venda
+Bloqueia usar o sistema para decidir. **Esta ordem não é negociável:** somar
+antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
+
+5. **ACHADO-13** — `faturar_segmento` delta-aware na conta de receita.
+6. **ACHADO-21 + recebíveis do aditivo, juntos.** Dependem um do outro: a
+   forma de pagamento coletada na assinatura seria apagada pelo recálculo, e
+   é a imutabilidade pós-assinatura que impede. Entram no mesmo passo o
+   predicado explícito do aditivo e a segmentação congelada.
+7. **ACHADO-12** — soma contrato + aditivos em `_valores_segmentados_do_projeto`.
+8. **ACHADO-16** — vereditos da Conciliação Final + relatório de reversões.
+9. **ACHADO-18** — guarda `valor_total > 0` antes de contrato e NF-e.
+10. **ACHADO-02** — VAVO em 4.1.01, custo financeiro em 4.4.03.
+11. **ACHADO-03** — ramo por tabela, não por `if`.
+
+**Marco:** rodar a suíte. Nenhum xfail citando achado da Fase 1 pode sobrar.
+
+## FASE 2 — custo e fechamento
+12. **ACHADO-01** — a perna de liquidação da provisão.
+13. **Fila de provisões em aberto** (dona: assistente administrativa).
+14. **P5**, **ACHADO-06** (medir antes), **ACHADO-17** (decisão pendente).
+
+## FASE 3 — integridade estrutural
+Não toca número; pode andar em paralelo com a Fase 2.
+
+15. `garantir_projeto()` extraído **antes** da FK.
+16. `projeto_id` → FK, com os dois testes de integridade.
+17. `periodo_fechado` + `lancar()` recusando mês fechado.
+18. Vocabulário controlado de `origem`; tipo de registro; competência referida.
+
+## FASE 4 — as visões
+**Só depois da Fase 1.** Relatório em cima de número errado é o pior
+resultado possível — errado e confiável.
+
+19. Rename Diferida/Antecipada; remover `competencia_estimada`.
+20. DRE Antecipada lendo o **constituído** por safra.
+21. Exportação Excel; variância por safra; endividamento; decomposição.
+
+## FASE 5 — higiene
+22. Os três consertos de causa do ACHADO-19 (o de `/parametros` primeiro).
+23. ACHADO-20, ACHADO-22, ACHADO-07, `_migrar_colunas_pg`, ciclos de FK,
+    FKs sem índice, `Environment=` da produção, rotação do `sad2026`.
+
+---
+
+## O aceite final
+
+Depois da Fase 4, a verificação completa é uma coisa só:
+
+```
+pytest -q
+```
+
+e **não sobrar nenhum xfail citando achado**. Um xfail que sobrou é conserto
+que não fechou; um XPASS que quebrou a suíte é conserto que fechou com o
+marcador velho. Nenhum dos dois passa despercebido — é para isso que o
+`strict=True` existe.

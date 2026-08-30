@@ -1,5 +1,8 @@
 # Plano de ajustes — consolidado
 
+> **A ordem de execução está em `docs/db/ROTEIRO.md`.** Este arquivo é o
+> porquê e o agrupamento; o roteiro é a fila.
+
 Reescrito em 29/08/2026, depois do teste de ciclo das DREs. Substitui as
 versões anteriores. Reúne os 22 achados contábeis, as pendências da
 TAREFA_PROVISOES, o desenho das visões de DRE e a dívida de banco.
@@ -67,9 +70,10 @@ dono:
   ao vivo. Um aditivo assinado depois de uma mudança de parâmetro é faturado
   com a segmentação ATUAL, não com a que valia quando foi negociado. Mesma
   classe do ACHADO-19; muda o número entre Mercadoria e Serviço.
-- **Não medido**: quantos projetos em produção têm `ArquivoPE.formato =
-  'xml_compl'` gravado — a dependência real do mecanismo legado. Exige
-  consultar os quatro ambientes. Decide o custo de aposentar o legado.
+- **Resolvido sem medir (29/08):** a dependência do mecanismo legado é
+  **zero** — os quatro ambientes foram limpos e não há projeto nenhum com
+  `ArquivoPE` gravado. Aposentar o legado custa zero agora, e este é o
+  momento mais barato que vai existir.
 
 **1. ACHADO-12 — aditivo não vira receita E não é cobrado.**
 Escalado em 29/08: o `Recebivel` nasce do contrato original, antes do

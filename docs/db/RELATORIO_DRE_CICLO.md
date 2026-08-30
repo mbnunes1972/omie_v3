@@ -262,18 +262,18 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 
 | linha | real | competencia_estimada | antecipacao_contrato | bate (real×comp_est) |
 |---|---|---|---|---|
-| receita_bruta | 58500.00 | 58500.00 | 90000.00 | sim |
+| receita_bruta | 61750.00 | 61750.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
-| receita_liquida | 58500.00 | 58500.00 | 90000.00 | sim |
+| receita_liquida | 61750.00 | 61750.00 | 90000.00 | sim |
 | cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 58500.00 | 16500.00 | 48000.00 | **NÃO** |
+| lucro_bruto | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 58500.00 | 16500.00 | 48000.00 | **NÃO** |
+| ebitda | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 58500.00 | 16500.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
 
 **Saldos das contas-chave:**
 
@@ -283,10 +283,10 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | 1.1.05 | 0.00 |
 | 1.1.06.19 | 0.00 |
 | 2.1.03 | 0.00 |
-| 2.1.06 | 36500.00 |
+| 2.1.06 | 33250.00 |
 | 2.1.04.13 | 0.00 |
 | 2.1.04.19 | 0.00 |
-| 4.1.01 | 58500.00 |
+| 4.1.01 | 61750.00 |
 | 4.3.01 | 0.00 |
 | 4.4.03 | 0.00 |
 
@@ -294,18 +294,18 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 
 | linha | real | competencia_estimada | antecipacao_contrato | bate (real×comp_est) |
 |---|---|---|---|---|
-| receita_bruta | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_bruta | 95000.00 | 95000.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
-| receita_liquida | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_liquida | 95000.00 | 95000.00 | 90000.00 | sim |
 | cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_bruto | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| ebitda | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 
 **Saldos das contas-chave:**
 
@@ -315,10 +315,10 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | 1.1.05 | 0.00 |
 | 1.1.06.19 | 0.00 |
 | 2.1.03 | 0.00 |
-| 2.1.06 | 5000.00 |
+| 2.1.06 | 0.00 |
 | 2.1.04.13 | 0.00 |
 | 2.1.04.19 | 0.00 |
-| 4.1.01 | 58500.00 |
+| 4.1.01 | 61750.00 |
 | 4.3.01 | 0.00 |
 | 4.4.03 | 0.00 |
 
@@ -326,18 +326,18 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 
 | linha | real | competencia_estimada | antecipacao_contrato | bate (real×comp_est) |
 |---|---|---|---|---|
-| receita_bruta | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_bruta | 95000.00 | 95000.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
-| receita_liquida | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_liquida | 95000.00 | 95000.00 | 90000.00 | sim |
 | cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_bruto | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| ebitda | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 
 **Saldos das contas-chave:**
 
@@ -347,10 +347,10 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | 1.1.05 | 0.00 |
 | 1.1.06.19 | 0.00 |
 | 2.1.03 | 0.00 |
-| 2.1.06 | 5000.00 |
+| 2.1.06 | 0.00 |
 | 2.1.04.13 | 0.00 |
 | 2.1.04.19 | 0.00 |
-| 4.1.01 | 58500.00 |
+| 4.1.01 | 61750.00 |
 | 4.3.01 | 0.00 |
 | 4.4.03 | 0.00 |
 
@@ -358,18 +358,18 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 
 | linha | real | competencia_estimada | antecipacao_contrato | bate (real×comp_est) |
 |---|---|---|---|---|
-| receita_bruta | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_bruta | 95000.00 | 95000.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
-| receita_liquida | 90000.00 | 90000.00 | 90000.00 | sim |
+| receita_liquida | 95000.00 | 95000.00 | 90000.00 | sim |
 | cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_bruto | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| ebitda | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 90000.00 | 48000.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
 
 **Saldos das contas-chave:**
 
@@ -379,10 +379,10 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | 1.1.05 | 0.00 |
 | 1.1.06.19 | 0.00 |
 | 2.1.03 | 0.00 |
-| 2.1.06 | 5000.00 |
+| 2.1.06 | 0.00 |
 | 2.1.04.13 | 0.00 |
 | 2.1.04.19 | 0.00 |
-| 4.1.01 | 58500.00 |
+| 4.1.01 | 61750.00 |
 | 4.3.01 | 0.00 |
 | 4.4.03 | 0.00 |
 

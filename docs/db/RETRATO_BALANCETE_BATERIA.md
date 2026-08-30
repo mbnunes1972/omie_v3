@@ -58,8 +58,7 @@
 | 1.1.01 Caixa/Bancos | 26600.00 |
 | 2.1.01 Fornecedores a Pagar | 9360.00 |
 | 2.1.03 Obrigações Tributárias | 1744.00 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 21800.00 |
+| 4.1.01 Receitas com Vendas | 24800.00 |
 | 4.3.01 Simples Nacional s/ Vendas | -1744.00 |
 | 4.4.03 Receita Financeira | 1800.00 |
 | 5.1.01 CMV Fábrica | 6000.00 |
@@ -81,8 +80,7 @@
 | 1.1.01 Caixa/Bancos | 29137.00 |
 | 2.1.01 Fornecedores a Pagar | 11510.00 |
 | 2.1.03 Obrigações Tributárias | 1931.48 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 24143.50 |
+| 4.1.01 Receitas com Vendas | 27143.50 |
 | 4.3.01 Simples Nacional s/ Vendas | -1931.48 |
 | 4.4.03 Receita Financeira | 1993.50 |
 | 5.1.01 CMV Fábrica | 6000.00 |
@@ -161,8 +159,7 @@
 | 2.1.01 Fornecedores a Pagar | 9360.00 |
 | 2.1.03 Obrigações Tributárias | 1744.00 |
 | 2.1.04.19 Provisão de Custo Financeiro | 1800.00 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 21800.00 |
+| 4.1.01 Receitas com Vendas | 24800.00 |
 | 4.3.01 Simples Nacional s/ Vendas | -1744.00 |
 | 5.1.01 CMV Fábrica | 6000.00 |
 | 5.1.02 Frete de Fábrica | 250.00 |
@@ -185,8 +182,7 @@
 | 2.1.01 Fornecedores a Pagar | 11510.00 |
 | 2.1.03 Obrigações Tributárias | 1931.48 |
 | 2.1.04.19 Provisão de Custo Financeiro | 1993.50 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 24143.50 |
+| 4.1.01 Receitas com Vendas | 27143.50 |
 | 4.3.01 Simples Nacional s/ Vendas | -1931.48 |
 | 5.1.01 CMV Fábrica | 6000.00 |
 | 5.1.02 Frete de Fábrica | 250.00 |
@@ -265,8 +261,7 @@
 | 2.1.01 Fornecedores a Pagar | 9360.00 |
 | 2.1.03 Obrigações Tributárias | 1744.00 |
 | 2.1.04.19 Provisão de Custo Financeiro | 1800.00 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 21800.00 |
+| 4.1.01 Receitas com Vendas | 24800.00 |
 | 4.3.01 Simples Nacional s/ Vendas | -1744.00 |
 | 5.1.01 CMV Fábrica | 6000.00 |
 | 5.1.02 Frete de Fábrica | 250.00 |
@@ -289,8 +284,7 @@
 | 2.1.01 Fornecedores a Pagar | 11510.00 |
 | 2.1.03 Obrigações Tributárias | 1931.48 |
 | 2.1.04.19 Provisão de Custo Financeiro | 1993.50 |
-| 2.1.06 Receita a Realizar | 3000.00 |
-| 4.1.01 Receitas com Vendas | 24143.50 |
+| 4.1.01 Receitas com Vendas | 27143.50 |
 | 4.3.01 Simples Nacional s/ Vendas | -1931.48 |
 | 5.1.01 CMV Fábrica | 6000.00 |
 | 5.1.02 Frete de Fábrica | 250.00 |

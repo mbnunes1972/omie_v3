@@ -43,7 +43,7 @@ não depois.
 | 09 | `5.3.01` usada por dois mecanismos | — | **SEM PROVA** (é nome, não número) |
 | 10 | `_fin_evento_seguro` código morto | `test_pdv_visao_unificada` | fechado |
 | 11 | docstring de `conciliar_final` | — | fechado (documental) |
-| 12 | aditivo não é faturado nem cobrado | `test_bateria_ciclo` (cenários `tem_aditivo`), `test_aditivo_costuras` | **provado** |
+| 12 | aditivo não é faturado nem cobrado | `test_aceite_achado12` (2 aceites: 2.1.06 zera, seleção explícita do orçamento) + `test_bateria_ciclo` (cenários `tem_aditivo` saíram do xfail, herdam ACHADO-01/02 por ramo como os demais) | **CONSERTADO** — passo 7 do ROTEIRO |
 | 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (`xfail` removido no commit do conserto, 30/08) + `test_mov_credor_liquido_estorno` (medição do ponto 2, líquido de estornos) | **CONSERTADO** — primeiro conserto da jornada |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |

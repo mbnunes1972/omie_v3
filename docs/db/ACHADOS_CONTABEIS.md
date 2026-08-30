@@ -380,7 +380,68 @@ não requer decisão.
 
 ---
 
-## ACHADO-12 — Aditivo contratual: a receita constituída nunca é faturada
+## ACHADO-12 — Aditivo contratual: a receita constituída nunca é faturada · RESOLVIDO 30/08/2026
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO12.md, passo 7 do ROTEIRO).** Último dos
+três defeitos do aditivo — o 13 (passo 5) e o 21 (passo 6) já tinham saído,
+nessa ordem, por desenho (somar antes deles transformaria defeito raro em
+defeito de todo projeto com aditivo, ou somaria um valor já duplicado).
+
+`_valores_segmentados_do_projeto` passou a usar `valor_contratado_do_projeto`
+(extraída no passo 6: contrato + aditivos **assinados**) em vez de ler só
+`Contrato.orcamento_id → Orcamento.valor_total`. Não escreveu um segundo
+predicado de "quais orçamentos contam" — herdou a definição que o ACHADO-21
+já fixou. Aceite: `tests/test_aceite_achado12.py::
+test_projeto_com_aditivo_termina_com_2106_zerado` — contrato R$ 88.888,89 +
+aditivo R$ 4.444,44, 2.1.06 chega a R$ 93.333,33 antes da NF-e e fecha em
+**R$ 0,00** depois dela; 4.1.01 fecha em R$ 93.333,33 (contrato + aditivo,
+uma vez só).
+
+**Três pontos resolvidos junto:**
+- `cfo` **removido** do retorno de `_valores_segmentados_do_projeto` —
+  nenhum dos três consumidores o lia (o custo de fábrica do aditivo já é
+  constituído por `_fin_provisoes_venda_seguro` na assinatura, achado do
+  passo 6); mantê-lo seria a mesma promessa sem consumidor do ACHADO-22.
+- Seleção do orçamento em `POST /aditivo` ficou **explícita**: entre os
+  candidatos do mesmo `parcela_id` (default `None` — nunca mais pega um
+  complemento de FASE por engano), prefere o **pendente** (sem aditivo
+  assinado ainda), nunca "o de maior id" — que ficou perigoso depois do
+  passo 6 criar orçamentos históricos. Aceite: `tests/test_aceite_achado12.py::
+  test_selecao_do_orcamento_no_post_aditivo_e_explicita`.
+- **Segmentação congelada — medido, não implementado** (`tests/
+  test_medicao_segmentacao_congelada.py`):
+  1. **Não é alcançável em operação normal.** `/api/projetos/<n>/parametros`
+     (que inclui `pct_mercadoria`/`pct_servico`) é bloqueado por
+     `_contrato_assinado` assim que o contrato tem qualquer assinatura.
+     `_congelar_segmentacao_no_projeto` (main.py:961, disparado na mesma
+     hora que as provisões) grava a segmentação efetiva DENTRO do
+     `Projeto.parametros_json`, e `segmentacao_efetiva` faz o override do
+     projeto vencer sempre o default da loja — uma mudança em `Loja.
+     pct_mercadoria`/`pct_servico` (edição de dados da loja, que não checa
+     projeto nenhum) depois disso **não afeta** o projeto: medido —
+     congelado em 100% mercadoria, loja mudou para 30/70 depois, o projeto
+     faturou os mesmos R$ 88.888,89 em mercadoria.
+  2. **Mas o congelamento é fail-soft** (main.py:956-963, `except Exception
+     as _eseg: ... print(...)`) — se falhar por qualquer motivo (ou num
+     projeto legado anterior ao mecanismo), o projeto vive do default da
+     loja AO VIVO, para sempre, e o caminho abre: medido sem o
+     congelamento — mercadoria a 65% = R$ 57.777,78; loja muda para 20%
+     depois da assinatura; mercadoria vira R$ 17.777,78 — R$ 40.000,00 de
+     diferença na face fiscal do MESMO contrato de R$ 88.888,89, sem
+     nenhuma ação no próprio projeto.
+  3. `Aditivo.dados_json` **não carrega segmentação nenhuma** hoje (só
+     `ambientes`, `valor_original/novo`, `diferenca`, `forma_pagamento_
+     snapshot`) — precisaria ganhar o campo se o congelamento por aditivo
+     for decidido.
+  **Decisão pendente do Marcelo:** o aditivo deveria congelar a própria
+  segmentação no `dados_json` (protegendo mesmo no caminho fail-soft), ou
+  o conserto é tornar o congelamento do CONTRATO menos fail-soft (falhar
+  alto em vez de silenciar)? As duas endereçam achados diferentes — a
+  primeira é sobre o aditivo, a segunda sobre o próprio ACHADO-19.
+
+---
+
+## ACHADO-12 · histórico da medição original
 
 **O que acontece:** um aditivo assinado (`POST /api/projetos/<nome>/aditivo/assinar`,
 main.py:9106-9165) cria um `Orcamento` separado (`complemento_pe=1`, valor da

@@ -1292,9 +1292,18 @@ def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
 
 def _valores_segmentados_do_projeto(db, loja_id, projeto_nome):
     """Fonte ÚNICA da segmentação de um projeto p/ a face fiscal (NF-e/NFS-e) e o wiring contábil:
-    Val_Cont do orçamento do contrato + parcelas Mercadoria/Serviço pela segmentação efetiva (congelada
-    na assinatura; override do projeto vence o default da loja). Retorna
-    {val_cont, mercadoria, servico, cfo, orc} ou None se não houver contrato/Val_Cont > 0."""
+    `valor_contratado_do_projeto` (contrato + aditivos ASSINADOS — ACHADO-12, docs/db/
+    TAREFA_ACHADO12.md, passo 7) + parcelas Mercadoria/Serviço pela segmentação efetiva
+    (congelada na assinatura; override do projeto vence o default da loja). Retorna
+    {val_cont, mercadoria, servico, seg, orc} ou None se não houver contrato/Val_Cont > 0.
+
+    Antes do ACHADO-12 lia só `Contrato.orcamento_id → Orcamento.valor_total` — o aditivo nunca
+    entrava no que era faturado (dinheiro constituído em 2.1.06 que nunca virava receita
+    faturada). Não escreve um segundo predicado de "quais orçamentos contam": usa a mesma
+    definição de `valor_contratado_do_projeto` que o ACHADO-21 já usa. `cfo` foi REMOVIDO do
+    retorno — nenhum dos três consumidores o lia (o custo de fábrica do aditivo já é constituído
+    por `_fin_provisoes_venda_seguro` na assinatura, achado do passo 6); mantê-lo seria a mesma
+    promessa sem consumidor que o ACHADO-22 descreve."""
     from mod_orcamento_params import resolver_segmentacao, segmentacao_efetiva, segmentar
     if not loja_id:
         return None
@@ -1303,15 +1312,14 @@ def _valores_segmentados_do_projeto(db, loja_id, projeto_nome):
         return None
     contrato = (db.query(Contrato).filter_by(projeto_nome=projeto_nome).order_by(Contrato.id.desc()).first())
     orc = db.get(Orcamento, contrato.orcamento_id) if contrato else None
-    val_cont = round(float(getattr(orc, "valor_total", 0) or 0), 2)
+    val_cont = valor_contratado_do_projeto(db, projeto_nome)
     if val_cont <= 0:
         return None
     pj = _projeto_da_loja(db, projeto_nome, loja_id)
     params = json.loads(pj.parametros_json) if (pj and pj.parametros_json) else {}
     seg = segmentacao_efetiva(resolver_segmentacao(loja.pct_mercadoria, loja.pct_servico), params)
     merc, serv = segmentar(val_cont, seg["pct_mercadoria"])
-    return {"val_cont": val_cont, "mercadoria": merc, "servico": serv, "seg": seg,
-            "cfo": round(float(getattr(orc, "cfo", 0) or 0), 2), "orc": orc}
+    return {"val_cont": val_cont, "mercadoria": merc, "servico": serv, "seg": seg, "orc": orc}
 
 
 def valor_contratado_do_projeto(db, nome_safe):
@@ -8981,10 +8989,22 @@ class Handler(BaseHTTPRequestHandler):
                     req = json.loads(body) if body else {}
                 except Exception:
                     req = {}
-                q_orc_aj = db.query(Orcamento).filter_by(projeto_id=nome, complemento_pe=1)
-                if "parcela_id" in req:
-                    q_orc_aj = q_orc_aj.filter_by(parcela_id=req.get("parcela_id"))
-                orc_aj = q_orc_aj.order_by(Orcamento.id.desc()).first()
+                q_orc_aj = db.query(Orcamento).filter_by(
+                    projeto_id=nome, complemento_pe=1,
+                    parcela_id=(req.get("parcela_id") if "parcela_id" in req else None))
+                # ACHADO-12 (docs/db/TAREFA_ACHADO12.md, passo 7): depois do 6-b existe mais de um
+                # orçamento de complemento por projeto/fase — cada revisão pós-assinatura cria um
+                # NOVO, e os já vinculados a aditivo assinado ficam congelados/históricos. Pegar
+                # "o de maior id" ficou perigoso, não só impreciso: poderia pegar um congelado.
+                # Seleção EXPLÍCITA: o Termo Aditivo se gera sobre o orçamento de complemento
+                # ainda SEM aditivo assinado — o "pendente" (é exatamente o que o get-or-create de
+                # /pe/complemento/orcamento reaproveita/cria; nunca há mais de um pendente ao
+                # mesmo tempo, por desenho do 6-b).
+                candidatos = q_orc_aj.order_by(Orcamento.id.desc()).all()
+                orc_aj = next(
+                    (o for o in candidatos if db.query(Aditivo).filter_by(
+                        orcamento_complemento_id=o.id, status="assinado").first() is None),
+                    candidatos[0] if candidatos else None)
                 if orc_aj is None:
                     self.send_json({"ok": False, "erro": "Negocie o complemento antes de gerar o termo "
                                     "aditivo (11e → Negociar Complemento)."}, code=400); return

@@ -164,9 +164,9 @@ def _rodar_cenario(app_db, cenario, oid):
                                            ref_base="pf:" + P + ":aditivo")
         ciclo.passo("aditivo")
 
-    # ── NF-e (main.py:_fin_faturamento_segmentado_seguro — fatura só o Val_Cont do Contrato
-    # ORIGINAL, nunca soma aditivos: main.py:1315-1336) ──
-    mc.faturar_segmento(db, ot, oid, P, "mercadoria", val_cont, ref_base="fat:" + P)
+    # ── NF-e (main.py:_fin_faturamento_segmentado_seguro — ACHADO-12 CONSERTADO no passo 7:
+    # fatura valor_contratado_do_projeto = Val_Cont do contrato + aditivos ASSINADOS) ──
+    mc.faturar_segmento(db, ot, oid, P, "mercadoria", val_cont + valor_aditivo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, impostos_valor, ref_base="imp:" + P)
     ciclo.passo("nfe")
 
@@ -306,19 +306,19 @@ _CENARIOS_CONTROLE_POSITIVO = [
 _CENARIOS = _CENARIOS_NUCLEO + _CENARIOS_TOGGLE_ISOLADO + _CENARIOS_CONTROLE_POSITIVO
 
 # ACHADOS que fazem um cenário falhar — nome do cenário -> (achado, motivo)
+# ACHADO-12 CONSERTADO no passo 7 (docs/db/TAREFA_ACHADO12.md): a NF-e passou a faturar
+# valor_contratado_do_projeto (contrato + aditivos assinados) — tem_aditivo=True deixou de ter
+# achado próprio aqui. Os cenários com aditivo caem nos MESMOS achados que os sem aditivo
+# (ACHADO-01/02, por ramo) — o aditivo não introduz um problema novo, herda o que já existia.
 _XFAILS = {}
 for _c in _CENARIOS:
     if _c["sem_financiamento"]:
         pass   # controle positivo — nenhum achado de custo financeiro pode se manifestar
-    elif _c["tem_aditivo"]:
-        _XFAILS[_c["nome"]] = ("ACHADO-12", "receita do aditivo constituída em 2.1.06 mas nunca "
-                                            "faturada — _valores_segmentados_do_projeto lê só o "
-                                            "Contrato original (main.py:1315-1336)")
     elif _c["ramo"] in ("financeira", "loja_antecipacao"):
         _XFAILS[_c["nome"]] = ("ACHADO-01", "reconhecer_custo_financeiro só baixa o ativo "
                                             "diferido (1.1.06.19) — a Provisão de Custo "
                                             "Financeiro (2.1.04.19) nunca é drenada")
-    elif _c["ramo"] == "loja" and not _c["tem_aditivo"]:
+    elif _c["ramo"] == "loja":
         _XFAILS[_c["nome"]] = ("ACHADO-02", "ramo 'loja': 4.1.01 fatura o Val_Cont cheio (que já "
                                             "inclui o custo financeiro) e 4.4.03 reconhece o "
                                             "mesmo custo financeiro de novo")

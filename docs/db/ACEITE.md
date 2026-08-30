@@ -47,7 +47,7 @@ não depois.
 | 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (strict) | **provado** |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
-| 16 | provisão cancelada em silêncio → margem fictícia | em construção — `docs/db/TAREFA_TESTE_ACHADO16.md` (passo 1 do roteiro) | prova do **fechamento recusado**; o aceite dos vereditos nasce com a implementação (passo 8) |
+| 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16::test_conciliacao_final_recusa_com_provisao_nunca_efetivada` (strict — aceite da recusa) + `test_aceite_achado16::test_mecanismo_hoje_cancela_saldo_sem_tocar_5101` (medição do mecanismo, verde hoje e depois) | **provado (a recusa)** — controle negativo confirmado (XPASS quebrou a suíte); o aceite dos vereditos (efetivada/encerrada com valor menor/não se aplica/ainda vai chegar) nasce com a implementação do passo 8, cobrindo a regra das duas pernas (efetivar pelo valor real, só então reverter o resíduo) |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
 | 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (guarda do comportamento atual) | medido; guarda decidida, **não implementada** |
 | 19 | seis rotas respondem `ok` a recálculo falho | `test_fail_soft_medicao2`, `test_negociacao_breakdown_excecoes` | medido; **conserto sem teste** |
@@ -62,10 +62,10 @@ não depois.
 
 **Os quatro buracos que importam:**
 
-1. **ACHADO-16 não tem teste.** É o achado mais grave da auditoria — o que
-   produziu o projeto com receita de 90.000 e custo zero —, tem conserto
-   decidido, e nada hoje viraria verde quando ele for consertado. **Escrever
-   este teste antes do conserto é a próxima coisa a fazer no Grupo 1.**
+1. ~~ACHADO-16 não tem teste.~~ **Resolvido (30/08)** — `test_aceite_achado16.py`
+   prova a recusa do fechamento (`xfail(strict=True)`, controle negativo
+   confirmado) e mede o mecanismo de cancelamento silencioso (verde hoje e
+   depois). Falta só o teste dos vereditos, que nasce com o passo 8.
 2. **ACHADO-03 não tem xfail próprio**, só menção em comentário.
 3. **ACHADO-19 e 18 têm testes de MEDIÇÃO, não de aceite.** Os testes provam
    o que o sistema faz hoje; nenhum vira verde quando o conserto entrar. Para

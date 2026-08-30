@@ -574,9 +574,24 @@ que quebra se `finalidade=complemento` parar de gravar:** nada crasha —
 ("PE não carregado" na tela); o legado ficaria mostrando zero para todo ambiente
 marcado, sem erro. Nenhum outro código lê `formato="xml_compl"` além dessa função.
 
-## ACHADO-13 — `faturar_segmento` duplica receita se chamado 2x para o mesmo segmento · MECANISMO CONFIRMADO COM NÚMEROS 29/08
+## ACHADO-13 — `faturar_segmento` duplica receita se chamado 2x para o mesmo segmento · RESOLVIDO 30/08/2026
 
-**Escalado.** Deixou de ser "não confirmado". A Costura 2 da
+**RESOLVIDO (docs/db/TAREFA_ACHADO13.md, passo 5 do ROTEIRO).**
+`faturar_segmento` (mod_contabil.py) passou a ler o já-reconhecido do
+próprio livro (`_mov(..., "4.1.01"/"4.2.01", "credor", ...)` — medido como
+LÍQUIDO de estornos em `tests/test_mov_credor_liquido_estorno.py`, não
+bruto) e a faturar só o **delta** contra o `valor` recebido, que passou a
+significar "o total que deve estar reconhecido", não um incremento. Delta
+negativo é recusado com erro nomeado (citando os dois números); delta ~0 é
+no-op; o split usa/resto não mudou — passou a repartir o delta em vez do
+total. Único chamador em produção (`main.py:1338`, dentro de
+`_fin_faturamento_segmentado_seguro`) já passava o total do segmento a
+cada chamada — não precisou de ajuste. `tests/test_aditivo_costuras.py::
+test_costura2_reemissao_nao_duplica_o_ja_faturado` perdeu o `xfail` no
+mesmo commit do conserto.
+
+**Escalado em 29/08** (histórico, antes do conserto): deixou de ser "não
+confirmado". A Costura 2 da
 `TAREFA_ADITIVO` reproduziu: o split usa/resto decide apenas **qual conta
 absorve o débito** — a receita em 4.1.01/4.2.01 é creditada pelo **valor
 cheio a cada chamada**, sem nenhuma noção de quanto já foi reconhecido.

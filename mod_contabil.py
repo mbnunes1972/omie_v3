@@ -1462,10 +1462,21 @@ def saldo_adiantamento_projeto(db, owner_tipo, owner_id, projeto_id):
 
 def faturar_segmento(db, owner_tipo, owner_id, projeto_id, segmento, valor, ref_base, data=None):
     """Fatura um segmento da receita (B1): 'mercadoria' → 4.1.01 (NF-e) | 'servico' → 4.2.01 (NFS-e).
-    Faz o SPLIT do valor entre baixar o Adiantamento do projeto (2.1.06, até o saldo em aberto) e
+    `valor` é o TOTAL que deve estar reconhecido para este projeto neste segmento — não um
+    incremento. A função lê o que o livro já tem reconhecido (`_mov(..., "credor")` na própria
+    conta de receita — LÍQUIDO de estornos, medido em tests/test_mov_credor_liquido_estorno.py:
+    um estorno de NF-e cancelada debita a mesma conta e reduz esta leitura) e fatura só a
+    DIFERENÇA (delta). Isso protege contra dois documentos fiscais faturando o mesmo segmento do
+    mesmo projeto (ACHADO-13) — a idempotência por `ref` só protege o MESMO documento duas vezes.
+
+    Delta < 0 (o total pedido é MENOR que o já reconhecido) é recusado: reduzir receita
+    reconhecida é estorno, não refaturamento — não implementado aqui (correção passa pela rota de
+    estorno, quando existir). Delta ~ 0 é no-op (nada novo a faturar).
+
+    Faz o SPLIT do DELTA entre baixar o Adiantamento do projeto (2.1.06, até o saldo em aberto) e
     constituir Contas a Receber (1.1.02) pelo resto. Idempotente por documento (refs `ref_base:adiantado`
     e `ref_base:areceber`) e crash-safe: se a 1ª perna já existe, o split é RECUPERADO dela (não
-    recalculado do pool, que já mudou). Invariantes: soma das pernas == valor; 2.1.06 do projeto ≥ 0."""
+    recalculado do pool, que já mudou). Invariantes: soma das pernas == delta; 2.1.06 do projeto ≥ 0."""
     if segmento not in ("mercadoria", "servico"):
         raise ValueError("segmento inválido: %s" % segmento)
     valor = round(float(valor or 0), 2)
@@ -1478,11 +1489,22 @@ def faturar_segmento(db, owner_tipo, owner_id, projeto_id, segmento, valor, ref_
     ja_r = lancamento_por_ref(db, owner_tipo, owner_id, ref_r)
     if ja_r is not None:                       # a perna final já existe → tudo lançado
         return [l for l in (ja_a, ja_r) if l is not None]
+    conta_receita = "4.1.01" if segmento == "mercadoria" else "4.2.01"
+    ja_reconhecido = _mov(db, owner_tipo, owner_id, conta_receita, "credor", None, None,
+                          projeto_id=projeto_id)
+    delta = round(valor - ja_reconhecido, 2)
+    if delta < -0.005:
+        raise ValueError(
+            "faturar_segmento: %s do projeto %s já tem R$ %.2f reconhecido em %s; R$ %.2f "
+            "pedido reduziria a receita reconhecida — refaturamento não faz isso, correção é "
+            "estorno (não implementado)." % (segmento, projeto_id, ja_reconhecido, conta_receita, valor))
+    if delta <= 0.005:
+        return []                              # já reconhecido integralmente — nada novo a faturar
     if ja_a is not None:
         usa = ja_a["valor"]                    # crash-recovery: split congelado na 1ª perna
     else:
-        usa = round(min(saldo_adiantamento_projeto(db, owner_tipo, owner_id, projeto_id), valor), 2)
-    resto = round(valor - usa, 2)
+        usa = round(min(saldo_adiantamento_projeto(db, owner_tipo, owner_id, projeto_id), delta), 2)
+    resto = round(delta - usa, 2)
     out = []
     if usa > 0:                                # perna 1: saca do pool (registrar_evento re-checa o ref)
         out.append(registrar_evento(db, owner_tipo, owner_id, ev_adiantado, usa,

@@ -149,24 +149,14 @@ def test_costura4_revisao_apos_aditivo_assinado_duplica_cobranca(app_db, seed, h
         % total_creditado_aditivos)
 
 
-@pytest.mark.xfail(strict=True, reason="ACHADO-13/Costura 2 (medido 29/08): CONFIRMADA a regressão "
-                    "que a própria tarefa previu. faturar_segmento faz o split usa/resto (2.1.06 x "
-                    "1.1.02) pelo saldo ATUAL da conta — mas usa+resto SEMPRE soma o `valor` "
-                    "recebido inteiro em 4.1.01/4.2.01 (a conta de RECEITA), sem nenhuma noção de "
-                    "'quanto desta receita já foi reconhecido antes'. Reemitir para o mesmo "
-                    "segmento do mesmo projeto sempre credita 4.1.01 pelo valor cheio de novo — "
-                    "hoje (sem a soma da Costura 1) isso já duplicaria SE alguém emitisse 2 NF-e's "
-                    "pro mesmo segmento (é o mesmo mecanismo do ACHADO-13); com a soma da Costura 1 "
-                    "implementada SEM mexer em faturar_segmento, a 2ª NF-e pós-aditivo dobra o "
-                    "Val_Cont original. NÃO implementar a soma da Costura 1 sem resolver isto "
-                    "junto — a regra que a própria tarefa pede.")
 def test_costura2_reemissao_nao_duplica_o_ja_faturado(app_db, seed, http_client_factory, monkeypatch):
-    """Simula o que a Costura 1 faria (somar aditivo ao Val_Cont segmentado) via monkeypatch em
-    `_valores_segmentados_do_projeto` — SEM implementar a soma de verdade (fora do escopo desta
-    tarefa). MEDIDO: `faturar_segmento` NÃO é delta-aware para a RECEITA — o split usa/resto só
-    decide qual conta de contrapartida (2.1.06 x 1.1.02) absorve o débito; o crédito a 4.1.01
-    sempre soma usa+resto = o `valor` passado inteiro, de novo, a cada chamada. Escrito ANTES de
-    qualquer conserto, pra travar a regressão que a soma da Costura 1 introduziria sozinha."""
+    """ACHADO-13 (docs/db/TAREFA_ACHADO13.md, passo 5 do ROTEIRO): CONSERTADO — `faturar_segmento`
+    agora é delta-aware na receita (lê `_mov(..., "credor")` na própria conta de 4.1.01/4.2.01,
+    líquido de estornos, e fatura só a diferença contra o `valor` recebido, que passou a
+    significar "o total que deve estar reconhecido"). Simula o que a Costura 1 faria (somar
+    aditivo ao Val_Cont segmentado) via monkeypatch em `_valores_segmentados_do_projeto` — SEM
+    implementar a soma de verdade (fora do escopo desta tarefa, ver ACHADO-12/passo 7) — e
+    confirma que a 2ª NF-e pós-aditivo fatura só o incremento, não o total somado de novo."""
     import main
     nome, pid, oid = _setup(app_db, seed)
     c = _login(http_client_factory, "dir_l1")

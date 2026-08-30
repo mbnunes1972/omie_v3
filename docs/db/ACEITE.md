@@ -44,7 +44,7 @@ não depois.
 | 10 | `_fin_evento_seguro` código morto | `test_pdv_visao_unificada` | fechado |
 | 11 | docstring de `conciliar_final` | — | fechado (documental) |
 | 12 | aditivo não é faturado nem cobrado | `test_bateria_ciclo` (cenários `tem_aditivo`), `test_aditivo_costuras` | **provado** |
-| 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (strict) | **provado** |
+| 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (`xfail` removido no commit do conserto, 30/08) + `test_mov_credor_liquido_estorno` (medição do ponto 2, líquido de estornos) | **CONSERTADO** — primeiro conserto da jornada |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
 | 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
 | 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16::test_conciliacao_final_recusa_com_provisao_nunca_efetivada` (strict — aceite da recusa) + `test_aceite_achado16::test_mecanismo_hoje_cancela_saldo_sem_tocar_5101` (medição do mecanismo, verde hoje e depois) | **provado (a recusa)** — controle negativo confirmado (XPASS quebrou a suíte); o aceite dos vereditos (efetivada/encerrada com valor menor/não se aplica/ainda vai chegar) nasce com a implementação do passo 8, cobrindo a regra das duas pernas (efetivar pelo valor real, só então reverter o resíduo) |

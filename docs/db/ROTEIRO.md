@@ -20,6 +20,45 @@ envelhece no primeiro commit e vira uma terceira fonte de verdade. A tarefa
 diz o que muda, onde e sob qual regra; o código nasce no commit, e quem
 garante o resultado é o teste da etapa anterior — não o texto.
 
+## Onde estamos
+
+Atualizar **a cada passo concluído**. Sem isto ninguém sabe o estado sem
+reconstruir o histórico — e a pergunta "a sequência está sendo seguida?"
+deixa de ter resposta rápida.
+
+| passo | estado |
+|---|---|
+| 1 · teste do ACHADO-16 | **feito** — `c7b8834` |
+| 2 · teste do ACHADO-03 | **feito** — `b194f0a` |
+| 3 · citação da costura 4 | **feito** — `b194f0a` (e a da costura 2, achada no caminho) |
+| 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
+| 5 · ACHADO-13 delta-aware | **em execução** |
+| 6 em diante | não iniciados |
+
+**Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
+`git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
+
+**O contador de progresso:**
+
+```
+grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
+```
+
+Hoje **16** (linhas, não testes — serve como tendência, não como precisão).
+No fim da Fase 4 tem que ser zero.
+
+## Quando aparece achado novo no meio de um passo
+
+Vai acontecer — o ACHADO-21 nasceu assim, no meio de uma medição. A regra:
+
+1. O achado ganha número e entra em `ACHADOS_CONTABEIS.md` **na hora**.
+2. Entra na fila deste roteiro, na posição que a gravidade dele pedir.
+3. **Não é consertado dentro do passo em andamento** — a não ser que
+   bloqueie o passo. Fora isso, o passo termina primeiro.
+
+Inserir trabalho no meio de um passo é como um plano linear volta a ser
+exploratório sem ninguém decidir isso.
+
 ## A regra de cada passo
 
 **Teste primeiro, sempre.** O `xfail(strict=True)` que descreve o erro entra

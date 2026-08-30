@@ -33,7 +33,8 @@ deixa de ter resposta rápida.
 | 3 · citação da costura 4 | **feito** — `b194f0a` (e a da costura 2, achada no caminho) |
 | 4 · aceites do 18/19/20 | **feito** — `b194f0a` |
 | 5 · ACHADO-13 delta-aware | **feito** — `8c5aca9` |
-| 6 em diante | não iniciados |
+| 6 · ACHADO-21 + recebíveis do aditivo | tarefa escrita |
+| 7 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -85,10 +86,14 @@ Bloqueia usar o sistema para decidir. **Esta ordem não é negociável:** somar
 antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
 
 5. **ACHADO-13** — `faturar_segmento` delta-aware na conta de receita.
-6. **ACHADO-21 + recebíveis do aditivo, juntos.** Dependem um do outro: a
-   forma de pagamento coletada na assinatura seria apagada pelo recálculo, e
-   é a imutabilidade pós-assinatura que impede. Entram no mesmo passo o
-   predicado explícito do aditivo e a segmentação congelada.
+6. **ACHADO-21 + recebíveis do aditivo, juntos**, precedidos da extração de
+   `valor_contratado_do_projeto` (contrato + aditivos assinados). Dependem um
+   do outro: a forma de pagamento coletada na assinatura seria apagada pelo
+   recálculo, e é a imutabilidade pós-assinatura que impede.
+   `docs/db/TAREFA_ACHADO21.md`.
+   *Ajustado em 30/08: o predicado explícito e a segmentação congelada saíram
+   daqui para o passo 7 — são sobre a soma para faturar, não sobre
+   imutabilidade.*
 7. **ACHADO-12** — soma contrato + aditivos em `_valores_segmentados_do_projeto`.
 8. **ACHADO-16** — vereditos da Conciliação Final + relatório de reversões.
 9. **ACHADO-18** — guarda `valor_total > 0` antes de contrato e NF-e.

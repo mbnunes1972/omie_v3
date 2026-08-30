@@ -36,7 +36,7 @@ deixa de ter resposta rápida.
 | 6 · ACHADO-21 + recebíveis do aditivo | **feito** — `c2c819d` |
 | 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
 | 8 · ACHADO-16, vereditos da Conciliação Final | **feito** — `28be877` |
-| 9 · ACHADO-18, guarda de `valor_total` | tarefa escrita |
+| 9 · ACHADO-18, guarda de `valor_total` | **feito** — `bb32a14` |
 | 10 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -50,9 +50,9 @@ conserto.)
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **12** (era 13 — o `xfail` do passo 1/ACHADO-16 saiu). Linhas, não
-testes — serve como tendência, não como precisão. No fim da Fase 4 tem que
-ser zero.
+Hoje **10** (era 12 — os dois `xfail` do passo 4/ACHADO-18 saíram). Linhas,
+não testes — serve como tendência, não como precisão. No fim da Fase 4 tem
+que ser zero.
 
 ## Quando aparece achado novo no meio de um passo
 

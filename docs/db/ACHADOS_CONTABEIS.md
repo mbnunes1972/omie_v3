@@ -1690,3 +1690,74 @@ número contábil) — mas em produção, hoje, é bloqueio total: nenhum aditiv
 completa a 2ª assinatura pela tela.
 
 **Grupo:** 1 — bloqueia um fluxo de negócio inteiro, não é só higiene.
+
+---
+
+## ACHADO-26 — a Conciliação Final não manda veredito nenhum: ou o projeto trava, ou o veredito é contornado em silêncio
+
+Encontrado no levantamento F2-2 (docs/db/TAREFA_CONTRATOS_UI.md), que a
+tarefa já apontava como suspeito grave: se a tela não manda vereditos,
+nenhum projeto se conclui pela interface. **Confirmado — e pior do que
+"não conclui": há um segundo caminho que conclui, mas sem o veredito
+nunca existir.**
+
+**O que a tela manda:** `conciliarFinal()` (static/index.html:20045) chama
+`POST /ciclo/21/conciliar` com `body: '{}'` — sempre, sem exceção. Nenhuma
+string do vocabulário de veredito (`encerrada_valor_menor`,
+`nao_se_aplica`, `ainda_vai_chegar`) aparece em `static/index.html` — zero
+ocorrências, confirmado por busca. Não existe formulário, campo ou modal
+para dar um veredito nomeado.
+
+**Caminho 1 — bloqueio direto:** se alguma rubrica de provisão (grupo
+2.1.04.x, exceto Impostos/Custo Financeiro) está em aberto quando o
+usuário clica "Concluir Conciliação Final", `mod_contabil.conciliar_final`
+recusa com `ValueError` — HTTP 400, mostrado via `showToast`:
+*"Conciliação Final recusada: falta veredito para `<código>` — toda
+provisão em aberto precisa de um veredito nomeado antes do projeto
+fechar."* Não há nenhuma ação na tela que o usuário possa tomar A PARTIR
+desta mensagem — o campo que falta não existe em lugar nenhum da UI.
+
+**Caminho 2 — contorno silencioso (o achado mais sério):** a mesma tela da
+Conciliação Final mostra uma tabela editável de provisões
+(`_reconProvTabelaHtml(..., {editavel:true, prefixo:'efc-'})`) com botões
+"Efetivar" e **"Resolver"**, que chamam `/api/financeiro/efetivar-provisao`
+e `/api/financeiro/resolver-saldo-provisao` diretamente —
+`mod_contabil.resolver_saldo_provisao` **zera o saldo da provisão sem
+exigir veredito nenhum e sem gravar nada em `VeredictoProvisao`**. Se o
+usuário clicar "Resolver" em cada rubrica aberta ANTES de clicar
+"Concluir", `abertas` fica vazia, `conciliar_final({})` passa limpo, e o
+projeto fecha — **mas o mecanismo inteiro do ACHADO-16 (veredito nomeado,
+motivo, tabela de auditoria, `relatorio_projetos_encerrados_por_reversao`)
+nunca é acionado.** `resolver_saldo_provisao` é uma função legítima
+(usada internamente por `resolver_veredito_provisao`), mas seu endpoint
+próprio permite pular o veredito por inteiro — é o único caminho que a
+tela oferece pra zerar uma rubrica, então é o caminho que todo usuário
+real necessariamente usa.
+
+**Por que é mais grave que o ACHADO-25:** aquele bloqueia um fluxo
+(aditivo). Este tem DOIS problemas simultâneos no fluxo mais importante do
+sistema (o fechamento que a auditoria inteira girou em torno de medir):
+ou o projeto não fecha (Caminho 1), ou fecha exatamente como fechava
+ANTES do ACHADO-16 ser corrigido no backend — sem nenhum registro de por
+quê uma provisão foi zerada sem efetivação. O conserto do ACHADO-16 no
+código nunca chega a proteger um usuário real, porque a tela nunca oferece
+o mecanismo que o protegeria.
+
+**Não é conserto desta tarefa** (F2-2 é levantamento — ver
+docs/db/TAREFA_CONTRATOS_UI.md). Registrado e enfileirado.
+
+**Conserto provável:** a tabela editável da Conciliação Final precisa, por
+rubrica em aberto, de um seletor de veredito (`encerrada_valor_menor` com
+valor efetivado, `nao_se_aplica` com motivo, `ainda_vai_chegar`) — e
+"Concluir Conciliação Final" monta o corpo `vereditos` a partir dele, em
+vez de mandar `{}`. Decisão de produto (rótulos, onde, se "Resolver"
+continua existindo fora deste fluxo ou é removido do card da Conciliação
+Final) cabe ao Marcelo.
+
+**Consequências no número final:** nenhuma medida nesta tarefa (é achado
+de UI). Em uso real: todo projeto concluído pela tela até hoje que tinha
+provisão em aberto foi fechado via "Resolver", sem veredito nomeado nem
+motivo registrado — o mesmo ponto cego que o ACHADO-16 mediu originalmente,
+reaberto pela tela.
+
+**Grupo:** 1 — é o fluxo de fechamento do sistema inteiro.

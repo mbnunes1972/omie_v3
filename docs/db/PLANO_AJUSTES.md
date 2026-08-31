@@ -395,6 +395,45 @@ alguém tocar naquela tela.
 - Aditivo tem **recebíveis próprios**: a assinatura coleta forma de pagamento
   e materializa `Recebivel` com a mesma mecânica do contrato.
 
+## Como impedir que mudança de contrato de API vire cegueira de UI (F2-2)
+
+docs/db/TAREFA_CONTRATOS_UI.md pediu uma recomendação, não código. Três
+direções, do mais barato ao mais caro:
+
+1. **Varredura estática de `static/index.html`** — um teste que faz parse
+   dos `fetch(...)` para rotas conhecidas e confere se o corpo enviado
+   contém as chaves que aquela rota hoje exige (uma tabela pequena,
+   mantida à mão, espelhando as guardas já escritas em `main.py`). Custo:
+   baixo — um arquivo, sem infraestrutura nova. Cobertura: pega
+   **ausência** de campo (teria pego o ACHADO-25 e o ACHADO-26 no mesmo
+   commit que os introduziu — `peAditivoAssinar` nunca cita
+   `forma_pagamento`; `conciliarFinal()` nunca cita `vereditos`). Não pega
+   **qualidade** do valor (manda a chave, mas vazia) — não pegaria sozinho
+   o ACHADO-24 original.
+2. **Contrato declarado por endpoint, lido pelos dois lados** — um schema
+   (JSON/dict) por rota, associado à guarda no backend E consultado por um
+   teste (ou por validação no próprio JS antes do `fetch`). Custo: médio —
+   exige reescrever as guardas ad-hoc de hoje numa forma declarativa,
+   endpoint por endpoint, à medida que cada um for tocado (não como
+   reescrita única). Cobertura: pega ausência E qualidade (um schema pode
+   exigir "pelo menos uma parcela ou entrada_valor > 0", não só "a chave
+   existe") — e dá erro de UX melhor, avisando antes do round-trip.
+3. **E2E de navegador nos fluxos críticos** (aditivo, contrato, Conciliação
+   Final) — Playwright/Selenium dirigindo a tela real. Custo: alto — infra
+   nova, testes lentos e mais frágeis a mudança visual. Cobertura: total —
+   é o único que pegaria o ACHADO-26 por inteiro (o campo nem existe pra
+   descrever num schema; só rodar a tela mostra que "Concluir" nunca
+   oferece veredito nenhum).
+
+**Recomendação:** fazer a **1** agora — é barata, teria pego os dois
+achados que já mordemos, e serve de rede permanente contra o próximo. Não
+esperar a 2 ou a 3 para isso. Migrar pra **2** endpoint por endpoint,
+como parte do próprio conserto de cada achado de UI (ACHADO-25, ACHADO-26)
+— o schema nasce junto com a correção, não depois. Reservar a **3** para
+só os 2-3 fluxos mais caros de errar (Conciliação Final é um deles) —
+não para a suíte inteira, o custo não compensa fora dos fluxos terminais/
+irreversíveis.
+
 ## Decisões ainda abertas
 
 1. **ACHADO-17**: implementar a retenção de comissão, ou renomear a conta?

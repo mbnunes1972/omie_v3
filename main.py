@@ -711,22 +711,27 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
                 "com_adm":             d.get("Com_Adm_Orc"),
             }
             ot, oid = mod_contabil.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
-            # FASE D2: registra a venda CHEIA (Val_Cont) em Receita a Realizar (1.1.02 × 2.1.06) — não toca a DRE
-            val_cont = round(float(getattr(orc2, "valor_total", 0) or 0), 2)
-            if val_cont > 0:
-                mod_contabil.registrar_evento(db, ot, oid, "registro_venda_contrato", val_cont,
+            # ACHADO-02 (docs/db/TAREFA_ACHADO02_03.md, passo 10): registra o VAVO — não o Val_Cont
+            # cheio — em Receita a Realizar (1.1.02 × 2.1.06); não toca a DRE. O preço do móvel não
+            # muda conforme a forma de pagamento — o custo financeiro (Val_Cont − VAVO) segue rota
+            # própria, abaixo, por ramo.
+            vavo = round(float(d.get("VAVO") or 0), 2)
+            if vavo > 0:
+                mod_contabil.registrar_evento(db, ot, oid, "registro_venda_contrato", vavo,
                                               projeto_id=projeto_id, ref=ref_base + ":venda")
             mod_contabil.constituir_provisoes_fechamento(db, ot, oid, projeto_id, valores, ref_base)
-            # Custo financeiro = Val_Cont − VAVO. Ramo pela forma de pagamento (Fatia B / spec §3.4):
-            #  - financeira (Aymoré/Cartão): DESPESA financeira diferida (provisão, rota própria);
-            #  - loja (Venda Programada/Parcelamento Loja, capital próprio): RECEITA financeira a apropriar (sem despesa).
+            # Custo financeiro = Val_Cont − VAVO. Ramo pela tabela decidida em 30/08 (ACHADO-02/03):
+            #  - financeira (Aymoré/Cartão): retenção esperada, posição de balanço (nada no resultado);
+            #  - loja / loja_antecipacao: receita financeira a apropriar (capital próprio, sem despesa) —
+            #    o deságio do banco na antecipação é custo SEPARADO, só no evento da antecipação.
             # (O box de override loja×financeira na AF1 entra na etapa B.2.)
             cust_fin = round(float(getattr(orc2, "valor_total", 0) or 0) - float(d.get("VAVO") or 0), 2)
             if cust_fin > 0:
                 _ramo = _ramo_financeiro_efetivo(orc2)
-                _ev = "fechamento_venda_custo_financeiro" if _ramo == "financeira" else "constituir_juros_direto"
-                mod_contabil.registrar_evento(db, ot, oid, _ev, cust_fin,
-                                              projeto_id=projeto_id, ref=ref_base + ":cfin")
+                _ev = mod_contabil.evento_custo_financeiro(_ramo)
+                if _ev:
+                    mod_contabil.registrar_evento(db, ot, oid, _ev, cust_fin,
+                                                  projeto_id=projeto_id, ref=ref_base + ":cfin")
         finally:
             db.close()
     except Exception as e:
@@ -1315,36 +1320,53 @@ def _valores_segmentados_do_projeto(db, loja_id, projeto_nome):
     val_cont = valor_contratado_do_projeto(db, projeto_nome)
     if val_cont <= 0:
         return None
+    # ACHADO-02 (docs/db/TAREFA_ACHADO02_03.md, passo 10): a face fiscal segmenta o VAVO, não o
+    # Val_Cont — Val_Cont inclui o custo financeiro (cust_fin = Val_Cont − VAVO), que tem rota
+    # própria por ramo (receita financeira a apropriar, ou retenção esperada). Faturar o Val_Cont
+    # cheio em 4.1.01/4.2.01 e RECONHECER o cust_fin de novo, separadamente, contava o mesmo
+    # dinheiro duas vezes — o preço do móvel (VAVO) não muda conforme a forma de pagamento.
+    vavo = vavo_contratado_do_projeto(db, projeto_nome)
     pj = _projeto_da_loja(db, projeto_nome, loja_id)
     params = json.loads(pj.parametros_json) if (pj and pj.parametros_json) else {}
     seg = segmentacao_efetiva(resolver_segmentacao(loja.pct_mercadoria, loja.pct_servico), params)
-    merc, serv = segmentar(val_cont, seg["pct_mercadoria"])
-    return {"val_cont": val_cont, "mercadoria": merc, "servico": serv, "seg": seg, "orc": orc}
+    merc, serv = segmentar(vavo, seg["pct_mercadoria"])
+    return {"val_cont": val_cont, "vavo": vavo, "mercadoria": merc, "servico": serv, "seg": seg, "orc": orc}
 
 
-def valor_contratado_do_projeto(db, nome_safe):
-    """Fonte ÚNICA de "quanto já foi contratado" neste projeto (docs/db/TAREFA_ACHADO21.md, 6-a):
-    Val_Cont do orçamento do Contrato + Val_Cont de cada orçamento de complemento cujo Aditivo
-    está TOTALMENTE assinado (`Aditivo.status == "assinado"` — as duas partes; rascunho,
-    "para_assinatura" e assinatura parcial de uma só parte NÃO contam). O critério de "assinado"
-    fica explícito aqui, não inferido por quem chama.
-
-    Usada pelo ACHADO-21 (calcular a diferença de uma revisão de PE nova contra o que já foi
-    contratado, não contra o contrato sozinho) e pelo ACHADO-12/passo 7 (somar contrato +
-    aditivos para faturar). Extração pura — sem mudar comportamento nenhum de quem ainda não a
-    chama. Retorna 0.0 se o projeto não tem contrato."""
+def _somar_campo_contratado_do_projeto(db, nome_safe, campo):
+    """Soma um campo do Orcamento do Contrato + de cada orçamento de complemento cujo Aditivo está
+    TOTALMENTE assinado (mesmo predicado de `valor_contratado_do_projeto`, docs/db/
+    TAREFA_ACHADO21.md, 6-a) — extraído pra servir tanto o Val_Cont quanto o VAVO (ACHADO-02,
+    passo 10) sem duplicar a travessia contrato+aditivos. Retorna 0.0 se o projeto não tem
+    contrato."""
     contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
                   .order_by(Contrato.id.desc()).first())
     if contrato is None:
         return 0.0
     orc_ct = db.get(Orcamento, contrato.orcamento_id)
-    total = round(float(getattr(orc_ct, "valor_total", 0) or 0), 2)
+    total = round(float(getattr(orc_ct, campo, 0) or 0), 2)
     aditivos_assinados = (db.query(Aditivo)
                             .filter_by(projeto_nome=nome_safe, status="assinado").all())
     for adt in aditivos_assinados:
         orc_aj = db.get(Orcamento, adt.orcamento_complemento_id)
-        total += round(float(getattr(orc_aj, "valor_total", 0) or 0), 2)
+        total += round(float(getattr(orc_aj, campo, 0) or 0), 2)
     return round(total, 2)
+
+
+def valor_contratado_do_projeto(db, nome_safe):
+    """Fonte ÚNICA de "quanto já foi contratado" (Val_Cont) neste projeto (docs/db/
+    TAREFA_ACHADO21.md, 6-a): contrato + aditivos assinados. Usada pelo ACHADO-21 (calcular a
+    diferença de uma revisão de PE nova contra o que já foi contratado, não contra o contrato
+    sozinho) e pelo ACHADO-12/passo 7 (somar contrato + aditivos para faturar)."""
+    return _somar_campo_contratado_do_projeto(db, nome_safe, "valor_total")
+
+
+def vavo_contratado_do_projeto(db, nome_safe):
+    """ACHADO-02 (docs/db/TAREFA_ACHADO02_03.md, passo 10): o VAVO contratado — contrato +
+    aditivos assinados, mesma soma de `valor_contratado_do_projeto`, mas do preço à vista (sem o
+    custo financeiro). É o que de fato é faturado como receita de vendas (4.1.01/4.2.01) — Val_Cont
+    inclui `cust_fin = Val_Cont − VAVO`, que tem rota própria por ramo."""
+    return _somar_campo_contratado_do_projeto(db, nome_safe, "vavo")
 
 
 def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc):
@@ -11275,8 +11297,12 @@ class Handler(BaseHTTPRequestHandler):
                 if orc is None:
                     self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                 ramo = _ramo_financeiro_efetivo(orc)
-                if ramo not in ("loja_antecipacao", "financeira"):
-                    self.send_json({"ok": False, "erro": "Só no ramo antecipação/financeira (atual: %s)" % ramo}, code=400); return
+                # ACHADO-02/03 (passo 10): 'financeira' não tem evento de antecipação — a
+                # retenção esperada dela é conferida por `conferir_retencao_financeira`
+                # (rota própria, "nada no resultado"), não pelo custo real da antecipação
+                # bancária, que só existe pra quem de fato antecipa (loja_antecipacao).
+                if ramo != "loja_antecipacao":
+                    self.send_json({"ok": False, "erro": "Só no ramo antecipação (atual: %s)" % ramo}, code=400); return
                 ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 seq = int(getattr(orc, "ramo_financeiro_seq", 0) or 0) + 1
                 lan = _mc.reconhecer_custo_financeiro(db, ot, own_id, orc.projeto_id, ramo, valor,

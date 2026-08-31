@@ -7,20 +7,31 @@ consequência no número final, não por facilidade de conserto.
 
 ---
 
-## ACHADO-01 — Custo Financeiro nunca reconcilia com o recebimento líquido · RESPONDIDO 30/08: a perna é o evento de conferência
+## ACHADO-01 — Custo Financeiro nunca reconcilia com o recebimento líquido · PARCIALMENTE RESOLVIDO 31/08 no passo 10 (ramo financeira); loja_antecipacao segue passo 12
 
-**A pergunta mais antiga desta auditoria tem resposta.** O que liquida a
-provisão é **a retenção real chegando** — no ramo `financeira`, a liquidação
-do cartão; no `loja_antecipacao`, a antecipação bancária. A provisão nunca
-foi dívida com ninguém: é **previsão de retenção de terceiro**, e se encerra
-quando a retenção acontece, com a diferença entre previsto e real indo para
-uma conta única de variância, nos dois sentidos — a mesma regra já decidida
-para os impostos.
+**A pergunta mais antiga desta auditoria tem resposta, e para o ramo
+`financeira` já tem código.** `mod_contabil.conferir_retencao_financeira`
+(docs/db/TAREFA_ACHADO02_03.md, passo 10) é a perna de liquidação: cancela o
+par ativo×provisão (2.1.04.19/1.1.06.19) constituído no fechamento e manda a
+diferença entre a retenção esperada e a real para 4.4.05 ("Ajuste de Retenção
+Financeira"), mesma conta nos dois sentidos — a mesma regra já decidida para
+os impostos. **Nada disparado automaticamente ainda** — falta o endpoint/
+gatilho que chama essa função quando o assistente financeiro confere o
+extrato; isso é o que resta do passo 12 para este ramo.
+
+Para `loja_antecipacao`, o passo 10 mudou o desenho: no fechamento ela passou
+a ser receita financeira a apropriar, **igual a `loja`** — não constitui mais
+a Provisão de Custo Financeiro. O deságio do banco na antecipação (quando ela
+de fato acontece) segue reconhecido por `reconhecer_custo_financeiro`, que
+agora se auto-constitui e resolve no mesmo evento (não precisa mais de uma
+estimativa prévia para capar) — **esse pedaço do ACHADO-01 está fechado por
+completo** para este ramo: não sobra provisão nenhuma para liquidar depois.
 
 Isso saiu da decisão da tabela por ramo (30/08, ver `PLANO_AJUSTES.md`) e do
 que o usuário explicou sobre a operação: a financeira retém o valor, o
-dinheiro não passa pelo caixa da loja. O conserto continua sendo o passo 12
-do roteiro, mas deixou de ser desenho em aberto.
+dinheiro não passa pelo caixa da loja. O passo 12 do roteiro encolhe: falta
+só o gatilho de conferência para `financeira` (a função já existe e está
+testada) — `loja_antecipacao` não precisa de nada a mais.
 
 O texto original do achado, que segue abaixo, continua descrevendo o defeito
 corretamente — só a pergunta final estava sem resposta.
@@ -63,7 +74,33 @@ fechar esse ciclo?
 
 ---
 
-## ACHADO-02 — Ramo "loja": a Receita Financeira pode ser reconhecida duas vezes (achado do teste de ciclo completo, Parte 4)
+## ACHADO-02 — Ramo "loja": a Receita Financeira pode ser reconhecida duas vezes (achado do teste de ciclo completo, Parte 4) · RESOLVIDO 31/08/2026, junto do ACHADO-03
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO02_03.md, passo 10 do ROTEIRO — fundido com o
+ACHADO-03: o 02 é a consequência, o 03 o roteador que a produzia).**
+`registro_venda_contrato`/`faturar_segmento` passam a usar o **VAVO** — não o
+Val_Cont cheio — em `1.1.02×2.1.06` e em `4.1.01`/`4.2.01`. `cust_fin =
+Val_Cont − VAVO` tem rota própria por ramo (`_RAMO_CFIN_EVENTO`, também
+corrigida — ver ACHADO-03 abaixo): receita financeira a apropriar (loja/
+loja_antecipacao) ou retenção esperada, posição de balanço (financeira). A
+receita de vendas nunca mais inclui o custo financeiro, e o ramo que
+reconhece esse custo faz isso uma vez só, na conta certa.
+
+`valor_contratado_do_projeto`/`_valores_segmentados_do_projeto` ganharam o
+espelho `vavo_contratado_do_projeto` (mesma soma contrato+aditivos assinados,
+campo `vavo` em vez de `valor_total`) — sem essa segunda soma, a segmentação
+mercadoria/serviço continuaria proporcional ao Val_Cont, arrastando o
+cust_fin junto.
+
+Aceite nº 1 (`tests/test_aceite_achado02_03.py::test_aceite1_...`): mesma
+venda, quatro ramos (à vista/loja/loja_antecipacao/financeira), mesma receita
+em 4.1.01 — é o teste que prova a decisão inteira.
+`test_ramo_loja_receita_total_deveria_contar_o_custo_financeiro_uma_vez_so`
+(o teste de medição do achado, sem `xfail` — nunca teve um, era só medição)
+foi reescrito para `test_ramo_loja_receita_total_conta_o_custo_financeiro_
+uma_vez_so`, com os mesmos números (R$ 46.300,00), agora fechando certo.
+
+**Histórico da medição (antes do conserto):**
 
 **O que acontece:** no fechamento da venda (`_fin_provisoes_venda_seguro`, main.py:739),
 `registro_venda_contrato` registra o Val_Cont CHEIO (D:1.1.02 × C:2.1.06) — e Val_Cont, por
@@ -116,7 +153,31 @@ somada, algo que não existe hoje no razão?
 
 ---
 
-## ACHADO-03 — Constituição do Custo Financeiro diverge por ramo entre dois pontos do código
+## ACHADO-03 — Constituição do Custo Financeiro diverge por ramo entre dois pontos do código · RESOLVIDO 31/08/2026, junto do ACHADO-02
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO02_03.md, passo 10 do ROTEIRO).** A medição
+original apontava a divergência certa, mas a resposta óbvia ("faça main.py
+chamar `_RAMO_CFIN_EVENTO`") estava errada: a medição da decisão (30/08)
+mostrou que **nenhuma das duas versões estava certa** — a tabela também
+mudou. `_RAMO_CFIN_EVENTO` agora é:
+
+| ramo | evento |
+|---|---|
+| `financeira` | `fechamento_venda_custo_financeiro` (retenção esperada, posição de balanço) |
+| `loja` / `loja_antecipacao` | `constituir_juros_direto` (receita financeira a apropriar) |
+
+`main.py` passou a ler a tabela (`mod_contabil.evento_custo_financeiro`) em
+vez de uma comparação binária própria — as duas fontes de verdade viraram
+uma. `trocar_ramo_custo_financeiro` (troca de ramo na AF) foi ajustada
+junto: só `financeira` é "provisão" agora — loja↔loja_antecipacao virou
+no-op contábil (eram os dois "provisão" que eram no-op entre si antes).
+
+`tests/test_aceite_achado03.py` (antes `xfail(strict=True)`, controle
+negativo confirmado) foi reescrito: hoje prova que main.py e o dicionário
+canônico **concordam** para `loja_antecipacao` — não mais uma divergência a
+corrigir.
+
+**Histórico da medição (antes do conserto):**
 
 **O que acontece:** `_fin_provisoes_venda_seguro` (main.py:749) decide qual
 evento constituir com uma comparação binária `_ramo == "financeira"` — só

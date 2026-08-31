@@ -74,7 +74,12 @@ def test_constituicao_usa_vavo_nao_val_cont(app_db, seed, monkeypatch):
     loja = db.get(app_db.Loja, seed["loja1_id"]); loja.modulos_ativos = None
     orcx = db.query(app_db.Orcamento).filter_by(loja_id=seed["loja1_id"]).first()
     orcx.valor_total = 99000.0   # Val_Cont → Cust_Fin = 99000 − 90000 = 9000
-    orcx.forma_pagamento = json.dumps({"codigo": "total_flex"})   # ramo LOJA (financiamento direto)
+    # "tipo" (não "codigo") é a chave que o frontend de fato manda (mod_recebiveis.ramo_por_tipo,
+    # achado do usuário 2026-08-13) — "tf" (Total Flex) mapeia pro ramo LOJA (financiamento direto).
+    # Com "codigo" (chave morta), _ramo_financeiro_efetivo caía em "avista" e o achado ACHADO-02/03
+    # (passo 10) expôs isso: main.py agora usa a tabela por ramo, que não trata mais "avista" como
+    # sinônimo de "loja" (o `if`/`else` binário antigo tratava).
+    orcx.forma_pagamento = json.dumps({"tipo": "tf"})   # ramo LOJA (financiamento direto)
     db.commit(); orc_id = orcx.id; db.close()
     brk = dict(r); brk["VAVO"] = 90000.0
     monkeypatch.setattr(main, "_negociacao_breakdown", lambda orc, db: brk)

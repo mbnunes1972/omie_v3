@@ -1,9 +1,10 @@
 """docs/db/TAREFA_BATERIA_CICLO.md — bateria exaustiva de ciclo completo.
 
 Um motor único (`_rodar_cenario`), cenários como dados (`_CENARIOS`), 7 invariantes iguais
-para todo cenário (`_conferir_invariantes`). NÃO CONSERTA NADA — onde uma invariante falha,
-`xfail(strict=True)` citando o ACHADO (docs/db/ACHADOS_CONTABEIS.md). Um xfail que virar
-"unexpected pass" é o sinal de que o achado foi corrigido e o marcador pode sair.
+para todo cenário (`_conferir_invariantes`). Onde uma invariante falhar, `xfail(strict=True)`
+citando o ACHADO (docs/db/ACHADOS_CONTABEIS.md) — um xfail que virar "unexpected pass" é o sinal
+de que o achado foi corrigido e o marcador pode sair. Passo 10 (docs/db/TAREFA_ACHADO02_03.md,
+ACHADO-01/02/03): os três ramos fecham sem xfail agora — `_XFAILS` fica vazio.
 
 Toggles de parametros (enumerados do código — mod_orcamento_params.py:13-29,
 mod_negociacao.py:19-24 — NÃO é só o aditivo que afeta contabilização):
@@ -132,8 +133,9 @@ def _rodar_cenario(app_db, cenario, oid):
 
     ramo = cenario["ramo"]
 
-    # ── venda + contrato (main.py:_fin_provisoes_venda_seguro, main.py:739-751) ──
-    mc.registrar_evento(db, ot, oid, "registro_venda_contrato", val_cont, projeto_id=P, ref="rv:" + P)
+    # ── venda + contrato (main.py:_fin_provisoes_venda_seguro) — ACHADO-02 (passo 10): VAVO, não
+    # Val_Cont cheio, em 1.1.02×2.1.06. O custo financeiro (cust_fin) tem rota própria, abaixo. ──
+    mc.registrar_evento(db, ot, oid, "registro_venda_contrato", vavo, projeto_id=P, ref="rv:" + P)
     ciclo.passo("venda_contrato")
 
     # ── provisões (constituir_provisoes_fechamento cobre as 16 matching-pleno + impostos) ──
@@ -142,11 +144,12 @@ def _rodar_cenario(app_db, cenario, oid):
         valores.setdefault(chave, _VALOR_BASE[chave])
     valores["impostos"] = impostos_valor
     mc.constituir_provisoes_fechamento(db, ot, oid, P, valores, ref_base="pf:" + P)
-    # custo financeiro: rota própria por ramo (ver ACHADO-03 — main.py:_fin_provisoes_venda_seguro
-    # usa comparação binária == "financeira"; aqui uso o dict canônico `_RAMO_CFIN_EVENTO`,
-    # que é o comportamento CORRETO — o cenário de ramo errado é achado, não replicado aqui)
+    # custo financeiro: rota própria por ramo, via o dict canônico `_RAMO_CFIN_EVENTO`/
+    # `evento_custo_financeiro` — main.py agora lê a mesma tabela (ACHADO-03), e a tabela em si
+    # mudou (ACHADO-02/03, passo 10): loja_antecipacao é receita financeira a apropriar, IGUAL a
+    # loja — só 'financeira' constitui a retenção esperada (provisão).
     if cust_fin > 0:
-        evento_cfin = mc._RAMO_CFIN_EVENTO.get(ramo)
+        evento_cfin = mc.evento_custo_financeiro(ramo)
         mc.registrar_evento(db, ot, oid, evento_cfin, cust_fin, projeto_id=P, ref="cf:" + P)
     ciclo.passo("provisoes")
 
@@ -165,17 +168,18 @@ def _rodar_cenario(app_db, cenario, oid):
         ciclo.passo("aditivo")
 
     # ── NF-e (main.py:_fin_faturamento_segmentado_seguro — ACHADO-12 CONSERTADO no passo 7:
-    # fatura valor_contratado_do_projeto = Val_Cont do contrato + aditivos ASSINADOS) ──
-    mc.faturar_segmento(db, ot, oid, P, "mercadoria", val_cont + valor_aditivo, ref_base="fat:" + P)
+    # fatura valor_contratado_do_projeto = Val_Cont do contrato + aditivos ASSINADOS; ACHADO-02,
+    # passo 10: o VALOR faturado é o VAVO, não o Val_Cont cheio) ──
+    mc.faturar_segmento(db, ot, oid, P, "mercadoria", vavo + valor_aditivo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, impostos_valor, ref_base="imp:" + P)
     ciclo.passo("nfe")
 
     # ── recebimento: coleta tudo que 1.1.02 registra como em aberto (venda original + aditivo,
-    # se houver — o cliente deve o valor cheio do contrato, faturado ou não) ──
+    # se houver — o cliente deve o VAVO cheio do contrato, faturado ou não) ──
     a_receber = _saldo(db, ot, oid, "1.1.02", P) or 0.0
     if a_receber > 0:
         mc.registrar_recebimento_venda(db, ot, oid, P, a_receber, ref="rec:" + P)
-    if ramo == "loja":
+    if ramo in ("loja", "loja_antecipacao"):
         mc.apropriar_juros_loja(db, ot, oid, P, cust_fin, ref_base="jur:" + P)
     ciclo.passo("recebimento")
 
@@ -190,13 +194,16 @@ def _rodar_cenario(app_db, cenario, oid):
     if montagem_aditivo > 0:
         mc.efetivar_provisao(db, ot, oid, P, "2.1.04.02", montagem_aditivo,
                             ref="ex:" + P + ":montagem:aditivo", forma_pagamento="a_prazo")
-    if ramo in ("financeira", "loja_antecipacao") and cust_fin > 0:
-        mc.reconhecer_custo_financeiro(db, ot, oid, P, ramo, cust_fin, ref="rcf:" + P)
+    # 'financeira': conferência (ACHADO-01/02/03, passo 10) — cenário limpo, real == esperado,
+    # sem variância. loja/loja_antecipacao já fecham via apropriar_juros_loja acima; nenhuma das
+    # duas exercita o evento da antecipação aqui (não é o que esta bateria investiga).
+    if ramo == "financeira" and cust_fin > 0:
+        mc.conferir_retencao_financeira(db, ot, oid, P, cust_fin, ref_base="conf:" + P)
     ciclo.passo("fechamento")
 
     return {"db": db, "ot": ot, "oid": oid, "P": P, "ramo": ramo, "val_cont": val_cont,
             "vavo": vavo, "cust_fin": cust_fin, "cust_ad": cust_ad, "valor_aditivo": valor_aditivo,
-            "valores_rubricas": valores, "ciclo": ciclo}
+            "montagem_aditivo": montagem_aditivo, "valores_rubricas": valores, "ciclo": ciclo}
 
 
 # ── as 7 invariantes ──────────────────────────────────────────────────────────────────────────
@@ -215,25 +222,32 @@ def _conferir_invariantes(ctx):
             abertos[cod] = s
     assert not abertos, "contas transitórias abertas no fechamento: %s" % abertos
 
-    # 3: receita total == valor da venda, contada uma vez (inclui aditivo) — ACHADO-02/ACHADO-12
+    # 3: receita total == valor da venda, contada uma vez (inclui aditivo) — ACHADO-02/ACHADO-12.
+    # ACHADO-02/03 (passo 10): cust_fin só entra na receita pra loja/loja_antecipacao (receita
+    # financeira a apropriar) — 'financeira' nunca soma cust_fin ao resultado (aceite #3).
     receita_total = round((_saldo(db, ot, oid, "4.1.01", P) or 0.0)
                           + (_saldo(db, ot, oid, "4.2.01", P) or 0.0)
                           + (_saldo(db, ot, oid, "4.4.03", P) or 0.0), 2)
-    receita_esperada = round(ctx["vavo"] + ctx["cust_fin"] + ctx["valor_aditivo"], 2)
+    cust_fin_na_receita = ctx["cust_fin"] if ctx["ramo"] in ("loja", "loja_antecipacao") else 0.0
+    receita_esperada = round(ctx["vavo"] + cust_fin_na_receita + ctx["valor_aditivo"], 2)
     assert receita_total == receita_esperada, (
-        "receita total apurada = R$ %.2f; deveria ser R$ %.2f (venda + custo financeiro + "
-        "aditivo, cada um uma vez) — distorção de R$ %.2f"
+        "receita total apurada = R$ %.2f; deveria ser R$ %.2f (venda + custo financeiro, "
+        "quando entra no resultado + aditivo, cada um uma vez) — distorção de R$ %.2f"
         % (receita_total, receita_esperada, round(receita_total - receita_esperada, 2)))
 
-    # 4: custo total == soma dos custos reais reconhecidos (nenhuma rubrica 2x, nenhuma esquecida)
+    # 4: custo total == soma dos custos reais reconhecidos (nenhuma rubrica 2x, nenhuma esquecida).
+    # ACHADO-02/03 (passo 10): nenhum ramo reconhece despesa de custo financeiro nesta bateria —
+    # 'financeira' nunca reconhece (aceite #3); loja/loja_antecipacao não exercitam o evento da
+    # antecipação aqui (não é o que esta bateria investiga).
     despesa_total = round(sum(
         (_saldo(db, ot, oid, RUBRICAS_MATCHING_PLENO[k][2], P) or 0.0) for k in ctx["valores_rubricas"]
         if k != "impostos"), 2)
-    custo_esperado = round(sum(v for k, v in ctx["valores_rubricas"].items() if k != "impostos"), 2)
-    if ctx["ramo"] in ("financeira", "loja_antecipacao"):
-        despesa_total = round(despesa_total + (_saldo(db, ot, oid, "5.5.03", P) or 0.0)
-                              + (_saldo(db, ot, oid, "5.5.04", P) or 0.0), 2)
-        custo_esperado = round(custo_esperado + ctx["cust_fin"], 2)
+    # o aditivo soma montagem PRÓPRIA (constituída à parte, ref ":aditivo") em cima da base —
+    # esquecer essa soma aqui era um bug de teste mascarado pelas falhas de ACHADO-01/02 (a
+    # invariante de receita/2.1.04.19 abortava antes de chegar aqui); descoberto ao consertar o
+    # passo 10, corrigido junto.
+    custo_esperado = round(sum(v for k, v in ctx["valores_rubricas"].items() if k != "impostos")
+                          + ctx["montagem_aditivo"], 2)
     assert despesa_total == custo_esperado, (
         "custo total reconhecido = R$ %.2f; deveria ser R$ %.2f" % (despesa_total, custo_esperado))
 
@@ -308,20 +322,12 @@ _CENARIOS = _CENARIOS_NUCLEO + _CENARIOS_TOGGLE_ISOLADO + _CENARIOS_CONTROLE_POS
 # ACHADOS que fazem um cenário falhar — nome do cenário -> (achado, motivo)
 # ACHADO-12 CONSERTADO no passo 7 (docs/db/TAREFA_ACHADO12.md): a NF-e passou a faturar
 # valor_contratado_do_projeto (contrato + aditivos assinados) — tem_aditivo=True deixou de ter
-# achado próprio aqui. Os cenários com aditivo caem nos MESMOS achados que os sem aditivo
-# (ACHADO-01/02, por ramo) — o aditivo não introduz um problema novo, herda o que já existia.
+# achado próprio aqui.
+# ACHADO-01/02/03 CONSERTADOS no passo 10 (docs/db/TAREFA_ACHADO02_03.md): 4.1.01 fatura o VAVO
+# (não mais o Val_Cont cheio, ACHADO-02); loja_antecipacao usa o mesmo mecanismo de loja no
+# fechamento (ACHADO-03); financeira confere a retenção esperada contra a real (ACHADO-01/
+# conferir_retencao_financeira) — nenhum dos três ramos tem achado próprio aqui.
 _XFAILS = {}
-for _c in _CENARIOS:
-    if _c["sem_financiamento"]:
-        pass   # controle positivo — nenhum achado de custo financeiro pode se manifestar
-    elif _c["ramo"] in ("financeira", "loja_antecipacao"):
-        _XFAILS[_c["nome"]] = ("ACHADO-01", "reconhecer_custo_financeiro só baixa o ativo "
-                                            "diferido (1.1.06.19) — a Provisão de Custo "
-                                            "Financeiro (2.1.04.19) nunca é drenada")
-    elif _c["ramo"] == "loja":
-        _XFAILS[_c["nome"]] = ("ACHADO-02", "ramo 'loja': 4.1.01 fatura o Val_Cont cheio (que já "
-                                            "inclui o custo financeiro) e 4.4.03 reconhece o "
-                                            "mesmo custo financeiro de novo")
 
 
 def _marca(cenario):
@@ -364,18 +370,15 @@ def test_cobertura_de_rubricas_da_bateria():
 def test_gravar_retrato_do_balancete(app_db):
     """Grava docs/db/RETRATO_BALANCETE_BATERIA.md com os saldos finais por conta, por cenário.
 
-    Isto NÃO é uma declaração de que os números estão certos — vários estão errados hoje (ver
-    ACHADO-01/02/03/12) e entram no retrato do jeito que estão. Quem julga certo/errado são as
-    invariantes de `_conferir_invariantes` (e os cenários marcados xfail acima). Este retrato
-    existe só para que uma mudança futura de comportamento apareça como diff no arquivo."""
+    Isto NÃO é uma declaração de que os números estão certos — quem julga certo/errado são as
+    invariantes de `_conferir_invariantes` (e os cenários marcados xfail acima, hoje nenhum). Este
+    retrato existe só para que uma mudança futura de comportamento apareça como diff no arquivo."""
     linhas = [
         "# Retrato do balancete — bateria de ciclo completo\n\n",
         "**Gerado por `tests/test_bateria_ciclo.py::test_gravar_retrato_do_balancete`. "
-        "NÃO é declaração de correção — é detector de mudança.** Vários saldos abaixo estão "
-        "errados hoje (ver docs/db/ACHADOS_CONTABEIS.md, ACHADO-01/02/03/12) e aparecem no "
-        "retrato do jeito que estão. Quem julga certo/errado são as invariantes de "
-        "`tests/test_bateria_ciclo.py`, não este arquivo. Se este arquivo mudar num PR futuro, "
-        "o diff é o alarme — investigue por que o comportamento mudou.\n\n",
+        "NÃO é declaração de correção — é detector de mudança.** Quem julga certo/errado são as "
+        "invariantes de `tests/test_bateria_ciclo.py`, não este arquivo. Se este arquivo mudar "
+        "num PR futuro, o diff é o alarme — investigue por que o comportamento mudou.\n\n",
     ]
     for c in _CENARIOS:
         oid = 6500 + _CENARIOS.index(c)

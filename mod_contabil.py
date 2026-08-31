@@ -104,6 +104,10 @@ PLANO_PADRAO = [
     ("4.4.02", "Reversão de Provisões"),
     ("4.4.03", "Receita Financeira"),   # FASE B: ramo LOJA — juros do financiamento direto (competência por parcela)
     ("4.4.04", "Ganhos com Acordos Financeiros"),   # opção B (2026-07-22): contrapartida-resultado de acrescer/abater
+    ("4.4.05", "Ajuste de Retenção Financeira"),   # ACHADO-01/02/03 (passo 10, docs/db/TAREFA_ACHADO02_03.md):
+    # variância entre a retenção esperada (2.1.04.19, ramo financeira) e a real, MESMA conta nos dois
+    # sentidos (sobra credita, falta debita) — mesma regra e mesma justificativa dos impostos (4.3.01):
+    # mandar sobra pra uma conta e falta pra outra infla receita em vez de corrigir.
     ("5", "DESPESAS / CUSTOS"),
     # Formalismo pleno (decisão do usuário, 2026-07-22, Sessão 109): a despesa de cada rubrica
     # tem UMA conta, e ela mora no grupo contábil FORMAL — frete sobre compra integra o custo
@@ -1653,9 +1657,16 @@ def disparar_deltas_af(db, owner_tipo, owner_id, projeto_id, itens_alvo, ref_bas
 
 
 _RAMO_CFIN_EVENTO = {
-    "financeira":       "fechamento_venda_custo_financeiro",  # despesa financeira PROVISIONADA (taxa da financeira)
-    "loja_antecipacao": "fechamento_venda_custo_financeiro",  # despesa PROVISIONADA (antecipação bancária; custo real depois)
-    "loja":             "constituir_juros_direto",            # receita financeira a apropriar (capital próprio, sem despesa)
+    # ACHADO-02/03 (docs/db/TAREFA_ACHADO02_03.md, passo 10, tabela decidida em 30/08): quem NUNCA
+    # teve o dinheiro (financeira/cartão retém a própria taxa antes de repassar) não tem receita
+    # nem custo no fechamento — vira retenção esperada, posição de balanço (ver
+    # _PROV_DESTINO_VARIANCIA). loja_antecipacao é receita financeira a apropriar, IGUAL a loja —
+    # o deságio do banco só existe se/quando a antecipação de fato acontece, evento separado
+    # (`reconhecer_custo_financeiro`). A tabela antiga mandava financeira E loja_antecipacao pro
+    # MESMO evento de custo provisionado — nenhum dos dois estava certo.
+    "financeira":       "fechamento_venda_custo_financeiro",  # retenção esperada (posição de balanço, nada no resultado)
+    "loja_antecipacao": "constituir_juros_direto",             # receita financeira a apropriar — igual a 'loja'
+    "loja":             "constituir_juros_direto",             # receita financeira a apropriar (capital próprio, sem despesa)
     # 'avista' → None (Cust_Fin = 0)
 }
 
@@ -1668,14 +1679,15 @@ def evento_custo_financeiro(ramo):
 def trocar_ramo_custo_financeiro(db, owner_tipo, owner_id, projeto_id, ramo_atual, ramo_novo, valor, ref_base, data=None):
     """#B.2 — troca o ramo do custo financeiro DEPOIS do fechamento (box da AF). Reverte o que o
     fechamento lançou e constitui o ramo novo. Idempotente por `ref_base`.
-      - loja → provisão (financeira/antecipação): estorna os juros a apropriar (reverter_juros_direto) e
-        constitui a Provisão de Custo Financeiro (fechamento_venda_custo_financeiro).
-      - provisão → loja: reverte a provisão (ajustar_provisao_delta → 0) e constitui os juros a apropriar.
-      - financeira ↔ loja_antecipacao: **no-op** contábil (mesma provisão; muda só a conta de despesa no
-        reconhecimento futuro).
+
+    ACHADO-02/03 (passo 10): só 'financeira' constitui a provisão (retenção esperada) — loja e
+    loja_antecipacao usam a MESMA receita financeira a apropriar (`_RAMO_CFIN_EVENTO`).
+      - loja ↔ loja_antecipacao: **no-op** contábil (mesmo mecanismo — juros a apropriar).
+      - loja/loja_antecipacao → financeira: estorna os juros a apropriar e constitui a provisão.
+      - financeira → loja/loja_antecipacao: reverte a provisão e constitui os juros a apropriar.
     Retorna o ramo efetivo (ramo_novo).
     """
-    _PROV = {"financeira", "loja_antecipacao"}
+    _PROV = {"financeira"}
     if ramo_atual == ramo_novo:
         return ramo_novo
     de_prov, para_prov = ramo_atual in _PROV, ramo_novo in _PROV
@@ -1699,29 +1711,80 @@ def trocar_ramo_custo_financeiro(db, owner_tipo, owner_id, projeto_id, ramo_atua
 
 _RAMO_CFIN_DESPESA = {
     "loja_antecipacao": "reconhecimento_antecipacao",              # 5.5.03 Custo de Antecipação de Recebíveis
-    "financeira":       "reconhecimento_despesa_custo_financeiro", # 5.5.04 Custo Financeiro sobre Vendas
+    # ACHADO-02/03 (passo 10): 'financeira' NUNCA reconhece despesa — nada no resultado, a
+    # retenção esperada é posição de balanço (ver conferir_retencao_financeira). O antigo
+    # "financeira": "reconhecimento_despesa_custo_financeiro" (5.5.04) saiu daqui.
 }
 
 
 def reconhecer_custo_financeiro(db, owner_tipo, owner_id, projeto_id, ramo, valor, ref, data=None):
-    """#B — reconhece a DESPESA do custo financeiro na DRE quando o custo real é apurado (a loja desconta
-    os boletos na antecipação bancária, ou a financeira liquida): despesa (antecipação → 5.5.03;
-    financeira → 5.5.04) × baixa do ativo diferido 1.1.06.19, CAPADO ao saldo do ativo em aberto (padrão
-    do matching operacional na NF-e). A Provisão 2.1.04.19 SOBREVIVE (paga ao banco/financeira depois).
-    Ramo 'loja' (próprio) / 'avista' não tem despesa → None. Idempotente por ref."""
+    """#B — reconhece o custo REAL da antecipação bancária (ramo loja_antecipacao) quando ela de fato
+    acontece: o deságio que o banco retém é custo SEPARADO do cust_fin do fechamento (que virou
+    receita financeira a apropriar, igual a 'loja' — ACHADO-02/03) — não é estimado antes, nasce
+    aqui. Constitui o ativo diferido/provisão (1.1.06.19×2.1.04.19) PARA o valor real, na hora, e
+    reconhece a despesa (5.5.03) contra o ativo no mesmo evento — sem cap, porque não há
+    estimativa prévia para capar contra.
+
+    Ramo 'loja' (próprio) / 'avista' não tem despesa → None. 'financeira' também não (nada no
+    resultado — ver conferir_retencao_financeira, a rota própria da retenção esperada).
+    Idempotente por ref."""
     evento = _RAMO_CFIN_DESPESA.get(ramo)
     if evento is None:
         return None
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
     if ja is not None:
         return ja
-    seed_plano(db, owner_tipo, owner_id)
-    saldo_ativo = round(total_lancado(db, owner_tipo, owner_id, "1.1.06.19", "debito", projeto_id)
-                        - total_lancado(db, owner_tipo, owner_id, "1.1.06.19", "credito", projeto_id), 2)
-    mv = round(min(float(valor or 0), max(saldo_ativo, 0.0)), 2)
-    if mv <= 0:
+    valor = round(float(valor or 0), 2)
+    if valor <= 0:
         return None
-    return registrar_evento(db, owner_tipo, owner_id, evento, mv, projeto_id=projeto_id, ref=ref)
+    seed_plano(db, owner_tipo, owner_id)
+    registrar_evento(db, owner_tipo, owner_id, "fechamento_venda_custo_financeiro", valor,
+                     projeto_id=projeto_id, ref=ref + ":prov")
+    return registrar_evento(db, owner_tipo, owner_id, evento, valor, projeto_id=projeto_id, ref=ref)
+
+
+def conferir_retencao_financeira(db, owner_tipo, owner_id, projeto_id, valor_real, ref_base, data=None):
+    """ACHADO-01/02/03 (passo 10) — a perna de liquidação da retenção esperada da financeira/cartão
+    (2.1.04.19/1.1.06.19, constituída no fechamento, ramo 'financeira'). NUNCA reconhece despesa
+    (aceite #3 — 'nada no resultado'): duas pernas independentes.
+
+    (1) Cancela o par constituído inteiro (D:2.1.04.19 × C:1.1.06.19, pelo saldo constituído) —
+    sem tocar DRE nem recebível: é só o encerramento da ESTIMATIVA, qualquer que seja o real.
+
+    (2) A diferença entre a retenção esperada e a real (`saldo − valor_real`) ajusta o recebível
+    (1.1.02) pela mesma diferença — é isto que faz "o líquido esperado = VAVO": se a financeira
+    reteve MENOS que o esperado, sobra dinheiro pra loja receber (1.1.02 sobe); se reteve MAIS,
+    falta (1.1.02 desce) — e o mesmo valor vai para 'Ajuste de Retenção Financeira' (4.4.05),
+    MESMA conta nos dois sentidos (sobra credita, falta debita), a mesma regra e a mesma
+    justificativa dos impostos (2.1.04.13 → 4.3.01).
+
+    Idempotente por ref_base (cada perna por si)."""
+    seed_plano(db, owner_tipo, owner_id)
+    saldo = round(_mov(db, owner_tipo, owner_id, "2.1.04.19", "credor", None, None, projeto_id=projeto_id), 2)
+    if saldo > 0.005:
+        ja = lancamento_por_ref(db, owner_tipo, owner_id, ref_base + ":cancela")
+        if ja is None:
+            prov = _conta_por_codigo(db, owner_tipo, owner_id, "2.1.04.19")
+            ativo = _conta_por_codigo(db, owner_tipo, owner_id, "1.1.06.19")
+            lancar(db, owner_tipo, owner_id, prov.id, ativo.id, saldo, data=data, projeto_id=projeto_id,
+                  origem=_ORIGEM_RESOL_SOBRA,
+                  historico="Retenção confirmada — cancela ativo × provisão (sem impacto no resultado)",
+                  ref=ref_base + ":cancela")
+    diferenca = round(saldo - round(float(valor_real or 0), 2), 2)
+    if abs(diferenca) < 0.005:
+        return None
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref_base + ":var")
+    if ja is not None:
+        return ja
+    rec = _conta_por_codigo(db, owner_tipo, owner_id, "1.1.02")
+    destino = _conta_por_codigo(db, owner_tipo, owner_id, "4.4.05")
+    if diferenca > 0:   # sobra: financeira reteve menos — sobra dinheiro pra loja receber
+        return lancar(db, owner_tipo, owner_id, rec.id, destino.id, diferenca, data=data, projeto_id=projeto_id,
+                      origem=_ORIGEM_RESOL_SOBRA, historico="Ajuste de retenção financeira (sobra)",
+                      ref=ref_base + ":var")
+    return lancar(db, owner_tipo, owner_id, destino.id, rec.id, -diferenca, data=data, projeto_id=projeto_id,
+                 origem=_ORIGEM_RESOL_FALTA, historico="Ajuste de retenção financeira (falta)",
+                 ref=ref_base + ":var")
 
 
 def apropriar_juros_loja(db, owner_tipo, owner_id, projeto_id, valor, ref_base, data=None):
@@ -1856,19 +1919,14 @@ _ORIGEM_RECLASS     = "reclassificacao_provisao"
 _PROV_DESPESA_POR_ATIVO = {cred: deb for ev, (deb, cred, _h) in EVENTOS.items()
                           if ev.startswith("reconhecimento_despesa_") and ev != "reconhecimento_despesa_custo_financeiro"}
 
-# docs/db/TAREFA_PROVISOES.md item 2 — BLOQUEADO (28/08/2026), não incluir 2.1.04.19 aqui.
-# `reconhecer_custo_financeiro` só debita despesa (5.5.03/5.5.04) × credita o ativo diferido
-# (1.1.06.19) — NUNCA toca a provisão (2.1.04.19). Diferente dos outros 15, que reduzem ativo E
-# provisão juntos (via `efetivar_provisao`), aqui só o ativo drena: por isso provisão e ativo
-# saem de lockstep (achado: provisão constituída em 1000, 700 já reconhecido como despesa real →
-# provisão continua 1000, ativo cai pra 300). Tratar 2.1.04.19 como "tempo real" sem essa 2ª
-# perna faria `resolver_saldo_provisao` tentar cancelar os 1000 da provisão contra um ativo que
-# só tem 300 — ativo diferido ficaria NEGATIVO. A causa raiz (falta a perna "D provisão × C
-# recebível/caixa", equivalente à liquidação — ver ACHADO-01, docs/db/ACHADOS_CONTABEIS.md) é
-# maior que este item: a reconciliação de Contas a Receber/Caixa da venda antecipada/financiada
-# não está fechada em lugar nenhum do código. Até isso ser resolvido, este set fica VAZIO —
-# 2.1.04.19 cai no "sem destino definido" de `resolver_saldo_provisao` (item 4) e FALHA alto,
-# em vez de fingir uma rota que quebraria o razão.
+# docs/db/TAREFA_PROVISOES.md item 2 — RESOLVIDO PARA 'financeira' por rota PRÓPRIA (passo 10,
+# ACHADO-01/02/03, 30/08): `conferir_retencao_financeira` é a perna de liquidação — cancela o
+# par ativo×provisão constituído no fechamento e manda a diferença entre a retenção esperada e a
+# real pra 'Ajuste de Retenção Financeira' (4.4.05) via um lançamento PRÓPRIO contra o recebível
+# (1.1.02), não pelo mecanismo genérico de `resolver_saldo_provisao` — por isso 2.1.04.19
+# continua de fora tanto daqui quanto de `_PROV_DESTINO_VARIANCIA`: uma chamada DIRETA e genérica
+# a `resolver_saldo_provisao("2.1.04.19", ...)` (fora da rota própria) segue sem destino
+# definido, de propósito — falha, não inventa uma rota alternativa que o razão não pediu.
 _PROV_TEMPO_REAL_ROTA_PROPRIA = set()
 
 # docs/db/TAREFA_PROVISOES.md item 3/4: destino EXPLÍCITO de variância por provisão, fora do

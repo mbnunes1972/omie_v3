@@ -32,9 +32,9 @@ não depois.
 
 | achado | o que erra | prova hoje | estado |
 |---|---|---|---|
-| 01 | provisão de custo financeiro nunca liquidada | `test_ciclo_completo_por_ramo` (2 xfails strict), `test_bateria_ciclo` (cenários com custo financeiro), `test_fase_d_reconciliacao`, `test_provisoes_impostos_custo_financeiro` | **provado** |
-| 02 | receita financeira contada duas vezes no ramo loja | `test_bateria_ciclo` (`_XFAILS`, ramo loja) | **provado** |
-| 03 | ramo roteado por `if` num lugar e por tabela em outro | `test_aceite_achado03::test_ramo_loja_antecipacao_diverge_do_dict_canonico` (strict, divergência reproduzida com `ramo_financeiro="loja_antecipacao"` — controle negativo confirmado) | **provado** |
+| 01 | provisão de custo financeiro nunca liquidada | `conferir_retencao_financeira` (mod_contabil.py) + `test_aceite_achado02_03::test_aceite4_...` (dois sentidos, mesma conta) + `test_resultado_financeiro::test_conferir_retencao_financeira_cancela_par_sem_dre` | **PARCIALMENTE CONSERTADO** — passo 10 (ramo financeira; falta só o gatilho HTTP/conferência manual — loja_antecipacao fechado por completo) |
+| 02 | receita financeira contada duas vezes no ramo loja | `test_aceite_achado02_03::test_aceite1_...`/`test_aceite2_...` + `test_ciclo_completo_por_ramo::test_ramo_loja_receita_total_conta_o_custo_financeiro_uma_vez_so` (era `xfail`-free medição, agora fecha certo) + `test_bateria_ciclo` (23 cenários, nenhum xfail) | **CONSERTADO** — passo 10 do ROTEIRO |
+| 03 | ramo roteado por `if` num lugar e por tabela em outro | `test_aceite_achado03::test_ramo_loja_antecipacao_usa_o_mesmo_evento_do_dict_canonico` (`xfail` removido no commit do conserto — main.py e o dict concordam) + `test_aceite_achado02_03::test_aceite5_...` | **CONSERTADO** — passo 10 do ROTEIRO |
 | 04 | — resolvido | `test_eventos`, `test_fase_b2_eventos` | fechado |
 | 05 | — resolvido | `test_eventos`, `test_partida_dobrada` | fechado |
 | 06 | reclassificação de Outros Fornecedores | — | **SEM PROVA** (medir antes) |
@@ -86,12 +86,14 @@ verificação completa é uma coisa só: **rodar a suíte e não sobrar nenhum
 xfail citando achado do Grupo 1.** Se sobrar, o conserto não fechou; se algum
 XPASS quebrar a suíte, o conserto fechou e o marcador está velho.
 
-## Um padrão que apareceu três vezes
+## Um padrão que apareceu três vezes (e mais no passo 10)
 
 Todo conserto até agora quebrou pelo menos um teste vizinho que **codificava
 o defeito como correto**: `test_cancelar_nfe_estorna_faturamento` (passo 5),
 `test_aditivo_lista_api` (passo 6), `test_custos_adicionais_provisao`
-(passo 8).
+(passo 8), `test_ciclo_completo_ramo_loja`/as trocas de ramo de
+`test_resultado_financeiro.py` (passo 10 — `4.1.01==Val_Cont` e
+`financeira↔loja_antecipacao` no-op eram exatamente o ACHADO-02/03).
 
 Não é descuido de quem escreveu — é o efeito natural de escrever teste sobre
 comportamento observado. Mas cria uma armadilha: **um teste verde não

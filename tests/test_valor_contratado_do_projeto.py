@@ -105,3 +105,52 @@ def test_multiplos_aditivos_assinados_somam_todos(app_db, seed):
     v = main.valor_contratado_do_projeto(db2, seed["projeto_l1"])
     db2.close()
     assert v == round(88888.89 + 4444.44 + 6666.67, 2)
+
+
+# ── vavo_contratado_do_projeto (ACHADO-02, docs/db/TAREFA_ACHADO02_03.md, passo 10) — mesma
+# soma de contrato + aditivos assinados, mas do VAVO (preço à vista, sem custo financeiro) ──────
+
+def test_vavo_sem_contrato_retorna_zero(app_db, seed):
+    db = app_db.get_session()
+    import main
+    assert main.vavo_contratado_do_projeto(db, "Projeto_Sem_Contrato_Nenhum") == 0.0
+    db.close()
+
+
+def test_vavo_so_contrato_diverge_do_valor_total_com_custo_financeiro(app_db, seed):
+    """O contrato tem Val_Cont > VAVO (cust_fin > 0) — a soma do VAVO tem que refletir isso, não
+    coincidir com valor_contratado_do_projeto (é exatamente essa diferença que ACHADO-02
+    corrige: 4.1.01 fatura o VAVO, não o Val_Cont cheio)."""
+    import main
+    _limpar_aditivos(app_db, seed["projeto_l1"])
+    db = app_db.get_session()
+    orc = db.get(app_db.Orcamento, seed["orcamento_l1_id"])
+    orc.valor_total = 88888.89
+    orc.vavo = 80000.00
+    db.commit()
+    val_cont = main.valor_contratado_do_projeto(db, seed["projeto_l1"])
+    vavo = main.vavo_contratado_do_projeto(db, seed["projeto_l1"])
+    db.close()
+    assert val_cont == 88888.89
+    assert vavo == 80000.00
+    assert vavo != val_cont
+
+
+def test_vavo_aditivo_assinado_entra_na_soma(app_db, seed):
+    import main
+    _limpar_aditivos(app_db, seed["projeto_l1"])
+    db = app_db.get_session()
+    orc = db.get(app_db.Orcamento, seed["orcamento_l1_id"])
+    orc.valor_total = 88888.89; orc.vavo = 80000.00
+    ct = db.query(app_db.Contrato).filter_by(projeto_nome=seed["projeto_l1"]).first()
+    ct_id = ct.id
+    db.commit(); db.close()
+
+    aid = _criar_aditivo(app_db, seed["projeto_l1"], ct_id, 4444.44, "assinado", seed["loja1_id"])
+    db2 = app_db.get_session()
+    orc_aj = db2.query(app_db.Aditivo).filter_by(id=aid).first().orcamento_complemento_id
+    db2.get(app_db.Orcamento, orc_aj).vavo = 4000.00
+    db2.commit()
+    v = main.vavo_contratado_do_projeto(db2, seed["projeto_l1"])
+    db2.close()
+    assert v == round(80000.00 + 4000.00, 2)

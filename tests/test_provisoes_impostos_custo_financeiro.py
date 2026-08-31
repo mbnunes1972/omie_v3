@@ -50,24 +50,27 @@ def test_guarda_aceita_provisao_legitima(app_db):
     db.close()
 
 
-# ── item 2 BLOQUEADO: Custo Financeiro ainda não tem destino — precisa falhar, não rotear ───────
-def test_custo_financeiro_sem_destino_falha_em_vez_de_rotear(app_db):
-    """Item 2 continua bloqueado (ACHADO-01): sem a perna de liquidação (D provisão × C
-    recebível/caixa), tratar 2.1.04.19 como "tempo real" cancelaria a provisão inteira contra um
-    ativo que só tem uma fração aberta — ativo diferido ficaria negativo. Até isso ser resolvido,
-    resolver_saldo_provisao tem que FALHAR pra esta conta (item 4), nunca inventar uma rota."""
+# ── item 2: Custo Financeiro tem rota PRÓPRIA agora — resolver_saldo_provisao genérico continua
+# recusando (de propósito), a liquidação de verdade é `conferir_retencao_financeira` ─────────────
+def test_custo_financeiro_sem_destino_generico_mas_tem_rota_propria(app_db):
+    """ACHADO-01/02/03 (passo 10, docs/db/TAREFA_ACHADO02_03.md): a perna de liquidação que
+    faltava (item 2) é `conferir_retencao_financeira` — não o mecanismo genérico de
+    `resolver_saldo_provisao`. Chamar `resolver_saldo_provisao` DIRETO em "2.1.04.19" continua
+    falhando de propósito (não é 'tempo real' nem tem destino em `_PROV_DESTINO_VARIANCIA') —
+    não inventa uma rota alternativa que o razão não pediu; a rota certa é a própria."""
     db = app_db.get_session(); ot, oid = "loja", 6103; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"custo_financeiro": 1000.0}, ref_base="pf:P")
-    mc.reconhecer_custo_financeiro(db, ot, oid, "P", "financeira", 700.0, ref="rcf:P")
-    assert _s(db, ot, oid, "2.1.04.19") == 1000.0    # provisão intocada por reconhecer_custo_financeiro
-    assert _s(db, ot, oid, "1.1.06.19") == 300.0     # só o ativo drena
     try:
         mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.19", ref="rs:P:19")
-        assert False, "deveria falhar -- 2.1.04.19 nao tem destino definido (item 2 bloqueado)"
+        assert False, "deveria falhar -- resolver_saldo_provisao genérico não serve 2.1.04.19"
     except ValueError as e:
         assert "2.1.04.19" in str(e)
-    assert _s(db, ot, oid, "2.1.04.19") == 1000.0    # nada foi gravado
-    assert _s(db, ot, oid, "1.1.06.19") == 300.0
+    assert _s(db, ot, oid, "2.1.04.19") == 1000.0    # nada foi gravado pela tentativa genérica
+
+    # a rota própria resolve de verdade: retenção real bate com a esperada, cancela sem DRE.
+    mc.conferir_retencao_financeira(db, ot, oid, "P", 1000.0, ref_base="conf:P")
+    assert _s(db, ot, oid, "2.1.04.19") == 0.0
+    assert _s(db, ot, oid, "1.1.06.19") == 0.0
     db.close()
 
 

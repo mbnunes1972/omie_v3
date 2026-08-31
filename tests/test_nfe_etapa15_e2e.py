@@ -101,7 +101,11 @@ def _reset15(app_db, proj):
     if contrato is not None:
         orc = db.get(app_db.Orcamento, contrato.orcamento_id)
         if orc is not None and not (orc.valor_total or 0) > 0:
+            # ACHADO-02 (docs/db/TAREFA_ACHADO02_03.md, passo 10): a segmentação da NF-e/NFS-e
+            # agora fatura o VAVO, não o Val_Cont cheio — sem custo financeiro nenhum modelado
+            # aqui, VAVO == valor_total (cust_fin = 0), como um projeto à vista teria.
             orc.valor_total = 100000.0
+            orc.vavo = 100000.0
     db.commit(); db.close()
 
 
@@ -630,6 +634,7 @@ def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, 
     dbx = app_db.get_session()
     orc = dbx.get(app_db.Orcamento, seed["orcamento_l2_id"])
     orc.valor_total = round((orc.valor_total or 0) + val_cont_incremento, 2)
+    orc.vavo = orc.valor_total   # sem custo financeiro modelado aqui (ACHADO-02, passo 10)
     orc.cfo = 40000.0
     dbx.commit(); dbx.close()
     # FASE D2: simula o contrato assinado — registra a venda cheia e constitui a provisão de fábrica (=CFO).
@@ -698,6 +703,7 @@ def test_cancelar_nfe_estorna_faturamento(http_client_factory, seed, app_db, pro
     dbx = app_db.get_session()
     orc = dbx.get(app_db.Orcamento, seed["orcamento_l2_id"])
     orc.valor_total = round((orc.valor_total or 0) + val_cont_incremento, 2)
+    orc.vavo = orc.valor_total   # sem custo financeiro modelado aqui (ACHADO-02, passo 10)
     orc.cfo = 40000.0
     dbx.commit(); dbx.close()
     ddb = app_db.get_session()
@@ -749,7 +755,7 @@ def test_face_fiscal_alinhada_a_segmentacao(http_client_factory, seed, app_db, p
     _reset15(app_db, proj); _perfil(app_db, seed["loja2_id"])
     dbx = app_db.get_session()
     orc = dbx.get(app_db.Orcamento, seed["orcamento_l2_id"])
-    orc.valor_total = 100000.0; orc.cfo = 40000.0
+    orc.valor_total = 100000.0; orc.vavo = 100000.0; orc.cfo = 40000.0
     dbx.commit(); dbx.close()
     c = _login(http_client_factory, "dir_l2")
     _, up = _upload_xml(c, proj, _fixture_xml())

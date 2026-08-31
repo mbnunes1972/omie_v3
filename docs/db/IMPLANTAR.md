@@ -149,4 +149,47 @@ Quatro coisas que o ensaio no WSL nao revelou. Todas custaram tentativa.
   Mesmos numeros, 0 orfaos, identicos depois do boot. HTTP 302.
   Os 10 owners anteriores dela foram substituidos pelos 7 do localhost,
   conforme a decisao "mista". Backup em /root/backups/homologacao_pre_*.
-- Producao: NAO executada. Bloqueada na pergunta do primeiro usuario.
+- Producao: reconstruida em algum momento entre 28/08 e 31/08 (fora deste
+  fluxo — encontrada ja no head 46a93cfd591b, com 1 loja/1 usuario/0 redes,
+  usuarios/lojas reais, HTTP 302). A pergunta do primeiro usuario admin
+  ficou resolvida (`scripts/criar_primeiro_admin.py` existe no codigo).
+
+### Marco da Fase 1 (docs/db/TAREFA_IMPLANTAR_FASE1.md) — 31/08/2026
+
+Upgrade INCREMENTAL nos tres ambientes (`git pull` + `alembic upgrade head`),
+sem DROP/recriar banco — decisao do Marcelo: o `confirmar.sh` ja reconstroi
+do zero num banco descartavel e compara, entao a garantia de schema vem sem
+o risco de tocar na config real. Contagens de `lancamento`/`contratos`/
+`orcamentos` ZERO nos tres ANTES de aplicar — nenhuma decisao sobre dado de
+teste foi necessaria (a autorizacao "pode apagar" do Marcelo, acima, nao
+precisou ser exercida).
+
+Tres migrations aplicadas em sequencia (Integracao → Homologacao → Producao),
+cada uma: backup (pg_dump) → systemctl stop → git pull → alembic upgrade
+head → alembic current (confirma f47f22de46a7) → systemctl start → HTTP 302
+→ `confirmar.sh` (15 OK / 0 FALHA nos tres). Contagens ZERO confirmadas de
+novo depois do boot, nos tres — nenhum movimento apareceu.
+
+**Duas armadilhas novas, nao documentadas antes (nenhum dos dois servidores
+tinha rodado `confirmar.sh` remotamente ate agora):**
+
+5. `orizon_baseline_teste` (o banco descartavel que `confirmar.sh` usa pra
+   comparar) nao existe nos servidores — so no WSL. Precisa ser criado uma
+   vez por servidor postgres (`sudo -u postgres psql -c "CREATE DATABASE
+   orizon_baseline_teste OWNER orizon;"`) antes da primeira conferencia.
+   Integracao e Homologacao dividem o MESMO postgres (167.88.33.121) —
+   so precisou uma vez la; Producao (179.197.77.9) precisou da sua propria.
+
+6. **Senha com `$`/`#` quebra `confirmar.sh` de duas formas diferentes** (a
+   senha do `orizon` em Producao tem os dois caracteres). Sourcing de um
+   `.env` com o valor SEM aspas faz o bash tentar expandir `$...` como
+   variavel e cortar a linha no `#` (comentario) — o `.env` precisa
+   `KEY='valor'`, com aspas simples, mesmo padrao que orizon-A.env/
+   orizon-B.env ja usavam (por isso so' Producao pegou essa). Separado
+   disso, `#` **sempre** termina a autoridade de uma URI (RFC 3986) —
+   mesmo escapando pra `%23`, valeu a pena so' pra `psql`/`pg_dump`
+   (`PGURL`); pro alembic (SQLAlchemy, mais tolerante), o `DATABASE_URL`
+   original sem escapar funciona. A solucao mais robusta: tirar a senha
+   da URI de vez pro `PGURL` (`postgresql://orizon@localhost/db`) e
+   deixar `~/.pgpass` (`host:port:*:user:senha`, 600) resolver a
+   autenticacao — sem escapar nada.

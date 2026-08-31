@@ -137,19 +137,26 @@ antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
 
 **Marco:** rodar a suíte. Nenhum xfail citando achado da Fase 1 pode sobrar.
 
-## Pendência de implantação
+## Implantação da Fase 1 — feita em 31/08/2026
 
-A partir do passo 8 o roteiro passou a gerar **migration**
-(`e031f6ad9c80`, tabela `veredictos_provisao`), aplicada só no localhost.
-Integração, Homologação e Produção estão atrás.
+**Três migrations, não duas.** `95c7e64afc6a` (rename 2.1.05 Total Flex →
+Parcelamento Loja, ACHADO-14) nunca tinha entrado nesta lista — achada só na
+hora de aplicar, ao rodar `alembic current` nos três ambientes ANTES de
+mexer em qualquer coisa (mesmo instinto que salvou o ACHADO-23: conferir
+antes de confiar na lista). Os três ambientes partiram de `46a93cfd591b`.
 
-**Não implantar a cada passo.** As migrations se acumulam e vão juntas **no
-fim da Fase 1**, com `docs/db/confirmar.sh` rodado em cada ambiente e
-`docs/db/IMPLANTAR.md` como procedimento. O risco real aqui não é a demora —
-é esquecer. Toda migration nova entra nesta lista no mesmo passo que a criou.
+Upgrade **incremental** (`git pull` + `alembic upgrade head`, sem
+DROP/recriar banco — decisão do Marcelo: `confirmar.sh` já reconstrói do
+zero num banco descartável e compara, a garantia vem sem tocar na config
+real). Medição antes de aplicar: `lancamento`/`contratos`/`orcamentos` ZERO
+nos três — nenhuma decisão sobre dado de teste foi necessária.
 
-**Pendentes:** `e031f6ad9c80`, `f47f22de46a7` — vão juntas no marco da
-Fase 1 (`docs/db/TAREFA_IMPLANTAR_FASE1.md`).
+**Integração → Homologação → Produção, nesta ordem, cada uma:** backup →
+stop → pull → `alembic upgrade head` → `alembic current` (confirma
+`f47f22de46a7`) → start → `confirmar.sh`. **15 OK / 0 FALHA nos três.**
+Detalhes, armadilhas novas (banco `orizon_baseline_teste` inexistente nos
+servidores; senha com `$`/`#` quebrando `.env`/URI) e o registro completo em
+`docs/db/IMPLANTAR.md`.
 
 **Lembrete que já custou um susto:** tabela nova precisa entrar no manifesto
 de `modulos.py`. O passo 8 descobriu isso por acidente; o `periodo_fechado`
@@ -161,6 +168,11 @@ INSERT literal pros 3 owners fixos do `orizon_baseline_teste`
 (`tests/test_gabarito_migration_x_seed.py` não tem dado de instância).
 
 ## FASE 2 — custo e fechamento
+
+**Leia `docs/db/FASE2.md` antes de escrever a primeira tarefa desta fase.**
+A Fase 1 mudou o escopo de três dos quatro itens, e o primeiro passo não é
+conserto: é rodar de novo a medição de ciclo das DREs.
+
 12. **ACHADO-01** — a perna de liquidação da provisão. *Encolhido no passo 10:*
     a função (`conferir_retencao_financeira`) já existe e está testada —
     `loja_antecipacao` fechou por completo (não constitui mais provisão).

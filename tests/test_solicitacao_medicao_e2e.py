@@ -232,7 +232,7 @@ def test_assinatura_interna_conclui_etapa9_so_com_as_duas_partes(app_db, seed, h
 
     c = _login(http_client_factory, "dir_l1")
     st, d = c.post(f"/api/projetos/{seed['projeto_l1']}/medicao/solicitacao/assinar",
-                   {"parte": "loja", "nome": "Loja Teste", "cpf": "00000000000"})
+                   {"parte": "loja", "nome": "Loja Teste", "cpf": "11144477735"})
     assert st == 200 and d.get("ok") and d["status"] == "assinado_loja", d
 
     db = app_db.get_session()
@@ -241,7 +241,7 @@ def test_assinatura_interna_conclui_etapa9_so_com_as_duas_partes(app_db, seed, h
     db.close()
 
     st2, d2 = c.post(f"/api/projetos/{seed['projeto_l1']}/medicao/solicitacao/assinar",
-                     {"parte": "cliente", "nome": "Cliente Teste", "cpf": "11111111111"})
+                     {"parte": "cliente", "nome": "Cliente Teste", "cpf": "11144477735"})
     assert st2 == 200 and d2.get("ok") and d2["status"] == "assinado", d2
 
     db = app_db.get_session()

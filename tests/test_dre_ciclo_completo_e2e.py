@@ -260,12 +260,12 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
 
     # ── 4. Assinaturas (1ª e 2ª) — canal interno (sem ClickSign instalado: portão real, sem mock) ──
     st, b = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "loja", "nome": "Gerente Loja 1", "cpf": "111.111.111-11"})
+                   {"parte": "loja", "nome": "Gerente Loja 1", "cpf": "111.444.777-35"})
     assert st == 200 and b["ok"] and b["status"] == "assinado_loja", b
     marco("4a_assinatura_loja")
 
     st, b = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "111.111.111-11"})
+                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "111.444.777-35"})
     assert st == 200 and b["ok"] and b["status"] == "assinado", b
     marco("4b_assinatura_cliente_provisoes_constituidas")
 

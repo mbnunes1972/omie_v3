@@ -898,9 +898,18 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
     `loja_id` vem de `contrato.loja_id` em vez do escopo de tenancy — ali não é gate de acesso,
     é processar um fato sobre um documento que já pertence a uma loja conhecida).
     Idempotente: `parte` já assinada é no-op (cobre reentrega de webhook de graça).
-    Retorna o status final do contrato (não commita a query de leitura, só os writes)."""
+    Retorna o status final do contrato (não commita a query de leitura, só os writes).
+
+    ACHADO-28: valida SÓ o dígito verificador do CPF (`validacao_doc.erro_doc`) — conferir
+    contra o cadastro é decisão do Marcelo, fica pro próximo ciclo. Por estar AQUI (não em cada
+    chamador) cobre os dois gatilhos de graça, inclusive o webhook ClickSign — ali o CPF vem de
+    fora (da própria ClickSign), a mesma razão de "enumerar os irmãos" (ACHADO-19/03/24/26)."""
     if any(a.parte == parte for a in contrato.assinaturas):
         return contrato.status
+    import validacao_doc
+    _erro_cpf = validacao_doc.erro_doc(cpf, "CPF de %s" % parte, "cpf")
+    if _erro_cpf:
+        raise ValueError(_erro_cpf)
     timestamp = datetime.utcnow().isoformat()
     hash_sig  = calcular_hash_assinatura(nome, cpf, contrato.id, timestamp)
     db.add(ContratoAssinatura(contrato_id=contrato.id, parte=parte, nome=nome, cpf=cpf,
@@ -1116,9 +1125,17 @@ def _reconciliar_contrato_clicksign(db, contrato, cfg):
         attrs = signers.get(info.get("signer_id")) or {}
         if not (attrs.get("signed_at") or envelope_fechado):
             continue
-        _registrar_assinatura_contrato(
-            db, contrato, parte, info.get("nome") or "", info.get("cpf") or "",
-            attrs.get("last_seen_ip") or "", contrato.loja_id, usuario_id=None)
+        # ACHADO-28: CPF vem de FORA (da própria ClickSign) — _registrar_assinatura_contrato
+        # recusa com ValueError se o dígito não confere. Webhook não tem pra quem mostrar um
+        # popup: loga e segue pros OUTROS signatários (um CPF ruim não pode travar o contrato
+        # inteiro nem impedir a reconciliação de quem assinou certo).
+        try:
+            _registrar_assinatura_contrato(
+                db, contrato, parte, info.get("nome") or "", info.get("cpf") or "",
+                attrs.get("last_seen_ip") or "", contrato.loja_id, usuario_id=None)
+        except ValueError as e:
+            logging.getLogger(__name__).warning(
+                "ClickSign contrato %s, parte %r: %s", contrato.id, parte, e)
     return contrato.status
 
 
@@ -1127,9 +1144,16 @@ def _registrar_assinatura_aprovacao_pe(db, aprov, parte, nome, cpf, ip_origem, u
     status. Mesmo padrão de _registrar_assinatura_contrato (compartilhada entre o endpoint síncrono
     de assinatura interna e o webhook/reconciliação ClickSign) — aqui não há cascade: fechar a
     subfase 11e continua sendo ação manual/gerencial, não algo disparado por esta função.
-    Idempotente: `parte` já assinada é no-op. Retorna o status final da aprovação."""
+    Idempotente: `parte` já assinada é no-op. Retorna o status final da aprovação.
+
+    ACHADO-28: mesma guarda de _registrar_assinatura_contrato — só dígito verificador, cobre
+    os dois gatilhos (interno e webhook ClickSign) por estar aqui, não em cada chamador."""
     if any(a.parte == parte for a in aprov.assinaturas):
         return aprov.status
+    import validacao_doc
+    _erro_cpf = validacao_doc.erro_doc(cpf, "CPF de %s" % parte, "cpf")
+    if _erro_cpf:
+        raise ValueError(_erro_cpf)
     from mod_contrato import calcular_hash_assinatura as _cha2
     ts = datetime.utcnow().isoformat()
     aprov.assinaturas.append(AprovacaoPEAssinatura(
@@ -1189,9 +1213,15 @@ def _reconciliar_aprovacao_pe_clicksign(db, aprov, cfg):
         attrs = signers.get(info.get("signer_id")) or {}
         if not (attrs.get("signed_at") or envelope_fechado):
             continue
-        _registrar_assinatura_aprovacao_pe(
-            db, aprov, parte, info.get("nome") or "", info.get("cpf") or "",
-            attrs.get("last_seen_ip") or "", usuario_id=None)
+        # ACHADO-28: mesma guarda de _reconciliar_contrato_clicksign — loga e segue os outros
+        # signatários em vez de travar a reconciliação inteira por um CPF ruim vindo de fora.
+        try:
+            _registrar_assinatura_aprovacao_pe(
+                db, aprov, parte, info.get("nome") or "", info.get("cpf") or "",
+                attrs.get("last_seen_ip") or "", usuario_id=None)
+        except ValueError as e:
+            logging.getLogger(__name__).warning(
+                "ClickSign aprovacao-pe %s, parte %r: %s", aprov.id, parte, e)
     return aprov.status
 
 
@@ -1200,9 +1230,16 @@ def _registrar_assinatura_solicitacao_medicao(db, sol, parte, nome, cpf, ip_orig
     SolicitacaoMedicaoAssinatura, atualiza status — e, quando loja+cliente já assinaram, conclui
     a etapa "9" do ciclo (achado do usuário 2026-08-17: antes a etapa 9 concluía no simples
     upload de um arquivo; agora só conclui com as DUAS assinaturas do documento gerado pelo
-    sistema, mesmo padrão da etapa 7/Contrato). Idempotente: `parte` já assinada é no-op."""
+    sistema, mesmo padrão da etapa 7/Contrato). Idempotente: `parte` já assinada é no-op.
+
+    ACHADO-28: mesma guarda de _registrar_assinatura_contrato — só dígito verificador, cobre
+    os dois gatilhos (interno e webhook ClickSign) por estar aqui, não em cada chamador."""
     if any(a.parte == parte for a in sol.assinaturas):
         return sol.status
+    import validacao_doc
+    _erro_cpf = validacao_doc.erro_doc(cpf, "CPF de %s" % parte, "cpf")
+    if _erro_cpf:
+        raise ValueError(_erro_cpf)
     from mod_contrato import calcular_hash_assinatura as _cha3
     ts = datetime.utcnow().isoformat()
     sol.assinaturas.append(SolicitacaoMedicaoAssinatura(
@@ -1268,9 +1305,15 @@ def _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg):
         attrs = signers.get(info.get("signer_id")) or {}
         if not (attrs.get("signed_at") or envelope_fechado):
             continue
-        _registrar_assinatura_solicitacao_medicao(
-            db, sol, parte, info.get("nome") or "", info.get("cpf") or "",
-            attrs.get("last_seen_ip") or "", usuario_id=None)
+        # ACHADO-28: mesma guarda de _reconciliar_contrato_clicksign — loga e segue os outros
+        # signatários em vez de travar a reconciliação inteira por um CPF ruim vindo de fora.
+        try:
+            _registrar_assinatura_solicitacao_medicao(
+                db, sol, parte, info.get("nome") or "", info.get("cpf") or "",
+                attrs.get("last_seen_ip") or "", usuario_id=None)
+        except ValueError as e:
+            logging.getLogger(__name__).warning(
+                "ClickSign solicitacao-medicao %s, parte %r: %s", sol.id, parte, e)
     return sol.status
 
 
@@ -9451,6 +9494,9 @@ class Handler(BaseHTTPRequestHandler):
                 status_final = _registrar_assinatura_aprovacao_pe(
                     db, aprov, parte, nome_ass, cpf, ip, usuario_id=usuario["id"])
                 self.send_json({"ok": True, "status": status_final})
+            except ValueError as e:
+                db.rollback()
+                self.send_json({"ok": False, "erro": str(e)}, code=400)
             except Exception as e:
                 db.rollback()
                 self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -13736,6 +13782,9 @@ class Handler(BaseHTTPRequestHandler):
                     status_final = _registrar_assinatura_contrato(
                         db, contrato, parte, nome, cpf, ip, loja_id, usuario_id=usuario["id"])
                     self.send_json({"ok": True, "status": status_final, "parte": parte})
+                except ValueError as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -14284,6 +14333,9 @@ class Handler(BaseHTTPRequestHandler):
                     status_final = _registrar_assinatura_solicitacao_medicao(
                         db, sol, parte, nome_ass, cpf, ip, usuario_id=usuario["id"])
                     self.send_json({"ok": True, "status": status_final, "parte": parte})
+                except ValueError as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=400)
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)

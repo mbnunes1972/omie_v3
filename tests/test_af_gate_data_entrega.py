@@ -72,7 +72,7 @@ def test_assinatura_exige_previsao_medicao(app_db, seed, http_client_factory):
     db.commit(); db.close()
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
     assert st == 400 and "medição" in (d.get("erro", "").lower()), (st, d)
 
 
@@ -99,7 +99,7 @@ def test_assinatura_bloqueia_folga_negativa_nao_autorizada(app_db, seed, http_cl
     nome = _prep_assinatura_folga(app_db, seed, folga_autorizada=0)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
     assert st == 400 and "folga" in (d.get("erro", "").lower()), (st, d)
 
 
@@ -107,7 +107,7 @@ def test_assinatura_permite_folga_negativa_autorizada(app_db, seed, http_client_
     nome = _prep_assinatura_folga(app_db, seed, folga_autorizada=1)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
     assert st == 200 and d.get("ok"), (st, d)
 
 
@@ -117,7 +117,7 @@ def test_assinatura_registra_data_limite_contratual(app_db, seed, http_client_fa
     nome = _prep_assinatura_folga(app_db, seed, folga_autorizada=1)   # datas válidas + loja já assinada
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
     assert st == 200 and d.get("ok"), (st, d)
     db = app_db.get_session()
     p = db.get(Projeto, nome)

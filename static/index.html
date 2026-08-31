@@ -19546,6 +19546,18 @@ function _cicloRenderTransferPrompt() {
         id: p.tipo === 't' ? -p.id : p.id,
         label: p.nome + (p.funcao_nome ? ' — ' + p.funcao_nome : ''),
       }));
+      // Achado do usuário (2026-08-31): lista vazia (nenhum funcionário/terceiro ativo
+      // cadastrado) ainda oferecia o seletor + "Transferir Responsabilidade" — clicável, mas
+      // sem opção nenhuma pra escolher, e o clique só reclamava "Escolha um destino" depois.
+      // Diz o que É verdade (nada cadastrado) em vez de fingir uma transferência possível.
+      if (!opts.length) {
+        box.innerHTML = `<div style="${estilo}">
+          <i class="ti ti-users-group" style="color:var(--accent)"></i>
+          <span>Nenhum funcionário ou terceiro cadastrado — não há para quem transferir
+          "<strong>${esc(st.alvoNome)}</strong>".</span>
+          <span style="margin-left:auto"><button class="btn btn-ghost btn-sm" onclick="_cicloTransferCancelar()">Fechar</button></span></div>`;
+        return;
+      }
       box.innerHTML = `<div style="${estilo}">
         <i class="ti ti-users-group" style="color:var(--accent)"></i>
         <span>Transferir "<strong>${esc(st.alvoNome)}</strong>" para:</span>

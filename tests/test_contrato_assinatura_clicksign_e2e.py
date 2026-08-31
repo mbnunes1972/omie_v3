@@ -241,8 +241,11 @@ def test_registrar_assinatura_testemunha_nao_mexe_no_status_intermediario(app_db
         contrato = db.get(app_db.Contrato, seed["contrato_l1_id"])
         contrato.status = "para_assinatura"
         db.commit()
+        # ACHADO-28: "22233344455" (usado noutros testes deste arquivo só pra envelope/envio,
+        # nunca registrado como assinatura de verdade) não passa no dígito verificador — trocado
+        # aqui pelo CPF de teste válido já usado no resto da suíte.
         status = _main._registrar_assinatura_contrato(
-            db, contrato, "testemunha1", "Fulano Testemunha", "22233344455", "203.0.113.5",
+            db, contrato, "testemunha1", "Fulano Testemunha", "111.444.777-35", "203.0.113.5",
             seed["loja1_id"])
         assert status == "para_assinatura", "testemunha assinando não deve mudar o status intermediário"
         db.refresh(contrato)

@@ -155,7 +155,7 @@ def test_assinatura_completa_mesmo_com_congelamento_falhando(app_db, seed, http_
 
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
 
     assert st == 200 and d.get("ok"), (
         "a assinatura não pode travar por causa do congelamento — %r" % (d,))
@@ -173,6 +173,6 @@ def test_assinatura_completa_e_congela_no_caminho_normal(app_db, seed, http_clie
     nome = _prep_assinatura(app_db, seed)
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, d = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente", "cpf": "11111111111"})
+                   {"parte": "cliente", "nome": "Cliente", "cpf": "11144477735"})
     assert st == 200 and d.get("ok"), d
     assert _segmentacao_congelada_no_banco(app_db, nome)

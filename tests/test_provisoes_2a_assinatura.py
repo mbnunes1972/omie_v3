@@ -47,7 +47,7 @@ def test_provisao_nao_existe_apos_1a_assinatura(app_db, seed, http_client_factor
     nome = seed["projeto_l1"]
     c = http_client_factory(); c.login("dir_l1", "senha123")
 
-    st, d = _assinar(c, nome, "loja", "Loja", "00000000000")
+    st, d = _assinar(c, nome, "loja", "Loja", "11144477735")
     assert st == 200 and d.get("ok"), (st, d)
 
     assert _sem_provisao_venda(app_db, seed["orcamento_l1_id"]) is None, \
@@ -63,9 +63,9 @@ def test_provisao_nasce_na_2a_assinatura_completa(app_db, seed, http_client_fact
     nome = seed["projeto_l1"]
     c = http_client_factory(); c.login("dir_l1", "senha123")
 
-    st1, d1 = _assinar(c, nome, "loja", "Loja", "00000000000")
+    st1, d1 = _assinar(c, nome, "loja", "Loja", "11144477735")
     assert st1 == 200 and d1.get("ok"), (st1, d1)
-    st2, d2 = _assinar(c, nome, "cliente", "Cliente", "11111111111")
+    st2, d2 = _assinar(c, nome, "cliente", "Cliente", "11144477735")
     assert st2 == 200 and d2.get("ok"), (st2, d2)
 
     reg = _sem_provisao_venda(app_db, seed["orcamento_l1_id"])
@@ -88,9 +88,9 @@ def test_reentrega_nao_duplica_provisao(app_db, seed, http_client_factory):
     nome = seed["projeto_l1"]
     c = http_client_factory(); c.login("dir_l1", "senha123")
 
-    _assinar(c, nome, "loja", "Loja", "00000000000")
-    _assinar(c, nome, "cliente", "Cliente", "11111111111")
-    st3, d3 = _assinar(c, nome, "cliente", "Cliente", "11111111111")   # reentrega
+    _assinar(c, nome, "loja", "Loja", "11144477735")
+    _assinar(c, nome, "cliente", "Cliente", "11144477735")
+    st3, d3 = _assinar(c, nome, "cliente", "Cliente", "11144477735")   # reentrega
     assert st3 == 400 and not d3.get("ok"), (st3, d3)   # endpoint recusa parte já assinada
 
     db = app_db.get_session()

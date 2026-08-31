@@ -46,6 +46,8 @@ deixa de ter resposta rápida.
 | **F2-2** · auditoria contrato de API × tela | **feito** — 31/08, mapa completo em `docs/db/ACHADOS_CONTABEIS.md`; achou o **ACHADO-26** (Conciliação Final pior que o 25 — trava OU contorna o veredito em silêncio); contrato e NF-e confirmados OK na tela |
 | **F2-3** · fila de provisões + ACHADO-26 | **feito** — 31/08, `test_aceite_fila_provisoes.py` (7 aceites); fila (`GET`/`POST /api/financeiro/fila-provisoes[/veredito]`) + tela própria (Financeiro → Fila de Provisões) entraram ANTES do desvio fechar; `resolver-saldo-provisao` só aceita Impostos/Custo Financeiro agora; mensagem da Conciliação Final aponta pra fila; ACHADO-26 **RESOLVIDO** |
 | **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | **feito** — 31/08, `89923db`; modal `_abrirModalPagamentoAditivo` em `static/index.html`; prova por E2E de navegador (`test_e2e_browser_conciliacao_final.py`, banco próprio `orizon_e2e`, de volta ao `pytest -q` padrão) |
+| **F2-5** · ACHADO-27, card de ambientes colapsa com plano de pagamento longo | **feito** — 31/08, `a2889df`; achado do Marcelo clicando em Homologação, correlacionado ao ciclo do beta (não regressão desta rodada); `flex-shrink:0` em `#neg-tbl-ambientes-card`; prova por E2E de navegador (`test_e2e_browser_negociacao_layout.py`) |
+| **F2-6** · ACHADO-28, CPF de assinatura sem validação de dígito | **feito** — 31/08; achado do Marcelo clicando em Homologação; `validacao_doc.erro_doc` dentro dos três `_registrar_assinatura_*` (main.py), cobre interno + webhook ClickSign; `test_aceite_achado28.py` (6 aceites); conferir CPF contra o cadastro adiado — LP-02 em `docs/db/LISTA_PARALELA.md` |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:

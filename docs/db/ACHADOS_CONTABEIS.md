@@ -1898,7 +1898,7 @@ uma condição específica (plano longo), não é só higiene.
 
 ---
 
-## ACHADO-28 — CPF de assinatura não é validado, e é ele que identifica quem assinou
+## ACHADO-28 — CPF de assinatura não é validado, e é ele que identifica quem assinou · RESOLVIDO 31/08/2026
 
 Encontrado pelo Marcelo em 31/08, clicando em Homologação: a assinatura do
 gerente aceitou um número aleatório como CPF.
@@ -1924,15 +1924,33 @@ de prova.
 o mecanismo existe, e o caminho real não passa por ele. Aqui a distância é
 de uma linha.
 
-**Conserto:** os três caminhos de assinatura chamam `validacao_doc.erro_doc`
-antes de gravar, recusando com mensagem. Vale para toda assinatura — interna
-e ClickSign (no webhook, o CPF vem de fora e merece a mesma conferência).
+**Conserto aplicado:** os três caminhos de assinatura chamam
+`validacao_doc.erro_doc` antes de gravar, recusando com `ValueError` — por
+estar DENTRO das três funções compartilhadas (não em cada chamador), cobre
+os dois gatilhos de cada uma de graça: o endpoint síncrono de assinatura
+interna (recusa vira HTTP 400) e o webhook/reconciliação ClickSign, onde o
+CPF vem de fora — ali a recusa não pode derrubar a reconciliação inteira
+(um CPF ruim de UM signatário não pode travar os outros), então
+`_reconciliar_contrato_clicksign`/`_reconciliar_aprovacao_pe_clicksign`/
+`_reconciliar_solicitacao_medicao_clicksign` capturam o `ValueError`, logam
+e seguem para o próximo signatário.
 
 **A decidir junto:** CPF do signatário deve **bater com o cadastro** da
 parte que assina (o cliente do projeto, o gerente da loja), ou basta ser um
 CPF válido? Validar o dígito impede o número inventado; conferir contra o
 cadastro impede o CPF de outra pessoa. São guardas diferentes e a segunda é
-decisão do dono do negócio.
+decisão do dono do negócio — adiada pra próxima, ver LP-02 em
+`docs/db/LISTA_PARALELA.md`.
+
+**Prova:** `tests/test_aceite_achado28.py` — seis aceites (dois por
+caminho): CPF estruturalmente inválido recusado com 400 e mensagem nomeando
+a parte, sem avançar o status do documento; CPF válido passa — controle
+positivo, sem o qual uma guarda que recusasse sempre passaria no primeiro
+aceite de cada par. `pytest -q` completo confirmado verde depois do
+conserto (2482 passed, 4 xfailed) — a guarda nova expôs CPFs de teste
+estruturalmente inválidos (dígitos repetidos, sequenciais) usados como
+placeholder em seis arquivos de teste pré-existentes, todos trocados pelo
+CPF de teste válido já padrão na suíte (111.444.777-35).
 
 **Consequências no número final:** nenhuma. É evidência, não contabilidade —
 e é por isso que precisa ser boa.

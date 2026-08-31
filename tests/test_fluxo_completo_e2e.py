@@ -263,13 +263,13 @@ def test_contrato_real_geracao_e_assinatura(app_db, seed, projetos_dir, contrato
 
     # 5) ASSINATURA — loja
     st, b = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "loja", "nome": "Gerente Loja 1", "cpf": "111.111.111-11"})
+                   {"parte": "loja", "nome": "Gerente Loja 1", "cpf": "111.444.777-35"})
     assert st == 200 and b["ok"], b
     assert b["status"] == "assinado_loja"
 
     # 6) ASSINATURA — cliente → 'assinado'
     st, b = c.post("/api/projetos/%s/contrato/assinar" % nome,
-                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "111.111.111-11"})
+                   {"parte": "cliente", "nome": "Cliente L1", "cpf": "111.444.777-35"})
     assert st == 200 and b["ok"], b
     assert b["status"] == "assinado"
 

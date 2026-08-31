@@ -67,7 +67,46 @@ nasceu — e foi assim que ele foi corrigido.
 14. **Retenção de comissão** — só se a decisão do ACHADO-17 for implementar
     em vez de renomear.
 
+## Solicitação de Medição — a data não é capturada
+
+Encontrado pelo Marcelo em 31/08, clicando em Homologação.
+
+`SolicitacaoMedicao` (database.py:1428) é o Termo de Responsabilidade da
+etapa 9 — tem `status`, PDF, assinaturas, canal ClickSign. **Não tem campo
+de data nenhum.** A única data de medição no sistema é
+`Contrato.previsao_medicao`, coletada lá atrás na tela de contrato
+(`ct-previsao-medicao`), junto com `data_entrega`.
+
+São coisas diferentes: `previsao_medicao` é **previsão**, dada no
+fechamento da venda; o que falta é a **data acordada** no momento de
+solicitar a medição — que é o que o cliente assina no termo.
+
+15. **Modal do botão "Solicitar Medição" captura a data da medição**, e ela
+    entra no documento gerado. Decidir se substitui, corrige ou apenas
+    complementa a `previsao_medicao` do contrato (as duas informações têm
+    valor: previsto × acordado é variância, e variância é o que ensina).
+
+16. **Cadastro de funcionários na Homologação.** A transferência de
+    responsabilidade na medição oferece uma lista vazia porque não há
+    medidor cadastrado. Duas coisas: popular a Homologação com um conjunto
+    de funcionários de teste; e a tela dizer *"nenhum medidor cadastrado"*
+    em vez de oferecer uma transferência impossível — lista vazia sem
+    explicação é a mesma família do `logging.warning` que ninguém lê.
+
 ## Em aberto, sem decisão
+
+- **Aditivo criado manualmente entre a assinatura e o PE.** Pedido do
+  Marcelo em 31/08: hoje o botão "Gerar Termo Aditivo" só existe dentro da
+  seção de PE (static/index.html:21731) — o aditivo nasce **exclusivamente**
+  da divergência do Projeto Executivo, o que é fiel à regra que o próprio
+  usuário definiu. A pergunta é se deve existir um segundo caminho, na aba
+  de contrato, depois da assinatura. As consequências estão avaliadas na
+  resposta de 31/08; em resumo: (a) o aditivo passaria a ter duas naturezas,
+  valor calculado e valor digitado; (b) a base do complemento de PE muda,
+  corretamente mas não obviamente; (c) o caminho novo precisa herdar as
+  quatro guardas dos ACHADOS 21, 24, 25 e do congelamento de segmentação, ou
+  reabre os quatro; (d) a própria regra "XML novo ⇒ projeto novo" limita o
+  escopo a mudança de valor em ambiente existente. **Não decidido.**
 
 - **Alternativas de revisão de PE.** Hoje só existe painel de comparação, e
   o usuário registrou insegurança quanto a essa escolha: o cliente às vezes

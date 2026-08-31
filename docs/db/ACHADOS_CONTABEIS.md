@@ -1895,3 +1895,44 @@ ninguém consegue aprovar orçamento nem assinar contrato pela tela.
 
 **Grupo:** 1 — bloqueia um fluxo de negócio inteiro (aprovar/assinar) sob
 uma condição específica (plano longo), não é só higiene.
+
+---
+
+## ACHADO-28 — CPF de assinatura não é validado, e é ele que identifica quem assinou
+
+Encontrado pelo Marcelo em 31/08, clicando em Homologação: a assinatura do
+gerente aceitou um número aleatório como CPF.
+
+**O validador existe.** `validacao_doc.valida_cpf` confere os dígitos
+verificadores, e `validacao_doc.erro_doc` é chamado nos caminhos de cadastro
+— cliente, parceiro, loja (main.py:9965, 9974, 10716, 10940, 10984).
+
+**Os caminhos de assinatura não o chamam.** Nenhum dos três:
+
+- `_registrar_assinatura_contrato` (main.py:891)
+- `_registrar_assinatura_aprovacao_pe` (main.py:1125)
+- `_registrar_assinatura_solicitacao_medicao` (main.py:1198)
+
+**Por que aqui é pior que no cadastro.** No cadastro, CPF errado é dado ruim
+— corrige-se depois. Na assinatura, o CPF entra em
+`calcular_hash_assinatura(nome, cpf, contrato_id, timestamp)`
+(mod_contrato.py:68): ele é **parte da evidência de quem assinou**. Uma
+assinatura com CPF inválido é evidência de nada, e o hash lhe dá aparência
+de prova.
+
+**Sexta ocorrência do mesmo padrão.** ACHADO-19, 03, 24, 26, e o CMV do 22:
+o mecanismo existe, e o caminho real não passa por ele. Aqui a distância é
+de uma linha.
+
+**Conserto:** os três caminhos de assinatura chamam `validacao_doc.erro_doc`
+antes de gravar, recusando com mensagem. Vale para toda assinatura — interna
+e ClickSign (no webhook, o CPF vem de fora e merece a mesma conferência).
+
+**A decidir junto:** CPF do signatário deve **bater com o cadastro** da
+parte que assina (o cliente do projeto, o gerente da loja), ou basta ser um
+CPF válido? Validar o dígito impede o número inventado; conferir contra o
+cadastro impede o CPF de outra pessoa. São guardas diferentes e a segunda é
+decisão do dono do negócio.
+
+**Consequências no número final:** nenhuma. É evidência, não contabilidade —
+e é por isso que precisa ser boa.

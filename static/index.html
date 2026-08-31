@@ -14430,6 +14430,8 @@ async function adminLojaProjetosCarregar(){
 }
 
 // ── Financeiro: seções no SUBMENU da sidebar (v4 §4) — não mais tabs no conteúdo ──
+// Subtítulo genérico original (fin-page-sub, HTML) — fallback pra toda seção sem `sub` próprio.
+const _FIN_SUB_PADRAO = 'Configuração financeira: provisões/custos-padrão e plano de contas.';
 const _FIN_SECOES = [
   {id:'prov',    lbl:'Provisões',       ic:'shield-dollar',   load:()=>finDashboardCarregar()},
   {id:'plano',   lbl:'Plano de Contas', ic:'list-tree',       load:()=>planoContasCarregar()},
@@ -14440,7 +14442,8 @@ const _FIN_SECOES = [
   {id:'proj',    lbl:'Margem/Projeto',  ic:'chart-dots',      load:()=>projDreCarregar()},
   {id:'recon',   lbl:'Reconciliação',   ic:'refresh',         load:()=>reconInit()},
   {id:'reconprov', lbl:'Reconc. Provisões', ic:'checklist',   load:()=>finReconProvCarregar()},   // FASE D
-  {id:'filaprov', lbl:'Fila de Provisões', ic:'list-check',  load:()=>filaProvisoesCarregar()},   // F2-3, ACHADO-26
+  {id:'filaprov', lbl:'Fila de Provisões', ic:'list-check',  load:()=>filaProvisoesCarregar(),
+   sub:'Provisões em aberto por projeto. Dê o veredito de cada uma antes do encerramento do projeto.'},   // F2-3, ACHADO-26
   {id:'contaspagar', lbl:'Contas a Pagar', ic:'file-invoice', load:()=>finContasPagarCarregar()}, // FASE D
   {id:'folha',   lbl:'Folha de Pagamento', ic:'cash-banknote', load:()=>folhaCarregar()},   // Modulos_Orizon_v10 §2.1
   // "Repasse Fábrica" saiu do Financeiro (Modulos_Orizon_v4/§6.2): migra p/ o módulo Assistências
@@ -15349,6 +15352,10 @@ function finTab(t){
   const sec = _FIN_SECOES.find(s => s.id===t);
   const tt = document.getElementById('fin-page-title');
   if(tt && sec) tt.textContent = 'Financeiro / ' + sec.lbl;
+  // Subtítulo por seção (opcional, `sec.sub`) — sem ele, mantém o genérico original (as demais
+  // seções nunca tiveram subtítulo próprio; só a Fila de Provisões precisava, F2-3).
+  const ts = document.getElementById('fin-page-sub');
+  if(ts) ts.textContent = (sec && sec.sub) || _FIN_SUB_PADRAO;
   _sbModuloAberto = 'financeiro'; _sbSecaoAtiva = t; sbNavRender();   // reflete no acordeão
   if(sec && sec.load) sec.load();
 }

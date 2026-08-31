@@ -366,3 +366,12 @@ def servidor(app_db, seed, projetos_dir):
 @pytest.fixture
 def http_client_factory(servidor):
     return lambda: HttpClient(servidor)
+
+# tests/test_e2e_browser_conciliacao_final.py: E2E de Playwright, sobe servidor+navegador de
+# verdade e usa o MESMO orizon_test da suíte (sem CREATEDB local pra um banco dedicado — ver
+# docs/db/IMPLANTAR.md) via um subprocesso que dá DROP SCHEMA CASCADE nele. Rodar dentro da
+# mesma sessão de `pytest -q` colidiria com o app_db/db_pg_limpo de outros módulos disputando
+# o mesmo schema ao mesmo tempo — por isso fica fora da coleta padrão. Continua rodável direto
+# por caminho: `pytest tests/test_e2e_browser_conciliacao_final.py -v` (collect_ignore só vale
+# pra coleta RECURSIVA, não quando o arquivo é passado explicitamente).
+collect_ignore = ["test_e2e_browser_conciliacao_final.py"]

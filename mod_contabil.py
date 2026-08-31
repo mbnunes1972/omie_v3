@@ -1939,6 +1939,17 @@ _PROV_DESTINO_VARIANCIA = {
     "2.1.04.13": "4.3.01",   # Impostos (P4): variância é dedução de receita, não custo nem receita nova
 }
 
+# F2-3 (docs/db/TAREFA_FILA_PROVISOES.md): as duas rubricas que `conciliar_final` e
+# `resolver_veredito_provisao` excluem da regra de veredito, de propósito (ACHADO-01) — rota
+# própria de liquidação, não o mecanismo genérico. Nome único usado nos dois lugares (antes eram
+# dois literais `{"2.1.04.13", "2.1.04.19"}` independentes) e na guarda do endpoint
+# `/api/financeiro/resolver-saldo-provisao`, que só continua aceitando estas duas depois do F2-3
+# fechar a porta dos fundos para o resto. Nota: 2.1.04.19 (Custo Financeiro) já falhava sozinho
+# nesta rota genérica ANTES do F2-3 (sem entrada em `_PROV_DESTINO_VARIANCIA` nem em
+# `_PROV_TEMPO_REAL_ROTA_PROPRIA`, de propósito, ver comentário acima) — continua listado aqui
+# só por simetria com `conciliar_final`, não porque a rota funcione para ele.
+_PROV_FORA_DO_VEREDITO = {"2.1.04.13", "2.1.04.19"}
+
 
 def reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
     """Perna de despesa de uma efetivação de provisão: débito na despesa FORMAL da rubrica (5.x) ×
@@ -2234,6 +2245,60 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
                        "resolvido_liquido": t("resolvido_liquido"), "saldo_aberto": t("saldo_aberto")}}
 
 
+def provisoes_em_aberto(db, owner_tipo, owner_id):
+    """Fila de provisões (F2-3, docs/db/TAREFA_FILA_PROVISOES.md) — a PORTA DA FRENTE do
+    veredito: toda provisão em aberto, por projeto, fora da Conciliação Final. Dona: a
+    assistente administrativa da loja (decisão do Marcelo, 31/08) — quem tem o pedido e a nota
+    da fábrica na mão pra responder "ainda há despesa a realizar?".
+
+    Mesma exclusão de `conciliar_final`: `_PROV_PAINEL_EXCLUI` (sem mecanismo ativo) e
+    `_PROV_FORA_DO_VEREDITO` (Impostos/Custo Financeiro, rota própria, ACHADO-01) nunca entram
+    na fila — dar veredito nelas é recusado por `resolver_veredito_provisao`.
+
+    `constituida_em` = data do lançamento mais antigo que tocou a rubrica NESTE projeto — só
+    para "há quanto tempo está aberta" na tela; não entra em nenhum cálculo de saldo."""
+    seed_plano(db, owner_tipo, owner_id)
+    excluir = _PROV_PAINEL_EXCLUI | _PROV_FORA_DO_VEREDITO
+    contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
+              .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).all())
+    conta_ids = {c.id: c for c in contas if c.codigo not in excluir}
+    if not conta_ids:
+        return []
+    ids = list(conta_ids.keys())
+    linhas = (db.query(Lancamento.projeto_id, Lancamento.conta_debito_id,
+                       Lancamento.conta_credito_id, Lancamento.data)
+                .filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
+                .filter(Lancamento.projeto_id.isnot(None))
+                .filter((Lancamento.conta_debito_id.in_(ids)) | (Lancamento.conta_credito_id.in_(ids)))
+                .all())
+    projetos_por_conta = {}   # conta_id -> {projeto_id, ...}
+    constituida_em = {}       # (projeto_id, conta_id) -> data mais antiga
+    for projeto_id, deb_id, cred_id, data in linhas:
+        for cid in (deb_id, cred_id):
+            if cid in conta_ids:
+                projetos_por_conta.setdefault(cid, set()).add(projeto_id)
+                chave = (projeto_id, cid)
+                if chave not in constituida_em or data < constituida_em[chave]:
+                    constituida_em[chave] = data
+
+    projetos = sorted({p for ps in projetos_por_conta.values() for p in ps})
+    fila = []
+    for projeto_id in projetos:
+        rec = reconciliacao(db, owner_tipo, owner_id, projeto_id=projeto_id)
+        for p in rec["provisoes"]:
+            if p["codigo"] in excluir or abs(p["saldo_aberto"]) < 0.005:
+                continue
+            cid = next((k for k, c in conta_ids.items() if c.codigo == p["codigo"]), None)
+            fila.append({
+                "projeto_id": projeto_id, "codigo": p["codigo"], "nome": p["nome"],
+                "provisionado": p["provisionado"], "efetivado": p["efetivado"],
+                "saldo_aberto": p["saldo_aberto"],
+                "constituida_em": constituida_em.get((projeto_id, cid)),
+            })
+    fila.sort(key=lambda r: (r["constituida_em"] is None, r["constituida_em"]))
+    return fila
+
+
 _VEREDITOS_VALIDOS = {"efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"}
 
 
@@ -2268,7 +2333,7 @@ def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_prov
         raise ValueError(
             "resolver_veredito_provisao: %r não é conta de provisão legítima (grupo %s.x, exceto %s)"
             % (codigo_provisao, GRUPO_PROVISOES, sorted(_PROV_PAINEL_EXCLUI)))
-    if codigo_provisao in ("2.1.04.13", "2.1.04.19"):
+    if codigo_provisao in _PROV_FORA_DO_VEREDITO:
         raise ValueError(
             "resolver_veredito_provisao: %s não segue a regra de veredito/reversão (ACHADO-01) — "
             "impostos e custo financeiro têm rota própria, fora da Conciliação Final." % codigo_provisao)
@@ -2350,7 +2415,7 @@ def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, d
     "valor_revertido":}} — descreve O QUE aconteceu, não só o saldo residual (a API não
     responde mais `{"resolvido": {...}}` sem dizer qual veredito foi dado, por quem)."""
     seed_plano(db, owner_tipo, owner_id)
-    excluir = _PROV_PAINEL_EXCLUI | {"2.1.04.13", "2.1.04.19"}   # ACHADO-01 — rota própria, fora da regra de veredito
+    excluir = _PROV_PAINEL_EXCLUI | _PROV_FORA_DO_VEREDITO   # ACHADO-01 — rota própria, fora da regra de veredito
     contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
               .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
     abertas = []
@@ -2364,9 +2429,13 @@ def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, d
     vereditos = vereditos or {}
     faltando = sorted(cod for cod in abertas if cod not in vereditos)
     if faltando:
+        # F2-3 (docs/db/TAREFA_FILA_PROVISOES.md, Parte 3): a mensagem passou a dizer ONDE
+        # resolver — a Conciliação Final não ganha campo de veredito nenhum, a Fila de
+        # Provisões é a porta da frente (ACHADO-26).
         raise ValueError(
             "Conciliação Final recusada: falta veredito para %s — toda provisão em aberto "
-            "precisa de um veredito nomeado antes do projeto fechar." % ", ".join(faltando))
+            "precisa de um veredito nomeado antes do projeto fechar. Resolva na Fila de "
+            "Provisões (Financeiro → Fila de Provisões) e tente novamente." % ", ".join(faltando))
     ainda_vai_chegar = sorted(cod for cod in abertas if vereditos[cod].get("veredito") == "ainda_vai_chegar")
     if ainda_vai_chegar:
         raise ValueError(

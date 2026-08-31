@@ -1854,6 +1854,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <div id="fin-panel-proj" style="display:none"><div id="proj-dre-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-recon" style="display:none"><div id="recon-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-reconprov" style="display:none"><div id="reconprov-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
+    <div id="fin-panel-filaprov" style="display:none"><div id="filaprov-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-contaspagar" style="display:none"><div id="contaspagar-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-repasse" style="display:none"><div id="repasse-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
     <div id="fin-panel-folha" style="display:none"><div id="folha-box"><em style="color:var(--muted);font-size:12px">Carregando…</em></div></div>
@@ -14439,6 +14440,7 @@ const _FIN_SECOES = [
   {id:'proj',    lbl:'Margem/Projeto',  ic:'chart-dots',      load:()=>projDreCarregar()},
   {id:'recon',   lbl:'Reconciliação',   ic:'refresh',         load:()=>reconInit()},
   {id:'reconprov', lbl:'Reconc. Provisões', ic:'checklist',   load:()=>finReconProvCarregar()},   // FASE D
+  {id:'filaprov', lbl:'Fila de Provisões', ic:'list-check',  load:()=>filaProvisoesCarregar()},   // F2-3, ACHADO-26
   {id:'contaspagar', lbl:'Contas a Pagar', ic:'file-invoice', load:()=>finContasPagarCarregar()}, // FASE D
   {id:'folha',   lbl:'Folha de Pagamento', ic:'cash-banknote', load:()=>folhaCarregar()},   // Modulos_Orizon_v10 §2.1
   // "Repasse Fábrica" saiu do Financeiro (Modulos_Orizon_v4/§6.2): migra p/ o módulo Assistências
@@ -14885,6 +14887,116 @@ async function finReconProvCarregar(){
     +'<span style="color:var(--muted)" title="Bruto '+_fBRL(tot.saldo)+'">Saldo <strong style="font-family:var(--font-mono);color:'+_reconSaldoCor(tot.saldo_aberto)+'">'+_fBRL(tot.saldo_aberto)+'</strong></span></div>'
     +_reconProvTabelaHtml(rec.provisoes, {editavel:false});
 }
+// ── Fila de Provisões (F2-3, docs/db/TAREFA_FILA_PROVISOES.md — ACHADO-26) ──────────────────
+// A PORTA DA FRENTE do veredito: dona é a assistente administrativa da loja (decisão do
+// Marcelo, 31/08) — quem tem o pedido e a nota da fábrica na mão pra responder "ainda há
+// despesa a realizar?". A Conciliação Final NÃO ganha campo de veredito nenhum (Parte 3 da
+// tarefa) — continua recusando quando há provisão aberta, e a mensagem aponta pra cá.
+function _filaProvDiasAberta(constituidaEm){
+  if(!constituidaEm) return '—';
+  const dias = Math.floor((Date.now() - new Date(constituidaEm).getTime()) / 86400000);
+  return dias <= 0 ? 'hoje' : (dias + (dias===1?' dia':' dias'));
+}
+async function filaProvisoesCarregar(){
+  const box = document.getElementById('filaprov-box');
+  if(!box) return;
+  box.innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
+  const d = await fetch('/api/financeiro/fila-provisoes', {credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));
+  if(!d.ok){ box.innerHTML = '<em style="color:var(--err);font-size:12px">Falha ao carregar a fila.</em>'; return; }
+  const fila = d.fila || [];
+  if(!fila.length){
+    box.innerHTML = '<div style="font-size:.85rem;color:var(--muted)">Nenhuma provisão em aberto — a fila está vazia.</div>';
+    return;
+  }
+  const linha = r => '<tr style="border-top:1px solid var(--border);font-size:12px">'
+    +'<td style="padding:10px 16px">'+esc(r.projeto_id)+'</td>'
+    +'<td style="padding:10px 16px" title="'+esc(r.codigo)+'">'+esc(r.nome)+'</td>'
+    +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono)">'+_fBRL(r.provisionado)+'</td>'
+    +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono)">'+_fBRL(r.efetivado)+'</td>'
+    +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);color:'+_reconSaldoCor(r.saldo_aberto)+'">'+_fBRL(r.saldo_aberto)+'</td>'
+    +'<td style="padding:10px 16px;color:var(--muted);white-space:nowrap">'+_filaProvDiasAberta(r.constituida_em)+'</td>'
+    +'<td style="padding:10px 16px;white-space:nowrap">'
+      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"efetivada")\'>Efetivada</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"encerrada_valor_menor")\'>Encerrada · valor menor</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"nao_se_aplica")\'>Não se aplica</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"ainda_vai_chegar")\'>Ainda vai chegar</button>'
+    +'</td></tr>';
+  box.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">'
+    +fila.length+' provisão(ões) em aberto — dê o veredito de cada uma antes que o projeto chegue na Conciliação Final.</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;min-width:900px;border-collapse:collapse">'
+    +'<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+    +'<th style="text-align:left;padding:10px 16px">Projeto</th><th style="text-align:left;padding:10px 16px">Rubrica</th>'
+    +'<th style="text-align:right;padding:10px 16px">Provisionado</th><th style="text-align:right;padding:10px 16px">Efetivado</th>'
+    +'<th style="text-align:right;padding:10px 16px">Saldo</th><th style="text-align:left;padding:10px 16px">Aberta há</th>'
+    +'<th style="text-align:left;padding:10px 16px">Veredito</th></tr>'
+    +fila.map(linha).join('')+'</table></div>';
+}
+async function _filaProvAcao(projeto, conta, veredito){
+  let extra = {};
+  if(veredito === 'encerrada_valor_menor'){
+    const valor = await _filaProvPromptValor(
+      'Encerrada com valor menor', 'Valor REAL efetivado (o que sobrar do provisionado vira reversão automática):');
+    if(valor === null) return;   // cancelou
+    extra = {valor_efetivado: valor};
+  } else if(veredito === 'nao_se_aplica'){
+    const motivo = await _filaProvPromptTexto(
+      'Não se aplica', 'Motivo (obrigatório) — por que esta rubrica nunca incidiu neste projeto:');
+    if(motivo === null) return;
+    if(!motivo.trim()){ await avisoPopup('Motivo é obrigatório para "Não se aplica".', {titulo:'Fila de Provisões'}); return; }
+    extra = {motivo: motivo.trim()};
+  } else {
+    const rotulo = veredito === 'ainda_vai_chegar' ? 'marcar como "ainda vai chegar" (o projeto continua sem poder concluir)'
+                                                    : 'marcar como "efetivada" (só vale quando o efetivado já superou o provisionado)';
+    if(!(await confirmarPopup('Confirma ' + rotulo + '?', {titulo:'Fila de Provisões'}))) return;
+  }
+  try {
+    const r = await fetch('/api/financeiro/fila-provisoes/veredito', {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({projeto, conta, veredito, ...extra}),
+    });
+    const d = await r.json();
+    if(!d.ok){ await avisoPopup(d.erro || 'Falha ao dar o veredito.', {titulo:'Fila de Provisões'}); return; }
+    showToast('Veredito registrado.');
+    filaProvisoesCarregar();
+  } catch(e){ showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+}
+function _filaProvPromptValor(titulo, label){
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">'+esc(titulo)+'</h4>'
+      +'<label style="font-size:.85rem;color:var(--muted);display:block;margin-bottom:6px">'+esc(label)+'</label>'
+      +'<input id="_filaprov-valor" type="number" step="0.01" min="0" placeholder="0,00" '
+      +'style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;font-size:.9rem;margin-bottom:14px">'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Cancelar</button>'
+      +'<button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">Confirmar</button>'
+      +'</div>');
+    const fin = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector('[data-act="ok"]').onclick = () => fin(parseMoeda(document.getElementById('_filaprov-valor').value) || 0);
+    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    setTimeout(() => document.getElementById('_filaprov-valor')?.focus(), 60);
+  });
+}
+function _filaProvPromptTexto(titulo, label){
+  return new Promise((resolve) => {
+    const ov = _popupOverlay(
+      '<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">'+esc(titulo)+'</h4>'
+      +'<label style="font-size:.85rem;color:var(--muted);display:block;margin-bottom:6px">'+esc(label)+'</label>'
+      +'<textarea id="_filaprov-motivo" rows="3" '
+      +'style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;font-size:.9rem;margin-bottom:14px"></textarea>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Cancelar</button>'
+      +'<button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">Confirmar</button>'
+      +'</div>');
+    const fin = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector('[data-act="ok"]').onclick = () => fin(document.getElementById('_filaprov-motivo').value || '');
+    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    setTimeout(() => document.getElementById('_filaprov-motivo')?.focus(), 60);
+  });
+}
+
 function _reconReloadAtivo(){
   // 3 telas possíveis desde 2026-08-06 (modal do projeto, Etapa 21 do Ciclo, Financeiro) —
   // recarrega só a que está de fato visível, na ordem de prioridade abaixo.

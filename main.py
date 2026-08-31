@@ -2339,6 +2339,22 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 db.close()
             return
+        if path == "/api/financeiro/fila-provisoes":
+            # F2-3 (docs/db/TAREFA_FILA_PROVISOES.md, Parte 1 — ACHADO-26): a porta da frente do
+            # veredito, fora da Conciliação Final. Dona: a assistente administrativa da loja
+            # (decisão do Marcelo, 31/08) — quem tem o pedido e a nota da fábrica na mão.
+            ctx = _contabil_ctx(self, exige_edicao=False)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                fila = mod_contabil.provisoes_em_aberto(db, ot, oid)
+                for r in fila:
+                    r["constituida_em"] = r["constituida_em"].isoformat() if r["constituida_em"] else None
+                self.send_json({"ok": True, "fila": fila})
+            finally:
+                db.close()
+            return
 
         if path == "/api/financeiro/projetos-encerrados-por-reversao":
             # ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8): o contra-controle do veredito
@@ -10201,6 +10217,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/financeiro/resolver-saldo-provisao":
             # FASE D: fecha o saldo da provisão ao resultado (sobra→4.4.02 / falta→5.6.10). Idempotente.
+            # F2-3 (docs/db/TAREFA_FILA_PROVISOES.md, Parte 2 — ACHADO-26): esta é a "porta dos
+            # fundos" que deixava fechar QUALQUER provisão sem veredito — inclusive as de
+            # matching pleno que a Conciliação Final exige. Só continua aberta para as duas
+            # rubricas que genuinamente não seguem a regra de veredito (Impostos/Custo
+            # Financeiro, ACHADO-01, `_PROV_FORA_DO_VEREDITO`); as demais têm que passar pela
+            # Fila de Provisões (`/api/financeiro/fila-provisoes/veredito`).
             ctx = _contabil_ctx(self, exige_edicao=True)
             if ctx is None: return
             import mod_contabil
@@ -10208,11 +10230,43 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 dd = json.loads(body or b'{}')
                 conta = (dd.get("conta") or "").strip()
+                if conta not in mod_contabil._PROV_FORA_DO_VEREDITO:
+                    self.send_json({"ok": False, "erro": "%s exige veredito nomeado — resolva "
+                                    "na Fila de Provisões (Financeiro → Fila de Provisões), não "
+                                    "por aqui." % conta}, code=409)
+                    return
                 proj = (dd.get("projeto") or "").strip() or None
                 ref = "resolve:%s:%s" % (proj or "-", conta)
                 lan = mod_contabil.resolver_saldo_provisao(db, ot, oid, proj, conta, ref=ref)
                 db.commit()
                 self.send_json({"ok": True, "lancamento": lan})
+            except ValueError as e:
+                db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
+            finally:
+                db.close()
+            return
+        if path == "/api/financeiro/fila-provisoes/veredito":
+            ctx = _contabil_ctx(self, exige_edicao=True)
+            if ctx is None: return
+            import mod_contabil
+            usuario, db, ot, oid = ctx
+            try:
+                dd = json.loads(body or b'{}')
+                proj = (dd.get("projeto") or "").strip()
+                conta = (dd.get("conta") or "").strip()
+                veredito = (dd.get("veredito") or "").strip()
+                if not proj or not conta:
+                    self.send_json({"ok": False, "erro": "Informe projeto e conta."}, code=400); return
+                ref = "fila:%s:%s" % (proj, conta)
+                v = mod_contabil.resolver_veredito_provisao(
+                    db, ot, oid, proj, conta, veredito, ref=ref,
+                    valor_efetivado=dd.get("valor_efetivado"), motivo=dd.get("motivo"),
+                    decidido_por_id=usuario.get("id"),
+                    forma_pagamento=dd.get("forma_pagamento") or "a_prazo")
+                db.commit()
+                self.send_json({"ok": True, "veredito": {
+                    "veredito": v.veredito, "valor_efetivado": v.valor_efetivado,
+                    "valor_revertido": v.valor_revertido}})
             except ValueError as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:

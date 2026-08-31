@@ -1693,7 +1693,7 @@ completa a 2ª assinatura pela tela.
 
 ---
 
-## ACHADO-26 — a Conciliação Final não manda veredito nenhum: ou o projeto trava, ou o veredito é contornado em silêncio
+## ACHADO-26 — a Conciliação Final não manda veredito nenhum: ou o projeto trava, ou o veredito é contornado em silêncio · RESOLVIDO 31/08/2026 (F2-3)
 
 Encontrado no levantamento F2-2 (docs/db/TAREFA_CONTRATOS_UI.md), que a
 tarefa já apontava como suspeito grave: se a tela não manda vereditos,
@@ -1743,63 +1743,56 @@ quê uma provisão foi zerada sem efetivação. O conserto do ACHADO-16 no
 código nunca chega a proteger um usuário real, porque a tela nunca oferece
 o mecanismo que o protegeria.
 
-**Não é conserto desta tarefa** (F2-2 é levantamento — ver
-docs/db/TAREFA_CONTRATOS_UI.md). Registrado e enfileirado.
-
-**Conserto provável:** a tabela editável da Conciliação Final precisa, por
-rubrica em aberto, de um seletor de veredito (`encerrada_valor_menor` com
-valor efetivado, `nao_se_aplica` com motivo, `ainda_vai_chegar`) — e
-"Concluir Conciliação Final" monta o corpo `vereditos` a partir dele, em
-vez de mandar `{}`. Decisão de produto (rótulos, onde, se "Resolver"
-continua existindo fora deste fluxo ou é removido do card da Conciliação
-Final) cabe ao Marcelo.
-
-**Consequências no número final:** nenhuma medida nesta tarefa (é achado
-de UI). Em uso real: todo projeto concluído pela tela até hoje que tinha
-provisão em aberto foi fechado via "Resolver", sem veredito nomeado nem
-motivo registrado — o mesmo ponto cego que o ACHADO-16 mediu originalmente,
-reaberto pela tela.
-
-**Grupo:** 1 — é o fluxo de fechamento do sistema inteiro.
-
----
-
-## ACHADO-26 — o conserto do ACHADO-16 tem porta dos fundos, e é a única que a tela oferece
-
-Medido pela Vera no F2-2. **O achado mais grave desde o ACHADO-16 — porque
-é o ACHADO-16 continuando a acontecer.**
-
-**O que acontece:** `conciliarFinal()` manda `body: '{}'`, sempre. Não existe
-nenhum campo de veredito em `static/index.html` — zero ocorrências de
-`encerrada_valor_menor`, `nao_se_aplica` ou `ainda_vai_chegar`. Mas a mesma
-tela tem botões "Efetivar"/"Resolver" ligados a
-`/api/financeiro/resolver-saldo-provisao`, que **zera o saldo de qualquer
-provisão direto**, sem veredito e sem escrever nada em `VeredictoProvisao`.
-
-Zerado tudo pelos botões, o "Concluir" passa legitimamente: não há mais nada
-em aberto para recusar. **O passo 8 guardou uma porta e deixou a outra
-aberta — e a outra é a única que a tela oferece.**
-
 **A quarta ocorrência do mesmo erro.** ACHADO-19 (seis rotas, uma guardada),
 ACHADO-03 (dois roteadores divergentes), ACHADO-24 (função compartilhada,
 dois chamadores), e agora este. A disciplina que faltava não é medir o livro
 nem checar quem chama: é **enumerar os irmãos** — antes de guardar uma
 operação, listar todo endpoint capaz de produzir a mesma mudança de estado.
 
-### DECIDIDO 31/08 — a fila é a porta da frente
+**Decisão de Marcelo, 31/08: a fila é a porta da frente, não a tela de
+Conciliação Final.** Quem dá os vereditos é a assistente administrativa da
+loja — quem tem o pedido e a nota da fábrica na mão e sabe responder "ainda
+há despesa a realizar?". A Conciliação Final **não ganha campos de
+veredito**: continua conferindo que nada ficou em aberto e, quando ficar,
+aponta para a fila. Ordem obrigatória: a fila entra **antes** do desvio
+fechar — fechá-lo primeiro deixaria o sistema sem porta nenhuma pra
+concluir projeto.
 
-Quem dá os vereditos é a **assistente administrativa**, na fila de provisões
-(passo 13), não na tela de Conciliação Final. É quem tem o pedido e a nota da
-fábrica na mão e sabe responder *"ainda há despesa a realizar?"*.
+**Conserto aplicado (F2-3, docs/db/TAREFA_FILA_PROVISOES.md), 31/08/2026:**
 
-A Conciliação Final **não ganha campos de veredito**: ela confere que nada
-ficou em aberto e, quando ficar, aponta para a fila.
+1. **A fila** — `GET /api/financeiro/fila-provisoes` (`mod_contabil.
+   provisoes_em_aberto`, todo projeto, toda rubrica em aberto que exige
+   veredito) e `POST /api/financeiro/fila-provisoes/veredito` (um veredito
+   por vez, por projeto+rubrica, via `resolver_veredito_provisao` — o
+   mesmo mecanismo do passo 8, `ref="fila:<projeto>:<conta>"`).
+2. **O desvio fechado** — `/api/financeiro/resolver-saldo-provisao` passa a
+   recusar (409) qualquer `conta` fora de `_PROV_FORA_DO_VEREDITO`
+   (Impostos/Custo Financeiro, ACHADO-01 — os únicos usos legítimos
+   levantados antes de restringir; nenhum outro endpoint zera saldo de
+   provisão além deste e do já conhecido ACHADO-07, Grupo 5, não tocado).
+   Achado colateral do levantamento: Custo Financeiro (2.1.04.19) já
+   falhava sozinho nesta rota genérica ANTES do F2-3 — não tem entrada em
+   `_PROV_DESTINO_VARIANCIA` nem em `_PROV_TEMPO_REAL_ROTA_PROPRIA`, de
+   propósito (rota própria é `conferir_retencao_financeira`) — listado em
+   `_PROV_FORA_DO_VEREDITO` só por simetria com `conciliar_final`, não
+   porque a rota funcionasse pra ele.
+3. **A mensagem** — o texto de `conciliar_final` ao recusar por falta de
+   veredito passou a dizer onde resolver ("Resolva na Fila de Provisões").
+   A Conciliação Final continua sem campo de veredito nenhum.
 
-**Ordem obrigatória:** a fila entra **antes** de o desvio ser fechado. Fechar
-`resolver-saldo-provisao` com a tela ainda sem lugar para dar veredito
-deixaria o sistema sem porta nenhuma — hoje pelo menos se conclui, ainda que
-errado.
+Provado por `tests/test_aceite_fila_provisoes.py` (7 aceites): o desvio
+recusado para rubrica que exige veredito (e o projeto continua sem
+concluir); os quatro vereditos pela fila, isolados (`efetivada` só para
+FALTA, `encerrada_valor_menor` reconhece o custo real em 5.1.01 antes de
+reverter o resíduo, `nao_se_aplica` exige motivo, `ainda_vai_chegar` não
+destrava o fechamento); controle positivo — Impostos continua funcionando
+pelo desvio; e o fluxo completo — veredito pela fila, fila deixa de listar
+a rubrica, Conciliação Final conclui com `{}` de sempre, custo aparece em
+5.1.01.
 
-**Consequências no número final:** as mesmas do ACHADO-16 — margem fictícia,
-custo que some. O conserto do passo 8 só passa a valer de fato quando este
-fechar.
+**Consequências no número final:** as mesmas do ACHADO-16 — margem
+fictícia, custo que some — mas só até este conserto: agora todo projeto
+concluído pela tela passa pelo veredito de verdade (fila) ou continua
+travado até passar.
+
+**Grupo:** 1 — é o fluxo de fechamento do sistema inteiro.

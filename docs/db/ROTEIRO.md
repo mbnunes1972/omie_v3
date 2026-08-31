@@ -43,7 +43,7 @@ deixa de ter resposta rápida.
 | **F2-0** · remedir o ciclo das DREs | **feito** — 31/08, `docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md`; ACHADO-15 **aposentado** (divergência de meio de ciclo é o modelo — decisão de 07/08 — não defeito; reconcilia no fechamento) |
 | **F2-1** · ACHADO-24, aditivo sem recebível | **feito** — 31/08, `test_aceite_achado24.py`; medidos os DOIS chamadores (aditivo E contrato, os dois expostos); guarda em main.py nos dois; fixture do ciclo corrigido, resíduo de R$5.000 em 1.1.02 desapareceu |
 | **F2-2** · auditoria contrato de API × tela | **feito** — 31/08, mapa completo em `docs/db/ACHADOS_CONTABEIS.md`; achou o **ACHADO-26** (Conciliação Final pior que o 25 — trava OU contorna o veredito em silêncio); contrato e NF-e confirmados OK na tela |
-| **F2-3** · fila de provisões + ACHADO-26 | tarefa escrita — `docs/db/TAREFA_FILA_PROVISOES.md`; a fila vira a porta da frente, o desvio fecha depois |
+| **F2-3** · fila de provisões + ACHADO-26 | **feito** — 31/08, `test_aceite_fila_provisoes.py` (7 aceites); fila (`GET`/`POST /api/financeiro/fila-provisoes[/veredito]`) + tela própria (Financeiro → Fila de Provisões) entraram ANTES do desvio fechar; `resolver-saldo-provisao` só aceita Impostos/Custo Financeiro agora; mensagem da Conciliação Final aponta pra fila; ACHADO-26 **RESOLVIDO** |
 | **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | enfileirado — bloco de frontend, depois do F2-3 |
 | 12 em diante | não iniciados |
 

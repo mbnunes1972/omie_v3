@@ -56,7 +56,7 @@ não depois.
 | 22 | docstring do CMV descreve mecanismo extinto | — | documental, Grupo 5 |
 | 23 | segmentação não congelada silenciosamente (falha engolida na assinatura) | `test_aceite_achado23.py` (4 aceites: recusa por injeção nomeando o projeto, reparo na AF1, controle positivo sem ruído, assinatura completa nos dois casos — confirmado que os dois primeiros falham pelo motivo certo contra o código pré-conserto) | **CONSERTADO** — passo 11 do ROTEIRO |
 | 24 | aditivo/contrato com plano de pagamento vazio não gera cobrança | `test_aceite_achado24.py` (2 `xfail(strict=True)`, um por chamador de `_materializar_recebiveis_venda_seguro`, + 2 controles positivos — `xfail` removido no commit do conserto, 31/08) | **CONSERTADO** — F2-1 do ROTEIRO |
-| 25 | tela do aditivo nunca envia forma de pagamento — ninguém completa pela UI | — | **SEM PROVA** (achado de UI, não de HTTP; enfileirado, não consertado) |
+| 25 | tela do aditivo nunca envia forma de pagamento — ninguém completa pela UI | `test_e2e_browser_conciliacao_final.py` (achado de UI — a prova é de NAVEGADOR, não de HTTP: gera o Termo Aditivo, assina loja, assina cliente — a assinatura que completa o par abre o modal de pagamento novo e a assinatura só se registra depois de confirmado) | **CONSERTADO** — F2-4 do ROTEIRO |
 | 26 | Conciliação Final não manda veredito — trava, ou contorna via "Resolver" sem auditoria | `test_aceite_fila_provisoes.py` (7 aceites: desvio recusado + projeto não conclui por ele; os 4 vereditos pela fila isolados; controle positivo — Impostos continua funcionando pelo desvio; fluxo completo — fila → conclusão → custo em 5.1.01) | **CONSERTADO** — F2-3 do ROTEIRO |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 

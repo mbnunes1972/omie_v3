@@ -44,7 +44,7 @@ deixa de ter resposta rápida.
 | **F2-1** · ACHADO-24, aditivo sem recebível | **feito** — 31/08, `test_aceite_achado24.py`; medidos os DOIS chamadores (aditivo E contrato, os dois expostos); guarda em main.py nos dois; fixture do ciclo corrigido, resíduo de R$5.000 em 1.1.02 desapareceu |
 | **F2-2** · auditoria contrato de API × tela | **feito** — 31/08, mapa completo em `docs/db/ACHADOS_CONTABEIS.md`; achou o **ACHADO-26** (Conciliação Final pior que o 25 — trava OU contorna o veredito em silêncio); contrato e NF-e confirmados OK na tela |
 | **F2-3** · fila de provisões + ACHADO-26 | **feito** — 31/08, `test_aceite_fila_provisoes.py` (7 aceites); fila (`GET`/`POST /api/financeiro/fila-provisoes[/veredito]`) + tela própria (Financeiro → Fila de Provisões) entraram ANTES do desvio fechar; `resolver-saldo-provisao` só aceita Impostos/Custo Financeiro agora; mensagem da Conciliação Final aponta pra fila; ACHADO-26 **RESOLVIDO** |
-| **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | enfileirado — bloco de frontend, depois do F2-3 |
+| **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | **feito** — 31/08, modal `_abrirModalPagamentoAditivo` em `static/index.html`; prova por E2E de navegador (`test_e2e_browser_conciliacao_final.py`, banco próprio `orizon_e2e`, de volta ao `pytest -q` padrão) |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:

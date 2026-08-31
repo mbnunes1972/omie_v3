@@ -2,17 +2,27 @@
 """Bootstrap de banco para o E2E de navegador (tests/test_e2e_browser_conciliacao_final.py).
 
 Roda como SUBPROCESSO isolado (nunca importado direto pelo processo principal do pytest) —
-assim o rebind de `database.ENGINE/Session` daqui nunca vaza pro resto da suíte. Reusa o mesmo
-`orizon_test` da suíte normal (o `orizon` local não tem CREATEDB — sem privilégio pra um banco
-`orizon_e2e` dedicado, ver docs/db/IMPLANTAR.md) — schema derrubado e recriado a cada run, igual
-ao `_reset_schema_pg` de conftest.py. **Nunca rode ao mesmo tempo que `pytest -q` da suíte
-inteira** — os dois disputam o mesmo schema."""
+assim o rebind de `database.ENGINE/Session` daqui nunca vaza pro resto da suíte. Banco PRÓPRIO
+(`orizon_e2e`, docs/db/ESTEIRA.md — "teste fora da rodada padrão apodrece": o problema era
+isolamento, não custo, e isolamento se resolve com banco próprio, não tirando o teste da
+suíte) — nunca `orizon_test` (esse é do resto da suíte; os dois disputariam o mesmo schema se
+rodassem juntos).
+
+GUARDA (ESTEIRA.md — "todo teste que abre banco afirma o nome do banco antes de qualquer
+coisa"): confere `current_database()` antes do DROP SCHEMA e recusa se não for `orizon_e2e` —
+mesma disciplina do ACHADO-18 (ler o estado, não confiar em quem chamou passar o valor certo).
+Em 31/08 um `DATABASE_URL` esquecido na sessão do shell fez este bootstrap escrever no banco de
+dev — a causa (usar `database.get_session()` sem bind próprio) já foi corrigida no teste; esta
+é a guarda que falta contra a PRÓXIMA forma de o mesmo acidente acontecer (ex.: alguém passar a
+URL errada como argumento)."""
 import glob
 import os
 import shutil
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+NOME_BANCO_ESPERADO = "orizon_e2e"
 
 
 def main(db_url):
@@ -21,6 +31,14 @@ def main(db_url):
     import database
 
     engine = create_engine(db_url, echo=False)
+    with engine.begin() as conn:
+        atual = conn.execute(text("SELECT current_database()")).scalar()
+    if atual != NOME_BANCO_ESPERADO:
+        raise RuntimeError(
+            "Recusado: este bootstrap só roda contra %r — conectou em %r. DROP SCHEMA CASCADE "
+            "num banco errado destruiria dado de verdade; corrija a URL antes de tentar de novo."
+            % (NOME_BANCO_ESPERADO, atual))
+
     with engine.begin() as conn:
         conn.execute(text(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "

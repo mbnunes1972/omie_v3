@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """E2E de NAVEGADOR (Playwright) — o fluxo terminal que mais atravessa o que foi consertado nos
-últimos dias (ACHADO-24, ACHADO-26): projeto criado pela interface, orçamento com um ambiente
-real (XML), contrato aprovado (exercita a guarda de recebível do ACHADO-24), assinado, veredito
-dado PELA FILA DE PROVISÕES (não pela API), Conciliação Final concluída pela tela de sempre
-(corpo `{}`, sem campo de veredito — ACHADO-26), e o custo conferido em 5.1.01.
+últimos dias (ACHADO-24, ACHADO-25, ACHADO-26): projeto criado pela interface, orçamento com um
+ambiente real (XML), contrato aprovado (exercita a guarda de recebível do ACHADO-24) e assinado,
+Termo Aditivo negociado/gerado/assinado pelas duas partes — a segunda assinatura passa pelo
+modal de forma de pagamento novo do ACHADO-25 —, veredito dado PELA FILA DE PROVISÕES (não pela
+API), Conciliação Final concluída pela tela de sempre (corpo `{}`, sem campo de veredito —
+ACHADO-26), e o custo conferido em 5.1.01.
 
-NÃO faz parte da suíte padrão — `tests/conftest.py` (`collect_ignore`) exclui este arquivo da
-coleta recursiva. **Não é por ser caro** (medido: ~13s, 3 rodadas seguidas, nada perto do custo
-que justificaria isolar por tempo) — é por DISPUTAR O MESMO BANCO: este arquivo sobe um
-subprocesso que dá DROP SCHEMA CASCADE em `orizon_test`, o mesmo banco que `app_db`/
-`db_pg_limpo` usam dentro do MESMO processo do pytest — rodar os dois na mesma sessão de
-`pytest -q` corromperia o schema de algum teste no meio da suíte. Roda sozinho, antes de
-implantar: `pytest tests/test_e2e_browser_conciliacao_final.py -v` (collect_ignore só vale pra
-coleta recursiva, não quando o arquivo é passado explicitamente por caminho).
+FAZ parte da suíte padrão (docs/db/ESTEIRA.md — "teste fora da rodada padrão apodrece": ele
+existe pra pegar a classe de regressão do ACHADO-25/26, e só pega se rodar sempre). O isolamento
+que antes exigia tirá-lo de `pytest -q` foi resolvido com banco PRÓPRIO (`orizon_e2e`,
+tests/_e2e_bootstrap.py) — nunca mais `orizon_test`, então não há mais DROP SCHEMA disputado com
+o resto da suíte. Também é critério de SAÍDA DA BANCADA (não de Integração — ele sobe o próprio
+servidor, prova o CÓDIGO, não o deploy; ESTEIRA.md corrigiu isso em 31/08).
 
 Duas regras (do teste manual do Marcelo no Chrome, 31/08):
 1. Sobe o PRÓPRIO servidor a partir do código atual, num subprocesso — nunca reusa um servidor
@@ -25,8 +25,8 @@ Escopo deliberadamente MENOR que "o ciclo inteiro clicado": Medição/Projeto ex
 Montagem/Assistência/Vistoria/Aprovação final (entre o Contrato e a Conciliação Final — puro
 "marcar como feito", sem forma própria nem risco de UI-cegueira, e nunca objeto de nenhum achado
 desta auditoria) são marcadas concluídas direto no banco, não clicadas. Tudo que envolve
-dinheiro/decisão (criar projeto, orçamento, ambiente, aprovar orçamento/gerar contrato, assinar,
-dar veredito, concluir) é clicado de verdade na tela.
+dinheiro/decisão (criar projeto, orçamento, ambiente, aprovar orçamento/gerar contrato, assinar
+contrato E aditivo, dar veredito, concluir) é clicado de verdade na tela.
 """
 import os
 import socket
@@ -35,11 +35,12 @@ import sys
 import time
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
-TEST_DB_URL = "postgresql+psycopg2://orizon:senha_local_qualquer@localhost/orizon_test"
+NOME_BANCO_ESPERADO = "orizon_e2e"
+TEST_DB_URL = "postgresql+psycopg2://orizon:senha_local_qualquer@localhost/%s" % NOME_BANCO_ESPERADO
 
 # XML Promob mínimo, com markup real (não "ruim" — ORDER 100.000 / BUDGET 140.000, 40%) — o
 # ORDER vira o CFO (2.1.04.06 Custo de Fábrica), o BUDGET vira a receita/Val_Cont do ambiente.
@@ -54,9 +55,17 @@ def _sessao_teste():
     teste: o processo do pytest importa `database` com o DATABASE_URL do AMBIENTE DE QUEM RODA
     O TESTE (pode ser o banco de dev real, se a variável estiver exportada no shell — foi
     exatamente isso que aconteceu numa rodada de depuração deste arquivo, escrevendo CicloEtapa
-    órfã no banco de dev local — limpo depois, mas não pode se repetir). Chamador fecha a
-    sessão E chama `.dispose()` na engine (`sessao.bind.dispose()`)."""
+    órfã no banco de dev local — limpo depois, mas não pode se repetir). Guarda o nome do banco
+    antes de devolver a sessão (docs/db/ESTEIRA.md — mesma disciplina do ACHADO-18: afirmar,
+    não confiar em coincidência de ambiente). Chamador fecha a sessão E chama `.dispose()` na
+    engine (`sessao.bind.dispose()`)."""
     eng = create_engine(TEST_DB_URL)
+    with eng.begin() as conn:
+        atual = conn.execute(text("SELECT current_database()")).scalar()
+    if atual != NOME_BANCO_ESPERADO:
+        eng.dispose()
+        raise RuntimeError("Recusado: sessão de teste só abre em %r — conectou em %r."
+                          % (NOME_BANCO_ESPERADO, atual))
     return sessionmaker(bind=eng)()
 
 
@@ -68,10 +77,9 @@ def _porta_livre():
 
 @pytest.fixture(scope="module")
 def servidor_e2e():
-    """Reseta o schema do banco de TESTE (mesmo `orizon_test` da suíte — sem CREATEDB local, ver
-    docs/db/IMPLANTAR.md; NUNCA rode isto ao mesmo tempo que `pytest -q` da suíte inteira, os dois
-    disputam o mesmo schema) e sobe `python3 main.py` DE VERDADE, do código atual, num
-    subprocesso — nunca um servidor já no ar."""
+    """Reseta o schema do banco PRÓPRIO do E2E (`orizon_e2e` — nunca `orizon_test`, esse é do
+    resto da suíte, ver tests/_e2e_bootstrap.py) e sobe `python3 main.py` DE VERDADE, do código
+    atual, num subprocesso — nunca um servidor já no ar."""
     porta = _porta_livre()
     r = subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "_e2e_bootstrap.py"),
                        TEST_DB_URL], cwd=REPO, capture_output=True, text=True, timeout=60)
@@ -239,29 +247,105 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     # "ambas as partes confirmaram", sem passar por um "loja confirmada" intermediário.
     page.wait_for_selector("text=Contrato assinado", timeout=10000)
 
-    # ── 7. Medição/Projeto executivo/Produção/Montagem/Assistência/Vistoria/Aprovação final
-    #      (puro "marcar feito", nunca objeto de achado desta auditoria): atalho direto no
-    #      banco — mod_ciclo.ETAPAS_PRINCIPAIS antes de CONCILIACAO_FINAL, exceto as já feitas
-    #      de verdade pela tela (Cadastro/Criação/Briefing/Orçamento/Contrato).
     import mod_ciclo
     import database
-    db = _sessao_teste()
-    try:
-        i_contrato = mod_ciclo.ETAPAS_PRINCIPAIS.index(mod_ciclo.CONTRATO)
-        i_final = mod_ciclo.ETAPAS_PRINCIPAIS.index(mod_ciclo.CONCILIACAO_FINAL)
-        for cod in mod_ciclo.ETAPAS_PRINCIPAIS[i_contrato + 1:i_final]:
+
+    # ── 7. Medição (puro "marcar feito", nunca objeto de achado): atalho direto no banco —
+    #      só ela, ANTES do aditivo — "Projeto executivo" (mãe das subfases, entre elas
+    #      "Aprovação do PE pelo cliente", onde mora o Termo Aditivo) só fica alcançável com
+    #      Medição concluída; as subfases não se gatam entre si (herdam o gate da mãe juntas).
+    def _marcar_concluido(cod):
+        db = _sessao_teste()
+        try:
             et = db.query(database.CicloEtapa).filter_by(
                 projeto_nome=nome_projeto, etapa_codigo=cod).first()
             if et is None:
                 et = database.CicloEtapa(projeto_nome=nome_projeto, etapa_codigo=cod)
                 db.add(et)
             et.status = "concluido"
+            db.commit()
+        finally:
+            db.bind.dispose()
+            db.close()
+
+    _marcar_concluido(mod_ciclo.MEDICAO)
+
+    # ── 8. Aditivo — ACHADO-25 (docs/db/ACHADOS_CONTABEIS.md): a tela de assinatura nunca
+    #      coletava forma_pagamento; o passo 6-c passou a exigi-la na assinatura que completa
+    #      o par, e nenhum aditivo conseguia ser assinado em produção. Provado aqui pela TELA
+    #      real: gerar o Termo Aditivo, assinar loja, assinar cliente — a segunda assinatura
+    #      abre o modal de pagamento novo (_abrirModalPagamentoAditivo) antes de completar.
+    #
+    #      O XML de complemento em si (formato Promob "PE de revisão") não é o objeto do
+    #      ACHADO-25 — semeado direto no banco, igual à Medição acima. O que é o objeto (gerar
+    #      o aditivo, assinar as duas partes, dar a forma de pagamento) é clicado de verdade.
+    db = _sessao_teste()
+    try:
+        pa = db.query(database.PoolAmbiente).filter_by(projeto_id=nome_projeto).first()
+        pa.renegociar_pe = 1
+        reg = database.ArquivoPE(projeto_nome=nome_projeto, pool_ambiente_id=pa.id,
+                                 formato="xml_compl", valor_venda=180000.0, valor_atualizado=130000.0)
+        db.add(reg)
         db.commit()
     finally:
         db.bind.dispose()
         db.close()
 
-    # ── 8. Fila de Provisões — dar o veredito PELA TELA (não pela API) ──────────────────
+    # O painel #ciclo-panel está aberto desde a assinatura do contrato — o seed acima (Medição +
+    # PoolAmbiente/ArquivoPE) foi direto no banco, então o estado de etapas em memória no
+    # navegador ficou desatualizado. Sem recarregar (carregarCiclo() → _fetchCiclo()), o clique na
+    # aba "Projeto executivo" acha o elemento (por isso não estoura timeout aqui) mas a aba ainda
+    # se comporta como travada pro estado antigo, e peComplementoRender() nunca roda — só estoura
+    # mais adiante, esperando "Negociar Complemento". #btn-abrir-ciclo não serve pra isso aqui: com
+    # o painel já ativo ele fica coberto pelo próprio painel (intercepta o clique) — chama
+    # carregarCiclo() direto em vez de clicar num botão que só existe pra ABRIR o painel fechado.
+    page.evaluate("() => carregarCiclo()")
+    ciclo.locator(".ficha-tab", has_text="Projeto executivo").first.click()
+    page.wait_for_timeout(500)
+    page.click("text=Aprovação do PE pelo cliente")
+    page.wait_for_selector('button:has-text("Negociar Complemento")', timeout=10000)
+    page.click('button:has-text("Negociar Complemento")')   # abre o modal comparativo
+    page.wait_for_timeout(500)
+    page.locator('button:has-text("Negociar Complemento")').last.click()   # confirma dentro do modal
+    page.wait_for_selector("text=Complemento ativo", timeout=10000)
+
+    # peComplementoNegociar() fecha o painel de propósito (fecharCiclo(); goPage(2) — navega pra
+    # Negociação depois de negociar o complemento) — painel FECHADO de verdade agora, então
+    # #btn-abrir-ciclo é o certo aqui (ao contrário do refresh acima, onde o painel seguia aberto
+    # e o mesmo botão ficava coberto pelo próprio painel).
+    page.click("#btn-abrir-ciclo")
+    ciclo.wait_for(state="visible", timeout=10000)
+    ciclo.locator(".ficha-tab", has_text="Projeto executivo").first.click()
+    page.wait_for_timeout(500)
+    page.click("text=Aprovação do PE pelo cliente")
+    page.wait_for_selector('button:has-text("Gerar Termo Aditivo")', timeout=10000)
+    page.click('button:has-text("Gerar Termo Aditivo")')
+    page.wait_for_selector("text=Termo aditivo gerado", timeout=10000)
+
+    page.fill("#pe-ad-nome", "Rep Loja E2E")
+    page.fill("#pe-ad-cpf", "111.444.777-35")
+    page.click('button:has-text("Assinar (loja)")')
+    page.wait_for_selector("text=Assinatura registrada", timeout=10000)
+
+    page.fill("#pe-ad-nome", "Cliente E2E")
+    page.fill("#pe-ad-cpf", "111.444.777-35")
+    page.click('button:has-text("Assinar (cliente)")')
+    # ACHADO-25: esta é a assinatura que COMPLETA o par — o modal de pagamento tem que aparecer.
+    page.wait_for_selector("text=Forma de pagamento do aditivo", timeout=10000)
+    page.click('[data-act="ok"]')   # confirma o plano à vista default (entrada 0, liquidação = total)
+    page.wait_for_selector("text=✓ cliente", timeout=10000)
+
+    # ── 9. Projeto executivo/Produção/Montagem/Assistência/Vistoria/Aprovação final: atalho
+    #      direto no banco (mod_ciclo.ETAPAS_PRINCIPAIS entre Medição e CONCILIACAO_FINAL), como
+    #      antes — só que agora "Projeto executivo" (código 11) já foi clicado de verdade no
+    #      passo 8 (Termo Aditivo assinado pelas duas partes); marcá-la concluída aqui de novo é
+    #      idempotente (mesma get-or-create de _marcar_concluido) e não reabre nem desfaz nada.
+    i_medicao = mod_ciclo.ETAPAS_PRINCIPAIS.index(mod_ciclo.MEDICAO)
+    i_final = mod_ciclo.ETAPAS_PRINCIPAIS.index(mod_ciclo.CONCILIACAO_FINAL)
+    for cod in mod_ciclo.ETAPAS_PRINCIPAIS[i_medicao + 1:i_final]:
+        _marcar_concluido(cod)
+
+    # ── 10. Fila de Provisões — dar o veredito PELA TELA (não pela API) ─────────────────
     page.click('text=Financeiro')
     page.click('text=Fila de Provisões')
     linha = page.locator("tr", has_text=nome_projeto)
@@ -271,7 +355,7 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     page.get_by_role("button", name="Confirmar", exact=True).last.click()
     page.wait_for_selector("text=Veredito registrado")
 
-    # ── 9. Conciliação Final — conclui pela tela normal (corpo {} de sempre) ────────────
+    # ── 11. Conciliação Final — conclui pela tela normal (corpo {} de sempre) ───────────
     page.click("text=Projetos")
     page.fill("#proj-search", nome_exibicao)
     page.locator(".proj-row", has_text=nome_exibicao).get_by_role("button", name="Abrir").click()
@@ -284,7 +368,7 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     _click_confirmar(page)
     page.wait_for_selector("text=Números finais conciliados")
 
-    # ── 10. Verificação — custo em 5.1.01 (Postgres, fonte de verdade) ──────────────────
+    # ── 12. Verificação — custo em 5.1.01 (Postgres, fonte de verdade) ──────────────────
     import mod_contabil as mc
     db = _sessao_teste()
     try:

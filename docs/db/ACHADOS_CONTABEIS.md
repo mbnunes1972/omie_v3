@@ -1651,7 +1651,7 @@ item da Fase 2 (F2-1), antes do passo 12.
 
 ---
 
-## ACHADO-25 — a tela de assinatura do aditivo nunca envia forma de pagamento — ninguém completa um aditivo hoje
+## ACHADO-25 — a tela de assinatura do aditivo nunca envia forma de pagamento — ninguém completa um aditivo hoje · RESOLVIDO 31/08/2026 (F2-4)
 
 Encontrado ao medir o ACHADO-24 (F2-1, docs/db/TAREFA_ACHADO24.md): a
 pergunta era "a tela exige parcelas, ou aceita um plano vazio como o
@@ -1690,6 +1690,27 @@ número contábil) — mas em produção, hoje, é bloqueio total: nenhum aditiv
 completa a 2ª assinatura pela tela.
 
 **Grupo:** 1 — bloqueia um fluxo de negócio inteiro, não é só higiene.
+
+**Conserto aplicado (31/08/2026):** modal novo,
+`_abrirModalPagamentoAditivo(valorComplemento)` (`static/index.html`) —
+mesma modalidade à vista/cartão/Aymore do pagamento do contrato, mas NÃO
+reaproveita `_capturarPagamento`/`window._planoPagamento` diretamente (o
+modal do contrato assume um fluxo de página inteira, com o resto da UI de
+negociação ao redor; o do aditivo precisa caber dentro do fluxo de
+assinatura de duas partes, num popup próprio) — reaproveita, sim, a lista
+de formas de entrada (`_FORMAS_ENTRADA`) e a mesma lógica de saldo/parcela
+única pro caso à vista. `peAditivoAssinar(parte)` agora sabe, no momento do
+clique, se ESTA assinatura completa o par — dois globais
+(`_peAditivoPartesAssinadas`, `_peAditivoValorComplemento`) setados em
+`peComplementoRender()`, onde a resposta de `/aditivo` já foi lida — e só
+abre o modal quando `completaAgora` for verdadeiro; a primeira assinatura
+(a que não completa) continua mandando só `{parte, nome, cpf}`, como antes.
+
+**Prova:** `tests/test_e2e_browser_conciliacao_final.py` — o mesmo E2E de
+navegador do ACHADO-24/ACHADO-26, estendido: gera o Termo Aditivo, assina a
+loja, assina o cliente (a assinatura que completa o par), preenche o modal
+de pagamento novo e confirma — clicado na tela, não chamado por HTTP. Roda
+em banco próprio (`orizon_e2e`) e voltou pra `pytest -q` padrão (docs/db/ESTEIRA.md).
 
 ---
 

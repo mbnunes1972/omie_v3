@@ -21633,6 +21633,8 @@ async function peComparacaoRender(){
 // ── Correção Fatia 3 PE — 11e: Complemento de Projeto + Aprovação do PE + Termo Aditivo ───────
 // O complemento é a DIFERENÇA dos ambientes marcados: XML de complemento (3º arquivo do ambiente)
 // × descontos do contrato × fator de custos adicionais 1/(1−p) − à vista contratado.
+let _peAditivoPartesAssinadas = new Set();   // ACHADO-25: ver comentário em peComplementoRender
+let _peAditivoValorComplemento = 0;          // idem
 async function peComplementoRender(){
   const cont = document.getElementById('pe-complemento-container');
   if(!cont || !projetoAtivo) return;
@@ -21713,6 +21715,12 @@ async function peComplementoRender(){
     adHtml = `<button class="btn-ciclo" onclick="peAditivoGerar()"><i class="ti ti-file-plus"></i> Gerar Termo Aditivo</button>`;
   } else {
     const partes = new Set((a.assinaturas||[]).map(s => s.parte));
+    // ACHADO-25 (docs/db/ACHADOS_CONTABEIS.md): peAditivoAssinar precisa, no momento do clique,
+    // (1) saber se ESTA assinatura completa o par (passo 6-c exige forma_pagamento só nesse
+    // caso) e (2) o valor do complemento pro modal de pagamento — os dois só existem aqui,
+    // onde a resposta de /aditivo já foi lida.
+    _peAditivoPartesAssinadas = partes;
+    _peAditivoValorComplemento = (a.dados && a.dados.diferenca) || 0;
     const assinado = a.status === 'assinado';
     const sigBtn = p => partes.has(p)
       ? `<span style="color:var(--ok)">✓ ${p}</span>`
@@ -21965,15 +21973,104 @@ async function peAditivoGerarNovo(){
   } catch(e){ await avisoPopup('Erro de rede.',{titulo:'Termo Aditivo'}); }
 }
 
+// ACHADO-25 (docs/db/ACHADOS_CONTABEIS.md): o passo 6-c passou a exigir forma_pagamento na
+// assinatura que COMPLETA o aditivo, mas esta tela nunca coletava o campo — toda conclusão de
+// aditivo era recusada em produção. Reaproveita o MODELO DE DADOS do plano de pagamento do
+// contrato (mesmo formato que `_capturarPagamento()` monta e que `mod_recebiveis.materializar`
+// espera — tipo/entrada_valor/entrada_data/entrada_forma/total_cliente/parcelas), num modal
+// PRÓPRIO em vez de transplantar os 5 painéis da Negociação (acoplados a IDs/estado globais da
+// tela de orçamento) — cobre à vista e financiada (Cartão/Aymoré), os dois casos medidos em
+// tests/test_aditivo_recebiveis_e_custo_financeiro.py; Parcelamento Loja/TF (com cronograma de
+// parcelas próprio) ficam de fora deste modal por ora.
+function _adpagRecalc(valorComplemento){
+  const tipo = document.getElementById('_adpag-tipo').value;
+  const entrada = parseMoeda(document.getElementById('_adpag-entrada').value) || 0;
+  const avistaWrap = document.getElementById('_adpag-saldo-wrap');
+  if(tipo === 'avista'){
+    avistaWrap.style.display = '';
+    const saldo = Math.max(0, valorComplemento - entrada);
+    document.getElementById('_adpag-saldo').textContent = 'R$ ' + fmt(saldo);
+  } else {
+    avistaWrap.style.display = 'none';
+  }
+}
+function _abrirModalPagamentoAditivo(valorComplemento){
+  return new Promise((resolve) => {
+    const formasEntrada = _FORMAS_ENTRADA.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+    const ov = _popupOverlay(`
+      <h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">Forma de pagamento do aditivo</h4>
+      <p style="margin:0 0 14px;color:var(--fg);font-size:.85rem">Complemento: <strong>R$ ${fmt(valorComplemento)}</strong>.
+        Como o cliente paga esta diferença? Precisa disto pra concluir a assinatura (ACHADO-25).</p>
+      <label style="font-size:.82rem;color:var(--muted);display:block;margin-bottom:4px">Modalidade</label>
+      <select id="_adpag-tipo" onchange="_adpagRecalc(${valorComplemento})"
+        style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:4px;font-size:.88rem;margin-bottom:12px">
+        <option value="avista">À Vista</option>
+        <option value="cartao">Cartão</option>
+        <option value="aymore">Aymoré (financeira)</option>
+      </select>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <div style="flex:1">
+          <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:3px">Entrada (R$, opcional)</label>
+          <input id="_adpag-entrada" type="text" placeholder="0,00" oninput="mascaraMoedaInput(this); _adpagRecalc(${valorComplemento})"
+            style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:4px;font-size:.88rem">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:3px">Data</label>
+          <input id="_adpag-entrada-data" type="date"
+            style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:4px;font-size:.88rem">
+        </div>
+        <div style="flex:1">
+          <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:3px">Forma</label>
+          <select id="_adpag-entrada-forma"
+            style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:7px;border-radius:4px;font-size:.88rem">${formasEntrada}</select>
+        </div>
+      </div>
+      <div id="_adpag-saldo-wrap" style="font-size:.82rem;color:var(--muted);margin-bottom:14px">
+        Liquidação (à vista, 1x): <strong id="_adpag-saldo" style="font-family:var(--font-mono)">R$ ${fmt(valorComplemento)}</strong>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Cancelar</button>
+        <button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">Confirmar</button>
+      </div>`);
+    const fin = (v) => { ov.remove(); resolve(v); };
+    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
+    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
+    ov.querySelector('[data-act="ok"]').onclick = () => {
+      const tipo = document.getElementById('_adpag-tipo').value;
+      const entrada = parseMoeda(document.getElementById('_adpag-entrada').value) || 0;
+      const entradaData = document.getElementById('_adpag-entrada-data').value || '';
+      const entradaForma = document.getElementById('_adpag-entrada-forma').value || 'pix';
+      const nomeForma = {avista:'À Vista', cartao:'Cartão', aymore:'Aymoré'}[tipo] || tipo;
+      const plano = {
+        tipo, nome_forma: nomeForma, entrada_valor: entrada, entrada_data: entradaData,
+        entrada_forma: entradaForma, total_cliente: valorComplemento, texto_cartao: '',
+        parcelas: [],
+      };
+      if(tipo === 'avista'){
+        const saldo = Math.max(0, valorComplemento - entrada);
+        if(saldo > 0) plano.parcelas = [{num: 1, data: entradaData, valor: saldo, forma: entradaForma}];
+      }
+      fin(plano);
+    };
+  });
+}
 async function peAditivoAssinar(parte){
   if(!projetoAtivo) return;
   const nome = (document.getElementById('pe-ad-nome')?.value || '').trim();
   const cpf  = (document.getElementById('pe-ad-cpf')?.value || '').trim();
   if(!nome || !cpf){ await avisoPopup('Preencha nome e CPF do signatário.',{titulo:'Assinar aditivo'}); return; }
+  const outraParte = parte === 'loja' ? 'cliente' : 'loja';
+  const completaAgora = _peAditivoPartesAssinadas.has(outraParte);
+  const corpo = {parte, nome, cpf};
+  if(completaAgora){
+    const plano = await _abrirModalPagamentoAditivo(_peAditivoValorComplemento);
+    if(!plano) return;   // cancelou — não assina sem o plano
+    corpo.forma_pagamento = JSON.stringify(plano);
+  }
   try {
     const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aditivo/assinar`,
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-       body: JSON.stringify({parte, nome, cpf})}).then(r=>r.json());
+       body: JSON.stringify(corpo)}).then(r=>r.json());
     if(!j.ok){ await avisoPopup(j.erro||'Erro',{titulo:'Assinar aditivo'}); return; }
     showToast('Assinatura registrada (' + parte + ').');
     peComplementoRender();

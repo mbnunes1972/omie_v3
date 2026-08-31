@@ -39,6 +39,7 @@ deixa de ter resposta rápida.
 | 9 · ACHADO-18, guarda de `valor_total` | **feito** — `bb32a14` |
 | 10 · ACHADO-02 + 03, tabela por ramo | **feito** — `dbeee03` |
 | 11 · ACHADO-23, trava na AF1 | **feito** — `e3a6756` |
+| **marco** · implantar nos 3 servidores | **feito** — 31/08, todos em `f47f22de46a7`, `confirmar.sh` 15 OK / 0 FALHA |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -144,6 +145,13 @@ Parcelamento Loja, ACHADO-14) nunca tinha entrado nesta lista — achada só na
 hora de aplicar, ao rodar `alembic current` nos três ambientes ANTES de
 mexer em qualquer coisa (mesmo instinto que salvou o ACHADO-23: conferir
 antes de confiar na lista). Os três ambientes partiram de `46a93cfd591b`.
+
+**A regra que sai disso:** a lista de migrations pendentes se monta do
+`alembic current` **dos servidores**, nunca do histórico do repositório. A
+versão anterior desta seção listava duas porque foi montada a partir do que
+o roteiro tinha produzido. **Achado resolvido no repositório não é achado
+implantado** — a `95c7e64afc6a` estava marcada RESOLVIDO desde 29/08 e
+nunca saíra do localhost.
 
 Upgrade **incremental** (`git pull` + `alembic upgrade head`, sem
 DROP/recriar banco — decisão do Marcelo: `confirmar.sh` já reconstrói do

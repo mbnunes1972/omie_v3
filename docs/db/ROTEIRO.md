@@ -37,7 +37,7 @@ deixa de ter resposta rápida.
 | 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
 | 8 · ACHADO-16, vereditos da Conciliação Final | **feito** — `28be877` |
 | 9 · ACHADO-18, guarda de `valor_total` | **feito** — `bb32a14` |
-| 10 · ACHADO-02 + 03, tabela por ramo | tarefa escrita |
+| 10 · ACHADO-02 + 03, tabela por ramo | **feito** — `dbeee03` |
 | 11 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -51,9 +51,12 @@ conserto.)
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **10** (era 12 — os dois `xfail` do passo 4/ACHADO-18 saíram). Linhas,
-não testes — serve como tendência, não como precisão. No fim da Fase 4 tem
-que ser zero.
+Hoje **7** linhas (era 10) — só 5 são `@pytest.mark.xfail` de verdade citando
+achado: 2 do ACHADO-19 e 1 do ACHADO-20 (Fase 5), 1 do ACHADO-15 (Fase 4, já
+existia) e 1 novo do ACHADO-01 (Fase 2, ramo financeira sem conferência —
+deliberado, ver passo 10). Os do ACHADO-02/03 saíram; as outras 2 linhas são
+comentário, não marcador. Linhas, não testes — serve como tendência, não
+como precisão. No fim da Fase 4 tem que ser zero.
 
 ## Quando aparece achado novo no meio de um passo
 
@@ -129,14 +132,23 @@ fim da Fase 1**, com `docs/db/confirmar.sh` rodado em cada ambiente e
 `docs/db/IMPLANTAR.md` como procedimento. O risco real aqui não é a demora —
 é esquecer. Toda migration nova entra nesta lista no mesmo passo que a criou.
 
-**Pendentes:** `e031f6ad9c80`.
+**Pendentes:** `e031f6ad9c80`, `f47f22de46a7`.
 
 **Lembrete que já custou um susto:** tabela nova precisa entrar no manifesto
 de `modulos.py`. O passo 8 descobriu isso por acidente; o `periodo_fechado`
-da Fase 3 vai passar pelo mesmo lugar.
+da Fase 3 vai passar pelo mesmo lugar. O passo 10 achou a variante disso:
+**conta nova em `PLANO_PADRAO` também precisa de migration** (`seed_plano`
+só cria o que falta num owner já existente) — `f47f22de46a7` faz isso pra
+`4.4.05`, com o mesmo padrão de `46a93cfd591b` (owners dinâmicos) mais um
+INSERT literal pros 3 owners fixos do `orizon_baseline_teste`
+(`tests/test_gabarito_migration_x_seed.py` não tem dado de instância).
 
 ## FASE 2 — custo e fechamento
-12. **ACHADO-01** — a perna de liquidação da provisão.
+12. **ACHADO-01** — a perna de liquidação da provisão. *Encolhido no passo 10:*
+    a função (`conferir_retencao_financeira`) já existe e está testada —
+    `loja_antecipacao` fechou por completo (não constitui mais provisão).
+    Falta só o gatilho (endpoint/fluxo) que chama a função quando o
+    assistente financeiro confere o extrato da financeira/cartão.
 13. **Fila de provisões em aberto** (dona: assistente administrativa).
 14. **P5**, **ACHADO-06** (medir antes), **ACHADO-17** (decisão pendente).
 

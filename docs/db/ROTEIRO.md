@@ -38,7 +38,8 @@ deixa de ter resposta rápida.
 | 8 · ACHADO-16, vereditos da Conciliação Final | **feito** — `28be877` |
 | 9 · ACHADO-18, guarda de `valor_total` | **feito** — `bb32a14` |
 | 10 · ACHADO-02 + 03, tabela por ramo | **feito** — `dbeee03` |
-| 11 em diante | não iniciados |
+| 11 · ACHADO-23, trava na AF1 | tarefa escrita |
+| 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -56,7 +57,17 @@ achado: 2 do ACHADO-19 e 1 do ACHADO-20 (Fase 5), 1 do ACHADO-15 (Fase 4, já
 existia) e 1 novo do ACHADO-01 (Fase 2, ramo financeira sem conferência —
 deliberado, ver passo 10). Os do ACHADO-02/03 saíram; as outras 2 linhas são
 comentário, não marcador. Linhas, não testes — serve como tendência, não
-como precisão. No fim da Fase 4 tem que ser zero.
+como precisão. No fim da Fase 4 tem que ser zero. No início do roteiro eram
+31.
+
+**O contador tem um ponto cego, demonstrado no fechamento da Fase 1.** Ele
+só enxerga achado que tem teste. O ACHADO-23 nasceu de uma medição, nunca
+ganhou xfail, e por isso a suíte deu a Fase 1 por fechada com ele ainda
+aberto.
+
+Por isso o aceite de cada fase tem **duas** travas, não uma:
+- `pytest -q` sem xfail citando achado da fase;
+- `docs/db/ACEITE.md` sem nenhuma linha da fase em "SEM PROVA".
 
 ## Quando aparece achado novo no meio de um passo
 

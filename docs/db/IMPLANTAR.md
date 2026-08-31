@@ -237,6 +237,24 @@ motivo do beta1 (falta aprovacao do Marcelo + lista de defeitos aceita, essa
 atualizada em `docs/db/DEFEITOS_CONHECIDOS_beta1.md` pra registrar a
 promocao pro beta2).
 
+### Terceiro deploy por tag — v2026.08.31-beta3 — 31/08/2026
+
+Pedido original era "tag v2026.08.31-beta2" de novo — já existia (deploy
+acima), e tag não se move (`ESTEIRA.md`). `v2026.08.31-beta3` (54e35d0) no
+lugar: ACHADO-28 resolvido (CPF de assinatura sem validação de dígito, nos
+três caminhos + webhook ClickSign), sem migration nova. Mesmo procedimento,
+mesma ordem. `git describe --tags` confirmado exato (`v2026.08.31-beta3`)
+nos dois antes de seguir. `confirmar.sh` 15 OK / 0 FALHA nos dois.
+
+Junto (Homologação, antes do deploy): funcionários semeados direto no banco
+(`orizon_homologacao`, loja 1) — um por função-chave do ciclo (Medidor,
+Consultor de Vendas, Projetista Executivo, Montador, Assistente
+Administrativo), CPFs de teste válidos. Sem isso a transferência de
+responsabilidade da etapa de Medição oferecia lista vazia — o que travava
+o teste do Marcelo. Confirmado que os cinco sobrevivem ao restart do
+serviço (checkout não toca banco). Producao NAO tocada — mesmo motivo do
+beta1/beta2.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

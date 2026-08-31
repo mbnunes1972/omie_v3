@@ -16,6 +16,16 @@ por E2E de navegador. Não estava nesta lista porque não tinha sido
 encontrado ainda quando ela foi escrita para o beta1. Os oito itens abaixo
 seguem exatamente iguais — nenhum foi tocado nesta rodada.
 
+**Atualização 31/08/2026 (2) — candidato passou a ser `v2026.08.31-beta3`**
+(pedido original repetia "beta2" — já usada, tag não se move, `ESTEIRA.md`).
+O ACHADO-28 (CPF de assinatura sem validação de dígito verificador — nos
+três caminhos: contrato, aprovação do PE, solicitação de medição, mais o
+webhook ClickSign) foi encontrado pelo Marcelo clicando em Homologação,
+consertado (`validacao_doc.erro_doc` dentro das três funções de
+assinatura) e provado por `test_aceite_achado28.py` (6 aceites). Conferir o
+CPF contra o cadastro da parte fica pro próximo ciclo — LP-02,
+`docs/db/LISTA_PARALELA.md`. Os oito itens abaixo seguem exatamente iguais.
+
 ---
 
 ## O que pode levar a decisão errada
@@ -90,5 +100,6 @@ De **31 xfails** no início do roteiro para **4**.
 
 Marcelo, ao aprovar a subida, aceita esta lista. Assinatura: a mensagem de
 aprovação no histórico da conversa, referenciando a tag do candidato atual,
-`v2026.08.31-beta2` (promovido de `v2026.08.31-beta1` em 31/08/2026 —
-ver "Atualização" no topo deste documento).
+`v2026.08.31-beta3` (promovido de `v2026.08.31-beta1` → `-beta2` →
+`-beta3` em 31/08/2026 — ver as duas "Atualização" no topo deste
+documento).

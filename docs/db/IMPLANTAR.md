@@ -170,6 +170,18 @@ head → alembic current (confirma f47f22de46a7) → systemctl start → HTTP 30
 → `confirmar.sh` (15 OK / 0 FALHA nos tres). Contagens ZERO confirmadas de
 novo depois do boot, nos tres — nenhum movimento apareceu.
 
+### Primeiro deploy por tag (docs/db/ESTEIRA.md) — 31/08/2026
+
+Tag `v2026.08.31-beta1` (9fc3d3c) — F2-4/ACHADO-25 resolvido, sem migration
+nova. Integracao e Homologacao, nessa ordem, pelo procedimento novo da
+esteira: `systemctl stop` → `git fetch --tags && git checkout <tag>`
+(HEAD destacado, nao `pull` de `main`) → `systemctl start` → `confirmar.sh`
+→ smoke (`POST /api/auth/login` com credencial inexistente responde 401
+estruturado, nao 404/500; `/static/index.html` e `/static/login.html` 200).
+`confirmar.sh` 15 OK / 0 FALHA nos dois. Producao NAO tocada — falta a
+aprovacao do Marcelo na tela e a lista de defeitos conhecidos do candidato
+(criterio Homologacao → Producao da esteira).
+
 **Duas armadilhas novas, nao documentadas antes (nenhum dos dois servidores
 tinha rodado `confirmar.sh` remotamente ate agora):**
 

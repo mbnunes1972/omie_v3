@@ -9263,6 +9263,20 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception as _e:
                         print("[ADITIVO-ASSINAR] recálculo com forma_pagamento falhou:", _e)
                     db.commit()
+                    # ACHADO-24 (docs/db/TAREFA_ACHADO24.md, F2-1): a forma de pagamento PRESENTE
+                    # não é a mesma pergunta que a forma de pagamento PRODUZIR recebível — um
+                    # plano sem parcelas/entrada_valor passa pela guarda acima e materializa
+                    # zero Recebivel em silêncio (`_materializar_recebiveis_venda_seguro` só
+                    # loga um warning). Recusa aqui, ANTES de registrar a assinatura: nenhum
+                    # default inventado, mesma regra de valor > 0 exige cobrança do ACHADO-18.
+                    if float(orc_aj.valor_total or 0) > 0:
+                        import mod_recebiveis as _mrec
+                        if not _mrec.materializar(forma_pagamento_str, orc_aj.valor_total,
+                                                  datetime.utcnow(), "check"):
+                            self.send_json({"ok": False, "erro": "O plano de pagamento do "
+                                            "aditivo não gera nenhum recebível — informe "
+                                            "entrada e/ou parcelas antes de concluir a "
+                                            "assinatura."}, code=400); return
                 # ALIAS obrigatório: import não-aliased tornaria calcular_hash_assinatura local
                 # ao do_POST inteiro e quebraria o handler de assinatura do CONTRATO acima
                 from mod_contrato import calcular_hash_assinatura as _cha
@@ -13907,6 +13921,21 @@ class Handler(BaseHTTPRequestHandler):
                             "ok": False,
                             "erro": "O orçamento tem valor_total nulo ou zero — não é possível "
                                     "gerar contrato.",
+                        }, code=400)
+                        return
+                    # ACHADO-24 (docs/db/TAREFA_ACHADO24.md, F2-1): diferente do aditivo, esta
+                    # rota não exigia nem a PRESENÇA de pagamento_json — um plano vazio/ausente
+                    # materializava zero Recebivel em silêncio (só logging.warning), com o
+                    # contrato inteiro fechando sem cobrança. Mesma guarda do aditivo, mesma
+                    # regra do ACHADO-18: valor > 0 exige cobrança, nenhum default inventado.
+                    import mod_recebiveis as _mrec
+                    _pag_json_check = pagamento_json_str or orcamento_dict.get("forma_pagamento", "") or ""
+                    if not _mrec.materializar(_pag_json_check, orcamento_dict.get("valor_total", 0),
+                                              datetime.utcnow(), "check"):
+                        self.send_json({
+                            "ok": False,
+                            "erro": "O plano de pagamento não gera nenhum recebível — informe "
+                                    "entrada e/ou parcelas antes de gerar o contrato.",
                         }, code=400)
                         return
                     # Signatário alternativo: substitui o cadastro só para este contrato.

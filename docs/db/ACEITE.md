@@ -46,7 +46,7 @@ não depois.
 | 12 | aditivo não é faturado nem cobrado | `test_aceite_achado12` (2 aceites: 2.1.06 zera, seleção explícita do orçamento) + `test_bateria_ciclo` (cenários `tem_aditivo` saíram do xfail, herdam ACHADO-01/02 por ramo como os demais) | **CONSERTADO** — passo 7 do ROTEIRO |
 | 13 | `faturar_segmento` não é delta-aware na receita | `test_aditivo_costuras::test_costura2_...` (`xfail` removido no commit do conserto, 30/08) + `test_mov_credor_liquido_estorno` (medição do ponto 2, líquido de estornos) | **CONSERTADO** — primeiro conserto da jornada |
 | 14 | — resolvido (rename Parcelamento Loja) | `test_ramo_financiamento` | fechado |
-| 15 | `real` × `competencia_estimada` nunca reconciliam | `test_dre_ciclo_completo_e2e` (strict) | **provado** |
+| 15 | `real` × `competencia_estimada` divergem de meio de ciclo | `test_dre_ciclo_completo_e2e` (`xfail` removido 31/08 — divergência de meio de ciclo é o modelo, decisão de 07/08; reconcilia no fechamento) | **APOSENTADO** (31/08) — não é defeito |
 | 16 | provisão cancelada em silêncio → margem fictícia | `test_aceite_achado16.py` (recusa sem veredito + `encerrada_valor_menor` reconhecendo custo real antes de reverter, via HTTP) + `test_fase_d2_conciliacao_final.py` (sem veredito recusa, sobra+falta com veredito, `nao_se_aplica` sem motivo recusa, `ainda_vai_chegar` mantém aberto, custo financeiro fora da regra, idempotência) + `test_relatorio_projetos_encerrados_por_reversao.py` (ordenação por valor revertido, motivo, endpoint) | **CONSERTADO** — passo 8 do ROTEIRO |
 | 17 | Retenção de Comissão: nome ≠ comportamento | — | **SEM PROVA** (decisão de produto pendente) |
 | 18 | NF-e sem `valor_total` | `test_failsoft_nfe_medicao` (medição) + `test_aceite_achado18.py` (recusa em contrato e NF-e, `xfail` removido no commit do conserto, 30/08 + `test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerado`, o caso do total contratado) | **CONSERTADO** — passo 9 do ROTEIRO |
@@ -55,6 +55,8 @@ não depois.
 | 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (`xfail` removido no commit do conserto, 30/08) + `test_valor_contratado_do_projeto`, `test_aditivo_recebiveis_e_custo_financeiro` | **CONSERTADO** — passo 6 do ROTEIRO (6-a/6-b/6-c) |
 | 22 | docstring do CMV descreve mecanismo extinto | — | documental, Grupo 5 |
 | 23 | segmentação não congelada silenciosamente (falha engolida na assinatura) | `test_aceite_achado23.py` (4 aceites: recusa por injeção nomeando o projeto, reparo na AF1, controle positivo sem ruído, assinatura completa nos dois casos — confirmado que os dois primeiros falham pelo motivo certo contra o código pré-conserto) | **CONSERTADO** — passo 11 do ROTEIRO |
+| 24 | aditivo/contrato com plano de pagamento vazio não gera cobrança | `test_aceite_achado24.py` (2 `xfail(strict=True)`, um por chamador de `_materializar_recebiveis_venda_seguro`, + 2 controles positivos — `xfail` removido no commit do conserto, 31/08) | **CONSERTADO** — F2-1 do ROTEIRO |
+| 25 | tela do aditivo nunca envia forma de pagamento — ninguém completa pela UI | — | **SEM PROVA** (achado de UI, não de HTTP; enfileirado, não consertado) |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 
 ---

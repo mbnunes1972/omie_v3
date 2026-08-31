@@ -21,7 +21,7 @@ def test_pdf_por_id_de_cada_renegociacao(http_client_factory, seed, app_db):
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
         corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
         if parte == "cliente":
-            corpo["forma_pagamento"] = json.dumps({"tipo": "avista", "total_cliente": 0})
+            corpo["forma_pagamento"] = json.dumps({"tipo": "avista", "entrada_valor": 1.0})
         st_ass, body_ass = c.post(f"/api/projetos/{nome}/aditivo/assinar", corpo)
         assert st_ass == 200 and body_ass["status"] in ("assinado_loja", "assinado"), body_ass
 

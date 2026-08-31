@@ -341,6 +341,13 @@ janeiro e na Diferida de junho. A comparação que ensina é **por safra**.
     a promessa do "matching pleno" extinto em 07/08, e apontar para
     `reconhecer_despesa_efetivacao`. É onde alguém vai procurar como o CMV é
     reconhecido, e a promessa velha já induziu um erro de análise.
+31-b. **Varredura por `logging.warning`/`print` em caminho de dinheiro**
+    (achado ao consertar o ACHADO-24, F2-1, 31/08/2026). Quarto lugar onde
+    alguém previu a falha e escolheu seguir com um aviso em vez de recusar —
+    os outros três são o ACHADO-19 (seis rotas), o ACHADO-23 (congelamento
+    da segmentação) e o ACHADO-18. Cada aviso desses é um lugar onde alguém
+    viu o problema e não teve tempo; vale uma varredura dedicada, não mais
+    um achado por vez.
 
 **ACHADO-19 e ACHADO-20 — medidos em 29/08 e rebaixados para cá.** As seis
 rotas que respondem `ok` a um recálculo que falhou continuam sendo desenho

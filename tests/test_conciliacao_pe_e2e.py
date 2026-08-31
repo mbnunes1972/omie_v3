@@ -40,6 +40,10 @@ def _setup(app_db, seed, cfo_original=30000.0, budget=80000.0):
     compls = [o.id for o in db.query(app_db.Orcamento)
               .filter_by(projeto_id=nome, complemento_pe=1).all()]
     if compls:
+        # ACHADO-24 (F2-1): desde que o aditivo materializa Recebivel de verdade, a FK
+        # recebivel_orcamento_id_fkey passou a bloquear este DELETE se não limpar antes.
+        db.query(app_db.Recebivel).filter(
+            app_db.Recebivel.orcamento_id.in_(compls)).delete(synchronize_session=False)
         db.query(app_db.OrcamentoAmbiente).filter(
             app_db.OrcamentoAmbiente.orcamento_id.in_(compls)).delete(synchronize_session=False)
         db.query(app_db.Orcamento).filter(app_db.Orcamento.id.in_(compls)).delete(synchronize_session=False)
@@ -564,7 +568,7 @@ def test_aditivo_da_fase_assinatura_completa_constitui_provisao(http_client_fact
     assert st == 200 and body["status"] == "assinado_loja", body
     st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
                       {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05",
-                       "forma_pagamento": json.dumps({"tipo": "avista", "total_cliente": 0})})
+                       "forma_pagamento": json.dumps({"tipo": "avista", "entrada_valor": 1.0})})
     assert st == 200 and body["status"] == "assinado", body
 
     import mod_contabil

@@ -151,7 +151,7 @@ def test_aditivo_wizard_ponta_a_ponta(http_client_factory, seed, app_db):
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
         corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
         if parte == "cliente":
-            corpo["forma_pagamento"] = json.dumps({"tipo": "avista", "total_cliente": 0})
+            corpo["forma_pagamento"] = json.dumps({"tipo": "avista", "entrada_valor": 1.0})
         st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar", corpo)
         assert st == 200, body
     assert body["status"] == "assinado"

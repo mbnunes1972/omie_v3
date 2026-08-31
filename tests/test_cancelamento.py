@@ -235,7 +235,8 @@ def test_gerar_contrato_apos_cancelamento_leve_usa_orcamento_correto(
     st, b = c.post("/api/projetos/%s/contrato" % nome, {
         "orcamento_id": oid1,
         "endereco_instalacao": "Av. Paulista, 1000 - São Paulo/SP",
-        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 90000.0, "parcelas": []}),
+        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 90000.0,
+                                      "parcelas": [{"num": 1, "valor": 90000.0}]}),
         "confirmar_loja_incompleta": True,
     })
     assert st == 200 and b["ok"], b
@@ -249,7 +250,8 @@ def test_gerar_contrato_apos_cancelamento_leve_usa_orcamento_correto(
     st, b2 = c.post("/api/projetos/%s/contrato" % nome, {
         "orcamento_id": oid2,
         "endereco_instalacao": "Av. Paulista, 1000 - São Paulo/SP",
-        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 50000.0, "parcelas": []}),
+        "pagamento_json": _json.dumps({"tipo": "avista", "total_cliente": 50000.0,
+                                      "parcelas": [{"num": 1, "valor": 50000.0}]}),
         "confirmar_loja_incompleta": True,
     })
     assert st == 200 and b2["ok"], b2

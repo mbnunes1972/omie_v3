@@ -214,7 +214,7 @@ def test_aditivo_assinado_constitui_provisao_contabil(http_client_factory, seed,
 
     st, body = c.post(f"/api/projetos/{nome}/aditivo/assinar",
                       {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05",
-                       "forma_pagamento": json.dumps({"tipo": "avista", "total_cliente": 0})})
+                       "forma_pagamento": json.dumps({"tipo": "avista", "entrada_valor": 1.0})})
     assert st == 200 and body["status"] == "assinado", body
 
     db = app_db.get_session()

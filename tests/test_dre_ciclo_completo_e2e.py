@@ -311,9 +311,16 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
     assert st == 200 and b["status"] == "assinado_loja", b
     marco("5b_aditivo_assinatura_loja")
 
+    # ACHADO-24 (docs/db/TAREFA_ACHADO24.md, F2-1): plano de pagamento REAL, com parcela cobrindo
+    # o valor cheio do complemento — o plano vazio de antes ({"total_cliente": 0}, sem parcelas)
+    # materializava zero Recebivel, e era essa a causa do resíduo de R$ 5.000 em 1.1.02 (achado
+    # do fixture, não da aplicação — ver docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md). Desde o
+    # conserto do ACHADO-24, um plano vazio como o antigo é recusado pela própria rota.
     st, b = c.post("/api/projetos/%s/aditivo/assinar" % nome,
                    {"parte": "cliente", "nome": "Cliente L1", "cpf": "222.333.444-05",
-                    "forma_pagamento": json.dumps({"tipo": "avista", "total_cliente": 0})})
+                    "forma_pagamento": json.dumps(
+                        {"tipo": "avista", "total_cliente": aditivo_valor,
+                         "parcelas": [{"num": 1, "valor": aditivo_valor}]})})
     assert st == 200 and b["status"] == "assinado", b
     marco("5c_aditivo_assinatura_cliente_provisoes_constituidas")
 

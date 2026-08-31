@@ -41,7 +41,8 @@ deixa de ter resposta rápida.
 | 11 · ACHADO-23, trava na AF1 | **feito** — `e3a6756` |
 | **marco** · implantar nos 3 servidores | **feito** — 31/08, todos em `f47f22de46a7`, `confirmar.sh` 15 OK / 0 FALHA |
 | **F2-0** · remedir o ciclo das DREs | **feito** — 31/08, `docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md`; ACHADO-15 **aposentado** (divergência de meio de ciclo é o modelo — decisão de 07/08 — não defeito; reconcilia no fechamento) |
-| **F2-1** · ACHADO-24, aditivo sem recebível | tarefa escrita — `docs/db/TAREFA_ACHADO24.md` |
+| **F2-1** · ACHADO-24, aditivo sem recebível | **feito** — 31/08, `test_aceite_achado24.py`; medidos os DOIS chamadores (aditivo E contrato, os dois expostos); guarda em main.py nos dois; fixture do ciclo corrigido, resíduo de R$5.000 em 1.1.02 desapareceu |
+| **F2-2** · ACHADO-25, tela do aditivo não envia forma de pagamento | achado novo, nascido na medição do F2-1 — **SEM PROVA**, enfileirado, não consertado (regra do roteiro: não bloqueou o passo em andamento) |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -55,13 +56,14 @@ conserto.)
 grep -rn "ACHADO-" tests/*.py | grep -i xfail | wc -l
 ```
 
-Hoje **7** linhas (era 10) — só 5 são `@pytest.mark.xfail` de verdade citando
-achado: 2 do ACHADO-19 e 1 do ACHADO-20 (Fase 5), 1 do ACHADO-15 (Fase 4, já
-existia) e 1 novo do ACHADO-01 (Fase 2, ramo financeira sem conferência —
-deliberado, ver passo 10). Os do ACHADO-02/03 saíram; as outras 2 linhas são
-comentário, não marcador. Linhas, não testes — serve como tendência, não
-como precisão. No fim da Fase 4 tem que ser zero. No início do roteiro eram
-31.
+Hoje **6** linhas (era 7) — só 4 são `@pytest.mark.xfail` de verdade citando
+achado: 2 do ACHADO-19 e 1 do ACHADO-20 (Fase 5), 1 do ACHADO-01 (Fase 2,
+ramo financeira sem conferência — deliberado, ver passo 10). O do ACHADO-15
+saiu em 31/08 (aposentado — divergência de meio de ciclo é o modelo, não
+defeito) e o do ACHADO-24 saiu no mesmo dia (F2-1, conserto aplicado). As
+outras 2 linhas são comentário, não marcador. Linhas, não testes — serve
+como tendência, não como precisão. No fim da Fase 4 tem que ser zero. No
+início do roteiro eram 31.
 
 **O contador tem um ponto cego, demonstrado no fechamento da Fase 1.** Ele
 só enxerga achado que tem teste. O ACHADO-23 nasceu de uma medição, nunca

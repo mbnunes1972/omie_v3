@@ -1583,7 +1583,7 @@ R$ 40.000 num contrato de R$ 88.888,89 se a falha ocorrer.
 
 ---
 
-## ACHADO-24 — aditivo assinado com plano de pagamento vazio não gera cobrança nenhuma
+## ACHADO-24 — aditivo assinado com plano de pagamento vazio não gera cobrança nenhuma · RESOLVIDO 31/08/2026
 
 Encontrado em 31/08 ao ler o relatório da remedição do ciclo. A Vera
 identificou corretamente que o resíduo de R$ 5.000 em 1.1.02 era artefato do
@@ -1610,17 +1610,83 @@ cobrado.
 **Mesma forma do ACHADO-18:** coisa com valor aceita sem cobrança atrelada,
 em silêncio. E a guarda é igualmente barata.
 
-**A medir antes de consertar:** a tela real de assinatura do aditivo exige
-parcelas, ou aceita um plano vazio como o fixture? Se exigir, a proteção é
-de tela e não de validação — e já sabemos o que isso vale.
+**Medição F2-1 (docs/db/TAREFA_ACHADO24.md), 31/08/2026 — os dois caminhos,
+não só o aditivo:** `_materializar_recebiveis_venda_seguro` é compartilhada
+com a geração de contrato (`POST /projetos/<nome>/contrato`, main.py). Medido
+por HTTP com `tests/test_aceite_achado24.py` (2 `xfail(strict=True)` +
+controle positivo, antes do conserto):
 
-**Conserto provável:** aditivo assinado com valor > 0 precisa materializar
-ao menos um `Recebivel`, ou a assinatura é recusada com mensagem. O
-`logging.warning` vira recusa.
+- **Aditivo:** a tela real (`static/index.html`, `peAditivoAssinar`) **não
+  envia `forma_pagamento` nenhum** — nem vazio, nem cheio. É pior do que o
+  achado original supunha: hoje, em produção, TODA tentativa de completar a
+  2ª assinatura do aditivo é recusada com "Informe a forma de pagamento do
+  aditivo antes de concluir a assinatura." (o guard de presença do passo
+  6-c). Ninguém consegue fechar um aditivo pela tela desde que aquele passo
+  entrou — ver ACHADO-25.
+- **Contrato:** medido e confirmado — `POST /contrato` aceitava
+  `pagamento_json` vazio **sem nenhuma validação**, nem de presença. Achado
+  maior do que registrado: um contrato inteiro podia fechar sem cobrança,
+  não só um aditivo.
+
+**Conserto aplicado:** valor > 0 exige que o plano produza ao menos um
+`Recebivel`, ou a operação é recusada com mensagem — nos dois chamadores
+(main.py, assinatura do aditivo e geração de contrato). O `logging.warning`
+antigo vira recusa de verdade. `xfail(strict=True)` dos dois aceites
+removido no commit do conserto; controle positivo (plano normal,
+`test_aditivo_com_plano_real_...`/`test_contrato_com_plano_real_...`)
+confirma que a guarda não barra o caso legítimo.
+
+**Fixture do ciclo corrigido:** `test_dre_ciclo_completo_e2e.py` (marco 5c)
+passou a enviar um plano real (parcela cobrindo o valor cheio do
+complemento) — o resíduo de R$ 5.000 em `1.1.02` desapareceu (vai a `0.00`
+no marco 7), confirmando que era artefato do fixture, não um remanescente
+da aplicação. Ver docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md.
 
 **Consequências no número final:** nenhuma medida (não há cliente real). Em
-uso real: 100% do valor do aditivo sem cobrança.
+uso real, antes do conserto: 100% do valor do aditivo ou do contrato sem
+cobrança, quando o plano de pagamento chegasse vazio.
 
-**Grupo:** 1 por natureza — é caixa que não entra. Mas a Fase 1 está
-fechada, então entra como primeiro item da Fase 2, antes do passo 12: é
-barato e é da mesma família do que acabou de ser consertado.
+**Grupo:** 1 por natureza — é caixa que não entra. Resolvido como primeiro
+item da Fase 2 (F2-1), antes do passo 12.
+
+---
+
+## ACHADO-25 — a tela de assinatura do aditivo nunca envia forma de pagamento — ninguém completa um aditivo hoje
+
+Encontrado ao medir o ACHADO-24 (F2-1, docs/db/TAREFA_ACHADO24.md): a
+pergunta era "a tela exige parcelas, ou aceita um plano vazio como o
+fixture?" — nenhuma das duas. `peAditivoAssinar(parte)` em
+`static/index.html` (linha ~21849, chamada pelo botão "Assinar (parte)")
+manda só `{parte, nome, cpf}`. Não existe campo de forma de pagamento em
+lugar nenhum perto da UI do Termo Aditivo — só `#pe-ad-nome` e `#pe-ad-cpf`.
+
+**O que impede:** **campo obrigatório de formulário ausente**, não
+validação. O backend (passo 6-c, ACHADO-21, 30/08/2026) passou a EXIGIR
+`forma_pagamento` na assinatura que completa o aditivo (`completa_agora`) —
+mas o frontend nunca foi atualizado para coletá-la. Resultado: hoje, em
+produção, clicar em "Assinar" na parte que completa o par (loja+cliente)
+**sempre** recebe `400` — "Informe a forma de pagamento do aditivo antes de
+concluir a assinatura." — com plano vazio, cheio, ou qualquer coisa, porque
+o campo simplesmente não existe para preencher.
+
+**Por que é mais grave que o ACHADO-24:** aquele era "a tela pode aceitar
+plano vazio". Este é "a tela não tem como completar o aditivo de jeito
+nenhum" — uma regressão funcional bloqueando um fluxo inteiro (2ª
+assinatura do Termo Aditivo) desde que o passo 6-c entrou, sem que nenhum
+teste de UI tivesse pego (os testes E2E chamam a rota HTTP diretamente,
+com `forma_pagamento` no corpo — nunca passaram pela tela real).
+
+**Não bloqueou o F2-1** (a guarda do ACHADO-24 se prova por HTTP,
+independente do formulário) — registrado e enfileirado, não consertado
+neste passo, por regra do roteiro.
+
+**Conserto provável:** um campo (ou modal) de forma de pagamento na UI do
+Termo Aditivo, no mesmo padrão do modal de Aprovar Orçamento
+(`_capturarPagamento`/`window._planoPagamento`) — coletado antes de permitir
+o clique em "Assinar" na parte que completa o par.
+
+**Consequências no número final:** nenhuma medida (é uso de tela, não
+número contábil) — mas em produção, hoje, é bloqueio total: nenhum aditivo
+completa a 2ª assinatura pela tela.
+
+**Grupo:** 1 — bloqueia um fluxo de negócio inteiro, não é só higiene.

@@ -14,6 +14,7 @@ Sobe o servidor real (fixture `servidor` de conftest.py) e bate via HTTP — nã
 _ContratoFake nem chama mod_documentos/mod_contrato direto. Intercepta apenas a escrita
 do PDF (WeasyPrint) para capturar o HTML renderizado sem depender de parsing de PDF.
 """
+import json
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -114,7 +115,7 @@ def test_post_contrato_novo_fixa_o_modelo_ativo_da_loja(
             "parcelas_descricao": "1x",
             "forma_entrada": "pix",
             "forma_parcelas": "boleto",
-            "pagamento_json": "",
+            "pagamento_json": json.dumps({"tipo": "avista", "parcelas": [{"num": 1, "valor": 1000.0}]}),
             "confirmar_loja_incompleta": True,
         },
     )

@@ -92,9 +92,10 @@ def _criar_modelo_aditivo(app_db, seed, loja_id=None):
 
 def _assinar_aditivo_completo(c, nome, forma_pagamento=None):
     """ACHADO-21, 6-c: a assinatura que completa (2ª parte) exige forma_pagamento — sem
-    default inventado (a tela recusa se não coletar). Passa à vista/entrada 0 por padrão do
-    teste, só na 2ª chamada (a 1ª nunca completa sozinha)."""
-    fp = forma_pagamento or json.dumps({"tipo": "avista", "total_cliente": 0})
+    default inventado (a tela recusa se não coletar). Passa um plano à vista com entrada > 0
+    por padrão do teste (ACHADO-24: `total_cliente` sozinho não materializa recebível nenhum —
+    só na 2ª chamada, a 1ª nunca completa sozinha)."""
+    fp = forma_pagamento or json.dumps({"tipo": "avista", "entrada_valor": 1.0})
     for parte, quem in (("loja", "Rep Loja"), ("cliente", "Cliente L1")):
         corpo = {"parte": parte, "nome": quem, "cpf": "111.444.777-35"}
         if parte == "cliente":

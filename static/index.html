@@ -414,6 +414,22 @@ body{overflow:hidden}
    flex sem `flex` continua com altura pelo conteúdo (igual ao block de antes) — só a largura
    passa a esticar via align-items:stretch (default), que já era o comportamento visual do bloco. */
 #page-02.active{display:flex;flex-direction:column;flex:1 1 0;min-height:0}
+/* ACHADO-27 (docs/db/ACHADOS_CONTABEIS.md): #page-02 é filho de altura fixa (a viewport, via
+   flex:1 1 0 acima) e some abaixo do conteúdo quando a soma dos filhos excede essa altura — mas só
+   PARA QUEM TEM overflow != visible. É a regra do flexbox: o mínimo automático de um item no eixo
+   principal (que `min-height:auto` — o valor JÁ PADRÃO, escrevê-lo de novo não muda nada —
+   resolve calcular) usa o tamanho do CONTEÚDO, exceto quando overflow não é visible, caso em que
+   o mínimo automático vira 0 — só então o item pode encolher abaixo do próprio conteúdo.
+   #neg-tbl-ambientes-card é o ÚNICO filho direto de #page-02 com overflow:hidden (ali só pra
+   cortar os cantos arredondados da tabela no border-radius do card — nada a ver com altura); os
+   outros (.neg-top, os cinco .mod-panel #plano-*) não têm overflow declarado e por isso já
+   recusam encolher abaixo do conteúdo, sem precisar deste ajuste — plano-cartao com 15 parcelas
+   mede 847px e não se move. `flex-shrink:0` é o fix certo (não um `min-height:auto` redundante):
+   tira o item do cálculo de encolhimento por completo, então o overflow:hidden dele volta a
+   servir só pro que foi posto ali pra fazer (cortar cantos), sem efeito colateral na altura.
+   #page-02 volta a crescer além da viewport quando o plano é longo, e .content (que já tem
+   overflow-y:auto, linha acima) rola normalmente pra mostrar o resto. */
+#neg-tbl-ambientes-card{flex-shrink:0}
 /* Sidebar params */
 .sb-params{padding:12px 0;border-top:1px solid var(--border);margin-top:8px}
 .sb-param-title{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:var(--font-sans)}
@@ -1508,7 +1524,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     <span id="neg-desc-pct-lbl" style="display:none">0</span>
 
     <!-- Tabela de ambientes -->
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">
+    <div class="card" id="neg-tbl-ambientes-card" style="padding:0;overflow:hidden;margin-bottom:14px">
       <!-- Cabeçalho da tabela (brief bloco 1 + bloco 7 de 2026-08-24): Ambientes/Novo Ambiente
            saíram da extinta faixa #neg-orc-bar e vieram pra cá — agora à ESQUERDA, dividindo a
            faixa com as ações da tela (Salvar/Aprovar/Imprimir), que subiram do rodapé pra

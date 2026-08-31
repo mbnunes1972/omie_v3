@@ -58,6 +58,7 @@ não depois.
 | 24 | aditivo/contrato com plano de pagamento vazio não gera cobrança | `test_aceite_achado24.py` (2 `xfail(strict=True)`, um por chamador de `_materializar_recebiveis_venda_seguro`, + 2 controles positivos — `xfail` removido no commit do conserto, 31/08) | **CONSERTADO** — F2-1 do ROTEIRO |
 | 25 | tela do aditivo nunca envia forma de pagamento — ninguém completa pela UI | `test_e2e_browser_conciliacao_final.py` (achado de UI — a prova é de NAVEGADOR, não de HTTP: gera o Termo Aditivo, assina loja, assina cliente — a assinatura que completa o par abre o modal de pagamento novo e a assinatura só se registra depois de confirmado) | **CONSERTADO** — F2-4 do ROTEIRO |
 | 26 | Conciliação Final não manda veredito — trava, ou contorna via "Resolver" sem auditoria | `test_aceite_fila_provisoes.py` (7 aceites: desvio recusado + projeto não conclui por ele; os 4 vereditos pela fila isolados; controle positivo — Impostos continua funcionando pelo desvio; fluxo completo — fila → conclusão → custo em 5.1.01) | **CONSERTADO** — F2-3 do ROTEIRO |
+| 27 | plano de pagamento longo (15x) colapsa o card de ambientes na tela de Negociação — botões Salvar/Aprovar/Imprimir inclicáveis | `test_e2e_browser_negociacao_layout.py` (achado de layout CSS, não de HTTP — a prova é de NAVEGADOR: projeto real, Cartão de Crédito 15x, mede `getBoundingClientRect().height` do card > 100px e clica de verdade nos três botões, não só `is_visible()`) | **CONSERTADO** |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 
 ---

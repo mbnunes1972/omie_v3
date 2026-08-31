@@ -1817,3 +1817,81 @@ concluído pela tela passa pelo veredito de verdade (fila) ou continua
 travado até passar.
 
 **Grupo:** 1 — é o fluxo de fechamento do sistema inteiro.
+
+---
+
+## ACHADO-27 — plano de pagamento longo colapsa o card de ambientes na tela de Negociação · RESOLVIDO 31/08/2026
+
+Achado do Marcelo, clicando em Homologação, 31/08/2026 — **não é regressão
+desta rodada** (a esteira e o F2-4 não tocaram `#page-02`/CSS de layout;
+já existia antes, só nunca tinha sido clicado com um plano longo o
+suficiente para expor).
+
+**O que acontecia:** na tela de Negociação, com um plano de pagamento
+longo (medido com Cartão de Crédito, 15x), o card que contém a tabela de
+ambientes E a linha de ações (Salvar/Aprovar/Imprimir) colapsava para
+~1-2px de altura e sumia da tela. Os três botões continuavam **existindo**
+no DOM — `getComputedStyle` reportava `display:flex; visibility:visible`,
+e um `is_visible()` ingênuo (Playwright) reportava `true` — mas nenhum
+clique real os alcançava, recortados pelo pai.
+
+**Causa (medida, não suposta):** `#page-02.active` é `display:flex;
+flex-direction:column`, com altura ditada pelo espaço disponível na
+viewport (819px medidos no navegador real do Marcelo; ~604px no
+headless deste teste — o número muda com a janela, o mecanismo não).
+Pela regra do flexbox, o **mínimo automático** de um item flex no eixo
+principal (o valor que `min-height:auto` resolve) usa o tamanho do
+CONTEÚDO do item — **exceto** quando o item tem `overflow` diferente de
+`visible`, caso em que o mínimo automático vira **0**, e só então o item
+pode encolher além do próprio conteúdo. O card de ambientes
+(`#neg-tbl-ambientes-card`, antes só `.card` sem id) tem
+`overflow:hidden` inline — ali só para cortar os cantos arredondados da
+tabela no `border-radius` do card, sem relação nenhuma com altura.
+
+**Medido antes de mexer (a instrução era explícita: não tapar o buraco
+sem entender o resto do prédio) — os outros filhos diretos de `#page-02`
+não compartilham a mesma exposição:** `.neg-top` (grid do cabeçalho) e os
+cinco `.mod-panel` `#plano-*` (um por modalidade, só um visível por vez)
+não têm `overflow` declarado — o padrão é `visible`, então o mínimo
+automático deles já é o tamanho do conteúdo, e eles **já recusavam**
+encolher abaixo dele antes de qualquer conserto. Medido:
+`#plano-cartao` sozinho, com 15 parcelas, mede ~847px e não se move — é
+exatamente ele quem sobra além dos ~604-819px disponíveis, e o card de
+ambientes (o único com a saída de emergência do `overflow:hidden`) que
+absorve 100% do encolhimento. `#ciclo-panel` (o outro filho notável de
+`#page-02`, ver N4/2026-08-26 na CSS) é `position:absolute;inset:0` — fora
+do fluxo, não entra nesta conta.
+
+**Conserto:** `flex-shrink:0` só em `#neg-tbl-ambientes-card`
+(`static/index.html`) — tira o item do cálculo de encolhimento por
+completo, sem tocar no `overflow:hidden` que ele usa pra outra coisa
+(cortar cantos). `#page-02` volta a crescer além da viewport quando o
+plano é longo, e `.content` (ancestral, já com `overflow-y:auto` desde o
+N4) rola normalmente pra mostrar o resto — nenhuma mudança na altura do
+próprio `#page-02` nem no `#ciclo-panel` absolutamente posicionado dentro
+dele. Tentativa descartada: `min-height:auto` explícito no card — não
+muda nada, porque `auto` já É o valor padrão; o mecanismo do flexbox que
+zera o mínimo automático olha o `overflow`, não se o autor escreveu
+`min-height` ou deixou implícito.
+
+**Por que tem que ser um teste de NAVEGADOR:** nenhuma chamada de API vê
+isto — é um bug puramente de CSS/layout, que só existe depois que o motor
+do navegador renderiza a árvore inteira. Exatamente a classe de achado
+que o F2-2 já mostrou (ACHADO-25/26): milhares de testes de API verdes, e
+a tela travada.
+
+**Prova:** `tests/test_e2e_browser_negociacao_layout.py` — projeto real
+criado pela tela, ambiente via XML, modalidade Cartão de Crédito + 15
+parcelas selecionados na tela; mede `getBoundingClientRect().height` do
+card (> 100px, não recortado) e clica de verdade nos três botões
+(Salvar/Imprimir/Aprovar) — não só `is_visible()`, que o achado provou
+não bastar. Confirmado que o teste falha (`getBoundingClientRect` de um
+elemento sem a id nova, ou altura ~2px com o seletor antigo) contra o
+código de antes do conserto, e passa depois.
+
+**Consequências no número final:** nenhuma — é layout puro, nenhum valor
+contábil passa por aqui. Mas em produção, com plano de pagamento longo,
+ninguém consegue aprovar orçamento nem assinar contrato pela tela.
+
+**Grupo:** 1 — bloqueia um fluxo de negócio inteiro (aprovar/assinar) sob
+uma condição específica (plano longo), não é só higiene.

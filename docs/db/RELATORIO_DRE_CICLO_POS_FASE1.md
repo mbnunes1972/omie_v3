@@ -1,6 +1,6 @@
 # Relatório — três visões de DRE, ciclo completo (pós-Fase 1)
 
-Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de conserto.** `real` e `competencia_estimada` deveriam bater linha a linha (a hipótese de docs/db/TESTE_DRE_CICLO.md); `antecipacao_contrato` é só observada — ela diverge por desenho (reconhece no contrato, não na NF-e), não é achado.
+Gerado por `tests/test_dre_ciclo_completo_e2e.py`. `real` e `competencia_estimada` reconciliam no fechamento do projeto; divergem durante o ciclo por desenho (ver Diagnóstico). `antecipacao_contrato` é só observada — ela diverge por desenho (reconhece no contrato, não na NF-e), não é achado.
 
 Este arquivo é a remedição de docs/db/TAREFA_REMEDICAO_DRE.md, comparada
 marco a marco e conta a conta contra o relatório original,
@@ -23,7 +23,9 @@ Continua no mesmo lugar de antes: o marco `6a_nfe_produto_emitida`. `real`
 mostra `cmv_csp = 0.00`; `competencia_estimada` mostra `42000.00` (o CFO da
 provisão). A receita é idêntica nas duas visões nesse marco
 (`receita_bruta = 61750.00` em ambas) — a divergência é só de custo, exatamente
-como no relatório original. **Fase 1 não moveu esse ponto.**
+como no relatório original. **Fase 1 não moveu esse ponto**, e essa
+divergência agora é tratada como esperada, não como falha (ver "Veredito
+sobre o xfail" abaixo).
 
 ### 2. O projeto ainda fecha com margem de 100%?
 
@@ -47,13 +49,28 @@ trajetória.
 
 A conta que **fica presa em R$ 5.000,00 para sempre** a partir do
 recebimento é `1.1.02` (Contas a Receber), não `2.1.06`: `95000.00` (6a/6b)
-→ `5000.00` (7) → `5000.00` (8), nos dois relatórios. Isso bate com o
-cenário do fixture: a forma de pagamento tem `total_cliente = 90000.00`
-mas o aditivo eleva a receita para `95000.00` — os `5000.00` que sobram em
-aberto em `1.1.02` são o saldo não coberto pela forma de pagamento
-original, não um efeito do aditivo em si. **A referência da tarefa a
-`2.1.06` parece mirar o sintoma certo (valor preso em R$ 5.000) na conta
-errada — o número bate em `1.1.02`.**
+→ `5000.00` (7) → `5000.00` (8), nos dois relatórios.
+
+**Causa confirmada por leitura de código (Marcelo perguntou: caminho novo
+do passo 6-c, ou caminho antigo?):** o fixture EXERCITA o passo 6-c — a
+assinatura que completa o aditivo (marco 5c) envia
+`forma_pagamento = {"tipo": "avista", "total_cliente": 0}`, satisfazendo a
+exigência do endpoint (não é rejeitado) — mas esse payload não tem
+`parcelas` nem `entrada_valor`. `mod_recebiveis.materializar` (linhas
+59-110) nunca lê `total_cliente`; ela gera linhas a partir de
+`entrada_valor` e de `pag["parcelas"]` apenas. Sem nenhum dos dois, o
+`for` sobre `parcelas` roda 0 vezes e **nenhum `Recebivel` é criado** para
+os R$ 5.000,00 do complemento — só os R$ 90.000,00 do contrato original
+(que tem `parcelas` reais) geram `Recebivel`. O marco 7 confirma todo
+`Recebivel` do projeto; como o complemento nunca teve um, ele nunca é
+"recebido" — daí o 1.1.02 parar em 5.000,00 e nunca zerar.
+**Conclusão: é artefato do fixture, não achado** — o caminho novo (passo
+6-c) funciona; o teste é que descreve um plano de pagamento vazio para o
+complemento. `_materializar_recebiveis_venda_seguro` não acusa isso porque
+seu guard de log só dispara quando `forma_pagamento` está TOTALMENTE
+ausente (main.py:844-851) — aqui ela está presente, só vazia de parcelas.
+Essa lacuna no aviso é real, mas não altera nenhum número de produção;
+não abri achado novo para ela.
 
 ### 4. A `4.1.01` mudou de valor?
 
@@ -97,26 +114,38 @@ Sim, nas três visões capturadas em todo marco, sem mudança de forma —
 continua sendo a visão que sempre mostrou o custo estimado da venda desde
 a criação da provisão, independente de efetivação.
 
-## Veredito sobre o xfail (ACHADO-15)
+## Veredito sobre o xfail (ACHADO-15) — APOSENTADO 31/08/2026
 
-As três visões **não reconciliam em todos os marcos** — a divergência
-mora em `6a_nfe_produto_emitida`, `6b_nfse_servico_emitida` e
-`7_recebimento` (mesmos números do relatório original, inalterados). Ela
-só desaparece no marco final, `8_conclusao_projeto`, e apenas porque a
-Conciliação Final agora exige um veredito nomeado — que, quando o veredito
-reconhece o custo cheio (`encerrada_valor_menor` @ 42000.0), faz `real`
-convergir com `competencia_estimada` no fechamento.
+Medição inicial (mesmo dia): as três visões não reconciliavam em todo
+marco — divergiam em `6a_nfe_produto_emitida`, `6b_nfse_servico_emitida` e
+`7_recebimento`, só fechando em `8_conclusao_projeto`. Pela leitura
+estrita da tarefa ("se as visões reconciliarem [em todo marco], remova o
+marcador"), isso mantinha o `xfail(strict=True)`.
 
-Isso não satisfaz a condição da tarefa para remover o marcador ("se as
-visões reconciliarem" — sem qualificação). `test_ciclo_completo_tres_visoes_dre`
-continua **genuinamente FAILED** sob `--runxfail` (confirmado por execução
-direta), então **o `xfail(strict=True)` permanece** — mas seu texto estava
-factualmente errado ("nunca mais reconciliam neste cenário") e foi
-corrigido para refletir o achado mais estreito: a divergência é
-temporária, não permanente, e se fecha no momento da Conciliação Final
-por causa do veredito do passo 8, não por uma mudança em `real()`.
-ACHADO-15 permanece **aberto**, com escopo revisado — ver
-docs/db/ACHADOS_CONTABEIS.md.
+**Decisão de Marcelo, confirmada por releitura do código:** divergir
+durante o ciclo é o MODELO, não o defeito — decisão de 07/08
+(mod_contabil.py:1826-1832): a despesa entra em `real()` só na competência
+REAL da efetivação, nunca antes; `competencia_estimada` é projeção por
+desenho (mostra o constituído) e sai inteira na Fase 4. Um `xfail` sobre
+comportamento intencional não mede nada — só documenta uma expectativa
+errada.
+
+**Verificação antes de aposentar:** todas as divergências de meio de
+ciclo, em todos os marcos, se resumem a uma única causa —
+`cmv_csp`/`lucro_bruto`/`ebitda`/`lucro_liquido` (as três últimas são só a
+cascata aritmética da primeira). Nenhuma outra linha (`receita_bruta`,
+`deducoes`, `despesas_comerciais`, `despesas_administrativas`,
+`constituicao_provisoes`, `resultado_financeiro`, `outras_receitas`)
+diverge em nenhum marco. Não há divergência sem explicação pelo desenho.
+
+**Ação:** `xfail(strict=True)` removido de
+`test_ciclo_completo_tres_visoes_dre`. A asserção mudou de "bate em todo
+marco" para "bate no marco `8_conclusao_projeto`" — divergências de meio
+de ciclo continuam capturadas e reportadas (variável
+`divergencias_meio_ciclo` no teste), só não fazem o teste falhar. Teste
+roda **PASSED** (confirmado por execução direta, não `--runxfail`).
+ACHADO-15 marcado **RESOLVIDO/APOSENTADO** em
+docs/db/ACHADOS_CONTABEIS.md — decisão tomada, não bug pendente.
 
 ## Marco: 1_projeto_criado
 

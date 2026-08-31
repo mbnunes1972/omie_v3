@@ -772,7 +772,7 @@ chamado de novo nesse cenário.
 
 ---
 
-## ACHADO-15 — `real` e `competencia_estimada` divergem quando o projeto fecha sem efetivação
+## ACHADO-15 — `real` e `competencia_estimada` divergem quando o projeto fecha sem efetivação · APOSENTADO 31/08/2026
 
 **O que acontece:** se um projeto chega à Conciliação Final (etapa 21) sem
 que as rubricas de custo "matching pleno" (montagem, custo de fábrica,
@@ -829,27 +829,34 @@ deveria reconhecer, no momento da Conciliação Final, o custo cancelado
 como despesa (mesmo sem execução física confirmada), pra não subestimar
 custo?
 
-**Escopo revisado — remedição pós-Fase 1, 31/08/2026
-(docs/db/TAREFA_REMEDICAO_DRE.md):** a "decisão necessária" acima foi
-tomada — o passo 8 (ACHADO-16) passou a exigir um veredito nomeado por
-rubrica em aberto na Conciliação Final. Isso muda o achado, mas não o
-resolve: `real` e `competencia_estimada` **continuam divergindo** entre
-`6a_nfe_produto_emitida` e `7_recebimento` — mesmos números medidos antes
-da Fase 1 (`cmv_csp`: 0,00 vs 42.000,00, receita idêntica). A diferença é
-que, quando o veredito escolhido reconhece o custo cheio
-(`encerrada_valor_menor` @ 42.000,00, o cenário testado), as duas visões
-**reconciliam no marco final** — o projeto deixou de fechar com margem de
-100% (era `lucro_liquido = 95.000,00`; agora `53.000,00`, igual a
-`competencia_estimada`). Um veredito diferente (`nao_se_aplica` ou
-`ainda_vai_chegar` sem nunca resolver) reabriria a divergência até o
-fechamento — não testado aqui. `xfail(strict=True)` **permanece** em
-`test_ciclo_completo_tres_visoes_dre` (o teste continua FAILED sob
-`--runxfail`); o texto do marcador e o relatório completo, marco a marco,
-estão em docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md. ACHADO-15 segue
-**aberto**, com o remanescente restrito à janela entre emissão e
-recebimento — a "decisão necessária" original virou a decisão sobre qual
-veredito o negócio escolhe dar, não mais sobre se `real` reconhece o
-custo.
+**Remedição pós-Fase 1, 31/08/2026 (docs/db/TAREFA_REMEDICAO_DRE.md):** a
+"decisão necessária" acima foi tomada — o passo 8 (ACHADO-16) passou a
+exigir um veredito nomeado por rubrica em aberto na Conciliação Final.
+Medido: `real` e `competencia_estimada` continuam divergindo entre
+`6a_nfe_produto_emitida` e `7_recebimento` — mesmos números de antes da
+Fase 1 (`cmv_csp`: 0,00 vs 42.000,00, receita idêntica) — mas, quando o
+veredito escolhido reconhece o custo cheio (`encerrada_valor_menor` @
+42.000,00, o cenário testado), as duas visões **reconciliam no marco
+final**: o projeto deixou de fechar com margem de 100% (era
+`lucro_liquido = 95.000,00`; agora `53.000,00`, igual a
+`competencia_estimada`).
+
+**Decisão de Marcelo, 31/08/2026: aposentar o achado.** Divergir durante
+o ciclo — entre a NF-e e a Conciliação Final — é o MODELO, não o defeito:
+decisão de 07/08 (mod_contabil.py:1826-1832) já estabelecia que a despesa
+entra em `real()` só na competência REAL da efetivação; `competencia_estimada`
+é projeção por desenho e sai inteira na Fase 4. Verificado antes de
+aposentar: toda divergência de meio de ciclo, em todo marco, se resume a
+uma única causa (`cmv_csp` e sua cascata aritmética em
+`lucro_bruto`/`ebitda`/`lucro_liquido`) — nenhuma outra linha diverge em
+nenhum marco, então não há remanescente sem explicação pelo desenho.
+
+`xfail(strict=True)` removido de `test_ciclo_completo_tres_visoes_dre`; a
+asserção mudou de "bate em todo marco" para "bate no fechamento
+(`8_conclusao_projeto`)" — divergências de meio de ciclo continuam
+capturadas e reportadas, só deixaram de ser tratadas como falha. Teste
+roda PASSED. Relatório completo, marco a marco, em
+docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md.
 
 ---
 

@@ -202,17 +202,6 @@ def contratos_dir(tmp_path):
     mod_contrato.CONTRATOS_DIR = orig
 
 
-@pytest.mark.xfail(reason="ACHADO-15 (escopo revisado pós-Fase 1): real() só reconhece o custo "
-                          "das rubricas 'matching pleno' no momento da Conciliação Final, via "
-                          "o veredito nomeado do passo 8 (ACHADO-16) — não quando a NF-e é "
-                          "emitida. dre_simulada('competencia_estimada') mostra o CONSTITUÍDO "
-                          "desde a NF-e. As duas visões divergem entre 6a_nfe_produto_emitida "
-                          "e 7_recebimento (mesmos números medidos antes da Fase 1) e só "
-                          "reconciliam no marco 8_conclusao_projeto, quando o veredito "
-                          "'encerrada_valor_menor' reconhece o custo cheio — não em todo "
-                          "marco, então o xfail permanece. Ver "
-                          "docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md e "
-                          "docs/db/ACHADOS_CONTABEIS.md.", strict=True)
 def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_dir,
                                         http_client_factory, monkeypatch):
     import mod_contabil as mc
@@ -377,17 +366,27 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
                                   "RELATORIO_DRE_CICLO_POS_FASE1.md")
     _gravar_relatorio(retratos, relatorio_path)
 
-    # ── ASSERIR: real == competencia_estimada, linha a linha, em CADA marco ─────────────────
+    # ── ASSERIR: real == competencia_estimada, linha a linha ────────────────────────────────
     # (antecipacao_contrato NUNCA entra nesta checagem — só observação, ver docstring do módulo)
-    divergencias = []
+    #
+    # ACHADO-15 (remedição de 31/08/2026, docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md): divergir
+    # entre a NF-e (marco 6a) e a Conciliação Final é o MODELO, não o defeito — decisão de
+    # 07/08 (mod_contabil.py:1826-1832): despesa entra em real() na competência REAL da
+    # efetivação, nunca antes. competencia_estimada é projeção por desenho (mostra o
+    # constituído), e sai na Fase 4. Por isso só o marco final precisa reconciliar; marcos
+    # intermediários podem divergir (sempre só em cmv_csp e no que cascateia dele —
+    # lucro_bruto/ebitda/lucro_liquido — nunca em receita ou despesas).
+    divergencias_meio_ciclo = []
+    divergencias_finais = []
     for r in retratos:
+        alvo = (divergencias_finais if r["marco"] == "8_conclusao_projeto"
+                else divergencias_meio_ciclo)
         for l in LINHAS_DRE:
             rv, cv = r["real"].get(l), r["competencia_estimada"].get(l)
             if rv != cv:
-                divergencias.append((r["marco"], l, rv, cv))
-    assert not divergencias, (
-        "real e competencia_estimada divergem. Primeira ocorrência — marco=%r linha=%r: "
-        "real=%.2f competencia_estimada=%.2f. Todas as divergências: %s"
-        % (divergencias[0][0], divergencias[0][1], divergencias[0][2], divergencias[0][3],
-           divergencias)
+                alvo.append((r["marco"], l, rv, cv))
+    assert not divergencias_finais, (
+        "real e competencia_estimada não reconciliaram no fechamento do projeto (marco "
+        "8_conclusao_projeto): %s. Divergências de meio de ciclo (esperadas, informativas): %s"
+        % (divergencias_finais, divergencias_meio_ciclo)
     )

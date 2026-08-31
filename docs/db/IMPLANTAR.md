@@ -224,6 +224,19 @@ tinha rodado `confirmar.sh` remotamente ate agora):**
    deixar `~/.pgpass` (`host:port:*:user:senha`, 600) resolver a
    autenticacao — sem escapar nada.
 
+### Segundo deploy por tag — v2026.08.31-beta2 — 31/08/2026
+
+Tag `v2026.08.31-beta2` (a2889df) — ACHADO-27 resolvido (colapso do card de
+ambientes na Negociacao com plano de pagamento longo), sem migration nova.
+Mesmo procedimento do beta1, mesma ordem (Integracao, depois Homologacao):
+`systemctl stop` → `git fetch --tags && git checkout v2026.08.31-beta2` →
+`systemctl start` → `confirmar.sh` → smoke. `git describe --tags` confirmado
+exato (`v2026.08.31-beta2`, sem sufixo `-N-g<hash>`) nos dois antes de
+seguir. `confirmar.sh` 15 OK / 0 FALHA nos dois. Producao NAO tocada — mesmo
+motivo do beta1 (falta aprovacao do Marcelo + lista de defeitos aceita, essa
+atualizada em `docs/db/DEFEITOS_CONHECIDOS_beta1.md` pra registrar a
+promocao pro beta2).
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

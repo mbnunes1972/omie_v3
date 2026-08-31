@@ -334,8 +334,12 @@ janeiro e na Diferida de junho. A comparação que ensina é **por safra**.
 27. Onda 2 — os três ciclos de FK (usuarios↔funcionarios, redes↔emitente,
     orcamentos↔parcela_projeto).
 28. Onda 2 — os 53 pares FK-sem-índice de nível 3.
-29. Produção: `Environment=` na unidade systemd → `/root/orizon.env`. Hoje
-    qualquer um que rode `systemctl cat` lê a senha.
+29. ~~Produção: `Environment=` na unidade systemd → `/root/orizon.env`. Hoje
+    qualquer um que rode `systemctl cat` lê a senha.~~ **feito 31/08/2026** —
+    unidade agora usa `EnvironmentFile=/root/orizon.env` (modo 600);
+    `systemctl cat orizon` não mostra mais credencial. Backup da unidade
+    anterior em `/root/backups/orizon.service.bak.20260831_1604` (ver
+    `docs/db/IMPLANTAR.md`).
 30. Rotacionar o `sad2026` no localhost, Integração e Homologação.
 31-a. ACHADO-22 — apagar do docstring de `_fin_faturamento_segmentado_seguro`
     a promessa do "matching pleno" extinto em 07/08, e apontar para

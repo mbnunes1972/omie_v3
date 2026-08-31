@@ -4,11 +4,19 @@ Caminhos reais, colhidos do servidor em 28/08/2026. Ordem: Integracao,
 depois Homologacao, depois Producao. Cada uma so comeca quando a anterior
 fechou a conferencia.
 
+**Atualizacao de codigo (rotina) vive em `docs/db/ESTEIRA.md`, nao aqui.**
+Este documento cobre o rebuild de schema (Passo 0 a 3.8, uma vez por
+ambiente) e serve de referencia para os caminhos/armadilhas de cada
+servidor. A partir de 31/08/2026 todo deploy de codigo — inclusive o
+"Passo 2" abaixo, quando um rebuild precisar de codigo alinhado — sai de
+uma tag e usa `git checkout <tag>`, nunca `git pull` de `main`: um so
+procedimento, nao dois. Ver `## Conferir o que esta rodando` no fim.
+
 ## Mapa
-    ambiente      host              servico      diretorio             env                banco
-    Integracao    167.88.33.121     orizon-a     /root/orizon-manager  /root/orizon-A.env orizon_integracao
-    Homologacao   167.88.33.121     orizon-b     /root/orizon-homolog  /root/orizon-B.env orizon_homologacao
-    Producao      179.197.77.9      orizon       (a confirmar)         (a confirmar)      orizon_producao
+    ambiente      host              servico      diretorio             env                     banco
+    Integracao    167.88.33.121     orizon-a     /root/orizon-manager  /root/orizon-A.env       orizon_integracao
+    Homologacao   167.88.33.121     orizon-b     /root/orizon-homolog  /root/orizon-B.env       orizon_homologacao
+    Producao      179.197.77.9      orizon       /root/orizon-manager  /root/orizon.env (600)   orizon_producao
 
 /root/orizon-homolog-data NAO tem git e NAO deve ser tocado. Sao dados.
 
@@ -28,16 +36,17 @@ Do WSL:
     scp docs/db/config_20260828_0206.sql root@167.88.33.121:/root/
 
 ## Passo 2 — atualizar o codigo
-/root/orizon-manager esta em main:
+Deploy por tag (docs/db/ESTEIRA.md, 31/08/2026): o servidor faz checkout da
+tag alvo, nunca `pull` de `main` — `pull` desfaz qualquer fixacao anterior
+numa tag e deixa "o que esta rodando" dependente de quando alguem olhou o
+`git log`. Mesmo comando nos dois diretorios (nao ha mais tag "so de
+homolog" — Integracao e Homologacao acompanham a mesma linhagem de tags):
 
-    cd /root/orizon-manager && git fetch origin && git pull
+    cd /root/orizon-manager  && git fetch origin --tags && git checkout <tag>
+    cd /root/orizon-homolog  && git fetch origin --tags && git checkout <tag>
 
-/root/orizon-homolog esta em HEAD DESTACADO na tag v2026.08.26i-homolog.
-Precisa sair da tag primeiro:
-
-    cd /root/orizon-homolog && git fetch origin && git checkout main && git pull
-
-Confira nos dois que o commit bate com o do WSL antes de seguir.
+Confira nos dois com `git describe --tags` (ver `## Conferir o que esta
+rodando`) que a tag bate com a criada na bancada antes de seguir.
 
 ## Passo 3 — por ambiente
 
@@ -95,18 +104,21 @@ test_schema_boot_estavel prova que ele nao altera o schema — mas leia o log
 mesmo assim, e refaca a conferencia do 3.7 depois de subir. Se algum numero
 mudou, o boot mexeu em dado e precisamos saber.
 
-## Producao — NAO EXECUTAR AINDA
-Decisao: nasce so com estrutura e gabarito, sem configuracao.
-Mas `usuarios` vazio significa que ninguem consegue entrar para criar a
-rede e a loja reais.
+## Producao — reconstruida (rebuild de schema resolvido, ver `## Executado`)
+Esta secao descrevia o rebuild de schema, ainda nao feito quando foi
+escrita. Ja aconteceu (ver `## Executado`) e a pergunta do usuario admin
+inicial ja tinha resposta no proprio codigo (`scripts/criar_primeiro_
+admin.py`). Fica so como registro de que essa pergunta precisava ser
+respondida ANTES, nao improvisada com a Producao fora do ar — mesmo
+raciocinio vale pra proxima decisao pendente sobre ela.
 
-ANTES de reconstruir a Producao, responder: o app cria um usuario admin
-inicial no primeiro boot com o banco vazio? Se nao cria, o procedimento
-precisa de um passo a mais — inserir um usuario master — e esse passo tem
-que ser definido antes, nao improvisado com a Producao fora do ar.
-
-Confirmar tambem o diretorio e o arquivo .env do servico `orizon` em
-179.197.77.9, que ainda nao foram levantados.
+Diretorio e `.env` do servico `orizon` em 179.197.77.9, levantados em
+31/08/2026 (item 29 do Grupo 5, docs/db/PLANO_AJUSTES.md): diretorio
+`/root/orizon-manager`, unidade `orizon.service`. A senha do banco vivia
+em `Environment=` na propria unidade — qualquer um com `systemctl cat`
+lia. Movida para `/root/orizon.env` (modo 600, `EnvironmentFile=`);
+`systemctl cat orizon` hoje nao mostra credencial nenhuma. Backup da
+unidade anterior em `/root/backups/orizon.service.bak.20260831_1604`.
 
 ## Armadilhas encontradas na execucao real (28/08/2026)
 
@@ -155,6 +167,12 @@ Quatro coisas que o ensaio no WSL nao revelou. Todas custaram tentativa.
   ficou resolvida (`scripts/criar_primeiro_admin.py` existe no codigo).
 
 ### Marco da Fase 1 (docs/db/TAREFA_IMPLANTAR_FASE1.md) — 31/08/2026
+
+**Registro historico — o metodo de atualizacao de codigo usado aqui
+(`git pull` de `main`) foi substituido no mesmo dia pelo deploy por tag
+(docs/db/ESTEIRA.md, ver "Primeiro deploy por tag" abaixo). Nao repita
+`git pull` num deploy novo — o Passo 2 no topo deste documento ja reflete
+o metodo atual.**
 
 Upgrade INCREMENTAL nos tres ambientes (`git pull` + `alembic upgrade head`),
 sem DROP/recriar banco — decisao do Marcelo: o `confirmar.sh` ja reconstroi
@@ -205,3 +223,15 @@ tinha rodado `confirmar.sh` remotamente ate agora):**
    da URI de vez pro `PGURL` (`postgresql://orizon@localhost/db`) e
    deixar `~/.pgpass` (`host:port:*:user:senha`, 600) resolver a
    autenticacao — sem escapar nada.
+
+## Conferir o que esta rodando
+
+Nao entrar no servidor pra olhar `git log` — perguntar direto:
+
+    cd /root/orizon-manager && git describe --tags
+    cd /root/orizon-homolog && git describe --tags
+
+Retorna a tag exata quando o HEAD esta nela (`v2026.08.31-beta1`) ou
+`<tag-anterior>-N-g<hash>` se alguem rodou `pull`/`checkout` de um commit
+fora de tag — nesse segundo caso o servidor esta fora do procedimento da
+esteira e precisa voltar pra uma tag antes de qualquer outra coisa.

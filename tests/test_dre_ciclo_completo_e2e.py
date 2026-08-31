@@ -202,14 +202,17 @@ def contratos_dir(tmp_path):
     mod_contrato.CONTRATOS_DIR = orig
 
 
-@pytest.mark.xfail(reason="ACHADO-15: real() nunca reconhece o custo das rubricas 'matching "
-                          "pleno' que fecham o projeto sem terem sido efetivadas — a "
-                          "Conciliação Final cancela a provisão contra o ativo diferido sem "
-                          "tocar a DRE, e dre_simulada('competencia_estimada') continua "
-                          "mostrando o CONSTITUÍDO (a estimativa), nunca corrigido pela baixa. "
-                          "As duas visões divergem a partir da NF-e e nunca mais reconciliam "
-                          "neste cenário (ver docs/db/ACHADOS_CONTABEIS.md e "
-                          "docs/db/RELATORIO_DRE_CICLO.md).", strict=True)
+@pytest.mark.xfail(reason="ACHADO-15 (escopo revisado pós-Fase 1): real() só reconhece o custo "
+                          "das rubricas 'matching pleno' no momento da Conciliação Final, via "
+                          "o veredito nomeado do passo 8 (ACHADO-16) — não quando a NF-e é "
+                          "emitida. dre_simulada('competencia_estimada') mostra o CONSTITUÍDO "
+                          "desde a NF-e. As duas visões divergem entre 6a_nfe_produto_emitida "
+                          "e 7_recebimento (mesmos números medidos antes da Fase 1) e só "
+                          "reconciliam no marco 8_conclusao_projeto, quando o veredito "
+                          "'encerrada_valor_menor' reconhece o custo cheio — não em todo "
+                          "marco, então o xfail permanece. Ver "
+                          "docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md e "
+                          "docs/db/ACHADOS_CONTABEIS.md.", strict=True)
 def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_dir,
                                         http_client_factory, monkeypatch):
     import mod_contabil as mc
@@ -361,13 +364,17 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
         db.commit()
     finally:
         db.close()
-    st, b = c.post("/api/projetos/%s/ciclo/21/conciliar" % nome, {})
+    st, b = c.post("/api/projetos/%s/ciclo/21/conciliar" % nome,
+                   {"vereditos": {"2.1.04.06": {"veredito": "encerrada_valor_menor",
+                                                "valor_efetivado": 42000.0}}})
     assert st == 200 and b["ok"], b
     marco("8_conclusao_projeto")
 
     # ── grava o relatório SEMPRE, antes de qualquer asserção de divergência ─────────────────
+    # docs/db/TAREFA_REMEDICAO_DRE.md: remedição pós-Fase 1 — arquivo NOVO, não sobrescreve
+    # o original (a comparação entre os dois É o resultado).
     relatorio_path = os.path.join(os.path.dirname(__file__), "..", "docs", "db",
-                                  "RELATORIO_DRE_CICLO.md")
+                                  "RELATORIO_DRE_CICLO_POS_FASE1.md")
     _gravar_relatorio(retratos, relatorio_path)
 
     # ── ASSERIR: real == competencia_estimada, linha a linha, em CADA marco ─────────────────

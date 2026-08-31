@@ -40,7 +40,7 @@ deixa de ter resposta rápida.
 | 10 · ACHADO-02 + 03, tabela por ramo | **feito** — `dbeee03` |
 | 11 · ACHADO-23, trava na AF1 | **feito** — `e3a6756` |
 | **marco** · implantar nos 3 servidores | **feito** — 31/08, todos em `f47f22de46a7`, `confirmar.sh` 15 OK / 0 FALHA |
-| **F2-0** · remedir o ciclo das DREs | tarefa escrita — `docs/db/TAREFA_REMEDICAO_DRE.md` |
+| **F2-0** · remedir o ciclo das DREs | **medido** — 31/08, `docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md`; ACHADO-15 segue aberto, escopo estreitado (divergência só entre NF-e e recebimento, reconcilia no fechamento via veredito) |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:

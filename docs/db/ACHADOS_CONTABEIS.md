@@ -829,6 +829,28 @@ deveria reconhecer, no momento da Conciliação Final, o custo cancelado
 como despesa (mesmo sem execução física confirmada), pra não subestimar
 custo?
 
+**Escopo revisado — remedição pós-Fase 1, 31/08/2026
+(docs/db/TAREFA_REMEDICAO_DRE.md):** a "decisão necessária" acima foi
+tomada — o passo 8 (ACHADO-16) passou a exigir um veredito nomeado por
+rubrica em aberto na Conciliação Final. Isso muda o achado, mas não o
+resolve: `real` e `competencia_estimada` **continuam divergindo** entre
+`6a_nfe_produto_emitida` e `7_recebimento` — mesmos números medidos antes
+da Fase 1 (`cmv_csp`: 0,00 vs 42.000,00, receita idêntica). A diferença é
+que, quando o veredito escolhido reconhece o custo cheio
+(`encerrada_valor_menor` @ 42.000,00, o cenário testado), as duas visões
+**reconciliam no marco final** — o projeto deixou de fechar com margem de
+100% (era `lucro_liquido = 95.000,00`; agora `53.000,00`, igual a
+`competencia_estimada`). Um veredito diferente (`nao_se_aplica` ou
+`ainda_vai_chegar` sem nunca resolver) reabriria a divergência até o
+fechamento — não testado aqui. `xfail(strict=True)` **permanece** em
+`test_ciclo_completo_tres_visoes_dre` (o teste continua FAILED sob
+`--runxfail`); o texto do marcador e o relatório completo, marco a marco,
+estão em docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md. ACHADO-15 segue
+**aberto**, com o remanescente restrito à janela entre emissão e
+recebimento — a "decisão necessária" original virou a decisão sobre qual
+veredito o negócio escolhe dar, não mais sobre se `real` reconhece o
+custo.
+
 ---
 
 ## ACHADO-14 — "Total Flex" virou "Parcelamento Loja" e o rename não chegou · RESOLVIDO 29/08/2026

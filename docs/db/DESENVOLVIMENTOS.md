@@ -95,7 +95,8 @@ solicitar a medição — que é o que o cliente assina no termo.
 
 ## Em aberto, sem decisão
 
-- **Aditivo criado manualmente entre a assinatura e o PE.** Pedido do
+- ~~**Aditivo criado manualmente entre a assinatura e o PE.**~~ **DECIDIDO
+  31/08: não entra. O aditivo continua nascendo só do PE.** Pedido do
   Marcelo em 31/08: hoje o botão "Gerar Termo Aditivo" só existe dentro da
   seção de PE (static/index.html:21731) — o aditivo nasce **exclusivamente**
   da divergência do Projeto Executivo, o que é fiel à regra que o próprio
@@ -106,7 +107,12 @@ solicitar a medição — que é o que o cliente assina no termo.
   corretamente mas não obviamente; (c) o caminho novo precisa herdar as
   quatro guardas dos ACHADOS 21, 24, 25 e do congelamento de segmentação, ou
   reabre os quatro; (d) a própria regra "XML novo ⇒ projeto novo" limita o
-  escopo a mudança de valor em ambiente existente. **Não decidido.**
+  escopo a mudança de valor em ambiente existente.
+
+  **Motivo da decisão:** a janela entre assinatura e aprovação do PE é curta,
+  e o caminho existente — revisar o orçamento antes de assinar — cobre o
+  caso. Um segundo caminho custaria quatro guardas herdadas para atender
+  exceção. Se o caso real aparecer com frequência, reabre-se com número.
 
 - **Alternativas de revisão de PE.** Hoje só existe painel de comparação, e
   o usuário registrou insegurança quanto a essa escolha: o cliente às vezes

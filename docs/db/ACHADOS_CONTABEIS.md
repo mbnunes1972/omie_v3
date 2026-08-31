@@ -1761,3 +1761,45 @@ motivo registrado — o mesmo ponto cego que o ACHADO-16 mediu originalmente,
 reaberto pela tela.
 
 **Grupo:** 1 — é o fluxo de fechamento do sistema inteiro.
+
+---
+
+## ACHADO-26 — o conserto do ACHADO-16 tem porta dos fundos, e é a única que a tela oferece
+
+Medido pela Vera no F2-2. **O achado mais grave desde o ACHADO-16 — porque
+é o ACHADO-16 continuando a acontecer.**
+
+**O que acontece:** `conciliarFinal()` manda `body: '{}'`, sempre. Não existe
+nenhum campo de veredito em `static/index.html` — zero ocorrências de
+`encerrada_valor_menor`, `nao_se_aplica` ou `ainda_vai_chegar`. Mas a mesma
+tela tem botões "Efetivar"/"Resolver" ligados a
+`/api/financeiro/resolver-saldo-provisao`, que **zera o saldo de qualquer
+provisão direto**, sem veredito e sem escrever nada em `VeredictoProvisao`.
+
+Zerado tudo pelos botões, o "Concluir" passa legitimamente: não há mais nada
+em aberto para recusar. **O passo 8 guardou uma porta e deixou a outra
+aberta — e a outra é a única que a tela oferece.**
+
+**A quarta ocorrência do mesmo erro.** ACHADO-19 (seis rotas, uma guardada),
+ACHADO-03 (dois roteadores divergentes), ACHADO-24 (função compartilhada,
+dois chamadores), e agora este. A disciplina que faltava não é medir o livro
+nem checar quem chama: é **enumerar os irmãos** — antes de guardar uma
+operação, listar todo endpoint capaz de produzir a mesma mudança de estado.
+
+### DECIDIDO 31/08 — a fila é a porta da frente
+
+Quem dá os vereditos é a **assistente administrativa**, na fila de provisões
+(passo 13), não na tela de Conciliação Final. É quem tem o pedido e a nota da
+fábrica na mão e sabe responder *"ainda há despesa a realizar?"*.
+
+A Conciliação Final **não ganha campos de veredito**: ela confere que nada
+ficou em aberto e, quando ficar, aponta para a fila.
+
+**Ordem obrigatória:** a fila entra **antes** de o desvio ser fechado. Fechar
+`resolver-saldo-provisao` com a tela ainda sem lugar para dar veredito
+deixaria o sistema sem porta nenhuma — hoje pelo menos se conclui, ainda que
+errado.
+
+**Consequências no número final:** as mesmas do ACHADO-16 — margem fictícia,
+custo que some. O conserto do passo 8 só passa a valer de fato quando este
+fechar.

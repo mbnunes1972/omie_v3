@@ -43,8 +43,8 @@ deixa de ter resposta rápida.
 | **F2-0** · remedir o ciclo das DREs | **feito** — 31/08, `docs/db/RELATORIO_DRE_CICLO_POS_FASE1.md`; ACHADO-15 **aposentado** (divergência de meio de ciclo é o modelo — decisão de 07/08 — não defeito; reconcilia no fechamento) |
 | **F2-1** · ACHADO-24, aditivo sem recebível | **feito** — 31/08, `test_aceite_achado24.py`; medidos os DOIS chamadores (aditivo E contrato, os dois expostos); guarda em main.py nos dois; fixture do ciclo corrigido, resíduo de R$5.000 em 1.1.02 desapareceu |
 | **F2-2** · auditoria contrato de API × tela | **feito** — 31/08, mapa completo em `docs/db/ACHADOS_CONTABEIS.md`; achou o **ACHADO-26** (Conciliação Final pior que o 25 — trava OU contorna o veredito em silêncio); contrato e NF-e confirmados OK na tela |
-| **F2-3** · ACHADO-25, tela do aditivo não envia forma de pagamento | achado novo, nascido na medição do F2-1 — **SEM PROVA**, enfileirado, não consertado (regra do roteiro: não bloqueou o passo em andamento) |
-| **F2-4** · ACHADO-26, Conciliação Final não manda veredito (trava ou contorna) | achado novo, nascido no F2-2 — **SEM PROVA**, enfileirado, não consertado, gravidade 1 |
+| **F2-3** · fila de provisões + ACHADO-26 | tarefa escrita — `docs/db/TAREFA_FILA_PROVISOES.md`; a fila vira a porta da frente, o desvio fecha depois |
+| **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | enfileirado — bloco de frontend, depois do F2-3 |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -87,6 +87,11 @@ Descoberto em 31/08, pelo ACHADO-25: o passo 6-c passou a exigir um campo
 novo num endpoint, o frontend nunca foi atualizado, e **os 2466 testes
 continuaram verdes** — porque todos chamam a API direto, mandando o campo
 novo. Em produção, nenhum aditivo consegue ser assinado desde então.
+
+**A regra irmã, do ACHADO-26:** antes de guardar uma operação, **enumere os
+irmãos** — todo endpoint capaz de produzir a mesma mudança de estado. Quatro
+achados desta auditoria são a mesma omissão (19, 03, 24, 26): guardamos uma
+porta e havia outra.
 
 **Toda mudança de campo obrigatório é invisível para a suíte.** A regra, até
 existir trava melhor: passo que muda contrato de endpoint tem que dizer

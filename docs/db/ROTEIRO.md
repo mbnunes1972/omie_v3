@@ -148,7 +148,8 @@ fim da Fase 1**, com `docs/db/confirmar.sh` rodado em cada ambiente e
 `docs/db/IMPLANTAR.md` como procedimento. O risco real aqui não é a demora —
 é esquecer. Toda migration nova entra nesta lista no mesmo passo que a criou.
 
-**Pendentes:** `e031f6ad9c80`, `f47f22de46a7`.
+**Pendentes:** `e031f6ad9c80`, `f47f22de46a7` — vão juntas no marco da
+Fase 1 (`docs/db/TAREFA_IMPLANTAR_FASE1.md`).
 
 **Lembrete que já custou um susto:** tabela nova precisa entrar no manifesto
 de `modulos.py`. O passo 8 descobriu isso por acidente; o `periodo_fechado`

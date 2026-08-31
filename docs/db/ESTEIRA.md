@@ -31,6 +31,10 @@ propósito** — para não depender de quem está com pressa.
 
 **Bancada → Integração**
 - `pytest -q` verde;
+- **E2E de navegador verde** — ele sobe o próprio servidor a partir do
+  código atual, então prova o **código**, e por isso é critério daqui e não
+  do estágio seguinte (corrigido em 31/08: a primeira versão deste documento
+  colocava o E2E como critério de Integração, errado);
 - nenhum `xfail` citando achado da fase corrente;
 - nenhuma linha da fase em "SEM PROVA" no `ACEITE.md`;
 - tag criada (ver abaixo).
@@ -38,7 +42,11 @@ propósito** — para não depender de quem está com pressa.
 **Integração → Homologação**
 - migrations aplicadas, `alembic current` no head;
 - `confirmar.sh` **15 OK / 0 FALHA**;
-- E2E do fluxo terminal verde contra o servidor de Integração.
+- **smoke**: o serviço sobe, o login responde, e as telas-chave carregam.
+
+O que se prova aqui é **o deploy**, não o código — o código já foi provado
+na bancada. Rodar o fluxo completo contra um servidor compartilhado
+significaria criar e abandonar projetos nele a cada ciclo.
 
 **Homologação → Produção**
 - o Marcelo percorreu o fluxo na tela e aprovou;
@@ -59,6 +67,18 @@ servidor e olhar o `git log`. Passa a valer:
 
 Isso muda o trabalho da Vera: o fim de um ciclo passa a ser "suíte verde +
 tag criada", não "commitado".
+
+## Teste fora da rodada padrão apodrece
+
+Um teste que só roda quando alguém lembra de invocá-lo é da mesma família do
+`logging.warning` que ninguém lê. Se um teste precisa ficar fora do
+`pytest -q`, o problema é o isolamento dele — resolva o isolamento, não a
+convocação. O E2E de navegador ganha banco próprio (`orizon_e2e`) por essa
+razão.
+
+E todo teste que abre banco **afirma o nome do banco antes de qualquer
+coisa**, recusando rodar se não for o dele. Em 31/08 um `DATABASE_URL`
+esquecido na sessão fez o E2E escrever registros órfãos no banco de dev.
 
 ## Ninguém edita código em servidor
 

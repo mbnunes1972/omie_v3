@@ -8,7 +8,8 @@ cima para baixo.
 
 | documento | responde |
 |---|---|
-| `ACHADOS_CONTABEIS.md` | **o que está errado** — 22 achados, com medição |
+| `ACHADOS_CONTABEIS.md` | **o que está errado** — a lista em correção |
+| `LISTA_PARALELA.md` | **o que foi adiado** — a fila do ciclo seguinte |
 | `DESENVOLVIMENTOS.md` | **o que não existe** — ausências, separadas dos defeitos |
 | `ACEITE.md` | **como saber que consertou** — teste por achado |
 | `TAREFA_*.md` | **como consertar** — um por frente, escrito na hora de fazer |
@@ -98,6 +99,18 @@ existir trava melhor: passo que muda contrato de endpoint tem que dizer
 **quem chama** e conferir o chamador real em `static/index.html`. Tarefa que
 muda a API sem essa checagem está incompleta — e as que eu escrevi na Fase 1
 estavam.
+
+## Duas filas, uma ativa
+
+`ACHADOS_CONTABEIS.md` é o que se corrige agora; `LISTA_PARALELA.md` é o que
+foi adiado para o ciclo seguinte. Ao fim de cada etapa de estabilização a
+paralela é revisada, **vira a lista ativa**, e o que for adiado dela começa
+a nova paralela.
+
+**Adiar não é rejeitar.** Item decidido contra fica fechado onde nasceu, com
+o motivo — não vai para a paralela. E achado **correlacionado** ao que está
+sendo consertado entra na fila ativa, não na paralela: tratar junto custa
+menos, foi o que aconteceu com os ACHADOS 24, 26 e 27.
 
 ## Quando aparece achado novo no meio de um passo
 

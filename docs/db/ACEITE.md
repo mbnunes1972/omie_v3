@@ -54,6 +54,7 @@ não depois.
 | 20 | recursão no complemento auto-referente | `test_negociacao_breakdown_excecoes` (medição) + `test_aceite_achado19_20::test_complemento_auto_referente_recusado_com_erro_nomeado` (strict, controle negativo confirmado) | **provado** |
 | 21 | aditivo cobrado duas vezes | `test_aditivo_costuras::test_costura4_...` (`xfail` removido no commit do conserto, 30/08) + `test_valor_contratado_do_projeto`, `test_aditivo_recebiveis_e_custo_financeiro` | **CONSERTADO** — passo 6 do ROTEIRO (6-a/6-b/6-c) |
 | 22 | docstring do CMV descreve mecanismo extinto | — | documental, Grupo 5 |
+| 23 | segmentação não congelada silenciosamente (falha engolida na assinatura) | `test_aceite_achado23.py` (4 aceites: recusa por injeção nomeando o projeto, reparo na AF1, controle positivo sem ruído, assinatura completa nos dois casos — confirmado que os dois primeiros falham pelo motivo certo contra o código pré-conserto) | **CONSERTADO** — passo 11 do ROTEIRO |
 | P5 | `parcela_ambiente.valor_ambiente` | — | **SEM PROVA** |
 
 ---

@@ -962,12 +962,17 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
         # FASE B2 (A6): congela a segmentação Mercadoria × Serviço efetiva no projeto.
         # A partir da assinatura, NF-e e NFS-e leem os MESMOS percentuais (imune a mudança
         # do default da loja entre os dois documentos). Sem migração; grava no JSON existente.
+        # ACHADO-23 (docs/db/TAREFA_ACHADO23.md, passo 11): a assinatura NUNCA trava por isso —
+        # o cliente está na frente. Falha aqui não é silenciosa: vira log de erro de verdade
+        # (era `print`, ninguém ficava sabendo) e a AF1 (que já revisa a segmentação de qualquer
+        # jeito) é quem confere — e consegue reparar — antes de aprovar.
         try:
             if _congelar_segmentacao_no_projeto(db, loja_id, nome_safe) is not None:
                 db.commit()
         except Exception as _eseg:
             db.rollback()
-            print("[SEGMENTACAO] congelar na assinatura falhou:", _eseg)
+            logging.getLogger(__name__).error(
+                "[SEGMENTACAO] congelar na assinatura falhou (projeto=%s): %s", nome_safe, _eseg)
         try:
             upsert_projeto_status(nome_safe, "fechado")
         except Exception as _e:
@@ -1271,9 +1276,13 @@ def _reconciliar_solicitacao_medicao_clicksign(db, sol, cfg):
 
 def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
     """FASE B2 (A6): congela a segmentação Mercadoria × Serviço EFETIVA (override do projeto vence o
-    default da loja) no `parametros_json` do projeto — chamado na assinatura. Depois disso NF-e e NFS-e
-    leem os MESMOS percentuais, imunes a mudança do default da loja. Retorna o par congelado ou None
-    (loja/projeto ausente). NÃO commita (o chamador decide) e preserva os demais parâmetros."""
+    default da loja) no `parametros_json` do projeto — chamado na assinatura (e, de reparo, na
+    aprovação da AF1 — ACHADO-23, docs/db/TAREFA_ACHADO23.md). Depois disso NF-e e NFS-e leem os
+    MESMOS percentuais, imunes a mudança do default da loja. Grava `segmentacao_congelada=True`
+    junto — é esse marcador, não a mera presença de `pct_mercadoria`/`pct_servico` (que também
+    existem como override editável ANTES da assinatura), que a AF1 confere (`_segmentacao_
+    congelada`). Retorna o par congelado ou None (loja/projeto ausente). NÃO commita (o chamador
+    decide) e preserva os demais parâmetros."""
     from mod_orcamento_params import (parametros_default_loja, resolver_segmentacao,
                                       segmentacao_efetiva)
     lj = db.get(Loja, loja_id) if loja_id else None
@@ -1291,8 +1300,21 @@ def _congelar_segmentacao_no_projeto(db, loja_id, projeto_nome):
     seg = segmentacao_efetiva(resolver_segmentacao(lj.pct_mercadoria, lj.pct_servico), par)
     par["pct_mercadoria"] = seg["pct_mercadoria"]
     par["pct_servico"]    = seg["pct_servico"]
+    par["segmentacao_congelada"] = True
     pj.parametros_json = json.dumps(par, ensure_ascii=False)
     return seg
+
+
+def _segmentacao_congelada(pj):
+    """ACHADO-23: True só se `_congelar_segmentacao_no_projeto` já gravou o marcador com sucesso
+    — não basta `pct_mercadoria`/`pct_servico` existirem (também são o override editável antes da
+    assinatura, de outro fluxo)."""
+    if not (pj and pj.parametros_json):
+        return False
+    try:
+        return bool(json.loads(pj.parametros_json).get("segmentacao_congelada"))
+    except Exception:
+        return False
 
 
 def _valores_segmentados_do_projeto(db, loja_id, projeto_nome):
@@ -16197,6 +16219,31 @@ class Handler(BaseHTTPRequestHandler):
                                 "erro": "Contrato ainda não assinado pelas duas partes — não é possível "
                                         "aprovar a AF."}, code=400)
                             return
+                        # ACHADO-23 (docs/db/TAREFA_ACHADO23.md, passo 11): a segmentação Mercadoria ×
+                        # Serviço tem que estar congelada antes da AF1 aprovar — na assinatura, uma
+                        # falha silenciosa (loja/projeto ausente, ou exceção) deixava o projeto vivendo
+                        # do default AO VIVO da loja pra sempre (medido: R$ 40.000 de diferença na
+                        # face fiscal). Quem senta na AF1 já revisa esse número — a AF1 tenta congelar
+                        # ali mesmo (reparo, não só recusa); só recusa se o reparo também falhar.
+                        if etapa_cod == "8":
+                            _pj_seg = _projeto_da_loja(db, nome_safe, loja_id)
+                            if not _segmentacao_congelada(_pj_seg):
+                                try:
+                                    _seg_reparo = _congelar_segmentacao_no_projeto(db, loja_id, nome_safe)
+                                except Exception as _eseg_af1:
+                                    db.rollback()
+                                    logging.getLogger(__name__).error(
+                                        "[SEGMENTACAO] reparo na AF1 falhou (projeto=%s): %s",
+                                        nome_safe, _eseg_af1)
+                                    _seg_reparo = None
+                                if _seg_reparo is None:
+                                    self.send_json({"ok": False,
+                                        "erro": "Segmentação Mercadoria × Serviço do projeto \"%s\" não "
+                                                "está congelada e a tentativa de congelar agora falhou "
+                                                "— confira o log e o cadastro da loja antes de aprovar a "
+                                                "AF." % nome_safe}, code=400)
+                                    return
+                                db.commit()
                         # Conciliação de PE/AF2 (spec 2026-08-14): defesa em profundidade — a UI usa
                         # o endpoint dedicado /ciclo/11d/aprovar (mesma checagem), mas este PATCH
                         # genérico também precisa dela, senão vira um jeito de contornar a outra.

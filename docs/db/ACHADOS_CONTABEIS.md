@@ -1448,7 +1448,35 @@ nome.
 
 ---
 
-## ACHADO-23 — o congelamento da segmentação é fail-soft, e a assinatura completa mesmo assim
+## ACHADO-23 — o congelamento da segmentação é fail-soft, e a assinatura completa mesmo assim · RESOLVIDO 31/08/2026
+
+**RESOLVIDO (docs/db/TAREFA_ACHADO23.md, passo 11 do ROTEIRO — último da
+Fase 1).** A assinatura continua completando normalmente; a AF1 (etapa "8")
+ganhou o gate: sem `parametros_json["segmentacao_congelada"]` (o marcador
+que `_congelar_segmentacao_no_projeto` grava — não basta `pct_mercadoria`/
+`pct_servico` existirem, que também é o override editável de antes da
+assinatura), a AF1 tenta congelar ali mesmo (reparo); só recusa, nomeando o
+projeto, se o reparo também falhar. O `print` virou
+`logging.getLogger(__name__).error(...)`, nos dois pontos (assinatura e
+reparo da AF1).
+
+`tests/test_aceite_achado23.py` (4 aceites): as falhas foram FORÇADAS POR
+INJEÇÃO (monkeypatch de `_congelar_segmentacao_no_projeto`, não uma
+condição natural) — e os dois testes que dependem do gate (recusa por
+injeção; reparo na AF1) foram confirmados falhando **contra o código
+pré-conserto**, pelo motivo certo (recusa esperada e não aconteceu — não um
+erro de setup de data/contrato/senha). O controle positivo (segmentação já
+congelada → AF1 aprova sem tentar recongelar) e os dois testes de assinatura
+(completa com e sem falha de congelamento) passam nos dois códigos, como
+esperado de um controle.
+
+Este foi o achado que quase escapou do fechamento da Fase 1: nunca teve
+`xfail`, então o contador de xfails (o `grep` do ROTEIRO) não o via — só
+apareceu porque `ACEITE.md` não tinha linha nenhuma pra ele. A partir daqui
+o aceite de cada fase exige as duas travas: suíte sem xfail da fase **e**
+`ACEITE.md` sem linha da fase em "SEM PROVA".
+
+**Histórico da medição (antes do conserto):**
 
 Medido pela Vera no passo 7 (`docs/db/TAREFA_ACHADO12.md`, ponto 3), que
 pedia só a medição da segmentação. Achado novo — entra na fila pela regra do

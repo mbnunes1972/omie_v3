@@ -1580,3 +1580,47 @@ Fica no conserto, além disso:
 
 **Consequências no número final:** nenhuma em operação normal; até
 R$ 40.000 num contrato de R$ 88.888,89 se a falha ocorrer.
+
+---
+
+## ACHADO-24 — aditivo assinado com plano de pagamento vazio não gera cobrança nenhuma
+
+Encontrado em 31/08 ao ler o relatório da remedição do ciclo. A Vera
+identificou corretamente que o resíduo de R$ 5.000 em 1.1.02 era artefato do
+fixture; o mecanismo que o produziu, porém, é um achado.
+
+**O que acontece:** a assinatura do aditivo (passo 6-c) passou a exigir
+`forma_pagamento` e a chamar `_materializar_recebiveis_venda_seguro`. Mas
+nada valida que a forma de pagamento **produz** recebíveis. Um payload
+`{"tipo": "avista", "total_cliente": 0}` sem `parcelas` nem `entrada_valor`
+é aceito; `mod_recebiveis.materializar` nunca lê `total_cliente` e devolve
+zero linhas. O aditivo fica assinado, com receita constituída em 2.1.06, e
+**sem nenhum `Recebivel`** — não entra em cobrança em lugar nenhum.
+
+**Alguém já previu o caso e escolheu fail-soft:** main.py:842-846 tem um
+`logging.warning` — *"orçamento tem valor_total>0 mas nenhum plano de
+pagamento ... 0 recebíveis materializados. Verifique manualmente"*. Aviso em
+log não é controle: ninguém lê log de produção procurando venda não cobrada.
+
+**Por que importa:** é o ACHADO-12 por outra porta. Aquele era "o wiring de
+recebíveis nunca é chamado para o aditivo"; este é "o wiring é chamado e não
+produz nada". O efeito no caixa é idêntico — aditivo vendido, executado, não
+cobrado.
+
+**Mesma forma do ACHADO-18:** coisa com valor aceita sem cobrança atrelada,
+em silêncio. E a guarda é igualmente barata.
+
+**A medir antes de consertar:** a tela real de assinatura do aditivo exige
+parcelas, ou aceita um plano vazio como o fixture? Se exigir, a proteção é
+de tela e não de validação — e já sabemos o que isso vale.
+
+**Conserto provável:** aditivo assinado com valor > 0 precisa materializar
+ao menos um `Recebivel`, ou a assinatura é recusada com mensagem. O
+`logging.warning` vira recusa.
+
+**Consequências no número final:** nenhuma medida (não há cliente real). Em
+uso real: 100% do valor do aditivo sem cobrança.
+
+**Grupo:** 1 por natureza — é caixa que não entra. Mas a Fase 1 está
+fechada, então entra como primeiro item da Fase 2, antes do passo 12: é
+barato e é da mesma família do que acabou de ser consertado.

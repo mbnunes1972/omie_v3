@@ -57,11 +57,17 @@ o mapa da Fase 2, medido em vez de suposto.
 
 ## Ordem sugerida
 
-1. Medição de ciclo das DREs (acima) — reavalia tudo o que vem depois.
-2. Passo 12 — ACHADO-01, no escopo que sobrou.
-3. Passo 13 — fila de provisões em aberto, dona: assistente administrativa
+1. Medição de ciclo das DREs — **feita em 31/08.** ACHADO-15 aposentado: a
+   divergência de meio de ciclo é o modelo (despesa na competência real da
+   efetivação, decisão de 07/08), não defeito — as visões reconciliam no
+   fechamento.
+2. **ACHADO-24**, saído dessa medição: aditivo assinado com plano de
+   pagamento vazio não gera recebível nenhum. Medir se a tela alcança;
+   guarda barata, mesma forma do ACHADO-18.
+3. Passo 12 — ACHADO-01, no escopo que sobrou.
+4. Passo 13 — fila de provisões em aberto, dona: assistente administrativa
    da loja. Depende do que a medição mostrar sobre volume.
-4. Passo 14 — P5, ACHADO-06 (medir antes), ACHADO-17 (se decidido).
+5. Passo 14 — P5, ACHADO-06 (medir antes), ACHADO-17 (se decidido).
 
 ## O que continua valendo, sem exceção
 

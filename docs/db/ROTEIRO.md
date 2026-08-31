@@ -37,7 +37,8 @@ deixa de ter resposta rápida.
 | 7 · ACHADO-12, soma contrato+aditivos | **feito** — `50ec18f` |
 | 8 · ACHADO-16, vereditos da Conciliação Final | **feito** — `28be877` |
 | 9 · ACHADO-18, guarda de `valor_total` | **feito** — `bb32a14` |
-| 10 em diante | não iniciados |
+| 10 · ACHADO-02 + 03, tabela por ramo | tarefa escrita |
+| 11 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
 `git log 2764c31..HEAD -- main.py mod_contabil.py` volta **vazio**.
@@ -110,6 +111,8 @@ antes de 13 transforma defeito raro em defeito de todo projeto com aditivo.
     o `cust_fin`. O 02 é a consequência (receita financeira contada duas
     vezes), o 03 é o roteador ambíguo que a produz. Consertar um sem o outro
     é arrumar o efeito e deixar a causa escolhendo sozinha.
+    `docs/db/TAREFA_ACHADO02_03.md`. **A tabela `_RAMO_CFIN_EVENTO` também
+    está errada** — decidido em 30/08; ver a tabela por ramo no plano.
 11. **ACHADO-23** — segmentação não congelada trava a AF1, que consegue
     congelar ali mesmo. Decidido em 30/08.
 

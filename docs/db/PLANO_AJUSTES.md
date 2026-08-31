@@ -20,6 +20,23 @@ Terceiro financiou (banco, financeira, cartão): o deságio saiu da loja, é
 custo financeiro. A loja financiou (Parcelamento Loja): o deságio ficou na
 loja, é receita financeira. Os achados 01, 02 e 03 são violações disso.
 
+**Terceiro caso, acrescentado em 30/08:** quem **nunca teve** o dinheiro não
+tem nem receita nem custo. No ramo financeira/cartão a financeira recebe do
+cliente e retém a própria taxa — o deságio não passa pelo caixa da loja, e
+por isso não é despesa dela. O que a loja precisa ali não é lançar custo: é
+**conferir** se a retenção real bateu com a esperada.
+
+**A tabela por ramo (decidida em 30/08).** `cust_fin = Val_Cont − VAVO` é o
+preço do crédito cobrado do cliente. `4.1.01` recebe **o VAVO em todos os
+ramos** — o preço do móvel não muda conforme a forma de pagamento.
+
+| ramo | o que acontece | `cust_fin` |
+|---|---|---|
+| à vista | cliente paga o preço à vista | não existe |
+| loja | loja financia com capital próprio | **receita financeira** |
+| loja_antecipacao | loja financia; depois antecipa no banco | **receita financeira**; o deságio do banco é custo separado, no evento da antecipação |
+| financeira / cartão | a financeira recebe do cliente e retém a taxa | **nada no resultado** — vira retenção esperada, posição de balanço |
+
 **2. Um livro, várias lentes.**
 Todo evento lança uma vez. As visões de resultado são CONSULTAS sobre o
 mesmo livro, nunca contabilidades paralelas. Duas visões que divergem por
@@ -138,17 +155,37 @@ outras rotas que alcançam. A guarda entra na geração de contrato e na
 emissão de NF-e, recusando com mensagem. É a segunda linha; a primeira é o
 item 0. Proteção acidental não é proteção.
 
-**4. ACHADO-02 — receita financeira contada duas vezes no ramo loja.**
-Medido: R$ 3.800 em R$ 46.300. Decidido: `4.1.01` recebe o VAVO, `4.4.03`
-recebe o `cust_fin` como receita financeira. Somados dão o Val_Cont, uma vez.
+**4. ACHADO-02 + ACHADO-03, juntos — o que cada ramo faz com o `cust_fin`.**
+Medido: R$ 3.800 em R$ 46.300 contados duas vezes no ramo loja. Decidido em
+30/08 a tabela por ramo acima. `4.1.01` recebe **o VAVO sempre**.
+
+**A tabela `_RAMO_CFIN_EVENTO` também está errada** — não é a resposta
+canônica que o ACHADO-03 supunha. Ela manda `financeira` e
+`loja_antecipacao` para o mesmo evento de custo provisionado, quando o
+primeiro não gera custo nenhum e o segundo gera receita financeira no
+contrato. O `if` de main.py:749 e o dicionário divergiam **e nenhum dos dois
+estava certo**.
+
+**A retenção esperada fica**, nos ramos financeira e loja_antecipacao, e
+serve ao que o usuário pediu: conferência automática do assistente
+financeiro. Contrato de R$ 200.000 com retenção prevista de 10%; o banco
+retém 9%; sobram R$ 2.000 que precisam aparecer. Mas ela **não é despesa** —
+a receita já nasce líquida dela, e lançá-la como custo subtrai duas vezes.
+É posição de balanço que abate o recebível, e a **variância vai para uma
+conta só, nos dois sentidos**, exatamente como já foi decidido para os
+impostos (`2.1.04.13 → 4.3.01`).
 
 **5. ACHADO-13 — guarda do refaturamento.** Decidido: um segmento é faturado
 uma vez, sempre. `estornar_faturamento_nfe` já existe; a guarda reaproveita.
 Teste dos dois lados: segunda chamada recusada; depois do estorno, aceita.
 
-**6. ACHADO-03 — ramo roteado por `if` num lugar e por tabela em outro.**
-Pela regra do deságio, é o erro mais grave de classificação possível:
-registra como receita da loja um deságio que foi ao banco.
+**6. ACHADO-01 — a perna que faltava tem nome: o evento de conferência.**
+A pergunta mais antiga desta auditoria (*o que liquida a provisão de custo
+financeiro?*) foi respondida em 30/08 pela tabela por ramo: **a retenção
+real chegando**. No `financeira`, a liquidação do cartão; no
+`loja_antecipacao`, a antecipação bancária. A provisão não é dívida com
+ninguém — é previsão de retenção, e se encerra quando a retenção acontece,
+com a diferença indo para a conta única de variância.
 
 ## GRUPO 2 — custo e fechamento
 
@@ -342,6 +379,10 @@ alguém tocar naquela tela.
 - Conciliação Final não fecha com provisão em aberto; veredito nomeado por
   rubrica, e "ainda vai chegar" mantém o projeto aberto.
 - Antecipada lê o constituído (débitos do período), nunca o saldo da conta.
+- `4.1.01` recebe o **VAVO em todos os ramos**.
+- Quem nunca teve o dinheiro não tem receita nem custo (financeira/cartão).
+- Retenção esperada é posição de balanço, não despesa; variância numa conta
+  só, nos dois sentidos, como nos impostos.
 - Segmentação não congelada trava a **AF1**, não a assinatura nem a NF-e
   (ACHADO-23), e a AF1 consegue congelar ali mesmo.
 - Aditivo tem **recebíveis próprios**: a assinatura coleta forma de pagamento

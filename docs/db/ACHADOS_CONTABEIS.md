@@ -7,7 +7,24 @@ consequência no número final, não por facilidade de conserto.
 
 ---
 
-## ACHADO-01 — Custo Financeiro nunca reconcilia com o recebimento líquido
+## ACHADO-01 — Custo Financeiro nunca reconcilia com o recebimento líquido · RESPONDIDO 30/08: a perna é o evento de conferência
+
+**A pergunta mais antiga desta auditoria tem resposta.** O que liquida a
+provisão é **a retenção real chegando** — no ramo `financeira`, a liquidação
+do cartão; no `loja_antecipacao`, a antecipação bancária. A provisão nunca
+foi dívida com ninguém: é **previsão de retenção de terceiro**, e se encerra
+quando a retenção acontece, com a diferença entre previsto e real indo para
+uma conta única de variância, nos dois sentidos — a mesma regra já decidida
+para os impostos.
+
+Isso saiu da decisão da tabela por ramo (30/08, ver `PLANO_AJUSTES.md`) e do
+que o usuário explicou sobre a operação: a financeira retém o valor, o
+dinheiro não passa pelo caixa da loja. O conserto continua sendo o passo 12
+do roteiro, mas deixou de ser desenho em aberto.
+
+O texto original do achado, que segue abaixo, continua descrevendo o defeito
+corretamente — só a pergunta final estava sem resposta.
+
 
 **O que acontece:** a Provisão de Custo Financeiro (2.1.04.19) é constituída
 no fechamento da venda e nunca é drenada por nenhuma função — só o ativo

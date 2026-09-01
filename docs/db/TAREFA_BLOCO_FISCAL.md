@@ -66,6 +66,42 @@ configuração fiscal" e "Salvar credenciais Focus". O Marcelo salvou um e
 achou que estava completo. Independentes está certo (há comentário no código
 explicando por quê); o que falta é dizer que os dois são obrigatórios.
 
+### Terceira ocorrência, medida em 01/09 — o endereço
+
+Depois do token e dos campos fiscais, a emissão parou numa terceira falta, e
+dessa vez a mensagem não nomeia nada:
+
+```
+31:0: ERROR: Element '{...}cMun': This element is not expected.
+Expected is ({...}xLgr).
+```
+
+Traduzido: o schema da NF-e abre o bloco de endereço por `xLgr`
+(logradouro), `nro`, `xBairro`, e só então `cMun`. O validador encontrou
+`cMun` na primeira posição — ou seja, **logradouro, número e bairro saíram
+vazios** e o Focus os omitiu. A linha 31 cai dentro de `enderEmit`: é o
+**emitente**, não o destinatário. A tela Fiscal tem a seção "Endereço do
+emitente" e ela ficou em branco na limpeza da base.
+
+O ponto que interessa para a tarefa: `mod_fiscal.prontidao_emitente`, no
+ramo `produto`, checa **apenas** `regime_tributario` e `uf`. O endereço
+inteiro passa. E o **destinatário não é checado em lugar nenhum** — um
+cliente sem logradouro produz exatamente o mesmo erro, uma dezena de linhas
+mais abaixo, em `enderDest`.
+
+Então o selo do item 4 cobre os três blocos, não um:
+
+1. **Emitente — identificação e regime**: os campos já listados acima.
+2. **Emitente — endereço**: `logradouro`, `numero`, `bairro`, `cidade`,
+   `uf`, `cep`. Todos obrigatórios pelo schema; hoje todos `nullable`.
+3. **Destinatário — endereço**: os mesmos campos no `Cliente`, verificados
+   na etapa 15 contra o cliente daquele projeto, antes de chamar a Focus.
+
+E a regra que vale para os três: **erro de schema da SEFAZ é falha nossa de
+validação**. Se a mensagem que chega ao usuário for uma linha de XSD, a
+guarda não existia. `prontidao_emitente` nomeia o campo; a SEFAZ nunca deve
+ser quem descobre que ele está vazio.
+
 ## 5 · NF-e H e NF-e P — dois botões na emissão
 
 **Pedido do Marcelo, 01/09.** Em vez de emitir documento oficial e depois

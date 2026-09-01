@@ -2234,10 +2234,30 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
         # negativo=falta/despesa) — só para exibição (cor/sinal na UI); `resolvido` acima permanece
         # magnitude p/ não quebrar saldo_aberto nem os testes que já dependem dele.
         resolvido_liquido = round(resolvido_sobra - resolvido_falta, 2)
+        # ACHADO-32 (docs/db/TAREFA_CONCILIACAO_UI.md, item 1): a flag que decide se a linha pode
+        # oferecer Efetivar/Resolver genérico sai daqui — a MESMA constante que
+        # `/api/financeiro/resolver-saldo-provisao` usa pra recusar (main.py:10279). Duplicar a
+        # lista de códigos no JavaScript recriaria o defeito (servidor e tela podendo divergir de
+        # novo na próxima mudança de regra) — por isso a tela só LÊ este campo, nunca lista os
+        # códigos ela mesma.
+        exige_veredito = c.codigo not in _PROV_FORA_DO_VEREDITO
+        # Só importa pro tooltip da rota genérica (as duas exceções); calculado pra toda linha por
+        # uniformidade, sem custo — não é usado quando exige_veredito é True.
+        resolucao_tipo = None
+        resolucao_destino_nome = None
+        if c.codigo in _PROV_DESTINO_VARIANCIA:
+            resolucao_tipo = "destino_variancia"
+            destino_cod = _PROV_DESTINO_VARIANCIA[c.codigo]
+            destino_conta = _conta_por_codigo(db, owner_tipo, owner_id, destino_cod)
+            resolucao_destino_nome = destino_conta.codigo + " " + destino_conta.nome
+        elif _ativo_diferido_de(c.codigo) in _PROV_DESPESA_POR_ATIVO:
+            resolucao_tipo = "tempo_real"
         provs.append({"codigo": c.codigo, "nome": c.nome, "tipo": _PROV_PAINEL_TIPO.get(c.codigo, "O"),
                       "provisionado": provisionado, "efetivado": efetivado,
                       "saldo": saldo, "resolvido": resolvido, "resolvido_liquido": resolvido_liquido,
-                      "saldo_aberto": saldo_aberto})
+                      "saldo_aberto": saldo_aberto, "exige_veredito": exige_veredito,
+                      "resolucao_tipo": resolucao_tipo,
+                      "resolucao_destino_nome": resolucao_destino_nome})
     t = lambda k: round(sum(p[k] for p in provs), 2)
     return {"projeto_id": projeto_id, "provisoes": provs,
             "totais": {"provisionado": t("provisionado"), "efetivado": t("efetivado"),

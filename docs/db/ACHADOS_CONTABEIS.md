@@ -2083,3 +2083,69 @@ irrelevante — a contabilidade vem de `_valores_segmentados_do_projeto`, não
 da nota. Fiscalmente é divergência que alguém vai perguntar sobre um dia.
 
 **Grupo:** 2.
+
+---
+
+## ACHADO-32 — a guarda entrou no servidor e a tela continuou oferecendo a porta fechada · RESOLVIDO 01/09/2026
+
+Encontrado pelo Marcelo em 01/09, na Conciliação Final do ciclo de
+homologação. Relato dele: *"na hora de dar o veredito nas provisões que
+restaram a tela não parece processar o veredito"*.
+
+**Não é a tela que não processa. É o servidor que recusa, e a tela que
+continua pedindo.**
+
+O F2-3 (ACHADO-26, ontem) fechou a porta dos fundos:
+`POST /api/financeiro/resolver-saldo-provisao` (main.py:10264) agora
+responde **409** para qualquer rubrica fora de
+`_PROV_FORA_DO_VEREDITO = {"2.1.04.13", "2.1.04.19"}` — Impostos e Custo
+Financeiro. Todas as demais têm que passar pela Fila de Provisões.
+
+A tabela da Etapa 21 é montada por `_reconProvTabelaHtml(..., {editavel:true})`
+e desenha **Efetivar/Resolver em toda linha**, sem saber dessa regra. Na tela
+do Marcelo, das seis provisões abertas, **nenhuma** podia ser resolvida ali:
+Comissão de Vendedor, Comissão de Gerente, Retenção, Comissão Adicional,
+Montagem e Garantia são todas rubricas de veredito nomeado.
+
+E o texto do próprio card, escrito em 07/08, ainda instrui a fazer o que o
+servidor passou a recusar em 31/08:
+
+> *"o botão abaixo NÃO força essas duas; use Efetivar/Resolver na tabela se
+> precisar agir nelas"*
+
+**É o padrão "enumere os irmãos" ao contrário.** Nas ocorrências anteriores a
+guarda existia num endpoint e faltava no irmão. Aqui a guarda entrou nos dois
+endpoints e faltou no **chamador**: a UI oferece um botão cuja resposta é
+409 em 100% das linhas que ela mostra.
+
+**Irmãos a enumerar:** `_reconProvTabelaHtml` é compartilhado por três telas
+(Financeiro em leitura, modal de Reconciliação do projeto, Etapa 21). As duas
+editáveis — modal e Etapa 21 — têm o mesmo botão e o mesmo 409. Reconferido no
+conserto (grep pelas chamadas de `_reconProvTabelaHtml`): continuam sendo só
+essas três — nenhuma quarta tela apareceu.
+
+**Conserto (docs/db/TAREFA_CONCILIACAO_UI.md, item 1):** `mod_contabil.
+reconciliacao()` passa a expor `exige_veredito` por linha — derivado da MESMA
+`_PROV_FORA_DO_VEREDITO` que o endpoint usa pra recusar, nunca uma cópia no
+JavaScript (isso recriaria o defeito na próxima mudança de regra). A linha
+"veredito nomeado" perde Efetivar/Resolver genéricos e ganha um link "Dar
+veredito na Fila de Provisões"; a rota genérica (Impostos/Custo Financeiro)
+mantém os botões, agora com tooltip dizendo o EFEITO no livro (item 3), não o
+nome do botão. Texto do card reescrito (a frase de 07/08 que o F2-3 invalidou).
+
+Junto (mesmo ciclo, TAREFA_CONCILIACAO_UI.md itens 2 e 4 — pedidos do Marcelo
+no mesmo percurso manual): selo de estado por linha (Em Aberto/Efetivada/
+Resolvida/Na Fila — texto, não só cor) com realce de um segundo na linha que
+acabou de mudar, e toast dizendo o valor ("Efetivado R$X"/"Resolvido R$X"/
+"Nada a resolver"); `#ciclo-panel` deixa de ser um overlay curto demais —
+`#page-02.ciclo-on` esconde o resto da tela (a negociação não aparece mais
+por baixo ao rolar com o Plano de Pagamento aberto).
+
+**Prova:** `tests/test_aceite_conciliacao_ui_item1.py` (flag derivada da
+constante + controle negativo movendo um código pra `_PROV_FORA_DO_VEREDITO`),
+`tests/test_e2e_browser_conciliacao_ui.py` (navegador — os três estados
+batidos contra o JSON real do endpoint, tooltips, selo, toast) e
+`tests/test_e2e_browser_ciclo_overlay.py` (navegador — Ciclo aberto esconde a
+negociação, `.modal-overlay` continua visível).
+
+**Grupo:** 1.

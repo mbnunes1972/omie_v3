@@ -48,6 +48,7 @@ deixa de ter resposta rápida.
 | **F2-4** · ACHADO-25, tela do aditivo não envia forma de pagamento | **feito** — 31/08, `89923db`; modal `_abrirModalPagamentoAditivo` em `static/index.html`; prova por E2E de navegador (`test_e2e_browser_conciliacao_final.py`, banco próprio `orizon_e2e`, de volta ao `pytest -q` padrão) |
 | **F2-5** · ACHADO-27, card de ambientes colapsa com plano de pagamento longo | **feito** — 31/08, `a2889df`; achado do Marcelo clicando em Homologação, correlacionado ao ciclo do beta (não regressão desta rodada); `flex-shrink:0` em `#neg-tbl-ambientes-card`; prova por E2E de navegador (`test_e2e_browser_negociacao_layout.py`) |
 | **F2-6** · ACHADO-28, CPF de assinatura sem validação de dígito | **feito** — 31/08; achado do Marcelo clicando em Homologação; `validacao_doc.erro_doc` dentro dos três `_registrar_assinatura_*` (main.py), cobre interno + webhook ClickSign; `test_aceite_achado28.py` (6 aceites); conferir CPF contra o cadastro adiado — LP-02 em `docs/db/LISTA_PARALELA.md` |
+| **F2-7** · ACHADO-32 + tela do veredito + fichário do Ciclo | **feito** — 01/09; quatro itens de `docs/db/TAREFA_CONCILIACAO_UI.md` (1-4; o item 5 é do `TAREFA_BLOCO_FISCAL.md`, frente separada): flag `exige_veredito` do backend, seletor de estado por linha (3 estados), selo+toast+realce, tooltips por efeito no livro, `#page-02.ciclo-on` escondendo a negociação por baixo do Ciclo; ACHADO-32 **RESOLVIDO**, provado por `test_aceite_conciliacao_ui_item1.py` + `test_e2e_browser_conciliacao_ui.py` + `test_e2e_browser_ciclo_overlay.py` |
 | 12 em diante | não iniciados |
 
 **Fase 0 fechada.** Prova de que ela não mudou comportamento nenhum:
@@ -83,6 +84,28 @@ Por isso o aceite de cada fase tem **duas** travas, não uma:
 **Fase 1 fechada de verdade (31/08/2026)** — as duas travas conferidas: nenhum
 xfail citando achado da Fase 1, e nenhuma linha da Fase 1 em "SEM PROVA" em
 `ACEITE.md`.
+
+## O beta e a decisão de 01/09
+
+O candidato `v2026.08.31-beta3` **não sobe para produção como está**. O
+percurso manual do Marcelo em Homologação, que era o teste de aceite do
+candidato, encontrou quatro defeitos na Conciliação Final e no fichário do
+Ciclo — um deles (ACHADO-32) criado pelo próprio F2-3 de ontem: a guarda
+entrou no servidor e a tela continuou oferecendo a porta fechada.
+
+**A decisão foi consertar os quatro antes de subir**, e não aceitá-los como
+defeitos conhecidos. A razão vale como regra: *o percurso manual serve para
+achar o que a suíte não vê — descartar o que ele achou é desperdiçar o único
+teste que custou tempo de gente.*
+
+Consequência aceita: mais um ciclo bancada → Integração → Homologação, e a
+primeira subida à produção fica para o candidato seguinte
+(`v2026.09.01-beta4` ou o que a Vera nomear na hora — a tag sai da data real
+da construção, não desta linha).
+
+**O percurso manual se repete inteiro no candidato novo.** Não é retestar só
+a Conciliação Final: as quatro correções tocam o fichário do Ciclo, que é o
+contêiner de todas as etapas.
 
 ## A suíte prova o servidor, não o sistema
 

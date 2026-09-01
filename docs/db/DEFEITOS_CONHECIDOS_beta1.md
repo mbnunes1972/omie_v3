@@ -103,3 +103,19 @@ aprovação no histórico da conversa, referenciando a tag do candidato atual,
 `v2026.08.31-beta3` (promovido de `v2026.08.31-beta1` → `-beta2` →
 `-beta3` em 31/08/2026 — ver as duas "Atualização" no topo deste
 documento).
+
+---
+
+## Atualização 01/09 — este candidato não sobe
+
+O percurso manual em Homologação encontrou quatro defeitos (ACHADO-32 e os
+três itens de tela em `docs/db/TAREFA_CONCILIACAO_UI.md`). **Marcelo decidiu
+consertar os quatro antes da produção**, em vez de aceitá-los aqui.
+
+Esta lista, portanto, **não foi aceita** — ela passa para o candidato
+seguinte, e o percurso manual se repete inteiro sobre ele.
+
+O ACHADO-32 merece registro à parte porque nasceu do próprio conserto de
+ontem: o F2-3 fechou `resolver-saldo-provisao` no servidor e a Conciliação
+Final continuou desenhando o botão que agora leva 409 em todas as linhas.
+**Um conserto que fecha uma porta tem que passar por quem oferecia a porta.**

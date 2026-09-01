@@ -10194,9 +10194,15 @@ class Handler(BaseHTTPRequestHandler):
                 # projeto+conta+valor+dia: repetir o MESMO evento no mesmo dia vira no-op idempotente.
                 ref = (dd.get("ref") or "").strip() or (
                     "ef:%s:%s:%.2f:%s" % (proj or "-", conta, valor, date.today().isoformat()))
+                # ACHADO-32 (docs/db/TAREFA_CONCILIACAO_UI.md, item 3): efetivar_provisao é
+                # idempotente por ref — um segundo clique com o MESMO valor no mesmo dia não
+                # lança nada e devolve o lançamento antigo, indistinguível de um lançamento novo
+                # só olhando o retorno. Confere ANTES de chamar, pra tela poder dizer a verdade
+                # ("já efetivado hoje") em vez de anunciar um lançamento que não aconteceu.
+                ja_existia = mod_contabil.lancamento_por_ref(db, ot, oid, ref) is not None
                 lan = mod_contabil.efetivar_provisao(db, ot, oid, proj, conta, valor, ref=ref)
                 db.commit()
-                self.send_json({"ok": True, "lancamento": lan})
+                self.send_json({"ok": True, "lancamento": lan, "novo": not ja_existia})
             except ValueError as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:

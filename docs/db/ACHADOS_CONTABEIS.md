@@ -2148,4 +2148,25 @@ batidos contra o JSON real do endpoint, tooltips, selo, toast) e
 `tests/test_e2e_browser_ciclo_overlay.py` (navegador — Ciclo aberto esconde a
 negociação, `.modal-overlay` continua visível).
 
+**Correção sobre `446216b` (01/09):** o selo do commit original misturava dois
+eixos — "Na Fila" (uma ROTA, onde se age) entrava na mesma cadeia de decisão
+do estado do dinheiro, e vinha ANTES de "Efetivada", tornando "Efetivada"/
+"Parcialmente Efetivada" inalcançáveis pra qualquer código fora de Impostos/
+Custo Financeiro (mesmo `efetivar-provisao` não tendo guarda de veredito —
+qualquer rubrica pode acumular `efetivado` de verdade). Corrigido: o selo
+(EM ABERTO/PARCIALMENTE EFETIVADA/EFETIVADA/RESOLVIDA/"—") só reflete o fato
+do dinheiro; "onde se agir" continua só na célula de Ação, via
+`p.exige_veredito`, já correta desde `446216b`. Também corrigido:
+`|saldo_aberto|<0.005` sozinho marcava "Resolvida" uma rubrica NUNCA
+constituída (o teste original gravava isso como certo — trocado pela
+asserção que exige movimento real: provisionado, efetivado ou resolvido
+≠ 0); e o toast de Efetivar mostrava o valor DIGITADO, não o do razão
+(`d.lancamento.valor`, como o Resolver já fazia), e não distinguia um clique
+novo de um repetido no mesmo dia — `efetivar_provisao` é idempotente por ref
+e o segundo clique não lança nada, então o endpoint passa a devolver `novo`
+(checando `lancamento_por_ref` ANTES de chamar) e o toast diz "Já efetivado
+hoje." em vez de fingir um lançamento que não aconteceu. Controle negativo
+de cada uma das três, revertendo e confirmando que o teste correspondente
+falha, documentado na conversa.
+
 **Grupo:** 1.

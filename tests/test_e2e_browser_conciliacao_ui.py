@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """E2E de NAVEGADOR (Playwright) — ACHADO-32 (docs/db/ACHADOS_CONTABEIS.md), itens 1/2/3 de
-docs/db/TAREFA_CONCILIACAO_UI.md.
+docs/db/TAREFA_CONCILIACAO_UI.md, com as correções sobre o commit 446216b.
 
 O F2-3 fechou `resolver-saldo-provisao` no servidor (409 pra qualquer conta fora de
 `_PROV_FORA_DO_VEREDITO`) e `_reconProvTabelaHtml` continuou desenhando Efetivar/Resolver em toda
@@ -9,13 +9,13 @@ verdade, contra o modal de Reconciliação do projeto (`modal-recon-proj`) — u
 editáveis que `_reconProvTabelaHtml` compartilha com a Etapa 21 (mesma função, mesmo HTML; a
 Etapa 21 exige um contrato assinado só pra o BOTÃO aparecer, não pra tabela renderizar diferente).
 
-Três linhas, três estados, batidos contra o JSON que o próprio endpoint devolveu para aquela
-conta (não contra um valor hardcoded no teste):
-- "2.1.04.10" (Comissão) — saldo aberto, exige_veredito=True → só o link pra Fila, sem botões.
-- "2.1.04.13" (Impostos) — saldo aberto, exige_veredito=False → Efetivar/Resolver, com tooltip
-  de destino de variância.
-- qualquer código nunca tocado (saldo_aberto=0) → selo "Resolvida", sem ação nenhuma.
-"""
+Dois EIXOS por linha, batidos contra o JSON que o próprio endpoint devolveu (não um valor
+hardcoded no teste): o SELO diz o que é verdade sobre o dinheiro (Em Aberto / Parcialmente
+Efetivada / Efetivada / Resolvida / "—" pra quem nunca teve movimento nenhum); a célula de AÇÃO
+diz só onde se age (Efetivar/Resolver genéricos na rota própria, link pra Fila nas demais, nada
+quando já resolvida) — os dois são independentes: "2.1.04.10" (Comissão, exige_veredito=True)
+prova isso ficando "Parcialmente Efetivada" no selo (tem efetivação real registrada) enquanto a
+ação continua sendo só o link pra Fila (o botão genérico permanece bloqueado pra ela)."""
 import os
 import socket
 import subprocess
@@ -117,8 +117,12 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     page.click('button:has-text("Salvar Briefing")')
     page.wait_for_selector("#modal-briefing", state="hidden")
 
-    # ── Seed direto no razão: constitui duas provisões reais (uma "veredito nomeado", uma
-    #    "rota genérica") — o achado é sobre RENDERIZAÇÃO, o valor contábil em si não é o objeto.
+    # ── Seed direto no razão: constitui provisões reais nos dois "eixos" que o item 1 corrigiu.
+    #    O achado é sobre RENDERIZAÇÃO/decoupling — os valores contábeis em si não são o objeto.
+    #    "2.1.04.10" ganha uma efetivação PARCIAL de verdade (efetivar_provisao, sem passar pelo
+    #    botão genérico — exatamente como uma rubrica de veredito nomeado acumula `efetivado`
+    #    fora desta tela, via eventos reais do projeto) pra provar que o SELO ("Parcialmente
+    #    Efetivada") e a AÇÃO (só o link pra Fila, nunca Efetivar/Resolver) são independentes.
     db = _sessao_teste()
     try:
         import mod_contabil as mc
@@ -127,8 +131,12 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
         ot, oid = mc.resolver_owner(db, {"loja_id": loja.id, "rede_id": None})
         mc.registrar_evento(db, ot, oid, "fechamento_venda_com_medidor", 5000.0,
                             projeto_id=nome_projeto, ref="e2e:seed:comissao")
+        mc.efetivar_provisao(db, ot, oid, nome_projeto, "2.1.04.10", 2000.0,
+                             ref="e2e:seed:comissao:efetivacao-parcial")
         mc.registrar_evento(db, ot, oid, "fechamento_venda_impostos", 800.0,
                             projeto_id=nome_projeto, ref="e2e:seed:impostos")
+        mc.registrar_evento(db, ot, oid, "fechamento_venda_custo_financeiro", 1000.0,
+                            projeto_id=nome_projeto, ref="e2e:seed:custo-financeiro")
         db.commit()
     finally:
         db.bind.dispose()
@@ -149,7 +157,11 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     assert provs["2.1.04.10"]["exige_veredito"] is True
     assert provs["2.1.04.13"]["exige_veredito"] is False
 
-    # Linha "2.1.04.10" (veredito nomeado): SEM Efetivar/Resolver, só o link pra Fila.
+    # Linha "2.1.04.10" (veredito nomeado, com efetivação PARCIAL real de 2000/5000 seedada
+    # acima): selo e ação são EIXOS INDEPENDENTES — o selo relata o fato do dinheiro
+    # ("Parcialmente Efetivada"), a ação continua travada no link pra Fila, nunca no botão
+    # genérico (que o servidor recusaria com 409). Antes da correção, "Na Fila" vinha ANTES na
+    # cadeia do selo e tornava "Efetivada"/"Parcialmente Efetivada" inalcançável aqui.
     linha_comissao = page.locator('tr[data-prov-codigo="2.1.04.10"]')
     assert linha_comissao.locator('button:has-text("Efetivar")').count() == 0, (
         "veredito nomeado não pode oferecer Efetivar genérico — o servidor recusa com 409")
@@ -159,7 +171,9 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     assert link_fila.count() == 1
     assert "veredito nomeado" in (link_fila.get_attribute("title") or "").lower()
     # inner_text() reflete o text-transform:uppercase do CSS do selo (não o texto cru do DOM).
-    assert "NA FILA" in linha_comissao.inner_text().upper()
+    assert "PARCIALMENTE EFETIVADA" in linha_comissao.inner_text().upper(), (
+        "selo tem que refletir o dinheiro (efetivado=2000 < provisionado=5000), não a rota — "
+        "'Na Fila' não é um estado do fato, é onde se age, e não pode aparecer no selo")
 
     # Linha "2.1.04.13" (rota genérica, Impostos): Efetivar/Resolver presentes, com tooltip de
     # destino de variância — não o nome do botão.
@@ -172,16 +186,22 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     titulo_efetivar = linha_impostos.locator('button:has-text("Efetivar")').get_attribute("title") or ""
     assert "despesa" in titulo_efetivar.lower() and "competência" in titulo_efetivar.lower()
 
-    # Linha nunca tocada (ex. "2.1.04.11") — saldo_aberto=0 → selo "Resolvida", sem Efetivar/
-    # Resolver/link (a coluna de Data Prevista é outro metadado, fora do escopo deste achado —
-    # continua com seu próprio Salvar, que este item não pediu pra mexer).
-    linha_resolvida = page.locator('tr[data-prov-codigo="2.1.04.11"]')
-    assert "RESOLVIDA" in linha_resolvida.inner_text().upper()
-    assert linha_resolvida.locator('button:has-text("Efetivar")').count() == 0
-    assert linha_resolvida.locator('button:has-text("Resolver")').count() == 0
-    assert linha_resolvida.locator("a").count() == 0
+    # Linha NUNCA tocada (ex. "2.1.04.11") — provisionado=efetivado=resolvido=0 já satisfaz
+    # |saldo_aberto|<0.005 sozinho, mas isso não é "Resolvida": nada foi resolvido, nada
+    # aconteceu. Correção sobre o commit 446216b: o selo passou a exigir movimento real
+    # (provisionado, efetivado ou resolvido != 0) antes de anunciar qualquer fato — sem
+    # movimento, "—". A ASSERÇÃO ANTIGA aqui (`"RESOLVIDA" in ...`) gravava o defeito como
+    # correto; a que vale agora é a de baixo.
+    linha_sem_movimento = page.locator('tr[data-prov-codigo="2.1.04.11"]')
+    assert "—" in linha_sem_movimento.inner_text(), (
+        "rubrica nunca constituída não é 'Resolvida' — não teve o que resolver")
+    assert "RESOLVIDA" not in linha_sem_movimento.inner_text().upper()
+    assert linha_sem_movimento.locator('button:has-text("Efetivar")').count() == 0
+    assert linha_sem_movimento.locator('button:has-text("Resolver")').count() == 0
+    assert linha_sem_movimento.locator("a").count() == 0
 
-    # ── Item 2: Efetivar de verdade em Impostos — toast tem que dizer o valor, e a linha realça.
+    # ── Item 2: Efetivar de verdade em Impostos — toast tem que dizer o valor DO RAZÃO
+    # (d.lancamento.valor), e a linha realça e muda de selo (efetivado==provisionado → Resolvida).
     # (id contém pontos — inválido como seletor CSS "#id"; endereça por atributo [id=...].)
     page.fill('[id="efp-2.1.04.13"]', "800")
     page.click('tr[data-prov-codigo="2.1.04.13"] button:has-text("Efetivar")')
@@ -190,3 +210,24 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     # O toast aparece ANTES do _reconRealcarLinha (que recarrega a tabela) terminar — espera a
     # própria linha mudar de estado, não só o toast, senão a leitura corre contra o reload.
     page.wait_for_selector('tr[data-prov-codigo="2.1.04.13"]:has-text("resolvida")', timeout=10000)
+
+    # ── Item 3, controle de idempotência: Custo Financeiro (2.1.04.19), efetivado PARCIAL
+    # (400/1000) — o botão continua visível (não resolvido), e um 2º clique com o MESMO valor
+    # no MESMO dia é idempotente (efetivar_provisao não lança de novo). O toast tem que dizer
+    # "Já efetivado hoje.", não fingir um novo lançamento que não aconteceu.
+    page.fill('[id="efp-2.1.04.19"]', "400")
+    page.click('tr[data-prov-codigo="2.1.04.19"] button:has-text("Efetivar")')
+    page.wait_for_selector("text=Efetivado 400,00", timeout=10000)
+    page.wait_for_selector('tr[data-prov-codigo="2.1.04.19"]:has-text("parcialmente efetivada")',
+                          timeout=10000)
+    page.fill('[id="efp-2.1.04.19"]', "400")
+    page.click('tr[data-prov-codigo="2.1.04.19"] button:has-text("Efetivar")')
+    page.wait_for_selector("text=Já efetivado hoje.", timeout=10000)
+    # O segundo clique não pode ter dobrado o efetivado (400+400=800) — confere contra o
+    # endpoint de novo, não contra a leitura visual (que poderia atrasar o mesmo tanto do toast).
+    resp2 = page.evaluate(
+        "(nome) => fetch('/api/financeiro/reconciliacao-provisoes?projeto=' + encodeURIComponent(nome), "
+        "{credentials:'same-origin'}).then(r=>r.json())", nome_projeto)
+    custo_fin = next(p for p in resp2["reconciliacao"]["provisoes"] if p["codigo"] == "2.1.04.19")
+    assert custo_fin["efetivado"] == 400.0, (
+        "clique repetido no mesmo dia/valor não pode duplicar o efetivado — idempotência por ref")

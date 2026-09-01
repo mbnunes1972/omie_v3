@@ -14723,11 +14723,27 @@ function _reconProvTabelaHtml(provisoes, opts){
     const resolvido = Math.abs(p.saldo_aberto) < 0.005;
     // Selo (item 2 — achado do usuário: verde-com-borda-verde lia como "clique aqui", não
     // "pronto", e o único sinal de ação aceita era um showToast que some). Texto, não só cor.
+    //
+    // Correção sobre o commit 446216b (o selo misturava dois eixos): esta coluna diz o que É
+    // VERDADE sobre o dinheiro (provisionado × efetivado × resolvido) — nunca ONDE se age.
+    // "Na Fila" saiu daqui porque não é um fato do dinheiro, é uma rota (a mesma informação já
+    // mora na célula de Ação, via p.exige_veredito, logo abaixo) — misturado com o selo, ele
+    // vinha ANTES de "Efetivada" na cadeia, e "Efetivada" ficava inalcançável fora de Impostos/
+    // Custo Financeiro (efetivar-provisao não tem guarda de veredito — QUALQUER rubrica pode
+    // acumular `efetivado` de verdade, mesmo as de veredito nomeado, via eventos reais do
+    // projeto — só o botão genérico É QUE fica escondido pra elas, na célula de Ação).
+    //
+    // |saldo_aberto|<0.005 sozinho também marcava "Resolvida" uma rubrica NUNCA constituída
+    // (provisionado=efetivado=resolvido=0 já satisfaz o mesmo epsilon) — corrigido: só conta
+    // como Resolvida quem teve movimento de verdade; sem movimento nenhum, o selo é "—".
+    const houveMovimento = Math.abs(p.provisionado) > 0.005 || Math.abs(p.efetivado) > 0.005
+      || Math.abs(p.resolvido) > 0.005;
     let selo;
-    if(resolvido) selo = {t:'&#x2713; Resolvida', c:'var(--status-ok)'};
-    else if(p.exige_veredito) selo = {t:'Na Fila', c:'var(--status-warn)'};
-    else if(Math.abs(p.efetivado) > 0.005) selo = {t:'Efetivada', c:'var(--status-ok)'};
-    else selo = {t:'Em Aberto', c:'var(--text-3)'};
+    if(!houveMovimento) selo = {t:'—', c:'var(--text-3)'};
+    else if(resolvido) selo = {t:'&#x2713; Resolvida', c:'var(--status-ok)'};
+    else if(Math.abs(p.efetivado) <= 0.005) selo = {t:'Em Aberto', c:'var(--text-3)'};
+    else if(p.efetivado + 0.005 >= p.provisionado) selo = {t:'Efetivada', c:'var(--status-ok)'};
+    else selo = {t:'Parcialmente Efetivada', c:'var(--status-warn)'};
     const seloHtml = '<span style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:'+selo.c+';margin-left:8px;white-space:nowrap">'+selo.t+'</span>';
     let acao='';
     if(editavel){
@@ -15101,8 +15117,15 @@ async function reconProvEfetivar(conta, prefixo, btn){
     const valor=parseFloat(el&&el.value);
     if(!valor||valor<=0){ showToast('Informe o valor real efetivado.', true); return; }
     const d=await fetch('/api/financeiro/efetivar-provisao',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projeto:_reconProvProj,conta:conta,valor:valor})}).then(r=>r.json());
-    if(d.ok){ showToast('Efetivado '+_fBRL(valor)+'.'); await _reconRealcarLinha(conta); }
-    else { await avisoPopup(d.erro||'Erro',{titulo:'Efetivar'}); }
+    if(!d.ok){ await avisoPopup(d.erro||'Erro',{titulo:'Efetivar'}); return; }
+    // Item 3 (docs/db/TAREFA_CONCILIACAO_UI.md): o toast tem que dizer o valor do RAZÃO
+    // (d.lancamento.valor), não o digitado — os dois só divergem se o backend arredondar/
+    // rejeitar diferente, mas "razão, não formulário" é a mesma regra do Resolver. E
+    // efetivar_provisao é idempotente por ref (proj:conta:valor:dia) — um 2º clique com o
+    // MESMO valor no mesmo dia não lança nada; sem d.novo, o toast diria "Efetivado" pra uma
+    // ação que não aconteceu.
+    showToast(d.novo ? ('Efetivado '+_fBRL(d.lancamento.valor)+'.') : 'Já efetivado hoje.');
+    await _reconRealcarLinha(conta);
   } finally {
     if(btn) btn.disabled = false;
   }

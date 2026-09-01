@@ -162,6 +162,65 @@ estado, não só que salvou.
 
 ---
 
+---
+
+## 6 · CORREÇÃO do item 1 — o Efetivar não devia ter saído (ACHADO-33)
+
+**Erro meu na redação do item 1**, corrigido aqui antes que o beta4 saia com
+ele. O item 1 disse "veredito nomeado → link pra Fila, **sem Efetivar/
+Resolver genéricos**". O 409 do F2-3 é só de `resolver-saldo-provisao`.
+`efetivar-provisao` nunca teve guarda de veredito, e não deve ter.
+
+Ler o ACHADO-33 inteiro. O resumo operacional:
+
+**O estado "veredito nomeado" passa a ser:**
+
+- **Efetivar + input: continuam**, com o tooltip do item 3. Registrar custo
+  real na competência real é o que a auditoria inteira defendeu.
+- **Resolver genérico: sai**, substituído pelo link da Fila — só isso era o
+  409.
+- Assistência Técnica (2.1.04.05) e Garantia (2.1.04.03) mantêm o Efetivar
+  travado com o `title` do módulo Assistências (guarda de 07/08).
+
+**Por que isso é grave e não cosmético:** Montagem (2.1.04.02) e o grupo da
+fábrica (.06 .07 .08 .09 .14) **não têm módulo alimentador nenhum** — o
+botão genérico é a única rota viva para o custo real delas. Sem ele o custo
+da fábrica só entra no encerramento, capado e datado errado.
+
+**Teste, e este é o que importa:** um aceite que prove que a linha de
+Montagem (2.1.04.02) — rubrica de veredito nomeado, sem alimentador — tem
+**Efetivar habilitado e Resolver ausente**, com o link da Fila ao lado.
+Controle negativo: remova o Efetivar dessa linha e o teste falha.
+
+**Além disso, o teste do item 1 precisa mudar de forma.** Ele hoje afirma
+"veredito nomeado → nenhum botão, só link". Essa asserção gravou o defeito
+como correto — é a segunda vez nesta tarefa (a primeira foi a linha
+"RESOLVIDA" da rubrica nunca constituída). Diga no relatório qual asserção
+saiu e qual entrou.
+
+## 7 · Ligar os eventos mortos, ou dizer por escrito que não existem (ACHADO-33)
+
+`execucao_montagem` e `pagamento_fabrica` estão na tabela `EVENTOS` e são
+disparados **só por testes**. Duas saídas, e a escolha é do Marcelo:
+
+1. **Ligar**: a conclusão da etapa 10 (Montagem) dispara `execucao_montagem`
+   com o custo real; o pagamento à fábrica dispara `pagamento_fabrica`. Aí o
+   botão genérico vira rede de segurança em vez de rota principal.
+2. **Remover da tabela** e assumir que essas duas rubricas se efetivam à mão
+   pela Reconciliação.
+
+**O que não pode ficar é o estado atual**, em que o mecanismo existe, os
+testes o exercitam, e nenhum caminho da aplicação o chama. Não implemente
+nenhuma das duas sem a decisão — **reporte a medição** (o que dispararia
+cada evento, se ligado) e pare.
+
+## 8 · A folha e o veredito (ACHADO-34)
+
+Só medir e reportar, sem mexer. `mod_folha.py:306` efetiva **e resolve** a
+provisão de comissão em Python direto, sem `VeredictoProvisao`. Reportar:
+que projeto/rubrica ficam sem registro de veredito depois de uma folha paga,
+e se a Conciliação Final desses projetos passa ou trava.
+
 ## O que reportar
 
 1. Cada item com aceite próprio, com o teste que prova.

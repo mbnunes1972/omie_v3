@@ -2170,3 +2170,115 @@ de cada uma das três, revertendo e confirmando que o teste correspondente
 falha, documentado na conversa.
 
 **Grupo:** 1.
+
+---
+
+## ACHADO-33 — o conserto do ACHADO-32 tirou a única porta por onde o custo de fábrica e de montagem entrava · RESOLVIDO 01/09/2026 (item 6)
+
+**Achado meu, 01/09, conferindo o c6fdf38. A causa é minha: o
+`TAREFA_CONCILIACAO_UI.md` item 1 escreveu "veredito nomeado → link pra
+Fila, sem Efetivar/Resolver genéricos" — e Efetivar não tinha nada a ver com
+o 409.**
+
+O F2-3 fechou **`resolver-saldo-provisao`**. `efetivar-provisao` nunca teve
+guarda de veredito, e não devia ter: são ações diferentes.
+
+- **Efetivar** registra um fato que ACONTECEU — o custo real, na competência
+  real. É a coisa que a auditoria inteira defendeu contra o custo estimado
+  de uma vez na NF-e.
+- **Veredito** decide o destino do que SOBROU no fim. É decisão, precisa de
+  nome, data e pessoa.
+
+A tela agora não oferece Efetivar em nenhuma rubrica de veredito nomeado —
+ou seja, em todas menos Impostos e Custo Financeiro.
+
+**Quem alimenta cada provisão, medido:**
+
+| rubrica | alimentador real |
+|---|---|
+| Comissões (2.1.04.10/11/12/21) | `mod_folha` |
+| Garantia (.03) e Assistência (.05) | `mod_assistencias` |
+| **Montagem (2.1.04.02)** | **nenhum** |
+| **Fábrica e fornecedores (.06 .07 .08 .09 .14)** | **nenhum** |
+
+Para essas seis, o botão genérico era a **única** rota viva. Sem ele, o
+custo da fábrica — o maior número de qualquer projeto — só entra no
+fechamento, pelo veredito `encerrada_valor_menor`, capado ao saldo aberto e
+datado no dia do encerramento. **A competência real morre.**
+
+### E os eventos que existiam para isso nunca foram ligados
+
+`EVENTOS` tem `"execucao_montagem"` (2.1.04.02 × 1.1.01) e
+`"pagamento_fabrica"` (2.1.04.06 × 1.1.01). Procurados no código inteiro:
+aparecem na tabela de eventos e **em testes**. Nenhum caminho da aplicação
+dispara os dois.
+
+É a **sétima ocorrência** do padrão (a) — "o mecanismo existe e o caminho
+real não usa" — e a mais cara delas, porque os testes exercitam
+`registrar_evento` direto e o mecanismo parece vivo.
+
+### A regra que fica
+
+**A restrição da Fila é sobre RESOLVER, nunca sobre EFETIVAR.** O link da
+Fila substitui o Resolver; o Efetivar continua em toda rubrica (menos as
+duas que o módulo Assistências já alimenta, guarda de 07/08 que continua
+valendo).
+
+**Conserto aplicado (item 6):** o estado "veredito nomeado" da tabela volta
+a mostrar Efetivar + input (com o tooltip do item 3); só o Resolver
+genérico sai, trocado pelo link da Fila. Assistência/Garantia mantêm o
+Efetivar travado do módulo Assistências, agora dentro deste mesmo ramo (elas
+também são veredito nomeado).
+
+**Prova:** `tests/test_e2e_browser_conciliacao_ui.py` — aceite que importa:
+a linha de Montagem (2.1.04.02, veredito nomeado, **sem alimentador**) com
+Efetivar habilitado e Resolver ausente. Controle negativo: Efetivar
+removido de toda rubrica de veredito nomeado — o teste falha na linha de
+Comissão (2.1.04.10), antes mesmo de chegar em Montagem.
+
+**A asserção do item 1 mudou de forma — a segunda vez nesta tarefa que isso
+acontece** (a primeira foi "RESOLVIDA" na rubrica nunca constituída, item
+2). **Saiu:** `assert linha_comissao.locator('button:has-text("Efetivar")').count() == 0`
+(gravava o erro de redação do item 1 como correto — "veredito nomeado →
+nenhum botão, só link"). **Entrou:** o Efetivar tem que estar presente e
+HABILITADO em rubrica de veredito nomeado; só o Resolver genérico continua
+ausente, substituído pelo link da Fila.
+
+**O que fica aberto — decisão do Marcelo (item 7, medido sem mexer):**
+`execucao_montagem`/`pagamento_fabrica` (`EVENTOS`, só disparados por
+teste) — ligar (a versão de hoje faz só o lançamento provisão×caixa, SEM a
+perna de despesa que `efetivar_provisao` já faz — ligar assim perderia a
+competência real) ou remover da tabela. Ver LP-11 em
+`docs/db/LISTA_PARALELA.md`.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-34 — a folha resolve a provisão de comissão sem veredito nomeado
+
+Encontrado no mesmo levantamento. `mod_folha.py:306` chama
+`efetivar_provisao` e, na linha seguinte, `resolver_saldo_provisao` direto
+em Python — sem passar pelo endpoint, portanto sem o 409 do F2-3 e sem
+gravar `VeredictoProvisao`.
+
+**Não está claro que seja defeito**, e por isso é achado e não conserto: a
+folha É o ato nomeado — funcionário, competência, valor, aprovação. Talvez
+seja um registro melhor que um veredito digitado à mão.
+
+O que não pode continuar é **implícito**. Ou a folha é reconhecida por
+escrito como uma segunda forma legítima de veredito, ou ela grava um
+`VeredictoProvisao` com origem `folha`. É o quinto irmão de
+`resolver_saldo_provisao`, e ninguém o tinha enumerado.
+
+**Medido em 01/09 (item 8, sem mexer):** só `2.1.04.12` (Retenção de
+Comissão de Vendas) passa por esse caminho — as outras comissões não são
+tocadas por `mod_folha`. Depois de uma folha paga, o projeto chega na
+Conciliação Final **sem** `VeredictoProvisao` pra essa rubrica, e **não
+trava**: `conciliar_final` só exige veredito pra provisão com saldo aberto,
+e a folha já zerou o saldo antes de o projeto chegar lá. Consequência:
+`relatorio_projetos_encerrados_por_reversao` (que lista por veredito
+revertido) nunca enxerga esses casos — não existe veredito nenhum pra
+listar. Decisão registrada em LP-12, `docs/db/LISTA_PARALELA.md`.
+
+**Grupo:** 1.

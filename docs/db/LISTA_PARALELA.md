@@ -99,6 +99,49 @@ que trata de revisão *depois* da assinatura e é defeito, não ausência.
 Hoje ficam desalinhados na tela de conciliação de PE. Ergonomia pura.
 *Adiado:* não muda número nem trava fluxo. (Marcelo, 31/08.)
 
+**LP-11 · `execucao_montagem`/`pagamento_fabrica` — ligar ou remover
+(ACHADO-33, item 7 de `TAREFA_CONCILIACAO_UI.md`).**
+Medido em 01/09, sem mexer: os dois estão em `EVENTOS` e só são disparados
+por teste. Se ligados hoje, do jeito que estão definidos, cada um faria
+**um lançamento só** — provisão (2.1.04.02/2.1.04.06) × Caixa/Bancos
+(1.1.01), sem a perna de despesa formal que `efetivar_provisao` já faz
+(`reconhecer_despesa_efetivacao`, débito na despesa × crédito no ativo
+diferido). Ligar assim, sem essa perna, moveria dinheiro da provisão pro
+caixa sem NUNCA reconhecer a despesa real na DRE — o oposto do que a
+auditoria inteira defendeu. Gatilho natural, se ligados: `execucao_montagem`
+na conclusão da etapa "17" (Montagem) — hoje sem NENHUM campo de valor
+nesse ponto, precisaria de um novo, tipo o "informe o valor efetivamente
+gasto" do Efetivar; `pagamento_fabrica` não tem gatilho natural nenhum na
+aplicação — o pagamento a fornecedor que existe (`/api/financeiro/
+pagar-fornecedor`, evento `pagamento_fornecedor`, DIFERENTE deste) baixa a
+conta genérica 2.1.01 (Fornecedores a Pagar), não a provisão 2.1.04.06
+diretamente. Como o item 6 (ACHADO-33) restaurou o Efetivar genérico pra
+Montagem e pra Fábrica — que já faz as duas pernas certas, com
+`forma_pagamento` à escolha (direto ou a_prazo) — os dois eventos mortos
+podem já ser puramente redundantes com o mecanismo genérico.
+*Adiado:* decisão do Marcelo — ligar (com a perna de despesa corrigida) ou
+remover da tabela `EVENTOS` os dois.
+
+**LP-12 · A folha resolve comissão de venda sem `VeredictoProvisao`
+(ACHADO-34, item 8 de `TAREFA_CONCILIACAO_UI.md`).**
+Medido em 01/09, sem mexer: `mod_folha.pagar()` (mod_folha.py:306) chama
+`efetivar_provisao` + `resolver_saldo_provisao` DIRETO em Python pra cada
+item de comissão de venda (só `2.1.04.12`, Retenção de Comissão de Vendas —
+as outras comissões de `_PROV_PAINEL_TIPO` não passam pela folha), fora do
+endpoint guardado e sem gravar `VeredictoProvisao`. Efeito medido: depois de
+uma folha paga, o projeto chega na Conciliação Final **sem** veredito
+registrado pra essa rubrica — e ela **passa limpo**, não trava, porque
+`conciliar_final` só exige veredito pra rubrica com saldo aberto
+(`_mov(...) >= 0.005`), e a folha já zerou o saldo antes. Consequência
+colateral: `relatorio_projetos_encerrados_por_reversao` (que lista projetos
+por veredito revertido) nunca vê esses casos, porque não existe
+`VeredictoProvisao` nenhum pra listar.
+*Adiado:* não está claro que seja defeito — a folha É o ato nomeado
+(funcionário, competência, valor, aprovação), talvez melhor registro que um
+veredito digitado à mão. Decisão do Marcelo: reconhecer por escrito a folha
+como forma legítima de veredito, ou fazer `mod_folha.pagar()` gravar um
+`VeredictoProvisao` com origem `folha`.
+
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""E2E de NAVEGADOR (Playwright) — ACHADO-32 (docs/db/ACHADOS_CONTABEIS.md), itens 1/2/3 de
-docs/db/TAREFA_CONCILIACAO_UI.md, com as correções sobre o commit 446216b.
+"""E2E de NAVEGADOR (Playwright) — ACHADO-32/ACHADO-33 (docs/db/ACHADOS_CONTABEIS.md), itens
+1/2/3/6 de docs/db/TAREFA_CONCILIACAO_UI.md, com as correções sobre os commits 446216b/c6fdf38.
 
 O F2-3 fechou `resolver-saldo-provisao` no servidor (409 pra qualquer conta fora de
 `_PROV_FORA_DO_VEREDITO`) e `_reconProvTabelaHtml` continuou desenhando Efetivar/Resolver em toda
@@ -12,10 +12,15 @@ Etapa 21 exige um contrato assinado só pra o BOTÃO aparecer, não pra tabela r
 Dois EIXOS por linha, batidos contra o JSON que o próprio endpoint devolveu (não um valor
 hardcoded no teste): o SELO diz o que é verdade sobre o dinheiro (Em Aberto / Parcialmente
 Efetivada / Efetivada / Resolvida / "—" pra quem nunca teve movimento nenhum); a célula de AÇÃO
-diz só onde se age (Efetivar/Resolver genéricos na rota própria, link pra Fila nas demais, nada
-quando já resolvida) — os dois são independentes: "2.1.04.10" (Comissão, exige_veredito=True)
-prova isso ficando "Parcialmente Efetivada" no selo (tem efetivação real registrada) enquanto a
-ação continua sendo só o link pra Fila (o botão genérico permanece bloqueado pra ela)."""
+diz só onde se age.
+
+ACHADO-33 (item 6, correção de um erro meu na redação do item 1): a restrição do F2-3 é só sobre
+RESOLVER — `efetivar-provisao` nunca teve guarda de veredito. Rubrica de veredito nomeado
+continua com Efetivar + input (Montagem e o grupo da fábrica não têm NENHUM outro alimentador —
+tirar o Efetivar delas capava o maior custo do projeto no encerramento); só o Resolver genérico
+sai, trocado pelo link da Fila. "2.1.04.10" (Comissão) prova o desacoplamento selo×ação ficando
+"Parcialmente Efetivada" no selo (efetivação real registrada) com a ação ainda mostrando Efetivar
++ o link da Fila (nunca o Resolver genérico, que o servidor recusaria com 409)."""
 import os
 import socket
 import subprocess
@@ -137,6 +142,10 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
                             projeto_id=nome_projeto, ref="e2e:seed:impostos")
         mc.registrar_evento(db, ot, oid, "fechamento_venda_custo_financeiro", 1000.0,
                             projeto_id=nome_projeto, ref="e2e:seed:custo-financeiro")
+        # Montagem (2.1.04.02) — veredito nomeado, SEM módulo alimentador nenhum (ACHADO-33): o
+        # aceite que importa é este, não o de Comissão. Só provisionada, nunca efetivada.
+        mc.registrar_evento(db, ot, oid, "fechamento_venda_montagem", 3000.0,
+                            projeto_id=nome_projeto, ref="e2e:seed:montagem")
         db.commit()
     finally:
         db.bind.dispose()
@@ -159,21 +168,39 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
 
     # Linha "2.1.04.10" (veredito nomeado, com efetivação PARCIAL real de 2000/5000 seedada
     # acima): selo e ação são EIXOS INDEPENDENTES — o selo relata o fato do dinheiro
-    # ("Parcialmente Efetivada"), a ação continua travada no link pra Fila, nunca no botão
-    # genérico (que o servidor recusaria com 409). Antes da correção, "Na Fila" vinha ANTES na
-    # cadeia do selo e tornava "Efetivada"/"Parcialmente Efetivada" inalcançável aqui.
+    # ("Parcialmente Efetivada"), a ação continua oferecendo Efetivar (ACHADO-33: a restrição do
+    # F2-3 é só sobre Resolver) e o link da Fila no lugar do Resolver genérico.
+    #
+    # ASSERÇÃO QUE SAIU (gravava o defeito do item 1 como correto — erro meu na redação):
+    #   assert linha_comissao.locator('button:has-text("Efetivar")').count() == 0
+    # ASSERÇÃO QUE ENTROU (ACHADO-33/item 6): Efetivar presente e HABILITADO; só Resolver sai.
     linha_comissao = page.locator('tr[data-prov-codigo="2.1.04.10"]')
-    assert linha_comissao.locator('button:has-text("Efetivar")').count() == 0, (
-        "veredito nomeado não pode oferecer Efetivar genérico — o servidor recusa com 409")
+    btn_efetivar_comissao = linha_comissao.locator('button:has-text("Efetivar")')
+    assert btn_efetivar_comissao.count() == 1, (
+        "ACHADO-33: efetivar-provisao nunca teve guarda de veredito — Efetivar continua "
+        "liberado em rubrica de veredito nomeado, só o Resolver genérico sai")
+    assert btn_efetivar_comissao.is_enabled()
     assert linha_comissao.locator('button:has-text("Resolver")').count() == 0, (
         "veredito nomeado não pode oferecer Resolver genérico — o servidor recusa com 409")
     link_fila = linha_comissao.locator('a:has-text("Dar veredito na Fila de Provisões")')
     assert link_fila.count() == 1
-    assert "veredito nomeado" in (link_fila.get_attribute("title") or "").lower()
+    assert "resolver" in (link_fila.get_attribute("title") or "").lower()
     # inner_text() reflete o text-transform:uppercase do CSS do selo (não o texto cru do DOM).
     assert "PARCIALMENTE EFETIVADA" in linha_comissao.inner_text().upper(), (
         "selo tem que refletir o dinheiro (efetivado=2000 < provisionado=5000), não a rota — "
         "'Na Fila' não é um estado do fato, é onde se age, e não pode aparecer no selo")
+
+    # ── ACHADO-33, o aceite que importa: Montagem (2.1.04.02) — veredito nomeado, SEM módulo
+    # alimentador nenhum. Sem Efetivar aqui, o custo da fábrica só entraria no encerramento,
+    # capado e datado errado. Efetivar tem que estar HABILITADO; Resolver, AUSENTE.
+    linha_montagem = page.locator('tr[data-prov-codigo="2.1.04.02"]')
+    btn_efetivar_montagem = linha_montagem.locator('button:has-text("Efetivar")')
+    assert btn_efetivar_montagem.count() == 1, (
+        "Montagem não tem módulo alimentador — sem Efetivar aqui, o custo da fábrica só entra "
+        "no encerramento (veredito), capado ao saldo aberto e datado no dia errado")
+    assert btn_efetivar_montagem.is_enabled(), "Montagem não é Assistência/Garantia — não trava"
+    assert linha_montagem.locator('button:has-text("Resolver")').count() == 0
+    assert linha_montagem.locator('a:has-text("Dar veredito na Fila de Provisões")').count() == 1
 
     # Linha "2.1.04.13" (rota genérica, Impostos): Efetivar/Resolver presentes, com tooltip de
     # destino de variância — não o nome do botão.

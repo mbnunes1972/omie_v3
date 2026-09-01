@@ -122,26 +122,6 @@ podem já ser puramente redundantes com o mecanismo genérico.
 *Adiado:* decisão do Marcelo — ligar (com a perna de despesa corrigida) ou
 remover da tabela `EVENTOS` os dois.
 
-**LP-12 · A folha resolve comissão de venda sem `VeredictoProvisao`
-(ACHADO-34, item 8 de `TAREFA_CONCILIACAO_UI.md`).**
-Medido em 01/09, sem mexer: `mod_folha.pagar()` (mod_folha.py:306) chama
-`efetivar_provisao` + `resolver_saldo_provisao` DIRETO em Python pra cada
-item de comissão de venda (só `2.1.04.12`, Retenção de Comissão de Vendas —
-as outras comissões de `_PROV_PAINEL_TIPO` não passam pela folha), fora do
-endpoint guardado e sem gravar `VeredictoProvisao`. Efeito medido: depois de
-uma folha paga, o projeto chega na Conciliação Final **sem** veredito
-registrado pra essa rubrica — e ela **passa limpo**, não trava, porque
-`conciliar_final` só exige veredito pra rubrica com saldo aberto
-(`_mov(...) >= 0.005`), e a folha já zerou o saldo antes. Consequência
-colateral: `relatorio_projetos_encerrados_por_reversao` (que lista projetos
-por veredito revertido) nunca vê esses casos, porque não existe
-`VeredictoProvisao` nenhum pra listar.
-*Adiado:* não está claro que seja defeito — a folha É o ato nomeado
-(funcionário, competência, valor, aprovação), talvez melhor registro que um
-veredito digitado à mão. Decisão do Marcelo: reconhecer por escrito a folha
-como forma legítima de veredito, ou fazer `mod_folha.pagar()` gravar um
-`VeredictoProvisao` com origem `folha`.
-
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

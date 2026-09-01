@@ -255,6 +255,21 @@ o teste do Marcelo. Confirmado que os cinco sobrevivem ao restart do
 serviço (checkout não toca banco). Producao NAO tocada — mesmo motivo do
 beta1/beta2.
 
+### Quarto deploy por tag — v2026.09.01-beta1 — 01/09/2026
+
+Primeiro candidato com data de 01/09 (nome pela data real da construção,
+não da linha anterior do ROTEIRO que especulava `-beta4`). Tag
+`v2026.09.01-beta1` (`7c75e38`) — ACHADO-33 resolvido (Efetivar restaurado
+em rubrica de veredito nomeado, Montagem/Fábrica sem outro alimentador);
+itens 7/8 medidos, sem implementar (LP-11/LP-12); sem migration nova (o
+único commit desde o beta3 que toca schema é nenhum — `7c75e38` é só
+`TAREFA_BLOCO_FISCAL.md`, documentação do PRÓXIMO candidato, não deste
+ciclo). Mesmo procedimento, mesma ordem (Integração, depois Homologação).
+`git describe --tags` confirmado exato (`v2026.09.01-beta1`) nos dois.
+`confirmar.sh` 15 OK / 0 FALHA nos dois. `alembic current` nos dois:
+`f47f22de46a7 (head)` — reportado por pedido explícito (não o histórico do
+repositório). Produção NÃO tocada nesta rodada.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

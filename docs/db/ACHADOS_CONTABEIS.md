@@ -2255,9 +2255,17 @@ competência real) ou remover da tabela. Ver LP-11 em
 
 ---
 
-## ACHADO-34 — a folha resolve a provisão de comissão sem veredito nomeado
+## ACHADO-34 — `conciliar_final` exige veredito pelo SALDO, não pela decisão — quem zera antes do fechamento nunca passa pela exigência
 
-Encontrado no mesmo levantamento. `mod_folha.py:306` chama
+**Generalização (01/09, ao mover pra fila ativa da Fase 2 — antes registrado
+como LP-12):** `conciliar_final` monta a lista de rubricas que exigem
+veredito olhando quem **ainda tem saldo aberto** no momento da Conciliação
+Final — não quem foi de fato **decidido** por um veredito nomeado. Qualquer
+mecanismo capaz de zerar o saldo de uma provisão ANTES desse momento
+atravessa a exigência inteira sem nunca precisar dela. `mod_folha` é o
+**caso real** disso, medido — não o único possível.
+
+Encontrado no mesmo levantamento do ACHADO-33. `mod_folha.py:306` chama
 `efetivar_provisao` e, na linha seguinte, `resolver_saldo_provisao` direto
 em Python — sem passar pelo endpoint, portanto sem o 409 do F2-3 e sem
 gravar `VeredictoProvisao`.
@@ -2279,6 +2287,6 @@ trava**: `conciliar_final` só exige veredito pra provisão com saldo aberto,
 e a folha já zerou o saldo antes de o projeto chegar lá. Consequência:
 `relatorio_projetos_encerrados_por_reversao` (que lista por veredito
 revertido) nunca enxerga esses casos — não existe veredito nenhum pra
-listar. Decisão registrada em LP-12, `docs/db/LISTA_PARALELA.md`.
+listar.
 
 **Grupo:** 1.

@@ -95,6 +95,10 @@ orçamentos, um vence.
 escolha atual sem ter decidido mudá-la. **Não confundir com o ACHADO-21**,
 que trata de revisão *depois* da assinatura e é defeito, não ausência.
 
+**LP-10 · Botões cobrar / manter / absorver / estornar em colunas.**
+Hoje ficam desalinhados na tela de conciliação de PE. Ergonomia pura.
+*Adiado:* não muda número nem trava fluxo. (Marcelo, 31/08.)
+
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

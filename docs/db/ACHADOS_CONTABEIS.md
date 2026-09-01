@@ -1954,3 +1954,117 @@ CPF de teste válido já padrão na suíte (111.444.777-35).
 
 **Consequências no número final:** nenhuma. É evidência, não contabilidade —
 e é por isso que precisa ser boa.
+
+---
+
+## ACHADO-29 — o plano de pagamento do aditivo mostra o contrato inteiro financiado
+
+Encontrado pelo Marcelo em 31/08, na tela de Negociar Complemento (beta3,
+Homologação).
+
+**O número medido:** entrada R$ 20.000 + 10 × R$ 17.429,56 =
+**R$ 194.295,56**. O contrato à vista é R$ 180.944,52; a diferença de
+R$ 13.351,04 é o custo financeiro da forma de pagamento. **É o contrato
+inteiro, financiado** — não o aditivo. O Δ de venda do PE, que é o valor do
+aditivo, é R$ 12.683,94.
+
+**Onde não está a causa:** o orçamento do complemento nasce com
+`forma_pagamento = None` (main.py:8055). O número não vem do banco.
+Hipótese a medir: **vazamento de estado do frontend** — o plano do orçamento
+anterior não é zerado ao abrir o complemento.
+
+### O desenho, especificado pelo usuário em 31/08
+
+**A base é o valor à vista.** Forma de pagamento não foi discutida na
+renegociação, então a referência é o à vista, não o financiado.
+
+**Carrega o desconto original do contrato** — a renegociação parte das
+mesmas condições da venda.
+
+**Apresenta a diferença definida na aprovação financeira**, não a diferença
+bruta: nem todo ambiente compõe o aditivo, porque o gerente financeiro pode
+**absorver** a diferença de alguns.
+
+**Valores editáveis.** O **limite de desconto continua valendo** no aditivo
+— o usuário considerou e reverteu, em 31/08, a ideia de removê-lo.
+
+### Os dois planos — a distinção que o usuário pediu atenção
+
+**Não confundir.** A decisão *cobrar / manter / absorver / estornar* é
+tomada olhando os **valores de fábrica** (plano de custo). O **valor do
+aditivo** vive no **plano de venda** — com o markup e os descontos da venda
+original. A decisão de custo determina **se** cobra; o quanto sai do plano
+de venda. **A armadilha a evitar:** pegar a diferença de custo e aplicar
+markup nela. Não é isso — é a diferença entre **dois valores de venda** já
+calculados pelo motor com os parâmetros da venda original. Na tela medida:
+Cozinha, à vista contrato R$ 103.462,72 × à vista PE R$ 124.154,20,
+Δ +R$ 20.691,48 = exatos +20%.
+
+**Onde nasce, confirmado:** o botão "Gerar Termo Aditivo" fica na **etapa 7,
+Projeto Executivo**, na seção de aprovação do PE (static/index.html:21731) —
+onde o usuário espera que esteja. Quando há valor a cobrar, há termo de
+aditivação.
+
+**Grupo:** 1 — é o valor que o cliente paga.
+
+---
+
+## ACHADO-30 — documentos de fase não têm como ser trocados, nem ficam imutáveis depois
+
+Encontrado pelo Marcelo em 31/08. Vale para os arquivos de **medição** e
+para o **XML da NF-e da fábrica**, e provavelmente para os demais
+`CicloDocumento`.
+
+**Duas faltas, e a primeira é pré-requisito da segunda:**
+
+1. **Não existe o acionamento.** Não há lixeira para apagar nem botão para
+   sobrescrever o arquivo anterior. A regra de imutabilidade não significa
+   nada enquanto não for possível trocar antes.
+2. **Não existe a trava.** Depois de a fase fechar, o arquivo deveria ficar
+   inalterável — e não fica.
+
+**A regra:** **mutável enquanto a fase está aberta, imutável depois.**
+Múltiplos arquivos permitidos enquanto aberta. É a regra 3 do plano — *o que
+já virou fato se lê de onde foi congelado* — estendida de lançamento
+contábil para documento.
+
+**Grupo:** 2 — não muda número, mas o documento é a prova do que foi feito.
+
+---
+
+## ACHADO-31 — o XML da fábrica só é validado na emissão, dois passos depois do upload
+
+Encontrado pelo Marcelo em 31/08, ao não conseguir concluir a etapa 15.
+
+**O upload aceita qualquer arquivo.** `POST /ciclo/15/nfe-fabrica`
+(main.py:14680) só verifica que veio um arquivo — a mensagem
+*"Anexe o XML da NF-e da fábrica"* dispara com campo vazio, não com conteúdo
+errado.
+
+**Quem rejeita é a emissão**, quando `mod_nfe.preview(xml_bytes, markup)`
+não acha o `infNFe`. O erro aparece dois passos depois da causa, e não diz
+que o problema é o arquivo.
+
+**Conserto:** validar no upload. O arquivo entra ou não entra ali.
+
+### O campo "30" ao lado de cada arquivo — corrigido em 31/08
+
+**Primeira versão desta seção dizia que o campo era inútil. Estava errada.**
+É o `markup_pct`, e ele tem propósito, explicado pelo usuário: a NF-e de
+**saída** extrai os produtos da NF-e de **entrada** (a da fábrica), e o
+markup leva o valor do produto de uma para a outra. Nome proposto pelo
+usuário: **"markup de ajuste"**.
+
+**O defeito real é maior do que a falta de rótulo:** quando existe contrato,
+o código reescalona os itens para a parcela Mercadoria do `Val_Cont`, e o
+próprio comentário diz *"o markup vira output do rateio"* — com o fallback
+*"sem contrato/Val_Cont (venda avulsa/teste) → mantém o markup"*. **O valor
+digitado é descartado justamente no caso normal.**
+
+**Decisão necessária (desenho, do dono do negócio):** quem manda no valor
+dos itens da NF-e de saída — o **markup de ajuste** digitado, ou o **rateio
+pelo `Val_Cont`**? Os dois não podem mandar. Se for o markup, o rateio sai;
+se for o rateio, o campo é informativo e a tela precisa dizer isso. Em
+qualquer dos casos, rotular.
+
+**Grupo:** 2.

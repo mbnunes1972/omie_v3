@@ -2061,10 +2061,25 @@ próprio comentário diz *"o markup vira output do rateio"* — com o fallback
 *"sem contrato/Val_Cont (venda avulsa/teste) → mantém o markup"*. **O valor
 digitado é descartado justamente no caso normal.**
 
-**Decisão necessária (desenho, do dono do negócio):** quem manda no valor
-dos itens da NF-e de saída — o **markup de ajuste** digitado, ou o **rateio
-pelo `Val_Cont`**? Os dois não podem mandar. Se for o markup, o rateio sai;
-se for o rateio, o campo é informativo e a tela precisa dizer isso. Em
-qualquer dos casos, rotular.
+### DECIDIDO 31/08 — o rateio sugere, o markup manda
+
+**O rateio pelo `Val_Cont` deixa de sobrescrever e passa a preencher.** Ele
+calcula o markup implícito e **pré-preenche o campo**; o usuário ajusta se a
+realidade do projeto exigir; a emissão usa o que está no campo. Um número só
+manda, e a sugestão vira valor inicial em vez de segundo dono.
+
+**Por que o markup precisa ser editável** (razão do usuário): quando parte
+do projeto é **produzida localmente**, a NF-e da fábrica não cobre tudo —
+forçar a face da saída a ser a parcela Mercadoria rateada dos itens da
+fábrica produz um número que não corresponde ao que saiu.
+
+O campo ganha o nome **"markup de ajuste"**.
+
+**Consequência aceita, registrada para não virar susto:** o rateio existe
+hoje para *"alinhar a FACE da NF-e à parcela Mercadoria"* (comentário do
+próprio código). Com o markup podendo sobrepor, **a face da nota deixa de
+bater com a receita de mercadoria escriturada**. Gerencialmente é
+irrelevante — a contabilidade vem de `_valores_segmentados_do_projeto`, não
+da nota. Fiscalmente é divergência que alguém vai perguntar sobre um dia.
 
 **Grupo:** 2.

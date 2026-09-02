@@ -448,6 +448,56 @@ def _maior_desconto_efetivo_pct(db, orc, novo_desconto_pct=None, overrides_indiv
     return maior
 
 
+def _maior_composto_com_parametros_pct(db, projeto_nome, orc_id_alvo=None,
+                                       desconto_pct_override=None,
+                                       individuais_override=None, params_override=None):
+    """ACHADO-42 (docs/db/ACHADOS_CONTABEIS.md, DECIDIDO 02/09) — mesmo achado da Vera de 12/08
+    (`_maior_desconto_efetivo_pct`), agora com comissão de arquiteto e fidelidade somando à mesma
+    margem. NÃO substitui `_maior_desconto_efetivo_pct` — os chamadores compõem os dois com
+    `max()`, preservando a garantia antiga (só desconto) e adicionando esta (desconto + comissão +
+    fidelidade), sem duplicar a fórmula: roda `_negociacao_breakdown` (o motor de verdade,
+    `mod_negociacao.calcular_orcamento`), nunca uma conta paralela.
+
+    Por AMBIENTE, nunca a média do orçamento — uma média diluiria o pior caso exatamente como a
+    checagem campo-a-campo do achado de 12/08 escondia o composto: `Desc_Tot` é uma média
+    ponderada entre ambientes, e um ambiente sozinho pode estourar o limite enquanto a média do
+    orçamento ainda parece dentro. Desc_Tot_ambiente = (VBVA − Val_Liq_ambiente) / VBVA.
+
+    `orc_id_alvo`: só esse orçamento recebe `desconto_pct_override`/`individuais_override` (os
+    demais orçamentos do projeto usam o que já está salvo) — `desconto_pct`/individual moram no
+    ORÇAMENTO. `params_override` (comissão/fidelidade) vale para TODOS os orçamentos do projeto —
+    moram no PROJETO (`parametros_json`). Orçamento de complemento é neutralizado por design
+    (mesma exceção de `_maior_desconto_efetivo_pct`) e não entra na conta.
+
+    Retorna `(maior_pct, menor_val_liq)` — o pior ambiente entre todos os orçamentos do projeto, e
+    a menor margem (Val_Liq) de qualquer orçamento — usada pelo corte duro de margem negativa
+    (Val_Liq < 0), que é sobre o orçamento inteiro, não por ambiente."""
+    orcs = db.query(Orcamento).filter_by(projeto_id=projeto_nome).all()
+    maior_pct, menor_val_liq = 0.0, None
+    for orc in orcs:
+        if getattr(orc, "complemento_pe", 0):
+            continue
+        eh_alvo = (orc_id_alvo is not None and orc.id == orc_id_alvo)
+        d = _negociacao_breakdown(
+            orc, db, params_override=params_override,
+            desconto_pct_override=(desconto_pct_override if eh_alvo else None),
+            desconto_individual_override=(individuais_override if eh_alvo else None))
+        vl_total = float(d.get("Val_Liq") or 0.0)
+        if menor_val_liq is None or vl_total < menor_val_liq:
+            menor_val_liq = vl_total
+        for amb in d.get("ambientes", []):
+            vbva = float(amb.get("VBVA") or 0.0)
+            if vbva <= 0:
+                continue
+            # round: mesmo cuidado de ponto flutuante do achado de 2026-08-13 (ver
+            # _maior_desconto_efetivo_pct) — composições matematicamente iguais não podem cair de
+            # lados opostos da trava por erro de arredondamento.
+            pct = round((1 - float(amb.get("Val_Liq") or 0.0) / vbva) * 100.0, 2)
+            if pct > maior_pct:
+                maior_pct = pct
+    return maior_pct, menor_val_liq
+
+
 def _set_etapa_status(db, nome_safe, codigo, status, responsavel_id):
     etapa = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
     if not etapa:
@@ -11198,6 +11248,41 @@ class Handler(BaseHTTPRequestHandler):
                 for _k in ("pct_mercadoria", "pct_servico"):
                     if _k in req:      novos[_k] = float(req[_k])
                     elif _k in atual:  novos[_k] = atual[_k]
+                # ACHADO-42 (docs/db/ACHADOS_CONTABEIS.md, DECIDIDO 02/09): comissão de arquiteto e
+                # fidelidade passam pelo MESMO portão do desconto — mesma margem, mesmo teto. Só
+                # roda quando um desses quatro campos está no pedido (mesmo escopo de
+                # `if "desconto_pct" in req` no /margens, abaixo).
+                if any(k in req for k in ("comissao_arq_pct", "fidelidade_pct",
+                                          "comissao_arq_ativa", "fidelidade_ativa")):
+                    maior_pct, menor_val_liq = _maior_composto_com_parametros_pct(
+                        db, nome_safe, params_override=novos)
+                    # Regra 3: margem negativa é recusa dura — nenhuma credencial a levanta.
+                    if menor_val_liq is not None and menor_val_liq < -0.005:
+                        self.send_json({"ok": False,
+                            "erro": "Comissão/fidelidade propostas deixariam a margem líquida "
+                                    "negativa (R$ %.2f) — não é autorizável, corrija os "
+                                    "percentuais." % menor_val_liq}, code=400)
+                        return
+                    if maior_pct > usuario["limite_desconto"]:
+                        autorizador = _usuario_autoriza_desconto(
+                            db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
+                            maior_pct, sessao=usuario)
+                        db.add(LogAutorizacao(
+                            solicitante_id=usuario["id"],
+                            autorizador_id=(autorizador.id if autorizador else None),
+                            desconto_solicit=maior_pct, desconto_limite=usuario["limite_desconto"],
+                            autorizado=1 if autorizador else 0,
+                            contexto=json.dumps({"origem": "parametros_comissao_fidelidade",
+                                                 "projeto": nome_safe})))
+                        if not autorizador:
+                            db.commit()
+                            self.send_json({"ok": False, "requer_autorizacao": True,
+                                "limite": usuario["limite_desconto"],
+                                "erro": f"Efeito composto de {maior_pct:.1f}% (desconto + comissão "
+                                        f"+ fidelidade) excede seu limite "
+                                        f"({usuario['limite_desconto']:.0f}%). Autorização "
+                                        f"gerencial necessária."}, code=403)
+                            return
                 p.parametros_json = json.dumps(novos, ensure_ascii=False)
                 db.commit()
                 proj_orcs = db.query(Orcamento).filter_by(projeto_id=nome_safe).all()
@@ -11252,7 +11337,18 @@ class Handler(BaseHTTPRequestHandler):
                 if "desconto_pct" in req:
                     novo_desconto = float(req["desconto_pct"])
                     maior_efetivo = _maior_desconto_efetivo_pct(db, orc, novo_desconto_pct=novo_desconto)
-                    checagem_pct = max(novo_desconto, maior_efetivo)
+                    # ACHADO-42 (DECIDIDO 02/09): o composto agora soma comissão/fidelidade já
+                    # salvas no projeto, não só desconto individual — max() com o cálculo antigo,
+                    # nunca substituindo (a garantia de 12/08 continua valendo do jeito que era).
+                    maior_composto, menor_val_liq = _maior_composto_com_parametros_pct(
+                        db, orc.projeto_id, orc_id_alvo=oid, desconto_pct_override=novo_desconto)
+                    if menor_val_liq is not None and menor_val_liq < -0.005:
+                        self.send_json({"ok": False,
+                            "erro": "Este desconto deixaria a margem líquida negativa (R$ %.2f) — "
+                                    "não é autorizável, corrija o percentual." % menor_val_liq},
+                            code=400)
+                        return
+                    checagem_pct = max(novo_desconto, maior_efetivo, maior_composto)
                     if checagem_pct > usuario["limite_desconto"]:
                         autorizador = _usuario_autoriza_desconto(
                             db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
@@ -11267,8 +11363,9 @@ class Handler(BaseHTTPRequestHandler):
                             db.commit()   # persiste o log da tentativa mesmo recusando o desconto
                             self.send_json({"ok": False, "requer_autorizacao": True,
                                             "limite": usuario["limite_desconto"],
-                                            "erro": f"Desconto efetivo de {checagem_pct:.1f}% (global × "
-                                                    f"individual por ambiente) excede seu limite "
+                                            "erro": f"Efeito composto de {checagem_pct:.1f}% (desconto "
+                                                    f"global × individual por ambiente, mais comissão/"
+                                                    f"fidelidade já salvas) excede seu limite "
                                                     f"({usuario['limite_desconto']:.0f}%). Autorização "
                                                     f"gerencial necessária."}, code=403)
                             return
@@ -15981,7 +16078,17 @@ class Handler(BaseHTTPRequestHandler):
                 limpos = sanear_descontos(pares, ids_validos)
                 maior_individual = max(limpos.values(), default=0.0)
                 maior_efetivo = _maior_desconto_efetivo_pct(db, orc, overrides_individuais=limpos)
-                maior_pct = max(maior_individual, maior_efetivo)
+                # ACHADO-42 (DECIDIDO 02/09): mesmo composto de _maior_composto_com_parametros_pct,
+                # somando comissão/fidelidade já salvas — max() com o cálculo antigo.
+                maior_composto, menor_val_liq = _maior_composto_com_parametros_pct(
+                    db, orc.projeto_id, orc_id_alvo=oid, individuais_override=limpos)
+                if menor_val_liq is not None and menor_val_liq < -0.005:
+                    self.send_json({"ok": False,
+                        "erro": "Estes descontos deixariam a margem líquida negativa (R$ %.2f) — "
+                                "não é autorizável, corrija os percentuais." % menor_val_liq},
+                        code=400)
+                    return
+                maior_pct = max(maior_individual, maior_efetivo, maior_composto)
                 if maior_pct > usuario["limite_desconto"]:
                     autorizador = _usuario_autoriza_desconto(
                         db, req.get("login_autorizador", ""), req.get("senha_autorizador", ""),
@@ -15996,10 +16103,10 @@ class Handler(BaseHTTPRequestHandler):
                         db.commit()
                         self.send_json({"ok": False, "requer_autorizacao": True,
                                         "limite": usuario["limite_desconto"],
-                                        "erro": f"Desconto efetivo de {maior_pct:.1f}% (individual × "
-                                                f"global) excede seu limite "
-                                                f"({usuario['limite_desconto']:.0f}%). Autorização "
-                                                f"gerencial necessária."}, code=403)
+                                        "erro": f"Efeito composto de {maior_pct:.1f}% (individual × "
+                                                f"global, mais comissão/fidelidade já salvas) excede "
+                                                f"seu limite ({usuario['limite_desconto']:.0f}%). "
+                                                f"Autorização gerencial necessária."}, code=403)
                         return
                 by_id = {lk.pool_ambiente_id: lk for lk in links}
                 for pid, pct in limpos.items():
@@ -17703,12 +17810,18 @@ def _params_iniciais_projeto(db, projeto_nome, loja_id):
     return par
 
 
-def _negociacao_breakdown(orc, db, vbva_override=None):
+def _negociacao_breakdown(orc, db, vbva_override=None, params_override=None,
+                          desconto_pct_override=None, desconto_individual_override=None):
     """Calcula a cadeia do motor lendo SÓ os insumos salvos (parametros_json, desconto do
     orçamento, descontos por ambiente, forma_pagamento). Sem overrides do frontend. NÃO grava.
     vbva_override: {pool_ambiente_id: VBVA} — substitui o valor bruto de ambientes específicos
     (Fatia venda da Revisão de PE: VBVA extraído do XML de PE passa pelo MESMO motor, com os
-    mesmos parâmetros/descontos, para comparar venda à vista maçã-com-maçã). Motor inalterado."""
+    mesmos parâmetros/descontos, para comparar venda à vista maçã-com-maçã). Motor inalterado.
+
+    `params_override`/`desconto_pct_override`/`desconto_individual_override` (ACHADO-42, DECIDIDO
+    02/09): pré-visualizam o efeito de uma alavanca PROPOSTA (ainda não persistida) — comissão de
+    arquiteto, fidelidade, desconto global, desconto por ambiente — sem gravar nada. Usados só por
+    `_maior_composto_com_parametros_pct`, pra checar o efeito composto ANTES de salvar."""
     import mod_negociacao, mod_provisoes, mod_orcamento_params
     proj = db.query(Projeto).filter_by(nome_safe=orc.projeto_id).first()
     # Carrega cfg da loja uma única vez — usado para defaults de params E para provisões
@@ -17724,7 +17837,10 @@ def _negociacao_breakdown(orc, db, vbva_override=None):
     # Projetos sem parametros_json herdam os defaults de negociação da loja (incl. carga_trib)
     params = (json.loads(proj.parametros_json) if (proj and proj.parametros_json)
               else mod_orcamento_params.parametros_default_loja(cfg))
-    desc_orc = orc.desconto_pct or 0.0
+    if params_override is not None:
+        params = dict(params_override)
+    desc_orc = (desconto_pct_override if desconto_pct_override is not None
+                else (orc.desconto_pct or 0.0))
     # Orçamento de COMPLEMENTO (correção Fatia 3, 2026-07-21): cada ambiente entra pela
     # DIFERENÇA (à vista do XML complemento com os descontos do CONTRATO e o fator de custos
     # adicionais − à vista contratado — ver _complemento_diferencas). Params NEUTROS e desconto
@@ -17757,8 +17873,9 @@ def _negociacao_breakdown(orc, db, vbva_override=None):
                 vbva = pa.budget_total or 0.0
                 cfa = pa.order_total or 0.0
             vbva = (vbva_override or {}).get(lk.pool_ambiente_id, vbva)
-            ambs.append({"VBVA": vbva, "CFA": cfa,
-                         "desc_amb_pct": float(lk.desconto_individual_pct or 0.0)})
+            desc_amb = (desconto_individual_override or {}).get(
+                lk.pool_ambiente_id, float(lk.desconto_individual_pct or 0.0))
+            ambs.append({"VBVA": vbva, "CFA": cfa, "desc_amb_pct": desc_amb})
             ids.append(lk.pool_ambiente_id)
     total_cliente = None
     try:

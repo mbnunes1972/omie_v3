@@ -23,18 +23,25 @@ Spec: docs/superpowers/specs/financeiro/2026-08-14-conciliacao-pe-af2-complement
 
 TIPOS_DECISAO = ("manter", "absorver", "cobrar", "estornar")
 
-# tipo_decisao válido por sinal de `diferenca_cfo` (= cfo_pe - cfo_original; positivo = custo
-# SUBIU, negativo = custo CAIU — mesma convenção de mod_pe_comparacao.montar_comparacao_pe).
+# tipo_decisao válido por sinal de Δ A COBRAR/ESTORNAR (`diferenca_valor_contrato`) — o que o
+# cliente efetivamente paga a mais/menos, NUNCA Δ custo de fábrica (`diferenca_cfo`, só
+# referência de conferência interna). ACHADO-42 (docs/db/ACHADOS_CONTABEIS.md, DECIDIDO 02/09,
+# fechando a 2ª metade): até aqui esta validação usava Δ custo (decisão de 2026-08-14) enquanto a
+# tela (B4/ACHADO-39, docs/db/TAREFA_PERCURSO_0109.md) já oferecia os botões por Δ a cobrar — os
+# dois podiam divergir de sinal quando o markup fosse negativo (ACHADO-42), e aí NENHUM botão da
+# tela seria aceito aqui. Alinhar as duas pontas na MESMA grandeza torna essa divergência
+# IMPOSSÍVEL por construção, não só improvável (o portão do ACHADO-42 já torna o markup negativo
+# muito difícil de alcançar, mas "impossível" é mais forte que "difícil").
 _VALIDOS_POR_SINAL = {
-    "alta":  ("absorver", "cobrar"),    # custo subiu: loja assume, ou repassa
-    "baixa": ("manter", "estornar"),    # custo caiu: loja fica com a economia, ou devolve
-    "zero":  ("manter", "absorver"),    # sem diferença: nada a repassar, só registrar
+    "alta":  ("absorver", "cobrar"),    # a cobrar subiu: loja assume, ou repassa
+    "baixa": ("manter", "estornar"),    # a cobrar caiu: loja fica com a economia, ou devolve
+    "zero":  ("manter", "absorver"),    # sem diferença a cobrar: nada a repassar, só registrar
 }
 
 
-def sinal_diferenca(diferenca_cfo):
-    """'alta' (custo subiu) | 'baixa' (custo caiu) | 'zero'."""
-    d = round(float(diferenca_cfo or 0), 2)
+def sinal_diferenca(diferenca_valor_contrato):
+    """'alta' (a cobrar subiu) | 'baixa' (a cobrar caiu) | 'zero'."""
+    d = round(float(diferenca_valor_contrato or 0), 2)
     if d > 0:
         return "alta"
     if d < 0:
@@ -42,17 +49,19 @@ def sinal_diferenca(diferenca_cfo):
     return "zero"
 
 
-def decisao_valida(diferenca_cfo, tipo_decisao):
-    """True se `tipo_decisao` é compatível com o sinal de `diferenca_cfo`.
+def decisao_valida(diferenca_valor_contrato, tipo_decisao):
+    """True se `tipo_decisao` é compatível com o sinal de `diferenca_valor_contrato` (Δ a cobrar/
+    estornar — a MESMA grandeza que a tela usa pra escolher os botões, ver `_peConcValidasPorSinal`
+    em static/index.html).
 
-    Regra dura (decisão do usuário, 2026-08-14): diferença negativa (custo caiu) NUNCA pode virar
-    'cobrar' — só 'manter' ou 'estornar'. Diferença positiva (custo subiu) nunca pode virar
-    'estornar' — só 'absorver' ou 'cobrar'. Evita duas rotas concorrentes pra mexer no bolso do
-    cliente na mesma direção errada.
+    Regra dura (decisão do usuário, 2026-08-14 — realinhada ao Δ a cobrar em 2026-09-02,
+    ACHADO-42): diferença negativa (a cobrar caiu) NUNCA pode virar 'cobrar' — só 'manter' ou
+    'estornar'. Diferença positiva (a cobrar subiu) nunca pode virar 'estornar' — só 'absorver' ou
+    'cobrar'. Evita duas rotas concorrentes pra mexer no bolso do cliente na mesma direção errada.
     """
     if tipo_decisao not in TIPOS_DECISAO:
         return False
-    return tipo_decisao in _VALIDOS_POR_SINAL[sinal_diferenca(diferenca_cfo)]
+    return tipo_decisao in _VALIDOS_POR_SINAL[sinal_diferenca(diferenca_valor_contrato)]
 
 
 def diferenca_valor_contrato(diferenca_cfo, markup):
@@ -70,13 +79,13 @@ def montar_decisao(pool_ambiente_id, diferenca_cfo, diferenca_valor_contrato, ti
     que efetivamente vira Complemento/Estorno depois.
     `valor_aprovado`: valor editável pelo gerente (tipicamente usado no Estorno); default é o
     módulo da diferença de valor de contrato recebida. Levanta ValueError se a decisão não bate
-    com o sinal da diferença (ver `decisao_valida`).
+    com o sinal de Δ a cobrar/estornar (ver `decisao_valida`) — não com o sinal de Δ custo.
     """
-    if not decisao_valida(diferenca_cfo, tipo_decisao):
-        raise ValueError(
-            "decisão '%s' incompatível com diferença de CFO %.2f"
-            % (tipo_decisao, float(diferenca_cfo or 0)))
     dvc = round(float(diferenca_valor_contrato or 0), 2)
+    if not decisao_valida(dvc, tipo_decisao):
+        raise ValueError(
+            "decisão '%s' incompatível com a diferença de valor de contrato %.2f"
+            % (tipo_decisao, dvc))
     valor = round(float(valor_aprovado), 2) if valor_aprovado is not None else abs(dvc)
     return {
         "pool_ambiente_id": pool_ambiente_id,

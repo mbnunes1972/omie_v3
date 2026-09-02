@@ -17,18 +17,45 @@ def test_sinal_diferenca():
     assert sinal_diferenca(None) == "zero"
 
 
-def test_decisao_valida_custo_subiu_so_absorver_ou_cobrar():
+def test_decisao_valida_valor_contrato_subiu_so_absorver_ou_cobrar():
+    """ACHADO-42 (docs/db/ACHADOS_CONTABEIS.md, DECIDIDO 02/09): `decisao_valida` valida pelo
+    sinal de Δ A COBRAR/ESTORNAR (`diferenca_valor_contrato`) — a mesma grandeza que a tela usa
+    pra escolher os botões (B4/ACHADO-39). Até 02/09 validava por Δ custo; realinhado pra fechar
+    a 2ª metade do ACHADO-42 (markup negativo podia inverter o sinal entre as duas grandezas)."""
     assert decisao_valida(300.0, "absorver") is True
     assert decisao_valida(300.0, "cobrar") is True
     assert decisao_valida(300.0, "manter") is False
     assert decisao_valida(300.0, "estornar") is False
 
 
-def test_decisao_valida_custo_caiu_so_manter_ou_estornar():
+def test_decisao_valida_valor_contrato_caiu_so_manter_ou_estornar():
     assert decisao_valida(-300.0, "manter") is True
     assert decisao_valida(-300.0, "estornar") is True
     assert decisao_valida(-300.0, "absorver") is False
     assert decisao_valida(-300.0, "cobrar") is False
+
+
+def test_montar_decisao_usa_valor_contrato_mesmo_quando_diverge_do_custo():
+    """O teste que prova o ALINHAMENTO (ACHADO-42, DECIDIDO 02/09, 2ª metade) — via `montar_
+    decisao`, o chamador cuja passagem de argumento pra `decisao_valida` é o que de fato mudou
+    (`decisao_valida` em si só olha o sinal do argumento que recebe; testá-la direto com um valor
+    literal não pegaria uma regressão de QUAL argumento é passado). Δ custo SUBIU (+1000, cenário
+    de markup negativo) mas Δ a cobrar CAIU (-500) — os mesmos botões que a tela ofereceria (B4,
+    Δ a cobrar) são os que `montar_decisao` aceita: 'manter'/'estornar' passam, 'absorver'/
+    'cobrar' (o que valeria pelo Δ custo antigo) levantam ValueError."""
+    d = montar_decisao(pool_ambiente_id=1, diferenca_cfo=1000.0, diferenca_valor_contrato=-500.0,
+                       tipo_decisao="manter")
+    assert d["tipo_decisao"] == "manter"
+
+    montar_decisao(pool_ambiente_id=1, diferenca_cfo=1000.0, diferenca_valor_contrato=-500.0,
+                   tipo_decisao="estornar")   # não levanta
+
+    with pytest.raises(ValueError):
+        montar_decisao(pool_ambiente_id=1, diferenca_cfo=1000.0, diferenca_valor_contrato=-500.0,
+                       tipo_decisao="absorver")   # válido pelo Δ CUSTO antigo, não pelo Δ a cobrar
+    with pytest.raises(ValueError):
+        montar_decisao(pool_ambiente_id=1, diferenca_cfo=1000.0, diferenca_valor_contrato=-500.0,
+                       tipo_decisao="cobrar")
 
 
 def test_decisao_valida_zero_so_manter_ou_absorver():
@@ -48,7 +75,7 @@ def test_diferenca_valor_contrato_grossup_por_markup():
     assert diferenca_valor_contrato(1000.0, None) == 0.0
 
 
-def test_montar_decisao_cobrar_custo_subiu():
+def test_montar_decisao_cobrar_valor_contrato_subiu():
     d = montar_decisao(pool_ambiente_id=7, diferenca_cfo=1000.0, diferenca_valor_contrato=2000.0,
                        tipo_decisao="cobrar")
     assert d == {

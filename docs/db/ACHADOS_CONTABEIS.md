@@ -2691,7 +2691,7 @@ aceites HTTP e o de navegador falham; restaurados, os 3 voltam a passar.
 
 ---
 
-## ACHADO-42 — o markup pode ser negativo, e aí o Δ a cobrar troca de sinal contra o Δ custo
+## ACHADO-42 — o markup pode ser negativo, e aí o Δ a cobrar troca de sinal contra o Δ custo · RESOLVIDO 02/09/2026
 
 Medido a pedido do Marcelo, verificando o risco residual anotado no
 ACHADO-39 ("se o sinal de Δ a cobrar divergir do de Δ custo, a tela oferece
@@ -2743,3 +2743,90 @@ plausível, mesmo padrão de `limite_desconto`; (b) `decisao_valida` passar a
 usar Δ a cobrar também, alinhando com o B4; ou (c) as duas.
 
 **Grupo:** 2 (medição — decisão de conserto em aberto).
+
+### DECIDIDO 02/09 — o mesmo portão do desconto
+
+Decisão do Marcelo: **comissão de arquiteto e fidelidade passam pelo mesmo
+portão do desconto** — teto do perfil, e autorização de quem tem limite
+maior para estourar.
+
+A razão é a que o próprio achado expõe: os três campos tiram dinheiro da
+**mesma margem**. Um deles exigir gerente e os outros dois não é uma
+assimetria sem defesa — quem quisesse contornar o teto do desconto já podia
+fazê-lo digitando a diferença como comissão de arquiteto.
+
+**Três coisas que decidem o conserto:**
+
+**1 · O portão é o do perfil, não da loja.** O padrão real é
+`Usuario.limite_desconto` → `perfis.desconto_max(nivel)`, verificado no
+servidor por `_usuario_autoriza_desconto` (main.py:403). O achado de UAT de
+10/08 vale aqui inteiro: *a autorização da tela sem trava no servidor é
+decoração*.
+
+**2 · Compor, nunca checar campo a campo.** Este é o achado da Vera de
+12/08, e ele se repete aqui com três campos em vez de dois: naquela vez,
+45% global + 45% individual davam 69,75% efetivo, e cada um passava
+sozinho no limite de 50%. Comissão e fidelidade têm que ser medidas
+**pelo efeito conjunto sobre a margem**, junto com o desconto que já
+estiver aplicado — não cada percentual contra o teto.
+
+**3 · Margem negativa não se autoriza.** O teto com autorização cobre a
+venda agressiva; não cobre vender abaixo de zero. `Val_Liq < 0` é recusa
+dura, sem credencial que a levante. Se algum dia houver caso real de venda
+deliberadamente negativa, ele volta como decisão própria — não entra pela
+porta de um campo sem validação.
+
+**E a segunda metade do ACHADO-42 continua valendo:** com o portão, o
+markup deixa de ir a negativo pela porta da digitação, mas `decisao_valida`
+segue ancorado em Δ custo enquanto a tela decide por Δ a cobrar. Alinhar as
+duas pontas é o que torna a divergência impossível **por construção**, e não
+apenas improvável. Vale a regra que a auditoria já usou no deságio e no
+markup de ajuste: **um número só manda.**
+
+### Implementado 02/09 — os quatro itens do DECIDIDO
+
+**1 · Portão no servidor.** `POST /api/projetos/<nome>/parametros` passa a
+checar `comissao_arq_pct`/`fidelidade_pct`/`comissao_arq_ativa`/
+`fidelidade_ativa` pelo MESMO mecanismo de `/margens` — `_usuario_autoriza_
+desconto` (main.py:403), `LogAutorizacao` gravado inclusive na tentativa
+recusada (`origem: "parametros_comissao_fidelidade"`).
+
+**2 · Composto, nunca campo a campo.** `_maior_composto_com_parametros_pct`
+(nova) roda o motor de verdade (`_negociacao_breakdown` →
+`mod_negociacao.calcular_orcamento`) com a alavanca PROPOSTA sobreposta às
+já salvas — nunca uma fórmula paralela. Por **AMBIENTE**, nunca a média do
+orçamento (uma média diluiria o pior caso exatamente como o achado de
+12/08 escondia o composto quando checado campo a campo): `Desc_Tot_
+ambiente = (VBVA − Val_Liq_ambiente) / VBVA`, o maior entre todos os
+ambientes de todos os orçamentos do projeto (exceto complemento,
+neutralizado por design, mesma exceção de `_maior_desconto_efetivo_pct`).
+`_negociacao_breakdown` ganhou `params_override`/`desconto_pct_override`/
+`desconto_individual_override` pra pré-visualizar sem gravar. Os
+chamadores existentes (`/margens`, `/descontos`) somam o resultado com
+`max()` ao cálculo antigo (`_maior_desconto_efetivo_pct`) — a garantia de
+12/08 continua exatamente como era, esta é adicional, nunca substitui.
+
+**3 · Margem negativa é recusa dura.** `menor_val_liq < -0,005` (a menor
+margem líquida entre os orçamentos do projeto) recusa com 400 ANTES de
+qualquer tentativa de `_usuario_autoriza_desconto` — nenhuma credencial,
+nem a do próprio Master (limite 50%, o maior do sistema), resolve.
+
+**4 · `decisao_valida` alinhado a Δ a cobrar.** `mod_conciliacao_pe.
+decisao_valida`/`sinal_diferenca` passam a receber `diferenca_valor_
+contrato`, não `diferenca_cfo` — `montar_decisao` (única chamadora) troca
+qual argumento repassa. A divergência do ACHADO-39 fica impossível **por
+construção**, não só protegida pelo portão do item 1.
+
+**Prova:** `tests/test_aceite_achado42_portao.py` (itens 1-3: comissão
+sozinha recusada/aceita/autorizada/senha errada; COMPOSIÇÃO nas duas
+ordens — desconto-depois-comissão e comissão-depois-desconto, cada um
+sozinho dentro do limite mas recusado junto; controle positivo — composto
+pequeno não bloqueia; margem negativa recusa mesmo com a própria
+credencial de Master) + `tests/test_conciliacao_pe.py`/`tests/test_
+medicao_achado42_markup_negativo.py` (item 4, via `montar_decisao` — testar
+`decisao_valida` isolada com um valor literal não pegaria uma regressão de
+qual argumento o chamador passa). Controle negativo: `main.py` revertido —
+7 dos 9 aceites do portão falham (os 2 que sobram são os controles
+positivos, que não dependem do gate); `mod_conciliacao_pe.py` revertido —
+os 2 aceites do item 4 falham. Restaurados, tudo volta a passar (43
+testes relacionados, mais a suíte completa).

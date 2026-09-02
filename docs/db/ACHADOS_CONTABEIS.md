@@ -2428,7 +2428,7 @@ abre as provisões de um projeto por vez.
 
 ---
 
-## ACHADO-38 — a AF2 pede senha antes de conferir se já foi aprovada
+## ACHADO-38 — a AF2 pede senha antes de conferir se já foi aprovada · RESOLVIDO 02/09/2026 (B3)
 
 Reaprovar a AF2 abre o pedido de login e senha do gerente, em vez de dizer
 "Aprovação Financeira já realizada".
@@ -2440,11 +2440,76 @@ qualquer checagem de estado. A ordem está invertida nas duas pontas.
 **A regra:** conferir o estado antes de pedir credencial. Pedir senha para
 uma ação que não vai acontecer treina o operador a digitar senha sem ler.
 
+**Correção sobre a redação original:** não havia, na verdade, um "já
+aprovada" nem antes nem depois da credencial — `_set_etapa_status`
+sobrescreve o status sem olhar o anterior. A checagem que faltava teve
+que ser **criada**, não só reordenada.
+
+**Conserto (docs/db/TAREFA_PERCURSO_0109.md, item B3):**
+
+- **Backend** (main.py, `/ciclo/11d/aprovar`): todas as checagens de estado
+  (escopo/tenancy — via `usuario` da sessão, não depende da credencial do
+  aprovador —, existência, contrato, data de entrega, assinatura dupla,
+  **11d já concluído** [checagem nova], subfases pendentes, rev2, fase
+  completa) passam a rodar ANTES de `_aprovador_financeiro`. A credencial só
+  é validada quando a aprovação vai mesmo acontecer.
+- **Frontend** (`peConciliacaoAprovar`, static/index.html): reconfere
+  `GET .../pe/conciliacao` (a MESMA fonte que desenha o botão — nunca uma
+  cópia da regra) antes de `pedirCredenciaisGerente`; se `etapa_status ===
+  'concluido'`, avisa "A AF2 já foi aprovada." e nunca chega a pedir senha.
+
+**Irmãos enumerados — todo chamador de `pedirCredenciaisGerente`
+(static/index.html), e se já checava estado antes da credencial:**
+
+| função | checava estado antes? |
+|---|---|
+| `reconRecebConfirmar` | não — só trava de duplo-clique |
+| `reconRecebReprogramar` | não — só validação de formulário (data preenchida) |
+| `reconRecebDuvidoso` | parcial — `confirmarPopup` (confirmação de ação, não estado do servidor) antes |
+| `fluxoRecebivelConfirmar` | não |
+| `convDestravar` | não — só formulário (motivo) |
+| `concluirAprovacaoFinanceira` | não — só `projetoAtivo` (precondição, não estado da ação) |
+| `_provAprovar` | não |
+| `_provAcao` | não |
+| `enviarSolicitacaoMedicao` | não — só formulário (arquivo anexado) |
+| `enviarParecerMedicao` | não — só formulário |
+| `enviarDecisaoReprovado` | não — só formulário |
+| `peConciliacaoDecidir` | não |
+| **`peConciliacaoAprovar`** | **era não — RESOLVIDO nesta rodada** |
+| `peConciliacaoReprovar` | não — fora de escopo (achado não nomeia; sem `fase_completa`-like gate, reordenar teria pouco efeito) |
+| `ramoJurosLojaRegistrar` | não — só formulário |
+| `devolucaoRegistrar` | não — só formulário |
+| `cancelarContrato` | parcial — `_escolherDesfechoCancelamento()` olha `_contratoTotalmenteAssinado` antes, mas escolhe variante, não checa "já cancelado" |
+| `ramoAntecipacaoRegistrar` | não — só formulário |
+| `ramoFinanceiroTrocar` | não |
+| `peUpload` | não — só formulário |
+| `conferenciaRegistrar` | não — só formulário |
+| `peConcluir` | não — só `projetoAtivo` |
+| `peRevisao` | parcial — `confirmarPopup` (aviso de consequência) antes, não checagem de estado |
+| `abrirModalReabrir` | parcial — `confirmarPopup` (aviso de consequência) antes, não checagem de estado |
+| `revisarContrato` | parcial — `confirmarPopup` (aviso de consequência) antes, não checagem de estado |
+
+Nenhum outro caso tem o mesmo formato do ACHADO-38 (checagem de "estado
+JÁ CONCLUÍDO" que o servidor tem e a tela ignora) — os demais checam
+formulário (obrigatório preencher algo) ou pedem confirmação de
+consequência, categorias diferentes. Fora de escopo desta rodada; ficam
+candidatos a auditoria de higiene futura.
+
+**Prova:** `tests/test_aceite_achado38.py` — HTTP (aprova, aprova de novo
+com senha ERRADA de propósito: a recusa tem que ser "AF2 já aprovada"
+[400], nunca "Senha/perfil inválido" [403] — prova a ORDEM, não só a
+existência; só um `LogAcaoGerencial` mesmo com duas chamadas) e navegador
+(estado mockado como `concluido`, `peConciliacaoAprovar()` nunca abre o
+modal de credenciais, mostra "A AF2 já foi aprovada." direto). Controle
+negativo: backend revertido (stash) — teste HTTP falha (403 em vez de
+400); frontend revertido — teste de navegador falha (modal de credenciais
+abre). Ambos restaurados, voltam a passar.
+
 **Grupo:** 1.
 
 ---
 
-## ACHADO-39 — a decisão do ambiente é oferecida pela coluna errada
+## ACHADO-39 — a decisão do ambiente é oferecida pela coluna errada · RESOLVIDO 02/09/2026 (B4)
 
 Na AF2, `_peConcValidasPorSinal(a.diferenca)` escolhe os botões pelo sinal
 de **Δ custo** — e a decisão é sobre **Δ a cobrar/estornar**.
@@ -2462,11 +2527,68 @@ a cobrar R$ 0,00 exige decisão, e o resultado registrado é **"Absorver R$
 há decisão a tomar — a linha entra como "sem diferença a decidir" e não
 conta como pendência.
 
+**Medição antes do conserto (regra da rodada — não apagar nada):** consulta
+read-only na `orizon_homologacao` (167.88.33.121, via SSH) —
+
+    total | zero_valor_contrato | absorver_zero
+    ------+---------------------+---------------
+        8 |                   4 |             4
+
+Quatro linhas de `conciliacao_pe_fase` já eram exatamente esse padrão:
+projetos **Teste_1** (`diferenca_cfo` 793.75 e 76.27) e **Teste_2** (mesmos
+dois valores, mesmos ambientes — o percurso do Marcelo repetido), todas
+`tipo_decisao='absorver'`, `diferenca_valor_contrato=0`,
+`valor_aprovado=0`. `orizon_integracao` e `orizon_producao` — zero linhas
+(tabela existe, vazia desse padrão). **Nenhuma linha foi apagada ou
+alterada.** O que acontece com elas: continuam no banco, inertes —
+`agregar_complemento` só soma decisões `'cobrar'`, então uma `'absorver'`
+R$0,00 nunca contribuiu pra nada; daqui pra frente essas quatro linhas
+simplesmente deixam de ser **exigidas** (o ambiente não entra mais em
+`ambientes_com_pe` de `fase_completa`) — se o gerente abrir a tela de novo,
+a linha mostra "Sem diferença a cobrar — nada a decidir." em vez do botão
+"alterar", mas o registro histórico de 31/08-02/09 permanece intacto.
+
+**Conserto (docs/db/TAREFA_PERCURSO_0109.md, item B4):**
+
+- **Frontend**: `_peConcValidasPorSinal` passa a receber
+  `a.diferenca_valor_contrato` (Δ a cobrar), não `a.diferenca` (Δ custo).
+  Ambiente com `abs(diferenca_valor_contrato) <= 0.005` nunca mostra
+  botões — mostra "Sem diferença a cobrar — nada a decidir.", mesmo se já
+  tiver uma decisão antiga registrada (as quatro linhas de homologação
+  incluídas).
+- **Backend**: `mod_conciliacao_pe.decisao_e_necessaria(diferenca_valor_
+  contrato)` (nova, `abs(round(dvc,2)) > 0.005`) filtra o conjunto
+  `ambientes_com_pe` de `fase_completa` nos **três** lugares que o
+  calculavam — `GET /pe/conciliacao` (já tinha o Δ a cobrar por ambiente
+  calculado, só faltava filtrar), `POST /ciclo/11d/aprovar` e o **irmão
+  encontrado ao revisar**: o PATCH genérico `/ciclo/<codigo>` tinha a
+  MESMA conta ingênua ("todo PE carregado é pendência") duplicada. Os dois
+  últimos agora chamam `main._pe_ambientes_pendentes_decisao(db, nome)`
+  (nova, extrai a MESMA fórmula do GET) — nenhuma cópia da regra.
+- **Não tocado, deliberadamente:** `mod_conciliacao_pe.decisao_valida`/
+  `_VALIDOS_POR_SINAL` continuam validando pelo sinal de Δ CUSTO — regra
+  dura, decisão do usuário de 2026-08-14, que o achado não pede pra mudar.
+  Risco residual observado (não medido como ocorrendo na prática): se o
+  sinal de Δ a cobrar divergir do sinal de Δ custo para um ambiente com
+  Δ a cobrar NÃO-zero, a tela pode oferecer um botão que o backend recusa
+  com 400 — fora de escopo desta rodada, candidato a achado próprio se
+  aparecer.
+
+**Prova:** `tests/test_aceite_achado39.py` — aceite principal (venda_pe ==
+VBVA contratado → Δ a cobrar = 0 com Δ custo = 3000; `fase.completa` já
+True sem decisão nenhuma; `/ciclo/11d/aprovar` aprova sem exigir a decisão
+deste ambiente) e controle positivo (Δ a cobrar ≠ 0 continua pendência
+normal, sem regressão). Controle negativo: `main.py`+`mod_conciliacao_pe.
+py`+`static/index.html` revertidos (stash) — o aceite principal falha
+(`fase.completa` volta a False); o controle positivo continua passando
+(prova que o teste pega o achado certo, não qualquer coisa). Restaurado,
+os dois voltam a passar.
+
 **Grupo:** 1.
 
 ---
 
-## ACHADO-40 — a coluna Decisão desalinha depois de decidida
+## ACHADO-40 — a coluna Decisão desalinha depois de decidida · PARCIALMENTE RESOLVIDO 02/09/2026 (B5)
 
 Cosmético, medido na imagem do Marcelo. A célula decidida é um flex livre
 (`<span>rótulo</span> valor <button>alterar</button>`), então rótulo, valor
@@ -2478,5 +2600,27 @@ E, no mesmo lote: o link **"Dar veredito na Fila de Provisões"** saiu como
 de tokens não pega, porque não há cor literal no CSS: a cor é o default do
 agente. O Marcelo pediu outra coisa, que resolve os dois problemas — ver o
 item correspondente na tarefa.
+
+**Conserto (docs/db/TAREFA_PERCURSO_0109.md, item B5) — só o desalinhamento:**
+a célula decidida (`peConciliacaoRender`, static/index.html) ganhou
+sub-colunas de largura fixa (rótulo 64px, valor 90px alinhado à direita em
+fonte monoespaçada, botão `flex:0 0 auto`) — rótulo/valor/botão caem no
+mesmo lugar horizontal em toda linha, qualquer que seja o texto
+("Manter"/"Absorver"/"Cobrar"/"Estornar", R$ 100,00/R$ 123.456,78).
+
+**O link azul NÃO foi tocado nesta rodada** — a própria Parte A do
+TAREFA_PERCURSO_0109.md nomeia esse conserto como parte do redesenho da
+tela de Provisões (botão "Resolver" volta, substituindo o link), e a Parte
+A está explicitamente fora desta rodada (decisão do Marcelo, frente
+própria). Achado permanece aberto só nessa metade.
+
+**Prova (por captura, não por asserção de DOM — o defeito é visual):**
+`tests/test_aceite_achado40.py` — duas linhas mockadas com rótulo e valor
+de comprimentos bem diferentes ("Manter"/R$100,00 vs "Estornar"/
+R$123.456,78); screenshot real salvo em disco (path impresso no teste) +
+medição de bounding box da sub-coluna de valor nas duas linhas (mesmo `x`
+= alinhado). Controle negativo: revertido, a mesma consulta de DOM não
+encontra as sub-colunas (markup antigo não as tem) — o teste falha.
+Restaurado, volta a passar.
 
 **Grupo:** 5.

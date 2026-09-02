@@ -2631,7 +2631,11 @@ class Handler(BaseHTTPRequestHandler):
                 for fase_id, f in fases_por_id.items():
                     if not f["ambientes"]:
                         continue
-                    com_pe = [a["pool_ambiente_id"] for a in f["ambientes"] if a["pe_carregado"]]
+                    # ACHADO-39 (B4): só pendência quem tem Δ A COBRAR diferente de zero — `_l
+                    # ["diferenca_valor_contrato"]` já computado acima, mesma conta pra tela e
+                    # pra este gate (nunca uma cópia que possa divergir).
+                    com_pe = [a["pool_ambiente_id"] for a in f["ambientes"]
+                              if a["pe_carregado"] and _mconc.decisao_e_necessaria(a["diferenca_valor_contrato"])]
                     registradas = [a["pool_ambiente_id"] for a in f["ambientes"] if a["decisao"] is not None]
                     completa, faltam = _mconc.fase_completa(com_pe, registradas)
                     fases_out.append({"parcela_id": f["parcela_id"], "ambientes": f["ambientes"],
@@ -7894,9 +7898,12 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(body) if body else {}
             db = get_session()
             try:
-                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
-                if not aprovador:
-                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                # ACHADO-38 (docs/db/TAREFA_PERCURSO_0109.md, item B3): estado primeiro, credencial
+                # só quando a ação vai mesmo acontecer — a ordem antiga validava a senha do gerente
+                # ANTES de checar se havia o que aprovar (contrato assinado? fase completa? já
+                # aprovada?), gastando a credencial numa chamada que ia recusar de qualquer jeito.
+                # `usuario` (sessão) já basta pra escopo/tenancy — não depende da credencial do
+                # aprovador (`req.login`/`req.senha`), então pode vir antes dela sem problema.
                 ator = _ator_dict(db, usuario)
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
@@ -7921,6 +7928,11 @@ class Handler(BaseHTTPRequestHandler):
                 # endpoint genérico de conclusão, então precisa checar aqui também.
                 _status_por = {e.etapa_codigo: e.status for e in
                                db.query(CicloEtapa).filter_by(projeto_nome=nome).all()}
+                # ACHADO-38: a checagem que faltava — `_set_etapa_status` sobrescreve o status sem
+                # olhar o anterior; sem isto, uma segunda aprovação (aba antiga, replay) reprocessa
+                # tudo de novo (log duplicado, chat duplicado) depois de já ter pedido a senha.
+                if _status_por.get("11d") == "concluido":
+                    self.send_json({"ok": False, "erro": "AF2 já aprovada."}, code=400); return
                 _faltando = mod_ciclo.subfases_pe_pendentes("11d", _status_por)
                 if _faltando:
                     self.send_json({"ok": False,
@@ -7931,10 +7943,9 @@ class Handler(BaseHTTPRequestHandler):
                 if rev2 is None:
                     self.send_json({"ok": False,
                         "erro": "Aprove a Revisão de Provisões (AF2) antes de concluir."}, code=400); return
-                pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome).all()]
-                com_pe = {a.pool_ambiente_id for a in
-                          db.query(ArquivoPE).filter_by(projeto_nome=nome, formato="xml_pe").all()
-                          if a.valor_atualizado is not None and a.pool_ambiente_id in pool_ids}
+                # ACHADO-39 (B4): ambiente com Δ a cobrar zero não é pendência — usa a mesma
+                # conta do GET /pe/conciliacao, nunca "todo PE carregado" cru.
+                com_pe = _pe_ambientes_pendentes_decisao(db, nome)
                 registradas = {d.pool_ambiente_id for d in
                                db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome).all()}
                 completa, faltam = _mconc.fase_completa(com_pe, registradas)
@@ -7943,6 +7954,10 @@ class Handler(BaseHTTPRequestHandler):
                         "erro": "Registre a decisão (Manter/Absorver/Cobrar/Estornar) de %d ambiente(s) "
                                 "antes de concluir." % len(faltam),
                         "faltam": faltam}, code=400); return
+                # Só agora — com a certeza de que a aprovação VAI acontecer — a credencial é gasta.
+                aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                if not aprovador:
+                    self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
                 _set_etapa_status(db, nome, "11d", "concluido", aprovador.id)
                 db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
                         acao="pe_11d_aprovar", projeto_nome=nome, etapa_alvo="11d"))
@@ -16413,10 +16428,10 @@ class Handler(BaseHTTPRequestHandler):
                                             + ", ".join(_faltando_11d) + "."}, code=400)
                                 return
                             import mod_conciliacao_pe as _mconc
-                            _pool_ids = [pa.id for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).all()]
-                            _com_pe = {a.pool_ambiente_id for a in
-                                      db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_pe").all()
-                                      if a.valor_atualizado is not None and a.pool_ambiente_id in _pool_ids}
+                            # ACHADO-39 (B4): irmão deste gate encontrado ao revisar — este PATCH
+                            # genérico tinha a MESMA conta ingênua ("todo PE carregado" = pendência)
+                            # que /ciclo/11d/aprovar. Reusa o mesmo helper, nunca uma cópia.
+                            _com_pe = _pe_ambientes_pendentes_decisao(db, nome_safe)
                             _registradas = {d.pool_ambiente_id for d in
                                            db.query(ConciliacaoPeFase).filter_by(projeto_nome=nome_safe).all()}
                             _completa, _faltam = _mconc.fase_completa(_com_pe, _registradas)
@@ -17196,6 +17211,44 @@ def _pe_fator_contexto(db, nome_safe, excluir_orcamento_id=None):
     d_amb_pct = {oa.pool_ambiente_id: float(oa.desconto_individual_pct or 0.0)
                 for oa in db.query(OrcamentoAmbiente).filter_by(orcamento_id=orc_ct.id).all()}
     return orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, vavo_ct, cad_ct, ja_contratado
+
+
+def _pe_ambientes_pendentes_decisao(db, nome_safe):
+    """ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): ambientes com PE carregado E Δ a
+    cobrar/estornar diferente de zero — a MESMA conta do GET /pe/conciliacao (`diferenca_valor_
+    contrato_estimada` + `mod_conciliacao_pe.decisao_e_necessaria`), reaproveitada aqui pra
+    `fase_completa` na aprovação da AF2 nunca divergir do que a tela mostra como pendência."""
+    import mod_conciliacao_pe as _mconc
+    pool = db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).order_by(PoolAmbiente.id.asc()).all()
+    pa_por_id = {pa.id: pa for pa in pool}
+    pa_nome = {pa.id: (pa.nome_exibicao or pa.nome) for pa in pool}
+    itens_cfo = [(pa_nome[pa.id], pa.order_total or 0.0) for pa in pool]
+    pes = db.query(ArquivoPE).filter_by(projeto_nome=nome_safe, formato="xml_pe").all()
+    valores_pe = {pa_nome[a.pool_ambiente_id]: a.valor_atualizado
+                  for a in pes if a.valor_atualizado is not None and a.pool_ambiente_id in pa_nome}
+    venda_por_pid = {a.pool_ambiente_id: a.valor_venda for a in pes}
+    linhas = mod_pe_comparacao.montar_comparacao_pe(itens_cfo, valores_pe)
+    id_por_nome = {v: k for k, v in pa_nome.items()}
+    orc_ct, vava_ct, fator_ca, d_orc_pct, d_amb_pct, _vavo_ct, _cad_ct, _ja_contratado = \
+        _pe_fator_contexto(db, nome_safe)
+    markup = float(orc_ct.markup or 0.0) if orc_ct else 0.0
+    pendentes = set()
+    for _l in linhas:
+        if not _l["pe_carregado"]:
+            continue
+        pid = id_por_nome.get(_l["ambiente"])
+        if pid is None:
+            continue
+        pa_l = pa_por_id.get(pid)
+        dvc = _mconc.diferenca_valor_contrato_estimada(
+            diferenca_cfo=_l["diferenca"], markup=markup, valor_venda_pe=venda_por_pid.get(pid),
+            vava_contratado=vava_ct.get(pid, 0.0),
+            vbva_contratado=float(pa_l.budget_total or 0.0) if pa_l else 0.0,
+            fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
+            desconto_amb_pct=d_amb_pct.get(pid, 0.0))
+        if _mconc.decisao_e_necessaria(dvc):
+            pendentes.add(pid)
+    return pendentes
 
 
 def _complemento_diferencas_fase(db, nome_safe, parcela_id, excluir_orcamento_id=None):

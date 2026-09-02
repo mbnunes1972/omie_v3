@@ -15006,10 +15006,13 @@ async function filaProvisoesCarregar(){
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);color:'+_reconSaldoCor(r.saldo_aberto)+'">'+_fBRL(r.saldo_aberto)+'</td>'
     +'<td style="padding:10px 16px;color:var(--muted);white-space:nowrap">'+_filaProvDiasAberta(r.constituida_em)+'</td>'
     +'<td style="padding:10px 16px;white-space:nowrap">'
-      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"efetivada")\'>Efetivada</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"encerrada_valor_menor")\'>Encerrada · valor menor</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"nao_se_aplica")\'>Não se aplica</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"ainda_vai_chegar")\'>Ainda vai chegar</button>'
+      // B6 (docs/db/TAREFA_PERCURSO_0109.md): cada veredito carrega, no tooltip, o que faz no
+      // livro — decisão de 31/08 do Marcelo, mas quem usa a tela todo dia é a assistente
+      // administrativa, não quem desenhou a regra. Texto verbatim da tarefa.
+      +'<button class="btn btn-sm" style="font-size:11px" title="Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"efetivada")\'>Efetivada</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" title="Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"encerrada_valor_menor")\'>Encerrada · valor menor</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" title="A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"nao_se_aplica")\'>Não se aplica</button> '
+      +'<button class="btn btn-sm" style="font-size:11px" title="A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"ainda_vai_chegar")\'>Ainda vai chegar</button>'
     +'</td></tr>';
   box.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">'
     +fila.length+' provisão(ões) em aberto — dê o veredito de cada uma antes que o projeto chegue na Conciliação Final.</div>'
@@ -22295,6 +22298,12 @@ const _peConcTipos = {
 let _peConcEditando = new Set();
 
 function _peConcValidasPorSinal(dif){
+  // ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): `dif` é Δ A COBRAR/ESTORNAR
+  // (diferenca_valor_contrato) — o que o cliente vê, nunca Δ de custo de fábrica (que é só
+  // referência de conferência interna; o mesmo sinal que o backend usa em decisao_valida
+  // continua sendo Δ custo, decisão de 2026-08-14, mas o BOTÃO oferecido na tela era escolhido
+  // pela grandeza errada — o gerente podia clicar "Absorver" ou "Cobrar" olhando um número que o
+  // cliente nunca vê).
   if (dif > 0.005) return ['absorver', 'cobrar'];
   if (dif < -0.005) return ['manter', 'estornar'];
   return ['manter', 'absorver'];
@@ -22340,11 +22349,24 @@ async function peConciliacaoRender(){
       }
       const corDif = a.diferenca > 0.005 ? 'var(--err)' : (a.diferenca < -0.005 ? 'var(--ok)' : 'var(--text-3)');
       let acao;
-      if(a.decisao && !_peConcEditando.has(a.pool_ambiente_id)){
+      if(Math.abs(a.diferenca_valor_contrato) <= 0.005){
+        // ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): Δ a cobrar/estornar zero não é
+        // pendência — nada a repassar ao cliente, mesmo que o Δ de custo de fábrica não seja zero
+        // (a loja absorveu sem que o cliente visse diferença nenhuma). Vale mesmo se já existir
+        // uma decisão antiga registrada por esta rota (medido em homologação: 4 linhas "Absorver
+        // R$ 0,00" nos projetos Teste_1/Teste_2, 01-02/09) — a linha antiga fica no banco
+        // (nunca apagada), só deixa de ser oferecida como pendência.
+        acao = `<span style="font-size:.78rem;color:var(--text-3)">Sem diferença a cobrar — nada a decidir.</span>`;
+      } else if(a.decisao && !_peConcEditando.has(a.pool_ambiente_id)){
         const t = _peConcTipos[a.decisao.tipo_decisao] || {label: a.decisao.tipo_decisao, cor:'var(--text)'};
-        acao = `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
-          <span style="color:${t.cor};font-weight:700">${esc(t.label)}</span> ${fmt(a.decisao.valor_aprovado)}
-          <button class="btn-ciclo" style="padding:2px 8px;font-size:.72rem"
+        // ACHADO-40 (docs/db/TAREFA_PERCURSO_0109.md, item B5): flex livre desalinhava rótulo/
+        // valor/botão de linha pra linha, conforme o comprimento do texto (rótulo variando entre
+        // "Manter"/"Absorver"/"Cobrar"/"Estornar"). Sub-colunas de largura FIXA — cada peça sempre
+        // no mesmo lugar horizontal, seja qual for o texto.
+        acao = `<div style="display:flex;align-items:center;gap:6px">
+          <span style="width:64px;flex:0 0 64px;color:${t.cor};font-weight:700">${esc(t.label)}</span>
+          <span style="width:90px;flex:0 0 90px;text-align:right;font-family:var(--font-mono)">${fmt(a.decisao.valor_aprovado)}</span>
+          <button class="btn-ciclo" style="flex:0 0 auto;padding:2px 8px;font-size:.72rem"
             onclick="_peConcEditando.add(${a.pool_ambiente_id});peConciliacaoRender()">alterar</button></div>`;
       } else {
         const decisaoAnterior = a.decisao
@@ -22354,7 +22376,7 @@ async function peConciliacaoRender(){
               (<button class="link-like" style="font:inherit;color:var(--accent);background:none;border:none;cursor:pointer;padding:0"
                 onclick="_peConcEditando.delete(${a.pool_ambiente_id});peConciliacaoRender()">cancelar</button>)</div>`
           : '';
-        const botoes = `<div style="display:flex;flex-wrap:wrap;gap:4px">` + _peConcValidasPorSinal(a.diferenca).map(k =>
+        const botoes = `<div style="display:flex;flex-wrap:wrap;gap:4px">` + _peConcValidasPorSinal(a.diferenca_valor_contrato).map(k =>
           `<button class="btn-ciclo" style="padding:3px 10px;font-size:.76rem"
             onclick='peConciliacaoDecidir(${a.pool_ambiente_id}, "${k}", ${a.diferenca_valor_contrato}, ${JSON.stringify(a.ambiente)})'>
             ${esc(_peConcTipos[k].label)}</button>`).join('') + `</div>`;
@@ -22468,6 +22490,17 @@ async function peConciliacaoGerarComplemento(parcelaId){
 
 async function peConciliacaoAprovar(){
   if(!projetoAtivo) return;
+  // ACHADO-38 (docs/db/TAREFA_PERCURSO_0109.md, item B3): estado primeiro, credencial só quando a
+  // ação vai mesmo acontecer — o botão só aparece com a fase completa e a AF2 ainda não aprovada,
+  // mas o estado em tela pode estar velho (outra aba aprovou primeiro); reconfere no MESMO
+  // endpoint que desenha a tela (fonte única — nunca uma cópia da regra aqui) antes de pedir senha.
+  const chk = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/conciliacao`,
+    {credentials:'same-origin'}).then(r=>r.json()).catch(()=>null);
+  if(chk && chk.ok && chk.etapa_status === 'concluido'){
+    await avisoPopup('A AF2 já foi aprovada.', {titulo:'Aprovar AF2'});
+    peConciliacaoRender();
+    return;
+  }
   const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Aprovar AF2',
     mensagem:'Login e senha do Gerente Administrativo/Financeiro ou Diretor.'});
   if(!cred) return;

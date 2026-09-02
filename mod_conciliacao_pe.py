@@ -141,6 +141,13 @@ def decisao_ambiente_novo(pool_ambiente_id, valor_venda_xml):
     }
 
 
+def decisao_e_necessaria(diferenca_valor_contrato):
+    """ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): ambiente com Δ a cobrar/estornar
+    zero não é pendência — nada a repassar ao cliente, mesmo que o Δ de custo de fábrica não
+    seja zero. Não pede decisão e não entra em `ambientes_com_pe` de `fase_completa`."""
+    return abs(round(float(diferenca_valor_contrato or 0), 2)) > 0.005
+
+
 def fase_completa(ambientes_com_pe, decisoes_registradas):
     """`ambientes_com_pe`: iterável de `pool_ambiente_id` com PE carregado nesta fase.
     `decisoes_registradas`: iterável de `pool_ambiente_id` que já têm decisão registrada.

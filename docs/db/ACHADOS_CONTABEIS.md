@@ -2290,3 +2290,140 @@ revertido) nunca enxerga esses casos — não existe veredito nenhum pra
 listar.
 
 **Grupo:** 1.
+
+---
+
+## ACHADO-35 — a idempotência recusa o lançamento legítimo, e antes de hoje recusava em silêncio
+
+Encontrado pelo Marcelo em 01/09, no percurso do `v2026.09.01-beta1`.
+Lançou R$ 3.000,00 em Provisão de Montagem, precisou lançar **mais** R$
+3.000,00 no mesmo dia, e o sistema recusou.
+
+`efetivar_provisao` é idempotente por
+`ref = "ef:<projeto>:<conta>:<valor>:<hoje>"` — chave desenhada em 07/08
+**contra o duplo-clique**. Ela não distingue *repetição acidental* de
+*segunda efetivação real de mesmo valor no mesmo dia*, e a segunda é um
+evento normal: duas entregas de montagem, dois pagamentos parciais iguais.
+
+**A parte grave é o que acontecia antes do conserto de hoje (item 3 do
+ACHADO-32):** a chamada era no-op, o backend devolvia o lançamento antigo, e
+a tela dizia **"Efetivado R$ 3.000,00"**. O operador via a confirmação de
+um lançamento que não aconteceu. O item 3 tornou a recusa visível; **não
+tornou o lançamento possível.**
+
+Prova de que a guarda protege pouco: o Marcelo lançou R$ 2.000,00 em
+seguida e **passou** — o valor entra na chave. Ela só barra o par idêntico.
+
+### O desenho certo: confirmar, não recusar
+
+A idempotência serve à requisição repetida (duplo-clique, retry de rede),
+não ao operador que quer lançar de novo. Então:
+
+> "Já foram efetivados R$ 3.000,00 nesta conta hoje. Confirmar a efetivação
+> de **mais** R$ 3.000,00?"
+
+Confirmado, o lançamento acontece — com `ref` novo (sequencial dentro do
+dia), porque é outro fato. Cancelado, nada acontece. **Vale para qualquer
+segundo lançamento no mesmo dia, de valor igual ou diferente** (pedido do
+Marcelo: "poderia haver erro também" no de R$ 2.000,00) — a tela mostra o
+que já foi efetivado hoje e pergunta.
+
+A trava de duplo-clique do botão continua sendo o que protege o acidente.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-36 — o sistema comunica pelo canto da tela
+
+Decisão do Marcelo, 01/09: *"Precisa comunicar algo, coloque no centro da
+tela. Se precisa de confirmação coloque um botão de ok, mas não coloque no
+cantinho escondido."*
+
+`showToast` no canto inferior direito é hoje o canal de **tudo** —
+inclusive de recusas ("Informe o valor real efetivado", "Já efetivado
+hoje") e de confirmações de lançamento contábil. Foi assim que o "não
+processa o veredito" nasceu: a informação existia e não era vista.
+
+**A regra que passa a valer:**
+
+| o que | onde |
+|---|---|
+| recusa, erro, ou qualquer coisa que o usuário precise **entender** | box central, no design do Orizon, com OK |
+| pedido de decisão | box central, com as opções |
+| confirmação de ação trivial já visível na tela | toast pode ficar |
+
+`avisoPopup` / `confirmarPopup` já existem e já são do design system — o
+trabalho é de roteamento, não de componente novo.
+
+**Grupo:** 5 (higiene), com exceção: as recusas de lançamento contábil sobem
+para o grupo 1, porque a mensagem não vista é o que produz o lançamento
+errado.
+
+---
+
+## ACHADO-37 — a Fila de Provisões empilha todos os projetos para sempre
+
+`provisoes_em_aberto` devolve uma lista plana de toda provisão aberta de
+**todos** os projetos. Com o sistema em uso, é uma pilha que só cresce.
+
+Observação do Marcelo: a unidade de trabalho é o **projeto** — quem resolve
+tem o pedido e a nota daquele projeto na mão. A tela lista **projetos**, e
+abre as provisões de um projeto por vez.
+
+**Grupo:** 2.
+
+---
+
+## ACHADO-38 — a AF2 pede senha antes de conferir se já foi aprovada
+
+Reaprovar a AF2 abre o pedido de login e senha do gerente, em vez de dizer
+"Aprovação Financeira já realizada".
+
+Não é só a tela: `POST /ciclo/11d/aprovar` (main.py:7877) chama
+`_aprovador_financeiro(...)` — que valida credencial — **antes** de
+qualquer checagem de estado. A ordem está invertida nas duas pontas.
+
+**A regra:** conferir o estado antes de pedir credencial. Pedir senha para
+uma ação que não vai acontecer treina o operador a digitar senha sem ler.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-39 — a decisão do ambiente é oferecida pela coluna errada
+
+Na AF2, `_peConcValidasPorSinal(a.diferenca)` escolhe os botões pelo sinal
+de **Δ custo** — e a decisão é sobre **Δ a cobrar/estornar**.
+
+O cabeçalho da própria tabela diz a diferença: *"Δ custo — só referência,
+não é o valor cobrado"* e *"Δ a cobrar/estornar — valor que será
+efetivamente cobrado/estornado do cliente"*.
+
+Consequência medida na tela do Marcelo: ambiente com Δ custo +R$ 76,27 e Δ
+a cobrar R$ 0,00 exige decisão, e o resultado registrado é **"Absorver R$
+0,00"** — uma decisão sobre nada, que ainda assim bloqueia o
+`fase.completa` e portanto a aprovação da AF2.
+
+**Regra, a mesma do deságio:** decide quem move dinheiro. Sem Δ a cobrar não
+há decisão a tomar — a linha entra como "sem diferença a decidir" e não
+conta como pendência.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-40 — a coluna Decisão desalinha depois de decidida
+
+Cosmético, medido na imagem do Marcelo. A célula decidida é um flex livre
+(`<span>rótulo</span> valor <button>alterar</button>`), então rótulo, valor
+e botão caem em posições diferentes a cada linha, conforme o comprimento do
+texto. Precisa de sub-colunas de largura fixa.
+
+E, no mesmo lote: o link **"Dar veredito na Fila de Provisões"** saiu como
+`<a>` sem classe — azul de navegador, fora do design system. O verificador
+de tokens não pega, porque não há cor literal no CSS: a cor é o default do
+agente. O Marcelo pediu outra coisa, que resolve os dois problemas — ver o
+item correspondente na tarefa.
+
+**Grupo:** 5.

@@ -2568,11 +2568,14 @@ a linha mostra "Sem diferença a cobrar — nada a decidir." em vez do botão
 - **Não tocado, deliberadamente:** `mod_conciliacao_pe.decisao_valida`/
   `_VALIDOS_POR_SINAL` continuam validando pelo sinal de Δ CUSTO — regra
   dura, decisão do usuário de 2026-08-14, que o achado não pede pra mudar.
-  Risco residual observado (não medido como ocorrendo na prática): se o
-  sinal de Δ a cobrar divergir do sinal de Δ custo para um ambiente com
-  Δ a cobrar NÃO-zero, a tela pode oferecer um botão que o backend recusa
-  com 400 — fora de escopo desta rodada, candidato a achado próprio se
-  aparecer.
+  **Risco residual MEDIDO, não mais hipotético — virou ACHADO-42:** o
+  markup pode ser negativo (`comissao_arq_pct`/`fidelidade_pct` sem limite
+  nenhum, ao contrário do desconto do orçamento), e nesse caso a rota
+  fallback de `diferenca_valor_contrato_estimada` inverte o sinal de Δ a
+  cobrar contra Δ custo — a tela oferece um botão que o backend recusa com
+  400. Prova computada (markup = −1,0 com uma comissão de 150%) em
+  ACHADO-42, mais abaixo. Sem conserto ainda — decisão de conserto em
+  aberto lá.
 
 **Prova:** `tests/test_aceite_achado39.py` — aceite principal (venda_pe ==
 VBVA contratado → Δ a cobrar = 0 com Δ custo = 3000; `fase.completa` já
@@ -2624,3 +2627,119 @@ encontra as sub-colunas (markup antigo não as tem) — o teste falha.
 Restaurado, volta a passar.
 
 **Grupo:** 5.
+
+---
+
+## ACHADO-41 — a Fila oferece os quatro vereditos, e o servidor recusa dois por sinal
+
+Achado meu em 01/09, conferindo a Parte B. **É a causa direta do "não
+consegui resolver a Montagem do Teste 1"** que o Marcelo reportou, e a
+medição da Vera já continha a resposta sem que ninguém a lesse assim.
+
+`static/index.html:15012-15015` desenha os quatro botões de veredito **em
+toda linha**, sem olhar o sinal de `saldo_aberto`.
+`resolver_veredito_provisao` recusa por sinal:
+
+| estado da linha | vereditos que o servidor aceita | oferecidos na tela |
+|---|---|---|
+| SOBRA (saldo > 0) | encerrada_valor_menor, nao_se_aplica, ainda_vai_chegar | os quatro |
+| FALTA (saldo < 0) | efetivada, ainda_vai_chegar | os quatro |
+
+**Em toda linha da Fila há pelo menos um botão que é recusa garantida** — e
+na sobra, que é o caso comum, o botão inútil é o primeiro da fileira,
+"Efetivada", justamente o que soa natural para quem acabou de pagar uma
+parcela. Foi exatamente o que aconteceu.
+
+### É a quarta ocorrência do mesmo padrão em um dia
+
+- **ACHADO-32** — a Conciliação Final oferecia "Resolver" com 409 garantido.
+- **ACHADO-33** — ao fechar aquilo, fechamos também o que funcionava.
+- **ACHADO-39** — a AF2 oferecia decisão escolhida pela grandeza errada.
+- **ACHADO-41** — a Fila oferece veredito que o sinal já exclui.
+
+**A regra, agora explícita:** *nenhuma tela oferece ação que o servidor
+recusará por regra conhecida no momento de desenhar a tela.* Quando a regra
+mora no backend, é o backend que diz quais ações valem para aquela linha —
+a tela não recalcula e não adivinha.
+
+O B6 (tooltips) foi o complemento certo e insuficiente: explicar bem um
+botão que nunca vai funcionar não é ajuda.
+
+**Conserto:** a linha da fila traz do backend a lista de vereditos válidos
+(derivada do mesmo lugar que `resolver_veredito_provisao` usa para recusar,
+nunca uma cópia da regra no JavaScript), e a tela desenha só esses. Os
+tooltips do B6 ficam.
+
+**Implementação:** `mod_contabil.vereditos_validos_para_saldo(saldo)` (nova)
+— `resolver_veredito_provisao` passa a CHAMAR essa função nas suas duas
+checagens de sinal (em vez de reimplementar o limiar inline), e
+`provisoes_em_aberto` expõe `vereditos_validos` por linha, chamando a
+MESMA função. `filaProvisoesCarregar` (static/index.html) filtra
+`_FILAPROV_BOTOES` por `r.vereditos_validos.includes(...)` antes de
+desenhar — nunca lista os quatro incondicionalmente.
+
+**Prova:** `test_aceite_achado41.py` (HTTP — linha em SOBRA não tem
+`efetivada` em `vereditos_validos`; linha em FALTA não tem
+`encerrada_valor_menor`/`nao_se_aplica`; conferido também que o backend
+continua recusando por trás, não é o campo ficando redundante por acaso)
++ `test_aceite_b6_fila_tooltips.py::test_linha_em_sobra_nao_desenha_botao_efetivada`
+(navegador — linha em SOBRA nunca desenha o botão "Efetivada"). Controle
+negativo: `mod_contabil.py`+`static/index.html` revertidos (stash) — os 2
+aceites HTTP e o de navegador falham; restaurados, os 3 voltam a passar.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-42 — o markup pode ser negativo, e aí o Δ a cobrar troca de sinal contra o Δ custo
+
+Medido a pedido do Marcelo, verificando o risco residual anotado no
+ACHADO-39 ("se o sinal de Δ a cobrar divergir do de Δ custo, a tela oferece
+um botão que o backend recusa"). A pergunta era se `markup` podia ser
+`<= 0`. **Pode — negativo, não só zero.**
+
+`markup = (val_liq / CFO) if CFO > 0 else 0.0` (`mod_negociacao.
+calcular_orcamento`). `val_liq = VAVO − cust_ad`, e `cust_ad` inclui
+`comissao_arq_pct`/`fidelidade_pct` **sem nenhum limite** — ao contrário do
+desconto do orçamento (`desconto_pct`), que passa por `limite_desconto` e
+autorização de gerente quando excede o teto, comissão/fidelidade não têm
+teto, nem autorização, nem clamp em `mod_orcamento_params.merge_parametros`
+(`float(dn["comissao_arq_pct"] or 0)`, aceita qualquer valor).
+
+**Prova (computada, não hipotética):**
+
+```python
+>>> import mod_negociacao as mn
+>>> mn.calcular_orcamento(
+...     [{"VBVA": 10000.0, "CFA": 5000.0, "desc_amb_pct": 0.0}],
+...     {"incluir_custos": False, "comissao_arq_ativa": True, "comissao_arq_pct": 150.0},
+...     desc_orc_pct=0.0)
+{..., 'Val_Liq': -5000.0, 'Markup': -1.0, ...}
+```
+
+Uma comissão de 150% sobre a VAVA (erro de digitação plausível — 150 em vez
+de 15) e nada mais especial já derruba o markup pra **-1,0**.
+
+**Consequência para o ACHADO-39/B4:** com `markup = -1.0` e um ambiente com
+Δ custo = +1000 (subiu), a rota fallback de `diferenca_valor_contrato_
+estimada` (sem `valor_venda_pe`) calcula Δ a cobrar = 1000 × (−1.0) =
+**−1000** — sinal invertido. A tela (B4, correta em usar Δ a cobrar) oferece
+`manter`/`estornar` (sinal negativo); o backend (`decisao_valida`, que usa
+Δ CUSTO, sinal "alta") só aceita `absorver`/`cobrar` para este ambiente —
+**qualquer clique é recusado com 400** ("decisão incompatível com diferença
+de CFO"). O residual deixa de ser hipotético: **é alcançável com um erro de
+digitação num campo sem validação nenhuma.**
+
+**O que isto NÃO é:** não é um defeito do B4 — o B4 fez a coisa certa
+(mostrar o botão pela grandeza que o cliente vê). É um achado sobre a
+AUSÊNCIA de limite em `comissao_arq_pct`/`fidelidade_pct`, e sobre
+`decisao_valida` continuar ancorada em Δ custo (decisão de 2026-08-14) numa
+situação em que essa grandeza já não é mais a que a tela usa para decidir
+qual botão oferecer.
+
+**Sem conserto nesta rodada** — é medição. Candidatos de conserto (não
+decididos): (a) validar `comissao_arq_pct`/`fidelidade_pct` num teto
+plausível, mesmo padrão de `limite_desconto`; (b) `decisao_valida` passar a
+usar Δ a cobrar também, alinhando com o B4; ou (c) as duas.
+
+**Grupo:** 2 (medição — decisão de conserto em aberto).

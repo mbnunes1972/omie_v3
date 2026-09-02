@@ -2331,6 +2331,9 @@ def provisoes_em_aberto(db, owner_tipo, owner_id):
                 "projeto_id": projeto_id, "codigo": p["codigo"], "nome": p["nome"],
                 "provisionado": p["provisionado"], "efetivado": p["efetivado"],
                 "saldo_aberto": p["saldo_aberto"],
+                # ACHADO-41: derivado, não uma cópia — mesma função que resolver_veredito_provisao
+                # chama pra recusar.
+                "vereditos_validos": vereditos_validos_para_saldo(p["saldo_aberto"]),
                 "constituida_em": constituida_em.get((projeto_id, cid)),
             })
     fila.sort(key=lambda r: (r["constituida_em"] is None, r["constituida_em"]))
@@ -2338,6 +2341,26 @@ def provisoes_em_aberto(db, owner_tipo, owner_id):
 
 
 _VEREDITOS_VALIDOS = {"efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"}
+
+
+def vereditos_validos_para_saldo(saldo):
+    """ACHADO-41 (docs/db/ACHADOS_CONTABEIS.md) — os MESMOS limites que `resolver_veredito_
+    provisao` usa pra recusar, chamados por ela abaixo (não uma cópia paralela que possa
+    divergir). A Fila de Provisões usa isto pra desenhar só os botões que o backend aceitaria —
+    nunca os quatro sempre, com dois recusando na cara do operador conforme o sinal do saldo.
+
+    `saldo` = provisionado − efetivado, líquido de resoluções anteriores (mesma convenção de
+    `reconciliacao()['provisoes'][i]['saldo_aberto']` — testado idêntico a `_mov(...,'credor',...)`
+    pro mesmo projeto/conta). 'ainda_vai_chegar' nunca é recusado. saldo ≤ 0,005 (FALTA ou zero):
+    'efetivada'. saldo ≥ −0,005 (SOBRA ou zero): 'encerrada_valor_menor'/'nao_se_aplica'."""
+    saldo = round(float(saldo or 0), 2)
+    validos = ["ainda_vai_chegar"]
+    if saldo <= 0.005:
+        validos.append("efetivada")
+    if saldo >= -0.005:
+        validos.append("encerrada_valor_menor")
+        validos.append("nao_se_aplica")
+    return validos
 
 
 def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, veredito, ref,
@@ -2388,7 +2411,7 @@ def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_prov
     if veredito == "ainda_vai_chegar":
         pass   # não toca o livro — quem chama decide que isto barra o fechamento
     elif veredito == "efetivada":
-        if saldo > 0.005:
+        if veredito not in vereditos_validos_para_saldo(saldo):
             raise ValueError(
                 "%s tem SOBRA de %.2f (não FALTA) — 'efetivada' só vale quando o efetivado já "
                 "supera o provisionado; escolha 'encerrada_valor_menor' ou 'nao_se_aplica'."
@@ -2396,7 +2419,7 @@ def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_prov
         resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
                                ref=ref + ":residual", data=data)
     elif veredito in ("encerrada_valor_menor", "nao_se_aplica"):
-        if saldo < -0.005:
+        if veredito not in vereditos_validos_para_saldo(saldo):
             raise ValueError(
                 "%s está em FALTA (%.2f) — '%s' só vale para SOBRA (provisionado > efetivado); "
                 "o veredito certo aqui é 'efetivada'." % (codigo_provisao, saldo, veredito))

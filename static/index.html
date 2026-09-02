@@ -14998,22 +14998,37 @@ async function filaProvisoesCarregar(){
     box.innerHTML = '<div style="font-size:.85rem;color:var(--muted)">Nenhuma provisão em aberto — a fila está vazia.</div>';
     return;
   }
-  const linha = r => '<tr style="border-top:1px solid var(--border);font-size:12px">'
+  // B6 (docs/db/TAREFA_PERCURSO_0109.md): tooltip com o efeito no livro, texto verbatim da
+  // tarefa — decisão de 31/08 do Marcelo, mas quem usa a tela todo dia é a assistente
+  // administrativa, não quem desenhou a regra.
+  // ACHADO-41: a tela só desenha o botão se `r.vereditos_validos` (vindo do BACKEND, derivado de
+  // onde `resolver_veredito_provisao` recusa) incluir o veredito — nunca os quatro sempre,
+  // com dois recusando na cara do operador conforme o sinal do saldo.
+  const _FILAPROV_BOTOES = [
+    {v:'efetivada', label:'Efetivada',
+     title:'Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado.'},
+    {v:'encerrada_valor_menor', label:'Encerrada · valor menor',
+     title:'Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína.'},
+    {v:'nao_se_aplica', label:'Não se aplica',
+     title:'A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro.'},
+    {v:'ainda_vai_chegar', label:'Ainda vai chegar',
+     title:'A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado.'},
+  ];
+  const linha = r => {
+    const validos = r.vereditos_validos || [];
+    const botoes = _FILAPROV_BOTOES.filter(b => validos.includes(b.v)).map(b =>
+      '<button class="btn btn-sm" style="font-size:11px" title="'+esc(b.title)+'" '
+      +'onclick=\''+'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+','+JSON.stringify(b.v)+')'+'\'>'
+      +esc(b.label)+'</button>').join(' ');
+    return '<tr style="border-top:1px solid var(--border);font-size:12px">'
     +'<td style="padding:10px 16px">'+esc(r.projeto_id)+'</td>'
     +'<td style="padding:10px 16px" title="'+esc(r.codigo)+'">'+esc(r.nome)+'</td>'
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono)">'+_fBRL(r.provisionado)+'</td>'
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono)">'+_fBRL(r.efetivado)+'</td>'
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);color:'+_reconSaldoCor(r.saldo_aberto)+'">'+_fBRL(r.saldo_aberto)+'</td>'
     +'<td style="padding:10px 16px;color:var(--muted);white-space:nowrap">'+_filaProvDiasAberta(r.constituida_em)+'</td>'
-    +'<td style="padding:10px 16px;white-space:nowrap">'
-      // B6 (docs/db/TAREFA_PERCURSO_0109.md): cada veredito carrega, no tooltip, o que faz no
-      // livro — decisão de 31/08 do Marcelo, mas quem usa a tela todo dia é a assistente
-      // administrativa, não quem desenhou a regra. Texto verbatim da tarefa.
-      +'<button class="btn btn-sm" style="font-size:11px" title="Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"efetivada")\'>Efetivada</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" title="Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"encerrada_valor_menor")\'>Encerrada · valor menor</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" title="A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"nao_se_aplica")\'>Não se aplica</button> '
-      +'<button class="btn btn-sm" style="font-size:11px" title="A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado." onclick=\'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+',"ainda_vai_chegar")\'>Ainda vai chegar</button>'
-    +'</td></tr>';
+    +'<td style="padding:10px 16px;white-space:nowrap">'+botoes+'</td></tr>';
+  };
   box.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">'
     +fila.length+' provisão(ões) em aberto — dê o veredito de cada uma antes que o projeto chegue na Conciliação Final.</div>'
     +'<div style="overflow-x:auto"><table style="width:100%;min-width:900px;border-collapse:collapse">'

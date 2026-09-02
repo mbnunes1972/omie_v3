@@ -68,9 +68,12 @@ def page(page):
     return page
 
 
+# os 4 vereditos "válidos" aqui são só pra exercitar as 4 tooltips num teste só — na Fila real
+# (ACHADO-41) uma linha nunca tem os 4 ao mesmo tempo, sempre 2-3 conforme o sinal do saldo.
 _MOCK_FILA = """{"ok": true, "fila": [
   {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
-   "provisionado": 1000.0, "efetivado": 400.0, "saldo_aberto": 600.0, "constituida_em": "2026-08-01T00:00:00"}
+   "provisionado": 1000.0, "efetivado": 400.0, "saldo_aberto": 600.0, "constituida_em": "2026-08-01T00:00:00",
+   "vereditos_validos": ["efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]}
 ]}"""
 
 
@@ -111,3 +114,43 @@ def test_cada_veredito_tem_tooltip_com_o_efeito_no_livro(page, servidor_e2e):
         assert trecho in titulo, (
             "tooltip de '%s' não explica o efeito no livro (esperado conter %r, veio %r)"
             % (rotulo, trecho, titulo))
+
+
+# ── ACHADO-41: a tela desenha só os botões que `vereditos_validos` (do backend) permite ──────
+
+_MOCK_FILA_SOBRA = """{"ok": true, "fila": [
+  {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
+   "provisionado": 1000.0, "efetivado": 400.0, "saldo_aberto": 600.0, "constituida_em": "2026-08-01T00:00:00",
+   "vereditos_validos": ["encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]}
+]}"""
+
+
+def test_linha_em_sobra_nao_desenha_botao_efetivada(page, servidor_e2e):
+    base = servidor_e2e
+    page.goto(base + "/static/login.html")
+    page.fill("#email", "e2e_master")
+    page.fill("#senha", "senha123")
+    page.click("#loginBtn")
+    page.wait_for_url(base + "/")
+
+    page.evaluate("""(mockJson) => {
+      const box = document.createElement('div');
+      box.id = 'filaprov-box';
+      box.style.cssText = 'position:fixed;top:0;left:0;z-index:999999;background:#111';
+      document.body.appendChild(box);
+      const fetchOriginal = window.fetch;
+      window.fetch = (url, opts) => {
+        if (String(url).includes('/api/financeiro/fila-provisoes') && !String(url).includes('/veredito')) {
+          return Promise.resolve({json: () => Promise.resolve(JSON.parse(mockJson))});
+        }
+        return fetchOriginal(url, opts);
+      };
+    }""", _MOCK_FILA_SOBRA)
+    page.evaluate("() => { filaProvisoesCarregar(); }")
+    page.wait_for_selector("#filaprov-box button", state="attached")
+
+    assert page.locator("#filaprov-box button", has_text="Efetivada").count() == 0, (
+        "linha em SOBRA não pode oferecer 'Efetivada' — o backend recusaria")
+    assert page.locator("#filaprov-box button", has_text="Encerrada").count() == 1
+    assert page.locator("#filaprov-box button", has_text="Não se aplica").count() == 1
+    assert page.locator("#filaprov-box button", has_text="Ainda vai chegar").count() == 1

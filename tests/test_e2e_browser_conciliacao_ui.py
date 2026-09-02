@@ -238,23 +238,39 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
     # própria linha mudar de estado, não só o toast, senão a leitura corre contra o reload.
     page.wait_for_selector('tr[data-prov-codigo="2.1.04.13"]:has-text("resolvida")', timeout=10000)
 
-    # ── Item 3, controle de idempotência: Custo Financeiro (2.1.04.19), efetivado PARCIAL
-    # (400/1000) — o botão continua visível (não resolvido), e um 2º clique com o MESMO valor
-    # no MESMO dia é idempotente (efetivar_provisao não lança de novo). O toast tem que dizer
-    # "Já efetivado hoje.", não fingir um novo lançamento que não aconteceu.
+    # ── ACHADO-35 (docs/db/TAREFA_PERCURSO_0109.md, item B1): Custo Financeiro (2.1.04.19),
+    # efetivado PARCIAL (400/1000) — o botão continua visível (não resolvido). A idempotência por
+    # ref (07/08, contra o duplo-clique) recusava a SEGUNDA efetivação real do mesmo dia; agora
+    # ela vira CONFIRMAÇÃO. Cancelar não lança nada (efetivado continua 400); confirmar lança de
+    # verdade (efetivado vai a 800, dois lançamentos).
     page.fill('[id="efp-2.1.04.19"]', "400")
     page.click('tr[data-prov-codigo="2.1.04.19"] button:has-text("Efetivar")')
     page.wait_for_selector("text=Efetivado 400,00", timeout=10000)
     page.wait_for_selector('tr[data-prov-codigo="2.1.04.19"]:has-text("parcialmente efetivada")',
                           timeout=10000)
+
     page.fill('[id="efp-2.1.04.19"]', "400")
     page.click('tr[data-prov-codigo="2.1.04.19"] button:has-text("Efetivar")')
-    page.wait_for_selector("text=Já efetivado hoje.", timeout=10000)
-    # O segundo clique não pode ter dobrado o efetivado (400+400=800) — confere contra o
-    # endpoint de novo, não contra a leitura visual (que poderia atrasar o mesmo tanto do toast).
+    # Regra 3: a pergunta mostra o total do RAZÃO ("400,00"), não uma soma lembrada pela tela.
+    page.wait_for_selector("text=Já foram efetivados 400,00 nesta conta hoje", timeout=10000)
+    page.click('[data-act="cancel"]')
+    resp_cancelado = page.evaluate(
+        "(nome) => fetch('/api/financeiro/reconciliacao-provisoes?projeto=' + encodeURIComponent(nome), "
+        "{credentials:'same-origin'}).then(r=>r.json())", nome_projeto)
+    custo_fin_cancelado = next(p for p in resp_cancelado["reconciliacao"]["provisoes"]
+                              if p["codigo"] == "2.1.04.19")
+    assert custo_fin_cancelado["efetivado"] == 400.0, "cancelar a confirmação não pode lançar nada"
+
+    page.fill('[id="efp-2.1.04.19"]', "400")
+    page.click('tr[data-prov-codigo="2.1.04.19"] button:has-text("Efetivar")')
+    page.wait_for_selector("text=Já foram efetivados 400,00 nesta conta hoje", timeout=10000)
+    page.click('[data-act="ok"]')
+    page.wait_for_selector("text=Efetivado 400,00", timeout=10000)
+    # O 2º lançamento real (confirmado) TEM que dobrar o efetivado (400+400=800) — ao contrário
+    # do retry/duplo-clique, que a trava do botão continua barrando.
     resp2 = page.evaluate(
         "(nome) => fetch('/api/financeiro/reconciliacao-provisoes?projeto=' + encodeURIComponent(nome), "
         "{credentials:'same-origin'}).then(r=>r.json())", nome_projeto)
     custo_fin = next(p for p in resp2["reconciliacao"]["provisoes"] if p["codigo"] == "2.1.04.19")
-    assert custo_fin["efetivado"] == 400.0, (
-        "clique repetido no mesmo dia/valor não pode duplicar o efetivado — idempotência por ref")
+    assert custo_fin["efetivado"] == 800.0, (
+        "efetivação real confirmada tem que lançar — a idempotência não pode mais barrar isso")

@@ -2293,7 +2293,7 @@ listar.
 
 ---
 
-## ACHADO-35 — a idempotência recusa o lançamento legítimo, e antes de hoje recusava em silêncio
+## ACHADO-35 — a idempotência recusa o lançamento legítimo, e antes de hoje recusava em silêncio · RESOLVIDO 02/09/2026 (B1)
 
 Encontrado pelo Marcelo em 01/09, no percurso do `v2026.09.01-beta1`.
 Lançou R$ 3.000,00 em Provisão de Montagem, precisou lançar **mais** R$
@@ -2330,11 +2330,35 @@ que já foi efetivado hoje e pergunta.
 
 A trava de duplo-clique do botão continua sendo o que protege o acidente.
 
+**Conserto (docs/db/TAREFA_PERCURSO_0109.md, item B1):** `/api/financeiro/
+efetivar-provisao` (main.py) ganhou a checagem por `mod_contabil.
+efetivado_no_dia(db, owner_tipo, owner_id, projeto_id, codigo, dia)` — soma
+do **razão** (débito na própria conta de provisão, no dia), nunca uma soma
+lembrada pela tela (regra 3). Já havendo lançamento no dia — valor igual ou
+diferente — o endpoint devolve `{"ok": false, "duplicado": true,
+"total_hoje": X}` em vez de lançar; a tela (`reconProvEfetivar`, static/
+index.html) pergunta via `confirmarPopup` ("Já foram efetivados R$ X nesta
+conta hoje. Confirmar a efetivação de mais R$ Y?"); confirmado, reenvia com
+`confirmado:true` e o backend lança com `ref` sequencial
+(`ref_base + ":" + (qtd_hoje+1)`), nunca colidindo com o `ref` do dia
+anterior de lançamentos. Cancelado, nada é enviado. A trava de duplo-clique
+do botão (`btn.disabled`) continua intocada.
+
+**Prova:** `tests/test_aceite_achado35.py` (dois aceites HTTP diretos: mesmo
+valor e valor diferente, ambos pedem confirmação, ambos lançam DOIS
+lançamentos com `ref` distintos ao confirmar, `total_hoje` sempre do
+razão) e `tests/test_e2e_browser_conciliacao_ui.py` (navegador — Custo
+Financeiro parcialmente efetivado, segunda efetivação pede confirmação,
+cancelar não lança nada, confirmar lança e soma 800,00). Controle negativo:
+`main.py`+`mod_contabil.py` revertidos (stash) — os dois aceites HTTP E o
+teste de navegador falham (o navegador trava esperando um texto que nunca
+aparece); restaurados, os três voltam a passar.
+
 **Grupo:** 1.
 
 ---
 
-## ACHADO-36 — o sistema comunica pelo canto da tela
+## ACHADO-36 — o sistema comunica pelo canto da tela · RESOLVIDO 02/09/2026 (B2, módulo financeiro/provisões)
 
 Decisão do Marcelo, 01/09: *"Precisa comunicar algo, coloque no centro da
 tela. Se precisa de confirmação coloque um botão de ok, mas não coloque no
@@ -2355,6 +2379,35 @@ processa o veredito" nasceu: a informação existia e não era vista.
 
 `avisoPopup` / `confirmarPopup` já existem e já são do design system — o
 trabalho é de roteamento, não de componente novo.
+
+**Correção sobre a redação original:** `showToast(msg, true)` já não caía no
+canto — redirecionava para `mostrarErroModal` (`erro-modal-overlay`), um
+overlay manuscrito próprio, de 2026-08-17, **fora do design system**
+(z-index/cores hard-coded, sem foco automático, sem Esc/Enter). O problema
+não era posição na tela; era ser um componente PARALELO a `avisoPopup`/
+`confirmarPopup`, com comportamento levemente diferente — a mesma família
+de defeito do ACHADO-32/33 (a mesma ação existindo em dois lugares que
+divergem sozinhos), aqui entre dois avisos em vez de duas rotas.
+
+**Conserto (docs/db/TAREFA_PERCURSO_0109.md, item B2):** levantamento no
+sistema inteiro: **200** chamadas de `showToast(..., true)` no candidato
+`v2026.09.01-beta1` (contagem correta atravessa quebra de linha — uma
+delas se parte em duas linhas e escapa de um grep simples). Convertidas
+nesta rodada, escopadas ao módulo financeiro/provisões (recon\*/filaProv\*/
+efetivar\*/resolver\*/folha\*/contasPagar\*/pagarFornecedor\*/provisao\*/
+lancamento\*/rateio\*/periodo\*, static/index.html): **36** chamadas — todas
+recusa/erro simples (nenhuma era pedido de decisão), viraram
+`avisoPopup(msg, {titulo:'Financeiro'})`. Ficam **164** no resto do
+sistema — higiene, fora de escopo desta rodada.
+
+**Prova:** `tests/test_aceite_achado36.py` — checagem estrutural (zero
+`showToast(..., true)` restando na faixa do módulo; contagem total do
+sistema = 164) e um aceite de navegador (sem projeto ativo,
+`abrirReconciliacaoProjeto()` mostra o `avisoPopup` do design system —
+`<h4>Financeiro</h4>` com botão `[data-act="ok"]` — nunca o
+`#erro-modal-overlay`). Controle negativo: revertida a conversão de
+`abrirReconciliacaoProjeto`, os três testes falham (o de navegador trava
+esperando um popup que não aparece); restaurada, os três voltam a passar.
 
 **Grupo:** 5 (higiene), com exceção: as recusas de lançamento contábil sobem
 para o grupo 1, porque a mensagem não vista é o que produz o lançamento

@@ -10187,22 +10187,37 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 proj = (dd.get("projeto") or "").strip() or None
                 valor = float(dd.get("valor") or 0)
-                # ref DETERMINÍSTICO quando o cliente não manda um (achado da Vera, 2026-08-07): um
-                # uuid aleatório a cada chamada fazia a idempotência de efetivar_provisao nunca
-                # acionar entre duas ações GENUINAMENTE separadas do operador (duplo-clique, retry
-                # após timeout) — cada uma tinha seu próprio ref, e a despesa duplicava. Chave por
-                # projeto+conta+valor+dia: repetir o MESMO evento no mesmo dia vira no-op idempotente.
-                ref = (dd.get("ref") or "").strip() or (
-                    "ef:%s:%s:%.2f:%s" % (proj or "-", conta, valor, date.today().isoformat()))
-                # ACHADO-32 (docs/db/TAREFA_CONCILIACAO_UI.md, item 3): efetivar_provisao é
-                # idempotente por ref — um segundo clique com o MESMO valor no mesmo dia não
-                # lança nada e devolve o lançamento antigo, indistinguível de um lançamento novo
-                # só olhando o retorno. Confere ANTES de chamar, pra tela poder dizer a verdade
-                # ("já efetivado hoje") em vez de anunciar um lançamento que não aconteceu.
+                confirmado = bool(dd.get("confirmado"))
+                hoje = date.today()
+                # ACHADO-35 (docs/db/TAREFA_PERCURSO_0109.md, item B1): a chave por valor+dia
+                # (07/08, pensada CONTRA o duplo-clique) recusava a SEGUNDA efetivação legítima
+                # do mesmo dia — e, antes do item 3 do ACHADO-32, recusava em silêncio (tela
+                # dizia "Efetivado" sem lançar nada). A idempotência serve à requisição REPETIDA,
+                # não ao operador que quer lançar de novo (duas entregas de montagem, dois
+                # pagamentos parciais iguais são normais). Regra 3: o total já efetivado HOJE
+                # vem do RAZÃO (consulta ao lançamento), nunca de uma soma que a tela lembra —
+                # só assim a pergunta abaixo mostra um número que sobrevive a F5/duas abas.
+                total_hoje, qtd_hoje = mod_contabil.efetivado_no_dia(
+                    db, ot, oid, proj, conta, hoje) if proj else (0.0, 0)
+                if qtd_hoje > 0 and not confirmado:
+                    # Mensagem formatada na TELA (_fBRL já existe lá e é o único formatador de
+                    # moeda do front) — o backend só devolve os números crus do razão.
+                    self.send_json({"ok": False, "duplicado": True, "total_hoje": total_hoje,
+                                    "valor": valor})
+                    return
+                # ref determinístico (achado da Vera, 2026-08-07: um uuid aleatório a cada chamada
+                # fazia a idempotência nunca acionar entre duas ações genuinamente separadas —
+                # duplo-clique/retry após timeout duplicavam a despesa). Base por
+                # projeto+conta+valor+dia continua protegendo o duplo-clique/retry da MESMA
+                # ação; uma efetivação CONFIRMADA (2ª+ do dia) ganha sufixo sequencial — outro
+                # fato, outro ref, nunca colide com o de antes.
+                ref_base = "ef:%s:%s:%.2f:%s" % (proj or "-", conta, valor, hoje.isoformat())
+                ref = ref_base if qtd_hoje == 0 else ref_base + ":%d" % (qtd_hoje + 1)
                 ja_existia = mod_contabil.lancamento_por_ref(db, ot, oid, ref) is not None
                 lan = mod_contabil.efetivar_provisao(db, ot, oid, proj, conta, valor, ref=ref)
                 db.commit()
-                self.send_json({"ok": True, "lancamento": lan, "novo": not ja_existia})
+                self.send_json({"ok": True, "lancamento": lan, "novo": not ja_existia,
+                                "total_hoje": round(total_hoje + (0.0 if ja_existia else valor), 2)})
             except ValueError as e:
                 db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=400)
             finally:

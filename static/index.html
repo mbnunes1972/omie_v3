@@ -14897,7 +14897,7 @@ async function reconRecebReprogramar(id, btn){
   try{
     const el = document.getElementById('receb-data-'+id);
     const novaData = el ? el.value : '';
-    if(!novaData){ showToast('Escolha a nova data prevista.', true); if(btn) btn.disabled = false; return; }
+    if(!novaData){ avisoPopup('Escolha a nova data prevista.', {titulo:'Financeiro'}); if(btn) btn.disabled = false; return; }
     const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
       titulo: 'Reprogramar recebível',
       mensagem: 'Não-recebimento: só muda a data prevista, sem lançamento. Login e senha do Gerente Adm/Financeiro ou Diretor.'});
@@ -15048,7 +15048,7 @@ async function _filaProvAcao(projeto, conta, veredito){
     if(!d.ok){ await avisoPopup(d.erro || 'Falha ao dar o veredito.', {titulo:'Fila de Provisões'}); return; }
     showToast('Veredito registrado.');
     filaProvisoesCarregar();
-  } catch(e){ showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e){ avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Financeiro'}); }
 }
 function _filaProvPromptValor(titulo, label){
   return new Promise((resolve) => {
@@ -15110,24 +15110,41 @@ async function _reconRealcarLinha(conta){
   tr.style.background = 'var(--accent-soft)';   // aparece na hora — sem isto o 1º frame não anima
   setTimeout(() => { tr.style.background = ''; }, 50);   // daqui em diante, a transição esmaece
 }
+async function _reconEfetivarPost(conta, valor, confirmado){
+  return fetch('/api/financeiro/efetivar-provisao',{method:'POST',credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({projeto:_reconProvProj,conta:conta,valor:valor,confirmado:!!confirmado})
+  }).then(r=>r.json());
+}
 async function reconProvEfetivar(conta, prefixo, btn){
   if(!_reconProvProj) return;
   // Trava o botão no clique (achado da Vera, 2026-08-07): sem isso, um duplo-clique dispara 2
-  // requisições quase simultâneas antes da 1ª voltar — o backend já ficou mais robusto (ref
-  // determinístico por dia), mas travar aqui evita a corrida de vez, sem depender só do servidor.
+  // requisições quase simultâneas antes da 1ª voltar — continua sendo a proteção contra o
+  // ACIDENTE (ACHADO-35: a chave por valor+dia não é mais essa proteção — ela virou a pergunta
+  // de confirmação abaixo, porque um SEGUNDO lançamento real no mesmo dia é evento normal).
   if(btn){ if(btn.disabled) return; btn.disabled = true; }
   try{
     const el=document.getElementById((prefixo||'ef-')+conta);
     const valor=parseFloat(el&&el.value);
-    if(!valor||valor<=0){ showToast('Informe o valor real efetivado.', true); return; }
-    const d=await fetch('/api/financeiro/efetivar-provisao',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projeto:_reconProvProj,conta:conta,valor:valor})}).then(r=>r.json());
+    // B2 (ACHADO-36): recusa vai pro centro da tela, não pro canto.
+    if(!valor||valor<=0){ await avisoPopup('Informe o valor real efetivado.', {titulo:'Efetivar'}); return; }
+    let d = await _reconEfetivarPost(conta, valor, false);
+    if(!d.ok && d.duplicado){
+      // ACHADO-35: recusa virou CONFIRMAÇÃO — o total "já efetivado hoje" vem do d.total_hoje,
+      // que o backend acabou de somar no RAZÃO (nunca uma soma que a tela lembra).
+      const prosseguir = await confirmarPopup(
+        'Já foram efetivados '+_fBRL(d.total_hoje)+' nesta conta hoje. Confirmar a efetivação '
+        +'de mais '+_fBRL(valor)+'?', {titulo:'Efetivar', okLabel:'Confirmar'});
+      if(!prosseguir) return;
+      d = await _reconEfetivarPost(conta, valor, true);
+    }
     if(!d.ok){ await avisoPopup(d.erro||'Erro',{titulo:'Efetivar'}); return; }
     // Item 3 (docs/db/TAREFA_CONCILIACAO_UI.md): o toast tem que dizer o valor do RAZÃO
     // (d.lancamento.valor), não o digitado — os dois só divergem se o backend arredondar/
-    // rejeitar diferente, mas "razão, não formulário" é a mesma regra do Resolver. E
-    // efetivar_provisao é idempotente por ref (proj:conta:valor:dia) — um 2º clique com o
-    // MESMO valor no mesmo dia não lança nada; sem d.novo, o toast diria "Efetivado" pra uma
-    // ação que não aconteceu.
+    // rejeitar diferente, mas "razão, não formulário" é a mesma regra do Resolver. `d.novo`
+    // continua distinguindo um retry de rede (mesmo ref, nenhum lançamento novo) de uma
+    // efetivação de verdade — não é mais o caso do 2º lançamento do dia, que agora tem ref
+    // próprio (sufixo sequencial) e sempre chega aqui com novo=true.
     showToast(d.novo ? ('Efetivado '+_fBRL(d.lancamento.valor)+'.') : 'Já efetivado hoje.');
     await _reconRealcarLinha(conta);
   } finally {
@@ -15150,13 +15167,13 @@ async function reconProvSalvarData(conta, prefixo){
   if(!_reconProvProj) return;
   const el = document.getElementById('provdata-'+prefixo+conta);
   const dataPrevista = el ? el.value : '';
-  if(!dataPrevista){ showToast('Escolha a data prevista.', true); return; }
+  if(!dataPrevista){ avisoPopup('Escolha a data prevista.', {titulo:'Financeiro'}); return; }
   const d=await fetch('/api/financeiro/provisao-data-prevista',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({projeto:_reconProvProj,conta:conta,data_prevista:dataPrevista})}).then(r=>r.json());
   if(d.ok){ showToast('Data prevista salva.'); _reconReloadAtivo(); } else { await avisoPopup(d.erro||'Erro',{titulo:'Data prevista'}); }
 }
 // Reconciliação dentro do PROJETO (modal; mesma fonte que o Financeiro, escopada por projeto)
 async function abrirReconciliacaoProjeto(){
-  if(!projetoAtivo){ showToast('Abra um projeto.', true); return; }
+  if(!projetoAtivo){ avisoPopup('Abra um projeto.', {titulo:'Financeiro'}); return; }
   _reconProvProj = projetoAtivo.nome_safe;
   document.getElementById('recon-proj-nome').textContent = projetoAtivo.nome_safe;
   document.getElementById('modal-recon-proj').style.display='flex';
@@ -15204,7 +15221,7 @@ async function finContasPagarCarregar(){
 async function contasPagarPagar(){
   const valor=parseFloat(document.getElementById('cap-valor').value);
   const proj=document.getElementById('cap-proj').value.trim()||null;
-  if(!valor||valor<=0){ showToast('Informe o valor.', true); return; }
+  if(!valor||valor<=0){ avisoPopup('Informe o valor.', {titulo:'Financeiro'}); return; }
   const d=await fetch('/api/financeiro/pagar-fornecedor',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({valor:valor,projeto:proj})}).then(r=>r.json());
   if(d.ok){ showToast('Pagamento registrado.'); finContasPagarCarregar(); } else { await avisoPopup(d.erro||'Erro',{titulo:'Pagar fornecedor'}); }
 }
@@ -15376,14 +15393,14 @@ async function fluxoCaixaLancar(){
   const valor = parseFloat(document.getElementById('fluxo-lanc-valor').value || '0');
   const data = document.getElementById('fluxo-lanc-data').value;
   const hist = document.getElementById('fluxo-lanc-hist').value || '';
-  if(!caixaId || !contraId){ showToast('Escolha a conta Caixa/Banco e a contrapartida.', true); return; }
-  if(!valor || valor<=0){ showToast('Informe um valor > 0', true); return; }
+  if(!caixaId || !contraId){ avisoPopup('Escolha a conta Caixa/Banco e a contrapartida.', {titulo:'Financeiro'}); return; }
+  if(!valor || valor<=0){ avisoPopup('Informe um valor > 0', {titulo:'Financeiro'}); return; }
   const deb = tipo==='entrada' ? caixaId : contraId;
   const cred = tipo==='entrada' ? contraId : caixaId;
   const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({conta_debito_id:deb, conta_credito_id:cred, valor, data, historico:hist})});
   const d = await r.json().catch(()=>({}));
-  if(!d.ok){ showToast(d.erro || 'Falha ao lançar', true); return; }
+  if(!d.ok){ avisoPopup(d.erro || 'Falha ao lançar', {titulo:'Financeiro'}); return; }
   showToast('Lançamento registrado.');
   _fluxoLancAberto = false;
   await _fluxoBuscarERenderizar();
@@ -15415,11 +15432,11 @@ async function fluxoCaixaAddConta(){
     const achar = nos => { for(const n of (nos||[])){ if(n.codigo==='1.1.01') return n.id; const r=achar(n.filhos); if(r) return r; } return null; };
     _fluxoRaizId = achar(arv.contas);
   }
-  if(!_fluxoRaizId){ showToast('Não achei a conta Caixa/Bancos (1.1.01).', true); return; }
+  if(!_fluxoRaizId){ avisoPopup('Não achei a conta Caixa/Bancos (1.1.01).', {titulo:'Financeiro'}); return; }
   const r = await fetch('/api/financeiro/contas', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({pai_id: _fluxoRaizId, nome})});
   const d = await r.json().catch(()=>({}));
-  if(!d.ok){ showToast(d.erro || 'Falha ao criar', true); return; }
+  if(!d.ok){ avisoPopup(d.erro || 'Falha ao criar', {titulo:'Financeiro'}); return; }
   showToast('Conta criada.');
   await _fluxoBuscarERenderizar();
 }
@@ -15494,7 +15511,7 @@ async function folhaMesCarregar(){
 function folhaMudarComp(v){ if(v){ _folhaComp = v; folhaCarregar(); } }
 async function folhaGerar(){
   const d = await (await fetch('/api/folha/gerar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({competencia:_folhaComp})})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  if(!d.ok){ avisoPopup('Erro: '+(d.erro||'falha'), {titulo:'Financeiro'}); return; }
   showToast('Folha gerada.', false); folhaRender(d.folha);
 }
 // Comissão Fixa: coluna colapsável, OCULTA por padrão (achado do usuário 2026-08-17) — a maioria
@@ -15508,17 +15525,17 @@ function folhaToggleComissaoFixa(){
 async function folhaPagar(id){
   if(!(await confirmarPopup('Confirmar o pagamento desta folha? A despesa será lançada nas contas 5.3 (Salários / Comissão de Vendedor).', {titulo:'Pagar folha', okLabel:'Confirmar pagamento'}))) return;
   const d = await (await fetch('/api/folha/'+id+'/pagar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  if(!d.ok){ avisoPopup('Erro: '+(d.erro||'falha'), {titulo:'Financeiro'}); return; }
   showToast('Folha paga.', false); folhaCarregar();
 }
 async function folhaAprovar(id){
   const d = await (await fetch('/api/folha/'+id+'/aprovar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  if(!d.ok){ avisoPopup('Erro: '+(d.erro||'falha'), {titulo:'Financeiro'}); return; }
   showToast('Folha aprovada.', false); folhaMesCarregar();
 }
 async function folhaReabrir(id){
   const d = await (await fetch('/api/folha/'+id+'/reabrir',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})).json().catch(()=>({}));
-  if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+  if(!d.ok){ avisoPopup('Erro: '+(d.erro||'falha'), {titulo:'Financeiro'}); return; }
   showToast('Folha reaberta para ajustes.', false); folhaMesCarregar();
 }
 function folhaRender(folha){
@@ -15602,7 +15619,7 @@ async function folhaSalvarBase(id, valor){
     headers:{'Content-Type':'application/json'}, body:JSON.stringify({base_comissao: parseFloat(valor)||0})});
   const d = await r.json().catch(()=>({}));
   if(r.ok && !d.erro){ folhaMesCarregar(); }   // recarrega: reflete %/variável/total recalculados
-  else { showToast((d&&d.erro)||'Erro ao salvar base.', true); }
+  else { avisoPopup((d&&d.erro)||'Erro ao salvar base.', {titulo:'Financeiro'}); }
 }
 
 // Recalcula ao vivo a 3ª coluna (Resultado) do modal — puro JS, sem round-trip ao servidor.
@@ -15621,7 +15638,7 @@ async function _comissaoSalvarAjuste(id){
   const r = await fetch('/api/comissao/'+id, {method:'PATCH', credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const d = await r.json().catch(()=>({}));
-  if(!r.ok || d.ok===false){ showToast((d&&d.erro)||'Erro ao salvar ajuste.', true); return; }
+  if(!r.ok || d.ok===false){ avisoPopup((d&&d.erro)||'Erro ao salvar ajuste.', {titulo:'Financeiro'}); return; }
   showToast('Ajuste salvo.', false);
   const ex=document.getElementById('modal-base-com'); if(ex) ex.remove();
   folhaGerar();   // regenera a folha p/ resomar a parte variável (Σ itens), mesmo padrão de antes
@@ -15629,7 +15646,7 @@ async function _comissaoSalvarAjuste(id){
 async function comissaoVerBase(folhaId){
   const r = await fetch('/api/folha/'+folhaId+'/comissoes-base',{credentials:'same-origin'});
   const d = await r.json().catch(()=>({}));
-  if(!r.ok || !d.ok){ showToast((d&&d.erro)|| (r.status===404?'Rota não encontrada — reinicie o servidor (python3 main.py).':'Erro ao carregar base.'), true); return; }
+  if(!r.ok || !d.ok){ avisoPopup((d&&d.erro)|| (r.status===404?'Rota não encontrada — reinicie o servidor (python3 main.py).':'Erro ao carregar base.'), {titulo:'Financeiro'}); return; }
   const blocos = (d.itens||[]).map(x=>{
     if(x.origem === 'venda'){
       const liq = x.valor_liquido_ajustado!=null ? x.valor_liquido_ajustado : x.valor_liquido_sistema;
@@ -15686,25 +15703,25 @@ function adiantamentoAdd(funcId, comp){
 }
 async function adiantamentoSalvar(funcId, comp){
   const valor=parseFloat(document.getElementById('adiant-valor').value)||0;
-  if(valor<=0){ showToast('Informe um valor.', true); return; }
+  if(valor<=0){ avisoPopup('Informe um valor.', {titulo:'Financeiro'}); return; }
   const body={funcionario_id:funcId, tipo:document.getElementById('adiant-tipo').value, competencia:comp,
     valor, abater:true, competencia_abate:document.getElementById('adiant-abate').value||comp,
     observacao:document.getElementById('adiant-obs').value||''};
   const r=await fetch('/api/adiantamentos',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json().catch(()=>({}));
   if(r.ok && d.ok!==false){ document.getElementById('modal-adiant').remove(); folhaMesCarregar(); }
-  else { showToast((d&&d.erro)||'Erro ao salvar.', true); }
+  else { avisoPopup((d&&d.erro)||'Erro ao salvar.', {titulo:'Financeiro'}); }
 }
 async function adiantamentoToggleAbater(id, on){
   const r=await fetch('/api/adiantamentos/'+id,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({abater:on})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { showToast((d&&d.erro)||'Erro.', true); }
+  if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { avisoPopup((d&&d.erro)||'Erro.', {titulo:'Financeiro'}); }
 }
 async function adiantamentoRemover(id){
   if(!(await confirmarPopup('Remover este adiantamento?', {titulo:'Remover adiantamento', okLabel:'Remover', perigo:true}))) return;
   const r=await fetch('/api/adiantamentos/'+id,{method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({remover:true})});
   const d=await r.json().catch(()=>({}));
-  if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { showToast((d&&d.erro)||'Erro.', true); }
+  if(r.ok && d.ok!==false){ folhaMesCarregar(); } else { avisoPopup((d&&d.erro)||'Erro.', {titulo:'Financeiro'}); }
 }
 
 async function repasseCarregar(){
@@ -15732,12 +15749,12 @@ async function repasseCarregar(){
 }
 async function repasseRegistrar(){
   const valor = parseFloat(document.getElementById('rep-valor').value||'0');
-  if(!valor||valor<=0){ showToast('Informe o valor do reparo', true); return; }
+  if(!valor||valor<=0){ avisoPopup('Informe o valor do reparo', {titulo:'Financeiro'}); return; }
   const r = await fetch('/api/financeiro/eventos', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({tipo:'execucao_reparo_garantia', valor,
       projeto_id: document.getElementById('rep-proj').value||null, motivo: document.getElementById('rep-motivo').value})});
   const d = await r.json().catch(()=>({}));
-  if(!d.ok){ showToast(d.erro||'Falha ao registrar', true); return; }
+  if(!d.ok){ avisoPopup(d.erro||'Falha ao registrar', {titulo:'Financeiro'}); return; }
   showToast('Reparo em garantia registrado'); repasseCarregar();
 }
 
@@ -15847,7 +15864,7 @@ async function reconFechar(){
   const r = await fetch('/api/financeiro/periodos', {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({metodologia, ini:_reconIni, fim:_reconFim})});
   const d = await r.json().catch(()=>({}));
-  if(d.ok) showToast('Período fechado (snapshot registrado)'); else showToast((d&&d.erro)||'Falha', true);
+  if(d.ok) showToast('Período fechado (snapshot registrado)'); else avisoPopup((d&&d.erro)||'Falha', {titulo:'Financeiro'});
 }
 
 // Mesma visão de reconhecimento do DRE (2026-08-07) — 'real' mostra Saldo em Aberto/Margem
@@ -16207,8 +16224,8 @@ async function _lancFormaLancar(btn, tipo){
     const valor = parseFloat(document.getElementById(pfx+'valor').value||'0');
     const data = document.getElementById(pfx+'data').value || null;
     const hist = document.getElementById(pfx+'hist').value || '';
-    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
-    if(!contaId||!contraId||contaId===contraId){ showToast('Escolha as duas contas.', true); return; }
+    if(!valor||valor<=0){ avisoPopup('Informe um valor > 0', {titulo:'Financeiro'}); return; }
+    if(!contaId||!contraId||contaId===contraId){ avisoPopup('Escolha as duas contas.', {titulo:'Financeiro'}); return; }
     // Receita é credora (credita a receita, debita a contrapartida); despesa é devedora
     // (debita a despesa, credita a contrapartida) — inversão obrigatória conforme o tipo.
     const debId = tipo==='receita' ? contraId : contaId;
@@ -16216,7 +16233,7 @@ async function _lancFormaLancar(btn, tipo){
     const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
       credentials:'same-origin', body: JSON.stringify({conta_debito_id:debId, conta_credito_id:credId, valor, data, historico:hist})});
     const d = await r.json().catch(()=>({}));
-    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    if(!d.ok){ avisoPopup(d.erro||'Falha ao lançar', {titulo:'Financeiro'}); return; }
     showToast('Lançamento registrado'); _lancAbaRenderizar();
   } finally { if(btn) btn.disabled = false; }
 }
@@ -16295,13 +16312,13 @@ async function _lancSugestaoLancar(contaId, btn){
     const valor = parseFloat(document.getElementById('sug-valor-'+contaId).value||'0');
     const data = document.getElementById('sug-data-'+contaId).value || null;
     const contraId = +document.getElementById('sug-contra-'+contaId).value;
-    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
-    if(!contraId){ showToast('Escolha a contrapartida.', true); return; }
+    if(!valor||valor<=0){ avisoPopup('Informe um valor > 0', {titulo:'Financeiro'}); return; }
+    if(!contraId){ avisoPopup('Escolha a contrapartida.', {titulo:'Financeiro'}); return; }
     const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
       credentials:'same-origin', body: JSON.stringify({conta_debito_id:contaId, conta_credito_id:contraId, valor, data,
         historico:'Despesa recorrente (sugerida a partir do mês anterior)'})});
     const d = await r.json().catch(()=>({}));
-    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    if(!d.ok){ avisoPopup(d.erro||'Falha ao lançar', {titulo:'Financeiro'}); return; }
     showToast('Lançamento registrado'); _lancDespesaCarregar();
   } finally { if(btn) btn.disabled = false; }
 }
@@ -16383,12 +16400,12 @@ async function lancContabilSalvar(btn){
     const valor = parseFloat(document.getElementById('lcont-valor').value||'0');
     const data = document.getElementById('lcont-data').value || null;
     const hist = document.getElementById('lcont-hist').value || '';
-    if(!valor||valor<=0){ showToast('Informe um valor > 0', true); return; }
-    if(!deb||!cred||deb===cred){ showToast('Escolha débito e crédito (contas diferentes).', true); return; }
+    if(!valor||valor<=0){ avisoPopup('Informe um valor > 0', {titulo:'Financeiro'}); return; }
+    if(!deb||!cred||deb===cred){ avisoPopup('Escolha débito e crédito (contas diferentes).', {titulo:'Financeiro'}); return; }
     const r = await fetch('/api/financeiro/lancamentos', {method:'POST', headers:{'Content-Type':'application/json'},
       credentials:'same-origin', body: JSON.stringify({conta_debito_id:deb, conta_credito_id:cred, valor, data, historico:hist})});
     const d = await r.json().catch(()=>({}));
-    if(!d.ok){ showToast(d.erro||'Falha ao lançar', true); return; }
+    if(!d.ok){ avisoPopup(d.erro||'Falha ao lançar', {titulo:'Financeiro'}); return; }
     showToast('Lançamento registrado'); lancContabilFechar(); lancamentosCarregar();
   } finally { if(btn) btn.disabled = false; }
 }
@@ -16657,7 +16674,7 @@ async function pcNovo(cfgKey, paiId, paiGrupo){
       credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome: resultado.nome,
         centro_custo_id: resultado.centro_custo_id, natureza_custo: resultado.natureza_custo})});
     const d = await r.json().catch(()=>({}));
-    if(!d.ok) showToast(d.erro || 'Falha ao criar', true);
+    if(!d.ok) avisoPopup(d.erro || 'Falha ao criar', {titulo:'Financeiro'});
     _pcRefresh(cfgKey);
     return;
   }
@@ -16666,7 +16683,7 @@ async function pcNovo(cfgKey, paiId, paiGrupo){
   const r = await fetch(cfg.criarUrl, {method:'POST', headers:{'Content-Type':'application/json'},
     credentials:'same-origin', body: JSON.stringify({pai_id: paiId, nome})});
   const d = await r.json().catch(()=>({}));
-  if(!d.ok) showToast(d.erro || 'Falha ao criar', true);
+  if(!d.ok) avisoPopup(d.erro || 'Falha ao criar', {titulo:'Financeiro'});
   _pcRefresh(cfgKey);
 }
 async function pcRenomear(cfgKey, id){

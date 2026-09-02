@@ -1853,6 +1853,24 @@ def total_lancado(db, owner_tipo, owner_id, codigo, lado, projeto_id=None,
     return round(sum(l.valor for l in q.all()), 2)
 
 
+def efetivado_no_dia(db, owner_tipo, owner_id, projeto_id, codigo_provisao, dia):
+    """ACHADO-35 (docs/db/TAREFA_PERCURSO_0109.md, item B1) — regra 3: o total já efetivado
+    NUM DIA vem do RAZÃO (débito na própria provisão, perna que `efetivar_provisao` sempre grava
+    — a perna de despesa é outra conta), nunca de uma soma que a tela lembra em variável. Retorna
+    (total, quantidade) — quantidade também numera a próxima efetivação confirmada do mesmo dia
+    (ref ganha sufixo sequencial, nunca colide com a de antes)."""
+    from datetime import datetime as _dt, time as _time
+    conta = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
+    ini = _dt.combine(dia, _time.min)
+    fim = _dt.combine(dia, _time.max)
+    lancs = (db.query(Lancamento)
+               .filter_by(owner_tipo=owner_tipo, owner_id=owner_id, projeto_id=projeto_id)
+               .filter(Lancamento.conta_debito_id == conta.id)
+               .filter(Lancamento.data >= ini, Lancamento.data <= fim)
+               .all())
+    return round(sum(l.valor for l in lancs), 2), len(lancs)
+
+
 def efetivar_impostos_segmento(db, owner_tipo, owner_id, projeto_id, valor, ref_base, data=None):
     """Efetiva (baixa) a Provisão de Impostos no faturamento, para a parcela `valor` (proporcional ao
     segmento Mercadoria/Serviço). Dois lançamentos idempotentes por ref: dedução na DRE

@@ -155,6 +155,76 @@ def classificar(ref, desc, cat):
 
 
 # ── Leitura de XML ───────────────────────────────────────────────────────────
+def _totais_declarados(root):
+    """ACHADO-44 (docs/db/ACHADOS_CONTABEIS.md): o próprio arquivo Promob declara, em
+    `<TOTALPRICES><MARGINS><ORDER VALUE=".."/><BUDGET VALUE=".."/></MARGINS></TOTALPRICES>`
+    (primeiro nó no documento — o grand-total do ambiente; os demais são subtotais por
+    modelo/categoria, que somam para este), o custo (ORDER, = order_total) e a venda (BUDGET,
+    = total) que a soma dos itens TEM que bater. Retorna (declarado_order, declarado_budget),
+    None quando o arquivo não carrega essa seção (formato antigo)."""
+    tp = root.find('.//TOTALPRICES')
+    if tp is None:
+        return None, None
+    margins = tp.find('MARGINS')
+    if margins is None:
+        return None, None
+    declarado_order = declarado_budget = None
+    oe = margins.find('ORDER')
+    if oe is not None:
+        try: declarado_order = float(oe.get('VALUE', '0') or '0')
+        except (TypeError, ValueError): pass
+    be = margins.find('BUDGET')
+    if be is not None:
+        try: declarado_budget = float(be.get('VALUE', '0') or '0')
+        except (TypeError, ValueError): pass
+    return declarado_order, declarado_budget
+
+
+def consistencia_interna(amb, tolerancia=0.05):
+    """ACHADO-44 — o arquivo conferido CONTRA ELE MESMO, nada externo entra na conta: a soma dos
+    `order_total`/`total` de todos os itens (já com os impostos/margens que cada item carrega,
+    lidos do próprio arquivo) tem que bater com o que `TOTALPRICES` declara para o ambiente
+    inteiro. Um `TOTAL` de item editado à mão (sem recalcular o grand-total) denuncia-se aqui —
+    foi assim que o Δ custo do C1 (`docs/db/TAREFA_PERCURSO_0209.md`) atravessou o ciclo inteiro
+    sem ninguém notar.
+
+    `amb`: dict de `ler_xml_str`/`ler_xml` (precisa ter rodado com `_totais_declarados`, i.e.
+    conter as chaves `declarado_order`/`declarado_budget`).
+
+    Retorna `(ok, problemas)` — `problemas`: lista de strings, vazia quando `ok`. Arquivo sem
+    `TOTALPRICES` (formato antigo) não tem o que conferir: sempre `ok`."""
+    declarado_order = amb.get('declarado_order')
+    declarado_budget = amb.get('declarado_budget')
+    soma_order = round(sum(item.get('order_total', 0.0)
+                           for grupo in amb.get('grupos', [])
+                           for item in grupo.get('itens', [])), 2)
+    soma_budget = round(amb.get('total', 0.0), 2)
+    problemas = []
+    if declarado_order is not None and abs(soma_order - declarado_order) > tolerancia:
+        problemas.append(
+            "custo de fábrica: soma dos itens R$ %.2f não bate com o total do arquivo R$ %.2f"
+            % (soma_order, declarado_order))
+    if declarado_budget is not None and abs(soma_budget - declarado_budget) > tolerancia:
+        problemas.append(
+            "venda: soma dos itens R$ %.2f não bate com o total do arquivo R$ %.2f"
+            % (soma_budget, declarado_budget))
+    return (not problemas), problemas
+
+
+def venda_maior_que_cfo(budget_total, order_total, tolerancia=0.005):
+    """ACHADO-45 (docs/db/TAREFA_PERCURSO_0209.md) — venda (`budget_total`) e custo de fábrica
+    (`order_total`) vêm do MESMO XML, e ninguém as compara. Um ambiente vendido pelo custo ou
+    abaixo dele nunca deveria existir — mas nada barrava. Medido em 02/09 antes de travar (Homo-
+    logação, único ambiente com dados reais: 0/12 violavam hoje) — a trava é prospectiva, nunca
+    retroativa.
+
+    Retorna True quando a venda é estritamente maior que o CFO (dentro da tolerância de
+    centavos) — ou seja, quando o ambiente PASSA. False significa recusar."""
+    bt = round(float(budget_total or 0), 2)
+    ot = round(float(order_total or 0), 2)
+    return bt > ot + tolerancia
+
+
 def _ler_xml_root(nome_arquivo, root):
     """Core parsing logic — receives ElementTree root directly."""
     projeto = root.get('DESCRIPTION', nome_arquivo)
@@ -163,6 +233,7 @@ def _ler_xml_root(nome_arquivo, root):
         data = datetime.strptime(data_str, '%d/%m/%Y').strftime('%d/%m/%Y')
     except:
         data = datetime.today().strftime('%d/%m/%Y')
+    declarado_order, declarado_budget = _totais_declarados(root)
 
     # Agrupa por ref (chapas/fitas podem ter múltiplos cortes com a mesma ref)
     refs = {}
@@ -260,6 +331,8 @@ def _ler_xml_root(nome_arquivo, root):
         'data':      data,
         'total':     round(total_ambiente, 2),
         'grupos':    grupos_resultado,
+        'declarado_order':  round(declarado_order, 2) if declarado_order is not None else None,
+        'declarado_budget': round(declarado_budget, 2) if declarado_budget is not None else None,
     }
 
 

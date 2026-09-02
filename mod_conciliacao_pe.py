@@ -150,11 +150,26 @@ def decisao_ambiente_novo(pool_ambiente_id, valor_venda_xml):
     }
 
 
-def decisao_e_necessaria(diferenca_valor_contrato):
-    """ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): ambiente com Δ a cobrar/estornar
-    zero não é pendência — nada a repassar ao cliente, mesmo que o Δ de custo de fábrica não
-    seja zero. Não pede decisão e não entra em `ambientes_com_pe` de `fase_completa`."""
-    return abs(round(float(diferenca_valor_contrato or 0), 2)) > 0.005
+def decisao_e_necessaria(diferenca_valor_contrato, diferenca_cfo=0.0):
+    """C2 (docs/db/TAREFA_PERCURSO_0209.md) — CORRIGE o ACHADO-39/B4: "Δ custo sem Δ a cobrar
+    não é pendência" estava errado. O custo mudou e o preço não: a margem caiu e a empresa
+    absorveu — é FATO DO RESULTADO, não referência de conferência. Só quando os DOIS (Δ a
+    cobrar/estornar E Δ custo de fábrica) são zero é que não há nada a decidir/reconhecer.
+    Ver `precisa_reconhecimento` — distingue esta pendência (reconhecimento, uma opção) da
+    pendência normal (Δ a cobrar ≠ 0, quatro opções)."""
+    dvc = round(float(diferenca_valor_contrato or 0), 2)
+    dcfo = round(float(diferenca_cfo or 0), 2)
+    return abs(dvc) > 0.005 or abs(dcfo) > 0.005
+
+
+def precisa_reconhecimento(diferenca_valor_contrato, diferenca_cfo):
+    """C2 — True quando Δ a cobrar é zero mas Δ custo não: a linha não oferece as quatro opções
+    normais (Manter/Absorver/Cobrar/Estornar) — oferece UM reconhecimento (o custo mudou e fica
+    com a empresa, pelo valor do Δ custo à vista). Ainda É pendência (`decisao_e_necessaria`
+    continua True) até o reconhecimento ser registrado."""
+    dvc = round(float(diferenca_valor_contrato or 0), 2)
+    dcfo = round(float(diferenca_cfo or 0), 2)
+    return abs(dvc) <= 0.005 and abs(dcfo) > 0.005
 
 
 def fase_completa(ambientes_com_pe, decisoes_registradas):

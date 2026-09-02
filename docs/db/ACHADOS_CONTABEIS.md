@@ -2830,3 +2830,354 @@ qual argumento o chamador passa). Controle negativo: `main.py` revertido —
 positivos, que não dependem do gate); `mod_conciliacao_pe.py` revertido —
 os 2 aceites do item 4 falham. Restaurados, tudo volta a passar (43
 testes relacionados, mais a suíte completa).
+
+---
+
+## ACHADO-43 — o portão da comissão tem porta dos fundos: o cadastro do parceiro · RESOLVIDO 02/09/2026
+
+Achado meu em 02/09, conferindo o portão do ACHADO-42 **no mesmo dia em que
+ele foi construído**.
+
+O portão cobre `comissao_arq_pct` quando o número é **digitado** — o `POST
+/api/projetos/<nome>/parametros` agora passa por `_usuario_autoriza_desconto`.
+Mas o campo tem uma segunda origem, que não passa por lugar nenhum:
+
+```
+main.py:17805   pct_parc = float(getattr(parc, "comissao_padrao_pct", 0) or 0)
+main.py:17808   par["comissao_arq_pct"] = pct_parc
+```
+
+`Parceiro.comissao_padrao_pct` entra no orçamento **por default**, sem
+autorização, e é gravado em três lugares sem validação nenhuma:
+
+| onde | linha | validação |
+|---|---|---|
+| criar parceiro | main.py:11130 | `float(req.get(...) or 0)` |
+| editar parceiro | main.py:11182 | `float(req[...] or 0)` |
+| importação em lote | main.py:18427 | `float(item.get(...) or 0)` |
+
+`Loja.comissao_padrao_pct` (database.py:568) é o irmão seguinte, ainda não
+medido.
+
+**Consequência:** um parceiro cadastrado com 150% aplica 150% em **todo
+projeto dele**, sem passar pelo portão — e o portão recusaria o mesmo 150%
+se alguém o digitasse na tela do orçamento. A trava vale para quem digita e
+não vale para quem cadastra.
+
+**A lição, e é sobre nós:** o portão foi construído hoje seguindo a decisão
+do Marcelo, com aceite e controle negativo — e nasceu com o irmão não
+enumerado. **A regra "enumere os irmãos" vale também para as guardas que a
+gente acabou de escrever**, não só para as que encontramos prontas. A
+pergunta que faltou é de uma linha: *de onde mais este campo pode vir?*
+
+**Conserto:** o teto se aplica ao **valor efetivo que chega ao orçamento**,
+qualquer que seja a origem. Ou o cadastro do parceiro valida contra o mesmo
+limite, ou o portão passa a medir depois da fusão dos defaults — a segunda
+é mais robusta, porque não depende de enumerar origens futuras.
+
+**Grupo:** 1.
+
+### Medição antes de escolher
+
+A citação original ("`Loja.comissao_padrao_pct` (database.py:568)") estava
+imprecisa: aquela linha é de `ParceiroLoja` (override por loja, tabela de
+junção parceiro↔loja), não de `Loja` — `Loja` não tem essa coluna. Medido
+também: `ParceiroLoja.comissao_padrao_pct` é **write-only** — gravado em
+três lugares, lido em nenhum caminho de negócio (só aparece no array de
+exibição do `_parceiro_dict`).
+
+Nos três reais (Homologação/Integração/Produção): **zero parceiros
+cadastrados**. Não há legado dos dois lados da escolha.
+
+### Conserto (02/09)
+
+Escolhida a **segunda opção** (medir depois da fusão): `_params_iniciais_projeto`
+só *sugere* o default do parceiro em duas rotas GET/preview — nunca grava
+sozinho. A única gravação real do campo composto é `POST
+/api/projetos/<nome>/parametros`, já gated pelo ACHADO-42 desde o mesmo dia.
+A porta dos fundos já estava estruturalmente fechada — exceto por uma
+lacuna de UX nova: o auto-save do formulário (`salvarParametrosAuto`)
+engolia `d.ok===false` em silêncio (ACHADO-36 de novo), inclusive quando a
+recusa vinha de um valor de parceiro. Corrigido: `salvarParametrosAuto`
+reabre `pedirCredenciaisGerente` quando `d.requer_autorizacao`.
+
+**Prova:** `tests/test_achado43_porta_dos_fundos.py` (3 — inclui a medição
+como teste, valor do parceiro passa pelo mesmo portão com e sem
+autorizador válido) + `tests/test_achado43_autosave_e2e.py` (navegador —
+recusa do servidor abre o modal, não falha em silêncio). Controle negativo
+confirmado nos dois arquivos.
+
+---
+
+## ACHADO-44 — nada verifica se o XML fecha consigo mesmo · RESOLVIDO 02/09/2026
+
+Medido em 02/09 (C1 do `TAREFA_PERCURSO_0209.md`), a partir do percurso do
+Marcelo: dois ambientes com venda idêntica ao centavo e CFO diferente.
+
+### A primeira versão desta entrada estava errada na causa
+
+Ela concluía que `ORDER/TOTAL` variava com "um estado do projeto no Promob
+que não viaja no arquivo", e levantava agregação de pedido ou frete por
+volume. **Errado.** O Marcelo respondeu: *"essa diferença é culpa minha, no
+passado eu pedi para alterar os arquivos para testar as comparações, e daí a
+alteração foi forçada sobre o valor total do pedido."*
+
+Fica registrado como estava, corrigido e não apagado — o percurso da
+investigação vale mais que o acerto final, e a lição está justamente aqui.
+
+### O que a medição provou, e continua valendo
+
+O código do Orizon está certo dos dois lados:
+
+| ambiente | (1) `order_total` no banco | (2) do `ambientes_json` | (3a) `ArquivoPE.valor_atualizado` | (3b) do arquivo |
+|---|---|---|---|---|
+| Banheiro Social | 953,40 | 953,40 | 1.029,67 | 1.029,67 |
+| Suite Master | 15.882,09 | 15.882,09 | 16.675,84 | 16.675,84 |
+
+Mesmos itens, mesmos `ref`, mesmas quantidades, `price_table` com razão
+**1,000000 nos 94 itens**, receita de `<MARGINS>` idêntica atributo por
+atributo — e a diferença inteira em `<ORDER UNIT TOTAL>`, com **`UNIT`
+batendo e `TOTAL` não**, uniforme por ambiente (~8,0% e ~5,0%).
+
+### O achado de verdade
+
+**Um arquivo alterado à mão entrou, foi aceito, virou custo de fábrica, e
+atravessou o ciclo inteiro até a AF2 — onde apareceu como Δ custo de
++76,27 e +793,75 que o sistema apresentou como fato.**
+
+A edição era do próprio dono do sistema, para teste. O ponto é que **nada no
+caminho notou**, e nada notaria se viesse de fora.
+
+E o arquivo se denuncia sozinho: `TOTAL` deixou de ser coerente com `UNIT`,
+com a quantidade e com a receita de margem que o **próprio arquivo** carrega.
+Não era preciso comparar com nada externo — bastava conferir o arquivo
+contra ele mesmo.
+
+**A regra, decisão do Marcelo em 02/09:** *a soma dos valores dos itens, com
+os devidos impostos conforme o próprio arquivo, tem que bater.* Consistência
+interna, verificada **no upload** — o que estende o ACHADO-31 ("o XML só é
+validado na emissão"): validar não é só conseguir parsear, é fechar a conta.
+
+**Grupo:** 1.
+
+### Medição antes de travar
+
+Dos arquivos já em base: `pool_ambientes` reais (Homologação) — **0/12 não
+fechavam**; `arquivo_pe` reais — **12/12 não fechavam** (os arquivos de
+teste do próprio Marcelo, editados de propósito — a causa já conhecida
+deste achado). Nenhuma linha existente foi tocada — a trava é só no
+**upload de arquivo novo**, nunca retroativa.
+
+### Conserto (02/09)
+
+`consistencia_interna(amb)` (`integracoes/promob_grupos.py`) soma
+`order_total`/`total` de todos os itens e compara contra o
+`declarado_order`/`declarado_budget` que o próprio `TOTALPRICES` do arquivo
+carrega. Recusa **dura** — decisão coberta pelo próprio texto do pedido
+("um arquivo com TOTAL forçado é recusado") e sustentada pela medição (o
+único jeito de furar hoje é editar o arquivo à mão, o mesmo gesto que
+causou o C1). Dois pontos de entrada: `POST /projetos/<nome>/pool`
+(contrato) e `POST /api/projetos/<nome>/pe/upload` (PE).
+
+**Prova:** `tests/test_achado44_consistencia_xml.py` (4 — função pura,
+fixture real de 16MB) + `tests/test_achado44_upload_e2e.py` (4 — HTTP, os
+dois endpoints, aceita/recusa). Controle negativo confirmado.
+
+---
+
+## ACHADO-45 — nada impede que a venda seja igual ou menor que o custo de fábrica · PARCIALMENTE RESOLVIDO 02/09/2026
+
+Decisão do Marcelo em 02/09, saída do ACHADO-44: **valor de venda nunca pode
+ser igual ou menor que o CFO.**
+
+Hoje as duas grandezas entram juntas do mesmo XML — `budget_total` (venda) e
+`order_total` (custo) — e ninguém as compara. Um ambiente pode ser importado,
+orçado e contratado com margem zero ou negativa sem que nada avise.
+
+É o mesmo princípio do portão do ACHADO-42, um andar abaixo: lá, a margem ia
+a negativo por um percentual sem teto; aqui, ela já nasce negativa no
+arquivo. As duas portas dão no mesmo lugar.
+
+**Medir antes de escolher o momento da trava:** quantos ambientes já
+importados violam a regra hoje? A resposta decide se a recusa fica na
+importação (mais cedo, mais duro, risco de travar trabalho legítimo) ou na
+contratação (mais tarde, mas antes de virar contrato). Não escolher antes de
+medir.
+
+**Grupo:** 1.
+
+### Medição (02/09, antes de escolher o momento)
+
+| ambiente | `pool_ambientes`: viola hoje | `arquivo_pe`: viola hoje |
+|---|---|---|
+| Homologação (único com dados reais) | 0/12 | 0/12 |
+| Integração | 0/0 (tabela vazia) | 0/0 (tabela vazia) |
+| Produção | 0/0 (tabela vazia — feature ainda não usada lá) | 0/0 (tabela vazia) |
+
+**Zero violações em toda a base real hoje.**
+
+**Recomendação (a escolha é do Marcelo):** travar **na importação**. Com
+zero violações existentes em qualquer ambiente, não há nenhum trabalho
+legítimo em risco de ser bloqueado — o argumento a favor de esperar até a
+contratação (não travar cedo demais) não se sustenta quando a medição não
+encontra nenhum caso hoje. Travar cedo também evita que o dado ruim
+percorra o ciclo (a mesma lição do ACHADO-44/C1: quanto mais tarde a
+recusa, mais longe o erro já viajou antes de alguém notar).
+
+### Achado dentro do achado: já existia uma trava, e ela é mais branda
+
+Ao implementar, `avaliar_qualidade_xml` (`mod_qualidade_xml.py`, Spec §8)
+já bloqueia **exatamente** "venda ≤ custo" — por ITEM, com tolerância de
+ruído de 5%, gravando `qa_selo='bloqueado'` no `PoolAmbiente`. Mas como
+**quarentena**: o upload é aceito, o ambiente entra na base, e só é barrado
+de virar orçamento (`test_qualidade_upload_e2e.py`, anterior a esta
+rodada). Não é recusa no upload — é revisão antes do uso comercial.
+
+Um hard-reject no `POST /projetos/<nome>/pool` teria duplicado essa trava
+com um comportamento mais duro (sem quarentena, sem chance de revisão) —
+**segunda porta pro mesmo destino**, e a regra do Marcelo (ROTEIRO.md,
+02/09) é perguntar antes de abrir. Não decidido sem essa pergunta.
+
+**Conserto aplicado (02/09, só onde não havia porta nenhuma):**
+`venda_maior_que_cfo(budget_total, order_total)` (`integracoes/promob_grupos.py`)
+recusa dura no **`POST /api/projetos/<nome>/pe/upload`** (`ArquivoPE`) — sem
+gate equivalente antes desta rodada. `POST /projetos/<nome>/pool` **não
+mudou**: continua coberto só pela quarentena existente.
+
+**Pergunta em aberto pro Marcelo:** o que fazer com o pool? (a) hard-reject
+também, substituindo a quarentena; (b) manter a quarentena como está — ela
+já cobre o caso, só não é tão dura quanto o resto desta rodada; (c) outra
+coisa.
+
+**Prova:** `tests/test_achado45_venda_maior_que_cfo.py` (6 — função pura
+incl. a fronteira venda==CFO, HTTP no upload de PE, tripwire do bypass de
+`xml_compl`, e uma prova de que o pool continua na quarentena antiga em
+vez de recusar). Controle negativo confirmado.
+
+---
+
+## ACHADO-46 — a transferência de responsabilidade procura por NOME de função, e o mecanismo certo já existe sem uso
+
+Encontrado pelo Marcelo em 02/09: tentou transferir a responsabilidade do
+projeto dentro do Ciclo e *"não encontrou ninguém de projeto executivo"*.
+
+**A busca é por nome literal.** `mod_escopo.PAPEL_FUNCOES` (mod_escopo.py:21)
+mapeia papel → uma tupla de **nomes** de função:
+
+```python
+PAPEL_FUNCOES = {
+    "projeto_executivo": ("Projetista Executivo",),
+    "medicao":           ("Medidor",),
+    "montagem":          ("Montador", "Supervisor de Montagem"),
+}
+```
+
+Quem não tiver uma função chamada exatamente "Projetista Executivo" não
+existe para a transferência. Uma loja que chame o cargo de "Projetista",
+"Detalhista" ou "Projetista Técnico" fica sem ninguém — **em silêncio**, que
+é a parte ruim: não diz "nenhum funcionário tem essa função", diz que não
+achou.
+
+**E o mecanismo certo já está construído e sem uso.** `Funcao.
+atribuicoes_json` guarda os papéis (`mod_escopo.PAPEIS`), e a própria
+`funcao_operacional` a chama de **"fonte PREFERIDA quando preenchida —
+elimina o acoplamento por nome"**. O comentário do código admite a dívida em
+mod_escopo.py:18: *"Follow-up: campo `papel` na Tabela de Funções elimina o
+acoplamento por nome."*
+
+É o padrão (a) mais uma vez — **o mecanismo existe e o caminho real não
+usa** — e desta vez está escrito no próprio arquivo.
+
+**Quinto irmão da mesma lista:** `mod_assistencias.py:21` carrega uma cópia
+de `PAPEL_FUNCOES["montagem"]`, **copiada e não importada**, com comentário
+explicando a decisão. Duas listas com a mesma regra divergem no dia em que
+alguém edita uma.
+
+**Conserto:** a busca vai por papel, lendo `atribuicoes_json`; o nome vira
+fallback declarado, não a fonte. E a tela de Funções passa a permitir marcar
+os papéis — hoje o campo existe no banco e não é preenchido pela Config, que
+é a razão de ele nunca ter substituído o nome.
+
+**Grupo:** 1.
+
+---
+
+## ACHADO-47 — uma pessoa só pode ter uma função, e a função é quem paga
+
+Pedido do Marcelo em 02/09: *"uma mesma pessoa deve poder acumular mais de
+uma função (por exemplo o Projeto Executivo e a Medição frequentemente são
+feitos pela mesma pessoa)"*.
+
+`Funcionario.funcao_id` é uma FK única (database.py). Uma função por
+pessoa, e é por isso que a busca do ACHADO-46 não acha quem faz os dois.
+
+### Acumular FUNÇÃO é a forma errada, e o próprio esquema diz por quê
+
+`Funcao` carrega `salario_fixo`, `beneficios_json`, `comissao_json`,
+`usa_comissao_vendas`, `comissao_fixa`, `remuneracao_padrao`. **Ela é o
+registro de quanto a pessoa ganha.** Duas funções na mesma pessoa criam uma
+pergunta sem resposta: qual salário vale? Qual comissão? A folha lê o quê?
+
+A separação certa está a um passo de existir:
+
+- **Função — o que a pessoa É e quanto ganha.** Uma só. Continua como está.
+- **Papéis — o que a pessoa FAZ.** Vários. Já existem em
+  `Funcao.atribuicoes_json`, já são a fonte preferida do código, e não são
+  preenchidos por tela nenhuma.
+
+Quem faz Projeto Executivo **e** Medição tem **uma** função, cujos papéis
+declaram os dois. Nada de migration, nada de tabela de ligação, nenhuma
+ambiguidade de folha. E se a remuneração for genuinamente diferente, então
+são duas pessoas-função diferentes de verdade — e aí a resposta é outra
+função, não uma segunda.
+
+### DECIDIDO 02/09 — sem papel avulso; o acúmulo se paga por adicional
+
+Decisão do Marcelo: **não há papel avulso no funcionário.** Os papéis vêm da
+função, e pronto — a mudança do ACHADO-46/47 acontece sem tocar no banco
+nessa parte.
+
+O que o acúmulo gera é **remuneração**, e ela vai no cadastro do
+funcionário, num bloco **Adicional**:
+
+- **adicional fixo** — valor mensal;
+- **adicional de comissão** — percentual, com **base declarada**. Padrão:
+  **Valor Líquido de Venda**. Outras bases ficam para depois, mas o campo
+  nasce dizendo qual base usa, em vez de assumir.
+
+O desenho fecha a ambiguidade que o acúmulo de funções criava: **a função
+paga a base, o adicional paga o acúmulo**, e a folha nunca precisa escolher
+entre dois salários.
+
+**Dois pontos que este desenho deixa em aberto, e que precisam de resposta
+antes de virar código:**
+
+**1 · O adicional não diz por quê.** Ele fica no funcionário, não no papel
+acumulado. Quando o papel sair — a pessoa deixa de medir —, nada avisa que o
+adicional deveria sair junto. Um campo de motivo, ou a referência ao papel
+que o justifica, é o que impede o adicional órfão que ninguém revisa. É a
+mesma família do "nome ≠ comportamento" do ACHADO-17: o valor existe e não
+diz de onde veio.
+
+**2 · O adicional de comissão é custo novo, e todo custo precisa de rota
+contábil decidida no nascimento.** A lição do ACHADO-33 é literalmente esta:
+Montagem e Fábrica ficaram sem alimentador porque ninguém decidiu a rota
+quando o mecanismo nasceu. Antes de implementar, decidir: entra na
+`ComissaoFolha` junto com a comissão de venda? Provisiona em
+`2.1.04.12`, em `2.1.04.10`, ou em rubrica própria? E o veredito da
+Conciliação Final passa a enxergá-lo?
+
+**E uma nota de aritmética:** a base padrão é o `Val_Liq`, a mesma grandeza
+que o portão do ACHADO-42 protege. Com o portão, ela não vai mais a
+negativo — o que é bom, porque comissão sobre base negativa seria comissão
+negativa. Vale registrar a dependência: **o adicional de comissão só é
+seguro porque o portão existe.**
+
+**E a base de funções que ele pediu já existe:** `FUNCOES_PADRAO`
+(database.py:2186) semeia treze — Consultor de Vendas, Gerente de Vendas,
+Gerente Administrativo/Financeiro, Diretor, Assistente Logístico,
+Conferente, Supervisor de Montagem, Assistente Administrativo, Projetista
+Executivo, Medidor, Montador, Ajudante de Montagem, SAC. O que falta não é a
+base: é **cada uma declarar seus papéis**.
+
+**Grupo:** 1.

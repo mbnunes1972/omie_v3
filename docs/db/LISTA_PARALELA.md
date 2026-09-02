@@ -42,6 +42,13 @@ no documento que o cliente assina. Decidir se substitui, corrige ou
 complementa a previsão — guardar as duas dá variância previsto × acordado.
 *Adiado:* é coluna nova, migration, tela e decisão de desenho — não cabe num
 ciclo de estabilização. (Marcelo, 31/08, clicando em Homologação.)
+*Pedido de novo em 02/09*, com dois requisitos que o item ainda não tinha:
+**uma data por fase** quando o projeto está desmembrado (liga no LP-12), e o
+registro **alterando a programação automática** que o cronograma padrão
+montou na assinatura — não é campo, é entrada que substitui previsão do
+sistema. Medir onde essa programação vive e quem mais a lê antes de escrever
+nela. Dois pedidos independentes do mesmo usuário: o adiamento estava certo,
+a necessidade está confirmada.
 
 **LP-02 · CPF do signatário conferido contra o cadastro.**
 O ACHADO-28 entra no beta2 só com validação de dígito. Conferir se o CPF
@@ -121,6 +128,49 @@ Montagem e pra Fábrica — que já faz as duas pernas certas, com
 podem já ser puramente redundantes com o mecanismo genérico.
 *Adiado:* decisão do Marcelo — ligar (com a perna de despesa corrigida) ou
 remover da tabela `EVENTOS` os dois.
+
+**LP-12 · Desmembramento em fases nas etapas futuras.**
+O desmembramento abre dois braços na venda e para por ali: as etapas
+seguintes continuam tratando o projeto como um só. A aprovação financeira
+passa a ser por fase, e as liberações também, com valor **proporcional à
+fase**.
+*Delimitação já dada pelo Marcelo, e é ela que torna o item viável:* **as
+contas de provisão NÃO se desmembram** — a contabilidade continua
+consolidada por projeto. O que ganha fase é a camada de acionamento. Sem
+migration de plano de contas, sem rateio contábil.
+*Falta decidir:* proporcional a quê — valor de contrato da fase, CFO da
+fase, ou número de ambientes.
+*Adiado:* é produto, não defeito; toca todas as etapas pós-venda.
+(Marcelo, 02/09, percurso do `v2026.09.02-beta1`.)
+
+**LP-13 · Tela única de Provisões por projeto.**
+Hoje há quatro caminhos para o mesmo estado — Financeiro em leitura, modal
+de Reconciliação do projeto, tabela da Conciliação Final, e a Fila. Essa
+multiplicidade produziu, sozinha, o **ACHADO-26, 32, 33 e 41**. O alvo: uma
+tela por projeto onde tudo acontece — ver, efetivar, revisar, resolver, dar
+veredito — e link para ela onde hoje há modal ou tabela editável. O botão
+"Resolver" volta e leva até lá, com a rubrica em foco.
+Resolve o **ACHADO-37** (a fila empilhando todos os projetos) de graça.
+*Adiado:* é redesenho, não conserto — e mexeria justamente na tela que
+acabou de ser estabilizada. Desenho completo na Parte A do
+`TAREFA_CONCILIACAO_UI.md`. (Marcelo, 01/09, e reafirmado em 02/09.)
+
+
+**LP-14 · Evento de término por etapa, com oferta de transferência.**
+Pedido do Marcelo (02/09): *toda etapa precisa ter um evento que caracterize
+seu término, e sempre que terminar deve aparecer um popup informando o
+término e oferecendo a transferência de responsabilidade.*
+Hoje a transferência é um ato avulso, procurado pelo usuário quando ele
+lembra — foi tentando fazê-la fora de hora que o ACHADO-46 apareceu.
+*O que o item exige antes de existir:* um levantamento de quais das 21
+etapas têm hoje um evento de término identificável e quais terminam por
+inferência (status mudou, alguém clicou). Sem esse mapa, "toda etapa" não
+tem alcance definido.
+*Adiado:* é fluxo novo em todas as etapas do ciclo, não conserto. Depende do
+ACHADO-46/47 estarem prontos — sem papéis declarados, a oferta de
+transferência não teria a quem oferecer.
+(Marcelo, 02/09, testando o Ciclo.)
+
 
 ---
 

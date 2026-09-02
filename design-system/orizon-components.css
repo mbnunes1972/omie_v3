@@ -107,7 +107,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
 .tbl td{padding:12px var(--sp-4);border-bottom:1px solid var(--border)}
 .tbl tr:last-child td{border-bottom:0}
 .tbl tr:hover td{background:var(--accent-soft)}
-.tbl .num{text-align:right;font-family:var(--font-mono);font-size:var(--fs-sm)}
+/* C6 (docs/db/TAREFA_PERCURSO_0209.md, 02/09): sem nowrap, "R$" quebrava numa linha e o número
+   na de baixo em colunas estreitas (achado no modal de comparação de PE) — mesmo tratamento que
+   .folha-tbl td.num já tinha. */
+.tbl .num{text-align:right;font-family:var(--font-mono);font-size:var(--fs-sm);white-space:nowrap}
 
 /* ---------- Cards ---------- */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:var(--sp-5);box-shadow:var(--shadow)}

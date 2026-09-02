@@ -2675,17 +2675,24 @@ class Handler(BaseHTTPRequestHandler):
                         desconto_amb_pct=d_amb_pct.get(pid, 0.0))
                     _l["decisao"] = ({"tipo_decisao": d.tipo_decisao, "valor_aprovado": d.valor_aprovado}
                                      if d is not None else None)
+                    # C2 (docs/db/TAREFA_PERCURSO_0209.md): fonte única pra tela decidir qual UI
+                    # desenhar — nunca reimplementar o predicado em JavaScript (mesmo cuidado do
+                    # exige_veredito, ACHADO-32).
+                    _l["precisa_reconhecimento"] = _mconc.precisa_reconhecimento(
+                        _l["diferenca_valor_contrato"], _l["diferenca"])
                     fases_por_id[fase_id]["ambientes"].append(_l)
 
                 fases_out = []
                 for fase_id, f in fases_por_id.items():
                     if not f["ambientes"]:
                         continue
-                    # ACHADO-39 (B4): só pendência quem tem Δ A COBRAR diferente de zero — `_l
-                    # ["diferenca_valor_contrato"]` já computado acima, mesma conta pra tela e
-                    # pra este gate (nunca uma cópia que possa divergir).
+                    # C2 (docs/db/TAREFA_PERCURSO_0209.md) — corrige o ACHADO-39/B4: Δ custo sem
+                    # Δ a cobrar CONTINUA pendência (a margem caiu, a empresa absorveu — fato do
+                    # resultado). `_l["diferenca"]` (Δ custo) e `_l["diferenca_valor_contrato"]`
+                    # (Δ a cobrar) já computados acima, mesma conta pra tela e pra este gate.
                     com_pe = [a["pool_ambiente_id"] for a in f["ambientes"]
-                              if a["pe_carregado"] and _mconc.decisao_e_necessaria(a["diferenca_valor_contrato"])]
+                              if a["pe_carregado"] and _mconc.decisao_e_necessaria(
+                                  a["diferenca_valor_contrato"], a["diferenca"])]
                     registradas = [a["pool_ambiente_id"] for a in f["ambientes"] if a["decisao"] is not None]
                     completa, faltam = _mconc.fase_completa(com_pe, registradas)
                     fases_out.append({"parcela_id": f["parcela_id"], "ambientes": f["ambientes"],
@@ -7795,6 +7802,28 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         valor = mod_pe_comparacao.extrair_cfo_pe(filename, data)
                         venda = mod_pe_comparacao.extrair_venda_pe(filename, data)
+                        # ACHADO-44 (docs/db/TAREFA_PERCURSO_0209.md, C1): o arquivo conferido
+                        # CONTRA ELE MESMO — foi por aqui, exatamente, que o Δ custo do C1
+                        # atravessou o ciclo inteiro sem ninguém notar (TOTAL de item editado à
+                        # mão, sem recalcular o TOTALPRICES que o próprio arquivo declara).
+                        # Medido antes de travar: 12/12 dos ArquivoPE já em base falhariam este
+                        # teste (arquivos de teste do Marcelo, editados de propósito) — a trava é
+                        # só NO UPLOAD, prospectiva, nunca retroativa.
+                        from integracoes.promob_grupos import ler_xml_str, consistencia_interna, venda_maior_que_cfo
+                        _amb_pe = ler_xml_str(filename, data)
+                        _ok_consist, _problemas_consist = consistencia_interna(_amb_pe)
+                        if not _ok_consist:
+                            self.send_json({"ok": False,
+                                "erro": "Este XML não fecha a conta consigo mesmo — "
+                                        + "; ".join(_problemas_consist)}); return
+                        # ACHADO-45: só faz sentido pro PE do ambiente inteiro (xml_pe) — o
+                        # complemento (xml_compl) é um DELTA sobre um ambiente já aprovado, não a
+                        # venda/custo absolutos dele.
+                        if formato != "xml_compl" and not venda_maior_que_cfo(venda, valor):
+                            self.send_json({"ok": False,
+                                "erro": "Venda (R$ %.2f) não pode ser igual ou menor que o custo "
+                                        "de fábrica (R$ %.2f) deste ambiente."
+                                        % (venda or 0.0, valor or 0.0)}); return
                     except Exception as e:
                         self.send_json({"ok": False, "erro": "XML de PE inválido: %s" % e}); return
                 else:
@@ -12148,12 +12177,34 @@ class Handler(BaseHTTPRequestHandler):
                     })
                     return
 
+                # ACHADO-44 (docs/db/TAREFA_PERCURSO_0209.md, C1): o arquivo conferido CONTRA ELE
+                # MESMO — soma dos itens tem que bater com o TOTALPRICES que o próprio arquivo
+                # declara. Medido antes de travar (12/09): pool_ambientes real, 0/12 falhava;
+                # trava é só NO UPLOAD, prospectiva — nada retroativo nos já importados.
+                from integracoes.promob_grupos import consistencia_interna
+                _ok_consist, _problemas_consist = consistencia_interna(amb)
+                if not _ok_consist:
+                    self.send_json({
+                        "ok": False,
+                        "erro": "Este XML não fecha a conta consigo mesmo — " + "; ".join(_problemas_consist),
+                    })
+                    return
+
                 budget_total = amb.get("total", 0.0)
                 order_total  = sum(
                     item.get("order_total", 0.0)
                     for grupo in amb.get("grupos", [])
                     for item in grupo.get("itens", [])
                 )
+                # ACHADO-45 (docs/db/TAREFA_PERCURSO_0209.md): venda <= CFO já tem trava NESTE
+                # caminho — `avaliar_qualidade_xml` (mod_qualidade_xml.py, Spec §8) bloqueia
+                # exatamente "venda ≤ custo" há mais tempo, por ITEM (com tolerância de ruído),
+                # via `qa_selo='bloqueado'` — mas como QUARENTENA (cria o PoolAmbiente, barra só
+                # a entrada em orçamento), não como recusa no upload. Decisão pendente com o
+                # Marcelo: hard-reject aqui duplicaria/substituiria essa quarentena já testada
+                # (test_qualidade_upload_e2e.py) — não decidido sem perguntar (regra das duas
+                # portas, ROTEIRO.md 02/09). O upload de PE (`.../pe/upload`, sem gate equivalente
+                # hoje) já ganhou o hard-reject — ver `venda_maior_que_cfo`.
                 _qa = avaliar_qualidade_xml(
                     [it for g in amb.get("grupos", []) for it in g.get("itens", [])])
 
@@ -14314,43 +14365,11 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
-            m = _re.match(r'^/api/projetos/([^/]+)/medicao/solicitacao$', path)
-            if m:
-                nome_safe = unquote(m.group(1))
-                usuario = get_usuario_sessao(self)
-                if not usuario:
-                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
-                arquivos, campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
-                db = get_session()
-                try:
-                    ator = _ator_dict(db, usuario)
-                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
-                    if _err:
-                        self.send_json({"ok": False, "erro": _err}, code=403)
-                        return
-                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
-                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404)
-                        return
-                    u = _usuario_com_capacidade(db, campos.get("login",""), campos.get("senha",""), "registrar_medicao", sessao=usuario)
-                    if not u:
-                        self.send_json({"ok": False, "erro": "Confirmação exige login+senha do Medidor (ou Diretor)."}, code=403); return
-                    if "arquivo" not in arquivos:
-                        self.send_json({"ok": False, "erro": "Anexe o arquivo de solicitação de medição."}); return
-                    fname, data = arquivos["arquivo"]
-                    destino = os.path.join(_projeto_path(nome_safe), "medicao", "solicitacao_" + os.path.basename(fname))
-                    storage_salvar_binario(destino, data)
-                    md = _get_or_create_medicao(db, nome_safe)
-                    md.solicitacao_arquivo = os.path.basename(destino)
-                    md.solicitacao_por = u.id
-                    md.solicitacao_em = datetime.utcnow()
-                    _set_etapa_status(db, nome_safe, "9", "concluido", u.id)
-                    db.add(LogAcaoGerencial(solicitante_id=u.id, autorizador_id=u.id,
-                            acao="medicao_solicitacao", projeto_nome=nome_safe, etapa_alvo="9"))
-                    db.commit()
-                    self.send_json({"ok": True})
-                finally:
-                    db.close()
-                return
+            # C3 (docs/db/TAREFA_PERCURSO_0209.md, 02/09): o antigo POST .../medicao/solicitacao
+            # (upload simples de arquivo, sem documento gerado nem assinatura) foi removido — era
+            # a porta morta da dupla apontada pelo Marcelo (nenhum teste cobria, e o próprio
+            # _registrar_assinatura_solicitacao_medicao já documentava que fora superado pelo
+            # fluxo de gerar+assinar abaixo). A porta que sobrevive é a de baixo (.../gerar).
 
             # POST /api/projetos/<nome>/medicao/solicitacao/gerar — gera o Termo de
             # Responsabilidade e Solicitação de Medição (achado do usuário 2026-08-17): documento
@@ -17321,10 +17340,11 @@ def _pe_fator_contexto(db, nome_safe, excluir_orcamento_id=None):
 
 
 def _pe_ambientes_pendentes_decisao(db, nome_safe):
-    """ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): ambientes com PE carregado E Δ a
-    cobrar/estornar diferente de zero — a MESMA conta do GET /pe/conciliacao (`diferenca_valor_
-    contrato_estimada` + `mod_conciliacao_pe.decisao_e_necessaria`), reaproveitada aqui pra
-    `fase_completa` na aprovação da AF2 nunca divergir do que a tela mostra como pendência."""
+    """Ambientes com PE carregado E (Δ a cobrar/estornar OU Δ custo) diferente de zero — a MESMA
+    conta do GET /pe/conciliacao (`diferenca_valor_contrato_estimada` + `mod_conciliacao_pe.
+    decisao_e_necessaria`), reaproveitada aqui pra `fase_completa` na aprovação da AF2 nunca
+    divergir do que a tela mostra como pendência. C2 (docs/db/TAREFA_PERCURSO_0209.md) corrige o
+    ACHADO-39/B4: Δ custo sem Δ a cobrar CONTINUA pendência (reconhecimento, não "nada a decidir")."""
     import mod_conciliacao_pe as _mconc
     pool = db.query(PoolAmbiente).filter_by(projeto_id=nome_safe).order_by(PoolAmbiente.id.asc()).all()
     pa_por_id = {pa.id: pa for pa in pool}
@@ -17353,7 +17373,7 @@ def _pe_ambientes_pendentes_decisao(db, nome_safe):
             vbva_contratado=float(pa_l.budget_total or 0.0) if pa_l else 0.0,
             fator_ca=fator_ca, desconto_orc_pct=d_orc_pct,
             desconto_amb_pct=d_amb_pct.get(pid, 0.0))
-        if _mconc.decisao_e_necessaria(dvc):
+        if _mconc.decisao_e_necessaria(dvc, _l["diferenca"]):
             pendentes.add(pid)
     return pendentes
 

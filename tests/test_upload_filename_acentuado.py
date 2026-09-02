@@ -12,7 +12,9 @@ import urllib.request as _urllib_req
 
 XML_MINIMO = ('<PROJECT DESCRIPTION="Orçamento" DATE="01/01/2026"><CATEGORY DESCRIPTION="X"><ITEMS>'
               '<ITEM REFERENCE="A" DESCRIPTION="a" UNIT="UN" QUANTITY="1" SHOWPRICE="Y">'
-              '<PRICE TABLE="100" TOTAL="100"><MARGINS><ORDER TOTAL="120"/><BUDGET TOTAL="100"/></MARGINS></PRICE>'
+              # ACHADO-45 (docs/db/TAREFA_PERCURSO_0209.md): venda > CFO — o teste é sobre
+              # filename acentuado, não sobre margem; valores só precisam passar no upload.
+              '<PRICE TABLE="100" TOTAL="100"><MARGINS><ORDER TOTAL="80"/><BUDGET TOTAL="100"/></MARGINS></PRICE>'
               '</ITEM></ITEMS></CATEGORY></PROJECT>')
 
 

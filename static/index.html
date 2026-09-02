@@ -11271,7 +11271,7 @@ function agendarSalvarDescontos(){
   clearTimeout(_descSalvarTimer);
   _descSalvarTimer = setTimeout(() => { if(_orcamentoAtivoId) _persistirDescontosOrc(); }, 500);
 }
-async function salvarParametrosAuto(){
+async function salvarParametrosAuto(credenciais){
   if(!projetoAtivo || !_orcamentoAtivoId) return;
   const id = s => document.getElementById(s);
   const inc = id('mp-incluir-custos')?.checked || false;
@@ -11290,6 +11290,10 @@ async function salvarParametrosAuto(){
     incluir_custos:     inc,
     carga_trib:         parseFloat(id('mp-carga-trib').value)||0,
   };
+  if(credenciais){
+    parametros.login_autorizador = credenciais.login;
+    parametros.senha_autorizador = credenciais.senha;
+  }
   try{
     const r = await fetch('/api/projetos/'+encodeURIComponent(projetoAtivo.nome_safe)+'/parametros',{
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(parametros),
@@ -11300,7 +11304,20 @@ async function salvarParametrosAuto(){
       // /parametros recalcula TODOS os orçamentos do projeto; exibe o do ATIVO via preview
       // (a 'sombra' de /parametros é de um orçamento arbitrário do projeto, não o ativo).
       await negPreview();
+      return;
     }
+    // ACHADO-43 (docs/db/ACHADOS_CONTABEIS.md): o portão do ACHADO-42 (comissão/fidelidade pelo
+    // mesmo teto do desconto) agora recusa este auto-save quando o composto estoura o limite —
+    // sem isto, a recusa do servidor era invisível (o campo parecia salvo e não estava,
+    // ACHADO-36 na veia). `pedirCredenciaisGerente`: o mecanismo genérico já usado em todo o
+    // sistema pra isto, não um modal próprio — evita abrir uma segunda porta pro mesmo destino.
+    if(d.requer_autorizacao && !credenciais){
+      const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro',
+        titulo:'Comissão/fidelidade acima do limite', mensagem: d.erro});
+      if(cred) await salvarParametrosAuto(cred);
+      return;
+    }
+    await avisoPopup(d.erro || 'Falha ao salvar parâmetros.', {titulo:'Parâmetros de negociação'});
   }catch(e){ console.warn('salvarParametrosAuto:', e); }
 }
 async function mpSalvarComValidacao(){
@@ -20056,6 +20073,7 @@ function _fichaEfeitos(codigo) {
   if (codigo === _FICHA_VISAO_CODIGO) { _visaoGeralRender(); return; }
   if (_statusFichario(codigo) === 'nao_iniciada') return;   // placeholder: nada a carregar
   if (codigo === '7') { carregarDadosContrato(); _contratoParamsResumo(); }
+  if (codigo === '9') carregarSolicitacaoMedicao();
   if (codigo === '11e') peComplementoRender();
   if (codigo === '21') _concFinalCarregar();   // provisões da Conciliação Final (2026-08-06)
   // Fichário fase 2: telas diretas (sem modal) — briefing na 3, provisões nas AFs.
@@ -21263,12 +21281,29 @@ function _provToggleRevisa() {
 
 // Aprovar: salva a revisão corrente (itens do form, ativo×provisão) E aprova a etapa de AF num passo.
 async function _provAprovar(oid, rev) {
+  // C4 (docs/db/TAREFA_PERCURSO_0209.md, 02/09) — mesmo padrão do ACHADO-38/B3
+  // (peConciliacaoAprovar): estado primeiro, credencial só quando a ação vai mesmo acontecer.
+  // `abrirProvisoes` sempre desenha o botão Aprovar, mesmo com a etapa já concluída (o painel
+  // não sabe reaprovar de "não fazer nada") — reconfere fresco (nunca uma cópia velha de
+  // _cicloData) antes de pedir senha; sem isto, reaprovar uma AF já aprovada só "piscava"
+  // (o POST .../provisoes/rev* recusa por estado, mas a UI não dizia por quê).
+  const codAf = window._provAfCodigo;
+  if (codAf) {
+    await _fetchCiclo();
+    if ((_cicloData[codAf] || {}).status === 'concluido') {
+      await avisoPopup('Esta etapa de Aprovação Financeira já foi concluída.',
+        {titulo: 'Aprovação Financeira'});
+      if (window._provModalOv) { window._provModalOv.remove(); window._provModalOv = null; }
+      _fichaRenderConteudo();
+      return;
+    }
+  }
   const itens = {};
   for (const rb of _PROV_RUBRICAS) {
     const el = document.getElementById('_prov-inp-' + rb.key);
     itens[rb.key] = el ? (parseFloat(el.value) || 0) : 0;
   }
-  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro', 
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
     titulo: 'Aprovar Aprovação Financeira',
     mensagem: 'Salva a revisão e aprova a etapa. Login e senha do Gerente Adm/Financeiro ou Diretor.' });
   if (!cred) return;
@@ -21499,29 +21534,21 @@ async function _carregarMedicao() {
   } catch(e) { _medicaoCache = null; }
 }
 
+// C3 (docs/db/TAREFA_PERCURSO_0209.md, ROTEIRO.md "Duas portas para o mesmo destino" 02/09):
+// esta ficha tinha DUAS portas — este card (upload simples de arquivo, "9" ao lado da Visão
+// Geral) e o botão dentro do bloco do Contrato (documento gerado pelo sistema + assinatura,
+// _renderSecaoSolicitacaoMedicao). Medição: o upload simples não tinha teste nenhum cobrindo-o
+// (nem unit nem e2e) e o próprio backend documenta que foi superado
+// (_registrar_assinatura_solicitacao_medicao, main.py: "antes a etapa 9 concluía no simples
+// upload de um arquivo; agora só conclui com as DUAS assinaturas do documento gerado pelo
+// sistema") — é a porta morta. A porta que sobrevive (documento+assinatura, já coberta por
+// tests/test_solicitacao_medicao_e2e.py) muda de casa: sai de dentro do bloco do Contrato e
+// passa a viver aqui, na própria ficha "9" — carregada por _fichaEfeitos ao selecionar a aba
+// (mesmo padrão de carregarDadosContrato() pra "7").
 function _renderCardSolicitacaoMedicao(dados, bloqueada) {
-  if (dados.status === 'concluido')
-    return `<p style="color:var(--ok);margin:0">&#x2713; Solicitação de medição confirmada.</p>`;
   if (bloqueada)
     return `<p style="color:var(--muted);font-size:.85rem;margin:0"><i class="ti ti-lock"></i> Conclua a etapa anterior.</p>`;
-  return `
-    <p style="color:var(--muted);font-size:.85rem;margin:0 0 10px">Anexe o arquivo de solicitação e confirme com a senha do medidor.</p>
-    <input type="file" id="med-solic-file" style="font-size:.82rem;margin-bottom:10px"><br>
-    <button onclick="enviarSolicitacaoMedicao()" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:6px;padding:8px 18px;font-weight:700;cursor:pointer">&#x2713; Confirmar (medidor)</button>`;
-}
-
-async function enviarSolicitacaoMedicao() {
-  const f = document.getElementById('med-solic-file')?.files[0];
-  if (!f) { await avisoPopup('Selecione o arquivo de solicitação.', {titulo:'Medição'}); return; }
-  const cred = await pedirCredenciaisGerente({capacidade: 'registrar_medicao', titulo:'Solicitação de Medição', mensagem:'Login e senha do Medidor (ou Diretor).'});
-  if (!cred) return;
-  const fd = new FormData();
-  fd.append('arquivo', f);
-  if (cred.login) { fd.append('login', cred.login); fd.append('senha', cred.senha); }
-  const d = await uploadFormData(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`, fd);
-  if (!d.ok) { await avisoPopup(d.erro || 'Falha', {titulo:'Medição'}); return; }
-  showToast('Solicitação de medição confirmada!', false);
-  await carregarCiclo();
+  return `<div id="med-solic-inline"><p style="color:var(--muted);font-size:.85rem;margin:0">Carregando...</p></div>`;
 }
 
 function _renderCardMedicao(dados, bloqueada) {
@@ -21735,9 +21762,12 @@ function _peCmpHelpers(){
   const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const sig = v => (v>0?'+':'') + fmt(v);
   const pctS = v => `${v>0?'+':''}${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}%`;
-  const kpi = (lbl,val,extra='') => `<div style="flex:1;min-width:150px">`
+  // C6 (docs/db/TAREFA_PERCURSO_0209.md, 02/09): "R$" quebrava numa linha e o número na de
+  // baixo — caixa estreita demais (150px) pro tamanho da fonte. Caixa um pouco maior, fonte um
+  // pouco menor (--fs-h3 15px → --fs-body 14px) e nowrap — símbolo e número são uma coisa só.
+  const kpi = (lbl,val,extra='') => `<div style="flex:1;min-width:180px">`
     + `<div style="font-size:var(--fs-xs);color:var(--text-3);text-transform:uppercase;letter-spacing:.06em">${lbl}</div>`
-    + `<div style="font-family:var(--font-mono);font-size:var(--fs-h3);font-weight:700;${extra}">${val}</div></div>`;
+    + `<div style="font-family:var(--font-mono);font-size:var(--fs-body);font-weight:700;white-space:nowrap;${extra}">${val}</div></div>`;
   return {fmt, sig, pctS, kpi};
 }
 async function _peComparacaoFetch(cont){
@@ -22364,13 +22394,11 @@ async function peConciliacaoRender(){
       }
       const corDif = a.diferenca > 0.005 ? 'var(--err)' : (a.diferenca < -0.005 ? 'var(--ok)' : 'var(--text-3)');
       let acao;
-      if(Math.abs(a.diferenca_valor_contrato) <= 0.005){
-        // ACHADO-39 (docs/db/TAREFA_PERCURSO_0109.md, item B4): Δ a cobrar/estornar zero não é
-        // pendência — nada a repassar ao cliente, mesmo que o Δ de custo de fábrica não seja zero
-        // (a loja absorveu sem que o cliente visse diferença nenhuma). Vale mesmo se já existir
-        // uma decisão antiga registrada por esta rota (medido em homologação: 4 linhas "Absorver
-        // R$ 0,00" nos projetos Teste_1/Teste_2, 01-02/09) — a linha antiga fica no banco
-        // (nunca apagada), só deixa de ser oferecida como pendência.
+      if(!a.precisa_reconhecimento && Math.abs(a.diferenca_valor_contrato) <= 0.005 && Math.abs(a.diferenca) <= 0.005){
+        // C2 (docs/db/TAREFA_PERCURSO_0209.md) corrige o ACHADO-39/B4: só quando os DOIS (Δ a
+        // cobrar E Δ custo) são zero é que não há nada — Δ custo sozinho é fato do resultado
+        // (a margem caiu, a empresa absorveu), não referência, e continua pendência (ver
+        // `a.precisa_reconhecimento`, abaixo).
         acao = `<span style="font-size:.78rem;color:var(--text-3)">Sem diferença a cobrar — nada a decidir.</span>`;
       } else if(a.decisao && !_peConcEditando.has(a.pool_ambiente_id)){
         const t = _peConcTipos[a.decisao.tipo_decisao] || {label: a.decisao.tipo_decisao, cor:'var(--text)'};
@@ -22383,6 +22411,15 @@ async function peConciliacaoRender(){
           <span style="width:90px;flex:0 0 90px;text-align:right;font-family:var(--font-mono)">${fmt(a.decisao.valor_aprovado)}</span>
           <button class="btn-ciclo" style="flex:0 0 auto;padding:2px 8px;font-size:.72rem"
             onclick="_peConcEditando.add(${a.pool_ambiente_id});peConciliacaoRender()">alterar</button></div>`;
+      } else if(a.precisa_reconhecimento){
+        // C2: uma opção só — reconhecer que o custo mudou e fica com a empresa, pelo valor do
+        // Δ custo à vista (nunca Δ a cobrar, que aqui é zero). Ainda É pendência — a fase não
+        // conclui até isto ser registrado (`decisao_e_necessaria`, mod_conciliacao_pe.py).
+        acao = `<div style="font-size:.78rem;color:var(--text-3);margin-bottom:4px">
+            Custo de fábrica mudou (${fmt(Math.abs(a.diferenca))}) sem afetar o valor a cobrar do cliente.</div>
+          <button class="btn-ciclo" style="padding:3px 10px;font-size:.76rem"
+            onclick='peConciliacaoReconhecer(${a.pool_ambiente_id}, ${a.diferenca}, ${JSON.stringify(a.ambiente)})'>
+            Reconhecer — fica com a empresa</button>`;
       } else {
         const decisaoAnterior = a.decisao
           ? `<div style="font-size:.72rem;color:var(--text-3);margin-bottom:4px">
@@ -22482,6 +22519,27 @@ async function peConciliacaoDecidir(poolAmbienteId, tipoDecisao, diferencaValorC
     if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Conciliação de PE'}); return; }
     _peConcEditando.delete(poolAmbienteId);
     showToast('Decisão registrada.');
+    peConciliacaoRender();
+  } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Conciliação de PE'}); }
+}
+
+async function peConciliacaoReconhecer(poolAmbienteId, diferencaCfo, nomeAmbiente){
+  // C2 (docs/db/TAREFA_PERCURSO_0209.md): Δ a cobrar zero, Δ custo não — UM reconhecimento, pelo
+  // valor do Δ custo à vista (nunca abs(Δ a cobrar), que aqui é zero — reusa 'absorver', o tipo
+  // já válido pro sinal zero de Δ a cobrar, mas com valor_aprovado explícito).
+  if(!projetoAtivo) return;
+  const valor = Math.abs(diferencaCfo);
+  const cred = await pedirCredenciaisGerente({capacidade:'aprovar_financeiro', titulo:'Conciliação de PE',
+    mensagem:`Confirma que o custo de fábrica de "${nomeAmbiente}" mudou R$ ${_fBRL(valor)} e fica `
+      + `com a empresa, sem repasse ao cliente?`});
+  if(!cred) return;
+  try {
+    const body = {login: cred.login, senha: cred.senha, tipo_decisao: 'absorver', valor_aprovado: valor};
+    const j = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/pe/conciliacao/${poolAmbienteId}`,
+      {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify(body)}).then(r=>r.json());
+    if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Conciliação de PE'}); return; }
+    showToast('Reconhecimento registrado.');
     peConciliacaoRender();
   } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Conciliação de PE'}); }
 }
@@ -23734,11 +23792,11 @@ function pedirCredenciaisGerente(opts) {
 async function carregarDadosContrato() {
   if (!projetoAtivo) return;
   try {
-    // Achado da Vera (2026-08-26, E2E7/E2E8): esta função nunca atualizava _cicloData — o ✓ de
-    // "Aprovação Financeira I"/"Solicitação de Medição" (lidos de _cicloData['8']/['9'] em
-    // _renderBotoesPosAssinaturaContrato) e a faixa "Etapas do Projeto" ficavam com o status
-    // ANTIGO até o usuário sair e reentrar. _fetchCiclo() ANTES do render pra este card já
-    // nascer certo; _fichaRenderLombada() depois refaz só a faixa (não mexe no conteúdo aberto).
+    // Achado da Vera (2026-08-26, E2E7/E2E8): esta função nunca atualizava _cicloData — o ✓ das
+    // sub-abas "Aprovação Financeira I"/"Solicitação de Medição" (lidos de _cicloData['8']/['9'])
+    // e a faixa "Etapas do Projeto" ficavam com o status ANTIGO até o usuário sair e reentrar.
+    // _fetchCiclo() ANTES do render pra este card já nascer certo; _fichaRenderLombada() depois
+    // refaz só a faixa (não mexe no conteúdo aberto).
     await _fetchCiclo();
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/contrato`,
                           { credentials: 'same-origin' });
@@ -23924,50 +23982,20 @@ function renderContratoUI(contrato) {
       </div>` : ''}
 
     ${['assinado','vigente'].includes(status)
-      ? `<div>
-          <p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>
-          ${_renderBotoesPosAssinaturaContrato()}
-        </div>`
+      ? `<p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>`
       : temArquivo ? _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) : ''
     }
   `;
 }
 
-// Aprovação Financeira I (etapa "8") e Solicitação de Medição (etapa "9") — achado do usuário
-// 2026-08-17: deixaram de ser etapas próprias do espinhaço do fichário e viraram gatilhos
-// independentes dentro da etapa 7 (Contrato), liberados só pelo contrato assinado (não uma
-// pela outra). AF1 reaproveita 100% o modal de provisões já existente — sem `#prov-inline-slot`
-// no DOM, `abrirProvisoes` cai sozinha no caminho de overlay (mesmo modal de sempre). Solicitação
-// de Medição (Frente 2) tem fluxo próprio de geração+assinatura, espelhando o do Contrato —
-// ver _renderSecaoSolicitacaoMedicao logo abaixo.
-function _renderBotoesPosAssinaturaContrato() {
-  const st8 = (_cicloData['8'] || {}).status || 'pendente';
-  const st9 = (_cicloData['9'] || {}).status || 'pendente';
-  const concl8 = STATUS_CONCLUSIVOS.has(st8);
-  const concl9 = STATUS_CONCLUSIVOS.has(st9);
-  const ok = '<span style="color:var(--ok);margin-left:6px">&#x2713;</span>';
-  return `
-    <div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px">
-      <div style="font-weight:600;font-size:.85rem;margin-bottom:10px">Próximos passos</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button onclick="abrirProvisoes(_orcamentoAtivoId, '8')" class="btn-ciclo" style="font-size:.82rem">
-          <i class="ti ti-cash"></i> Aprovação Financeira I${concl8 ? ok : ''}
-        </button>
-        <button onclick="_toggleSolicitacaoMedicaoInline()" class="btn-ciclo" style="font-size:.82rem">
-          <i class="ti ti-ruler-measure"></i> Solicitação de Medição${concl9 ? ok : ''}
-        </button>
-      </div>
-      <div id="med-solic-inline" style="display:none;border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:10px"></div>
-    </div>`;
-}
-
-function _toggleSolicitacaoMedicaoInline() {
-  const box = document.getElementById('med-solic-inline');
-  if (!box) return;
-  const abrir = box.style.display === 'none';
-  box.style.display = abrir ? 'block' : 'none';
-  if (abrir) carregarSolicitacaoMedicao();
-}
+// C3 (docs/db/TAREFA_PERCURSO_0209.md, 02/09): Aprovação Financeira I (etapa "8") e Solicitação
+// de Medição (etapa "9") tiveram, por um tempo (achado do usuário 2026-08-17), botões próprios
+// "Próximos passos" aqui dentro do bloco do Contrato — ao MESMO tempo em que "8"/"9" também são
+// sub-abas de "7" no fichário (N3, 2026-08-26, ver _FICHA_MAE_EXPLICITA) — duas portas pro mesmo
+// destino. Decisão do Marcelo: ficam só como sub-aba, ao lado da Visão Geral — os botões daqui
+// foram removidos. AF1 já abre sozinha (`_fichaEfeitos`, codigo '8'/'11d' → `abrirProvisoes`).
+// Solicitação de Medição ganhou o mesmo tratamento (`_fichaEfeitos`, codigo '9' →
+// `carregarSolicitacaoMedicao`, ver _renderCardSolicitacaoMedicao acima).
 
 // ── Solicitação de Medição (Frente 2, achado do usuário 2026-08-17) ──────────────────────────
 // Documento gerado pelo sistema (modelo por loja tipo 'solicitacao_medicao'), assinável interno

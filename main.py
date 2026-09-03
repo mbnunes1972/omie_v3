@@ -14956,6 +14956,19 @@ class Handler(BaseHTTPRequestHandler):
                     if "arquivo" not in arquivos:
                         self.send_json({"ok": False, "erro": "Anexe o XML da NF-e da fábrica."}, code=400); return
                     fname, data = arquivos["arquivo"]
+                    # ACHADO-31 (bloco fiscal item 2): o arquivo é conferido AQUI, não dois passos
+                    # depois em `mod_nfe.preview` — onde a recusa chega sem dizer que o problema é
+                    # o XML que alguém anexou lá atrás. Medido antes de travar: os 5 XML conhecidos
+                    # (3 reais da fábrica + 2 fixtures) passam inteiros, zero itens sem NCM/CFOP/
+                    # unidade ou com quantidade zerada. A trava é só NO UPLOAD, prospectiva e nunca
+                    # retroativa (mesmo desenho do ACHADO-44): documento carregado antes dela segue
+                    # sendo conferido na emissão, que continua parseando por conta própria.
+                    from fiscal import mod_nfe as _mod_nfe_upload
+                    _ok_xml, _probs_xml = _mod_nfe_upload.problemas_de_upload(data)
+                    if not _ok_xml:
+                        self.send_json({"ok": False, "erro":
+                                        "XML da NF-e da fábrica recusado: " + "; ".join(_probs_xml)},
+                                       code=400); return
                     base_nome = os.path.basename(fname)
                     unico = datetime.utcnow().strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:8] + "_" + base_nome
                     rel = os.path.join("ciclo", "15", unico)

@@ -26,7 +26,14 @@ deve ser o padrão de `CicloDocumento`. É a regra 3 do plano — *o que já
 virou fato se lê de onde foi congelado* — estendida de lançamento para
 documento.
 
-## 2 · Validar o XML no upload, não na emissão (ACHADO-31)
+## 2 · Validar o XML no upload, não na emissão (ACHADO-31) · FEITO 03/09
+
+`fiscal/mod_nfe.problemas_de_upload` + recusa 400 no upload da etapa 15; medido antes de
+travar, nenhum dos 5 XML conhecidos seria rejeitado. Detalhes no ACHADO-31.
+
+**Atenção ao marcar este item como fim do ACHADO-31: não é.** A outra metade do achado — o
+*markup de ajuste*, decidido em 31/08 — nunca foi implementada e não é item nenhum deste bloco.
+Foi para a `LISTA_PARALELA.md` como LP-15 em 03/09, para não ficar sem dono.
 
 Hoje o upload aceita qualquer arquivo e quem rejeita é
 `mod_nfe.preview`, dois passos depois, sem dizer que o problema é o arquivo.

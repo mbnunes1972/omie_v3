@@ -144,6 +144,59 @@ def preview(xml, markup_pct):
     }
 
 
+_CAMPOS_OBRIGATORIOS = (
+    ("ncm",  "NCM",      "sem NCM"),
+    ("cfop", "CFOP",     "sem CFOP"),
+    ("uCom", "unidade",  "sem unidade comercial"),
+)
+
+
+def problemas_de_upload(xml):
+    """ACHADO-31 (docs/db/TAREFA_BLOCO_FISCAL.md item 2) — o XML da fábrica conferido NO UPLOAD,
+    não dois passos depois na emissão. Hoje o upload aceita qualquer arquivo e quem recusa é
+    `preview`, na etapa 15, com uma mensagem que não diz que o problema é o arquivo que alguém
+    anexou lá atrás. O parser sempre esteve bom — faltava a validação estar no lugar certo.
+
+    Mesmo formato de `integracoes.promob_grupos.consistencia_interna` (ACHADO-44): devolve
+    `(ok, problemas)`, `problemas` é lista de strings e fica vazia quando `ok`. Quem chama é
+    quem decide o que fazer com isso — aqui, o upload da etapa 15 recusa com 400.
+
+    O que recusa, e por quê: XML mal formado ou sem `<infNFe>` (o `parse_nfe` já sabia dizer
+    isso, ninguém escutava no momento certo); nota sem nenhum item, que parseia mas não tem o
+    que emitir; e item sem NCM, CFOP, unidade ou com quantidade não positiva — os quatro que a
+    SEFAZ cobra e cuja falta hoje só aparece como erro de schema na emissão. É a regra do item 4
+    do mesmo bloco aplicada ao item: **erro de schema da SEFAZ é falha nossa de validação**.
+
+    Medido antes de travar (03/09), nos 5 XML disponíveis — os 3 reais da fábrica (195, 89 e 13
+    linhas) e as 2 fixtures sintéticas: **zero** itens sem NCM, sem CFOP, sem unidade ou com
+    quantidade zerada. A trava não rejeitaria nenhum arquivo real conhecido."""
+    try:
+        nfe = parse_nfe(xml)
+    except ValueError as e:
+        return False, [str(e)]
+    itens = nfe.get("itens") or []
+    if not itens:
+        return False, ["a nota não tem nenhum item (<det>) — não há o que emitir a partir dela"]
+    faltas = {rotulo: [] for _campo, rotulo, _frase in _CAMPOS_OBRIGATORIOS}
+    faltas["quantidade"] = []
+    for it in itens:
+        n = str(it.get("nItem") or "?")
+        for campo, rotulo, _frase in _CAMPOS_OBRIGATORIOS:
+            if not str(it.get(campo) or "").strip():
+                faltas[rotulo].append(n)
+        if not (it.get("qCom") or 0) > 0:
+            faltas["quantidade"].append(n)
+    frases = {r: f for _c, r, f in _CAMPOS_OBRIGATORIOS}
+    frases["quantidade"] = "com quantidade zerada ou negativa"
+    problemas = []
+    for rotulo in ("NCM", "CFOP", "unidade", "quantidade"):
+        ruins = faltas.get(rotulo) or []
+        if ruins:
+            amostra = ", ".join(ruins[:5]) + ("…" if len(ruins) > 5 else "")
+            problemas.append("%d item(ns) %s (item %s)" % (len(ruins), frases[rotulo], amostra))
+    return (not problemas), problemas
+
+
 def _valor_bruto_item(it, vun=None):
     """Valor bruto do item como a nota fiscal calcula (mapa_fiscal.montar_payload):
     round(qCom · preco_venda_unit, 2)."""

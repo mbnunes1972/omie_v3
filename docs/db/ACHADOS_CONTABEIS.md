@@ -2091,7 +2091,7 @@ no mesmo dia em que está adiada. Corrigido com `finally` que devolve o status.
 
 ---
 
-## ACHADO-31 — o XML da fábrica só é validado na emissão, dois passos depois do upload
+## ACHADO-31 — o XML da fábrica só é validado na emissão, dois passos depois do upload · PARCIALMENTE RESOLVIDO 03/09/2026 (F2-16, item 2 do bloco fiscal) — falta o markup de ajuste
 
 Encontrado pelo Marcelo em 31/08, ao não conseguir concluir a etapa 15.
 
@@ -2105,6 +2105,44 @@ não acha o `infNFe`. O erro aparece dois passos depois da causa, e não diz
 que o problema é o arquivo.
 
 **Conserto:** validar no upload. O arquivo entra ou não entra ali.
+
+### RESOLVIDO 03/09 — a metade da validação
+
+`fiscal/mod_nfe.problemas_de_upload(xml)` devolve `(ok, problemas)` no mesmo formato do
+`consistencia_interna` do ACHADO-44, e `POST /ciclo/15/nfe-fabrica` recusa com 400 **antes de
+gravar documento nenhum**. O parser sempre esteve bom — `parse_nfe` já sabia recusar XML mal
+formado e XML sem `<infNFe>` com mensagem clara; ninguém escutava no momento certo.
+
+Recusa quatro coisas: XML mal formado; XML sem `<infNFe>`; nota que parseia mas **não tem item
+nenhum** (não há o que emitir); e item sem NCM, CFOP, unidade ou com quantidade não positiva —
+nomeando quais itens estão furados. Esse último grupo é a regra do item 4 do mesmo bloco
+aplicada ao ITEM: *erro de schema da SEFAZ é falha nossa de validação*, e a nota não deve chegar
+lá para descobrir que o campo estava vazio.
+
+**Medido antes de travar**, nos 5 XML conhecidos (os 3 reais da fábrica — 195, 89 e 13 linhas —
+e as 2 fixtures sintéticas): **zero** itens sem NCM, sem CFOP, sem unidade ou com quantidade
+zerada. A trava não rejeitaria nenhum arquivo real conhecido. Ela é **prospectiva, só na porta
+de entrada** (mesmo desenho do ACHADO-44): documento carregado antes dela continua sendo
+conferido na emissão, que segue parseando por conta própria — defesa em profundidade, não porta
+substituída.
+
+**Correção de uma medição minha, para o registro:** ao medir eu li as chaves em maiúsculas
+(`NCM`/`CFOP`) e o parser as grava em minúsculas, o que me fez relatar que os itens reais não
+tinham NCM nem CFOP. Errado — o texto original desta seção estava certo em tudo, inclusive no
+"12 itens", que são os consolidados do `NFe-163298` (13 linhas → 12).
+
+**Prova:** `tests/test_achado31_xml_no_upload.py` (9 — a medição dos 5 arquivos travada como
+teste, as quatro recusas nomeadas, e os dois aceites de ponta a ponta: o upload ruim para na
+porta sem deixar documento, o upload bom continua entrando). Rodados junto os três arquivos que
+sobem XML pela mesma porta (`test_nfe_etapa15_e2e`, `test_aceite_achado18`,
+`test_dre_ciclo_completo_e2e`) — é neles que apareceria se a trava tivesse fechado a porta do
+arquivo legítimo. Suíte completa: **2585 passed, 4 xfailed, 0 failed**.
+
+**O que NÃO foi feito, e por isso o achado fica PARCIAL:** o *markup de ajuste* decidido em
+31/08 (a seção abaixo) continua sem uma linha de código — medido em 03/09: não existe
+`markup_ajuste` em lugar nenhum, e o rateio segue sobrescrevendo o valor digitado via
+`rescalar_itens_para_total` quando há contrato. Decisão tomada e não implementada, sem dono em
+nenhum item do bloco fiscal — registrada agora como LP-15 para não sumir.
 
 ### O campo "30" ao lado de cada arquivo — corrigido em 31/08
 

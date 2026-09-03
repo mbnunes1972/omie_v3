@@ -172,6 +172,21 @@ transferência não teria a quem oferecer.
 (Marcelo, 02/09, testando o Ciclo.)
 
 
+**LP-15 · Markup de ajuste — a metade não implementada do ACHADO-31.**
+Decidido em 31/08 e nunca escrito: *"o rateio sugere, o markup manda"* — o rateio pelo
+`Val_Cont` deveria deixar de sobrescrever e passar a PRÉ-PREENCHER o campo, que o usuário
+ajusta, e a emissão usaria o que está no campo. Medido em 03/09: não existe `markup_ajuste` em
+lugar nenhum do código, e `rescalar_itens_para_total` continua sobrescrevendo o valor digitado
+sempre que há contrato — ou seja, o número que o usuário digita é descartado justamente no caso
+normal, que é o defeito original.
+*Por que importa:* quando parte do projeto é produzida localmente, a NF-e da fábrica não cobre
+tudo, e forçar a face da saída à parcela Mercadoria rateada produz um número que não
+corresponde ao que saiu.
+*Adiado:* apareceu ao fechar o item 2 do bloco fiscal (03/09) e **não é item de nenhum bloco** —
+é decisão tomada, sem implementação e sem dono. Entra aqui para não sumir; a consequência aceita
+(a face da nota deixar de bater com a receita de mercadoria escriturada) já está registrada no
+próprio ACHADO-31.
+
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

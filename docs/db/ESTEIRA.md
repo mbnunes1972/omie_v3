@@ -68,16 +68,6 @@ servidor e olhar o `git log`. Passa a valer:
 Isso muda o trabalho da Vera: o fim de um ciclo passa a ser "suíte verde +
 tag criada", não "commitado".
 
-**A única exceção registrada até hoje** (03/09, `v2026.09.03-beta1`): um
-revision id de migration Alembic digitado à mão (`a1b2c3d4e5f6`, óbvio
-demais pra ser gerado) corrigido pra um id de verdade (`82275b998a4a`)
-antes de Produção entrar na cadeia — decisão do Marcelo, feita **antes**
-de qualquer servidor rodar código diferente sob a mesma tag (o commit
-movido, `4f7b831`, só toca `docs/` e o nome/id da migration — zero diff de
-código de aplicação; nenhum serviço precisou reiniciar). Não é o padrão:
-mover tag é para bookkeeping puro, descoberto cedo, nunca para levar
-código novo pra quem já rodou a tag.
-
 ## Teste fora da rodada padrão apodrece
 
 Um teste que só roda quando alguém lembra de invocá-lo é da mesma família do

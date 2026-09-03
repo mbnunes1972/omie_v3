@@ -270,6 +270,29 @@ ciclo). Mesmo procedimento, mesma ordem (Integração, depois Homologação).
 `f47f22de46a7 (head)` — reportado por pedido explícito (não o histórico do
 repositório). Produção NÃO tocada nesta rodada.
 
+### Quinto deploy por tag — v2026.09.03-beta1 → v2026.09.03-beta2 — 03/09/2026
+
+`v2026.09.03-beta1` (`29e4cdc`) — F2-13 (ACHADO-45 regra corrigida, 46, 47)
++ F2-14 (ACHADO-48, fuso horário como configuração). Primeira migration nova
+desde o beta1 de 01/09 (`f47f22de46a7` → `a1b2c3d4e5f6`, colunas Adicional
+do ACHADO-47) — backup + `alembic upgrade head` + `alembic current` nos
+dois antes de subir. Mesmo procedimento, mesma ordem (Integração, depois
+Homologação). `confirmar.sh` 15/0 nos dois, smoke OK.
+
+Ao revisar o deploy, achado: o revision id `a1b2c3d4e5f6` foi digitado à
+mão (óbvio demais pra ser gerado), ao contrário de todos os outros da
+cadeia. Corrigido para `82275b998a4a` (gerado). Primeira tentativa moveu a
+própria `v2026.09.03-beta1` pro commit corrigido — decisão revertida no
+mesmo dia: mover tag "só para bookkeeping" é precedente que se reaplica com
+menos cuidado depois, e cortar uma tag nova custa só um número que pula.
+`v2026.09.03-beta1` foi devolvida ao commit original (`29e4cdc`) e fica
+como registro histórico de que existiu e foi superada; `v2026.09.03-beta2`
+(`4f7b831`) é quem os servidores rodam de fato. Nos dois: `git checkout
+v2026.09.03-beta2`, `UPDATE alembic_version SET version_num=
+'82275b998a4a'` (troca de nome, não migration nova — o commit não muda
+schema), `alembic current` → `82275b998a4a (head)`, `confirmar.sh` 15/0,
+smoke OK. Produção NÃO tocada nesta rodada.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

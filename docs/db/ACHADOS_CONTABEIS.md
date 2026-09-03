@@ -2255,7 +2255,7 @@ competência real) ou remover da tabela. Ver LP-11 em
 
 ---
 
-## ACHADO-34 — `conciliar_final` exige veredito pelo SALDO, não pela decisão — quem zera antes do fechamento nunca passa pela exigência
+## ACHADO-34 — `conciliar_final` exige veredito pelo SALDO, não pela decisão — quem zera antes do fechamento nunca passa pela exigência · RESOLVIDO 03/09/2026 (F2-8)
 
 **Generalização (01/09, ao mover pra fila ativa da Fase 2 — antes registrado
 como LP-12):** `conciliar_final` monta a lista de rubricas que exigem
@@ -2292,6 +2292,69 @@ listar.
 **Grupo:** 1.
 
 ---
+
+### DECIDIDO 03/09 — a folha GRAVA um veredito, não é reconhecida como um
+
+Das duas saídas que o achado deixava abertas, o Marcelo escolheu a segunda: a
+folha passa a gravar um `VeredictoProvisao`. A primeira — reconhecer por escrito
+que a folha já É o ato nomeado — foi recusada porque deixaria o
+`relatorio_projetos_encerrados_por_reversao` permanentemente cego a esses
+projetos, e o relatório é o contra-controle do ACHADO-16: sem ele, "encerrado
+por reversão" volta a ser uma categoria que ninguém consegue auditar.
+
+**Sem migration.** `VeredictoProvisao` não tem coluna `origem`, mas tem `motivo`,
+`ref` e `decidido_por_id` — o ato que decidiu cabe no campo escrito, e criar uma
+coluna pra guardar o que o campo já guarda custaria uma migration por nada.
+
+### Conserto (03/09)
+
+`mod_contabil.resolver_por_ato_nomeado` é a porta única para resolver o saldo de
+uma provisão por um ato nomeado que acontece FORA da Conciliação Final. Genérica
+de propósito: hoje o único chamador é `mod_folha.pagar`, mas o achado registra
+que a folha é o caso real medido e não o único possível — o próximo mecanismo
+que zerar uma provisão antes do fechamento tem uma porta certa pra usar, em vez
+de chamar `resolver_saldo_provisao` direto e sumir do rastro (a regra das "duas
+portas" do ROTEIRO, aplicada antes de a segunda porta existir).
+
+**O veredito sai do SINAL do saldo, derivado de `vereditos_validos_para_saldo`** —
+a mesma função que `resolver_veredito_provisao` usa pra recusar, nunca uma
+segunda cópia dos limites (é literalmente a doença que o ACHADO-41 nomeia).
+FALTA ou zero → `efetivada`; SOBRA → `encerrada_valor_menor` com
+`valor_efetivado=0`, o caso que o próprio `resolver_veredito_provisao` já
+documentava: a rubrica foi efetivada mais cedo no projeto, fora daquela chamada,
+e chega só com o resíduo a reverter.
+
+**O livro não muda.** Nos dois sinais o caminho termina no mesmo
+`resolver_saldo_provisao` que a folha chamava sozinha — o que entra é o rastro,
+não a contabilidade. Só o `ref` do lançamento ganha sufixo (`:ajuste` →
+`:ajuste:residual`/`:reverte`); conferido que nada no repositório dependia dessa
+string. `mod_folha.pagar` ganhou `decidido_por_id=None` e `main.py` passa
+`usuario.get("id")` — o único chamador real, enumerado antes de mudar a
+assinatura.
+
+**Prova:** `tests/test_achado34_veredito_da_folha.py` (5 aceites) — veredito
+nomeado existe depois da folha paga, com motivo citando a folha e a competência
+e `decidido_por_id` de quem pagou; SOBRA vira `encerrada_valor_menor` e o
+projeto **passa a aparecer** no relatório de encerrados por reversão (a
+consequência exata que o achado registrava como perdida); o livro conferido
+conta a conta contra os mesmos números que `test_comissao.py` já travava
+(despesa, saldo da provisão, rota "sem DRE" com 4.4.02/5.6.10 intocadas); FALTA
+vira `efetivada` com a despesa formal pelo valor ajustado; idempotência por
+`ref`. Suíte completa: **2570 passed, 4 xfailed, 0 failed** (era 2565 — os 5
+aceites novos, nada mais mexeu).
+
+**Controle negativo:** revertida só a chamada em `mod_folha` para
+`resolver_saldo_provisao` (assinatura mantida, pra não falhar por `TypeError`),
+os aceites 1, 2 e 4 falham em `len(vs) == 1` com **zero vereditos** — o achado
+em si, na linha que o descreve. Os aceites 3 e 5 passam nos dois lados **por
+desenho**, e é assim que devem se comportar: o 3 afirma que o livro NÃO muda
+(controle de regressão, não detector do achado) e o 5 chama
+`resolver_por_ato_nomeado` direto, provando a idempotência da função e não o
+caminho da folha. Três detectores, dois controles de propriedade — a distinção
+fica escrita pra ninguém ler "5 aceites" como "5 provas do achado".
+
+**Grupo:** 1.
+
 
 ## ACHADO-35 — a idempotência recusa o lançamento legítimo, e antes de hoje recusava em silêncio · RESOLVIDO 02/09/2026 (B1)
 
@@ -3319,7 +3382,7 @@ nunca cria um segundo). Controle negativo confirmado.
 
 ---
 
-## ACHADO-48 — o livro é datado em UTC e a empresa vive em UTC−3
+## ACHADO-48 — o livro é datado em UTC e a empresa vive em UTC−3 · RESOLVIDO 03/09/2026 (F2-14)
 
 Encontrado pela Vera em 02/09, investigando três testes que falhavam antes
 de cortar a tag. **O diagnóstico dela está certo e é maior do que o sintoma

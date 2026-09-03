@@ -291,7 +291,7 @@ def reabrir(db, reg):
     return True, None
 
 
-def pagar(db, owner_tipo, owner_id, reg):
+def pagar(db, owner_tipo, owner_id, reg, decidido_por_id=None):
     """Paga a folha APROVADA: posta a despesa (fixa→5.3.06, variável não-venda→5.3.01) e marca
     'paga'. Idempotente por ref. Usa os Dados Bancários/PIX já cadastrados (nada redigitado).
 
@@ -303,7 +303,7 @@ def pagar(db, owner_tipo, owner_id, reg):
 
     Ajuste do gerente no ato do pagamento (2026-08-17): se `it.valor` (possivelmente ajustado via
     base_ajustada/pct_ajustado) diverge do que foi originalmente provisionado no contrato, sobra um
-    resíduo na provisão/ativo diferido — `mod_contabil.resolver_saldo_provisao` fecha esse resíduo
+    resíduo na provisão/ativo diferido — `mod_contabil.resolver_por_ato_nomeado` fecha esse resíduo
     (sobra: cancela sem tocar DRE, nunca foi gasto; falta: só zera o mecânico, a despesa da
     diferença já foi reconhecida no `efetivar_provisao` acima). Roda SEMPRE que há projeto (mesmo
     valor 0 — gerente pode zerar uma comissão indevida, a provisão original não pode ficar órfã), e
@@ -326,9 +326,15 @@ def pagar(db, owner_tipo, owner_id, reg):
                                            _PROV_COMISSAO_VENDA, v,
                                            ref=ref + ":venda:" + it.projeto_nome, forma_pagamento="direto")
         if it.projeto_nome:
-            mod_contabil.resolver_saldo_provisao(db, owner_tipo, owner_id, it.projeto_nome,
-                                                 _PROV_COMISSAO_VENDA,
-                                                 ref=ref + ":venda:" + it.projeto_nome + ":ajuste")
+            # ACHADO-34: pela porta que GRAVA o veredito, não por `resolver_saldo_provisao` direto
+            # — senão a rubrica chega zerada na Conciliação Final e atravessa a exigência de
+            # veredito sem nunca passar por ela, invisível ao relatório de reversões. O efeito no
+            # livro é o mesmo; o que entra é o rastro de que foi a FOLHA quem decidiu.
+            mod_contabil.resolver_por_ato_nomeado(db, owner_tipo, owner_id, it.projeto_nome,
+                                                  _PROV_COMISSAO_VENDA,
+                                                  origem="folha:%d competência %s" % (reg.id, reg.competencia),
+                                                  ref=ref + ":venda:" + it.projeto_nome + ":ajuste",
+                                                  decidido_por_id=decidido_por_id)
         it.status = "confirmado"
     variavel_nao_venda = round((reg.parte_variavel or 0) - sum(float(i.valor or 0) for i in itens_venda), 2)
     if variavel_nao_venda > 0:

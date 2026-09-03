@@ -10099,7 +10099,7 @@ class Handler(BaseHTTPRequestHandler):
                 # resolve pelo `lid` já escopado (a loja DONA da folha), não pelo `usuario` cru —
                 # mesmo achado de auditoria do endpoint de assistências acima.
                 ot, oid = mod_contabil.resolver_owner(db, {"loja_id": lid, "rede_id": None})
-                ok, err = mod_folha.pagar(db, ot, oid, reg)
+                ok, err = mod_folha.pagar(db, ot, oid, reg, decidido_por_id=usuario.get("id"))
                 if not ok:
                     self.send_json({"ok": False, "erro": err}, code=400); return
                 db.commit()

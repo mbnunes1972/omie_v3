@@ -2545,6 +2545,50 @@ def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_prov
     return v
 
 
+def resolver_por_ato_nomeado(db, owner_tipo, owner_id, projeto_id, codigo_provisao, origem, ref,
+                            decidido_por_id=None, data=None):
+    """ACHADO-34 (docs/db/ACHADOS_CONTABEIS.md) — porta ÚNICA para resolver o saldo de uma provisão
+    por um ATO NOMEADO que acontece FORA da Conciliação Final. Hoje o único chamador é o pagamento
+    da folha (`mod_folha.pagar`, comissão de venda 2.1.04.12), que é o caso real medido em 01/09 —
+    mas o achado registra que ele não é o único possível, e é por isso que esta função é genérica:
+    o próximo mecanismo que zerar uma provisão antes do fechamento tem uma porta certa pra usar,
+    em vez de chamar `resolver_saldo_provisao` direto e sumir do rastro.
+
+    **O defeito que ela fecha.** `conciliar_final` monta a lista de rubricas que exigem veredito
+    olhando quem AINDA TEM SALDO ABERTO naquele momento. Quem zera o saldo antes atravessa a
+    exigência inteira sem nunca passar por ela, e o `relatorio_projetos_encerrados_por_reversao`
+    fica cego a esses projetos — não existe `VeredictoProvisao` nenhum pra listar. Resolver o livro
+    sem deixar decisão escrita é exatamente o silêncio que o ACHADO-16 tirou da Conciliação Final;
+    aqui ele tinha voltado por uma porta lateral.
+
+    **O efeito no livro é IDÊNTICO ao de `resolver_saldo_provisao` chamado sozinho** — é o mesmo
+    caminho, alcançado pela porta que registra quem decidiu. O que muda é o rastro, não a
+    contabilidade; é o que os aceites de `tests/test_achado34_veredito_da_folha.py` provam conta a
+    conta. A DECISÃO do Marcelo (03/09) foi esta: a folha grava um veredito nomeado, em vez de ser
+    reconhecida por escrito como uma segunda forma legítima de veredito.
+
+    **O veredito sai do SINAL do saldo, derivado de `vereditos_validos_para_saldo`** — a mesma
+    função que `resolver_veredito_provisao` usa pra recusar (ACHADO-41: nunca uma segunda cópia dos
+    limites, que divergiria sozinha depois). FALTA ou zero → 'efetivada' (a despesa real já foi
+    reconhecida na efetivação que precede esta chamada; sobra o residual mecânico). SOBRA →
+    'encerrada_valor_menor' com `valor_efetivado=0`, que é o caso que o próprio
+    `resolver_veredito_provisao` documenta: a rubrica já foi efetivada mais cedo NO PROJETO, fora
+    desta chamada, e chega aqui só com o resíduo a reverter.
+
+    `origem` descreve o ato que decidiu ("folha:123 competência 2026-07") e vai para o `motivo` do
+    veredito — `VeredictoProvisao` não tem coluna `origem`, e criar uma custaria migration para
+    guardar o que o campo escrito já guarda. Idempotente por `ref`, como toda a família."""
+    saldo = round(_mov(db, owner_tipo, owner_id, codigo_provisao, "credor", None, None,
+                       projeto_id=projeto_id), 2)
+    if "efetivada" in vereditos_validos_para_saldo(saldo):
+        veredito, valor_efetivado = "efetivada", None
+    else:
+        veredito, valor_efetivado = "encerrada_valor_menor", 0.0
+    return resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
+                                      veredito, ref, valor_efetivado=valor_efetivado,
+                                      motivo=origem, decidido_por_id=decidido_por_id, data=data)
+
+
 def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, decidido_por_id=None, data=None):
     """FASE D2 — Conciliação Final (etapa 21). ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8):
     não fecha mais o projeto com provisão em aberto sem decisão — cada rubrica de custo do

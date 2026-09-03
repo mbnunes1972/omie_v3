@@ -25,8 +25,14 @@ PAPEL_FUNCOES = {
 }
 
 
-def funcao_compativel(papel, funcao_nome):
-    """True se `funcao_nome` é uma função aceita para `papel`. Papel sem mapeamento aceita qualquer."""
+def funcao_compativel(papel, funcao_nome, papeis=None):
+    """True se a função é aceita para `papel`. ACHADO-46: a busca vai por PAPEL — `papeis`
+    (lista de `Funcao.atribuicoes_json` já parseada, fonte PREFERIDA quando preenchida) primeiro;
+    `funcao_nome` (contra `PAPEL_FUNCOES`) é o FALLBACK, só quando a função não declara papéis
+    (não migrada pela tela de Funções ainda). Papel sem mapeamento em `PAPEL_FUNCOES` aceita
+    qualquer nome quando cai no fallback."""
+    if papeis:
+        return papel in papeis
     aceitas = PAPEL_FUNCOES.get(papel)
     return True if not aceitas else (funcao_nome in aceitas)
 

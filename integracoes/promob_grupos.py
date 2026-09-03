@@ -225,6 +225,24 @@ def venda_maior_que_cfo(budget_total, order_total, tolerancia=0.005):
     return bt > ot + tolerancia
 
 
+def itens_com_markup_invalido(amb, tolerancia=0.005):
+    """ACHADO-45 (DECIDIDO 02/09) — a regra é uma só, e é POR ITEM (é como os dois valores
+    existem no XML): `budget_total` (BUDGET/TOTAL, valor com markup) tem que ser > `order_total`
+    (ORDER/TOTAL, custo de fábrica com IPI) em TODO item. Markup > 1. Item com valor zero não é
+    condição separada — viola esta mesma regra. Recusa dura no upload de pool.
+
+    Medido em 02/09 (Homologação, único ambiente com dados reais): 0/795 itens violavam, em
+    nenhum dos 12 ambientes reais — inclusive checado o caso de um item vir zerado sem o
+    ambiente perder margem (nenhum encontrado). A quarentena por `qa_selo` (mod_qualidade_xml.py)
+    NÃO é substituída — ela usa tolerância/limiar diferentes e continua cobrindo o que já cobria.
+
+    Retorna a lista de itens (dicts) que violam — vazia quando o arquivo está OK."""
+    return [item
+            for grupo in amb.get('grupos', [])
+            for item in grupo.get('itens', [])
+            if float(item.get('budget_total', 0) or 0) <= float(item.get('order_total', 0) or 0) + tolerancia]
+
+
 def _ler_xml_root(nome_arquivo, root):
     """Core parsing logic — receives ElementTree root directly."""
     projeto = root.get('DESCRIPTION', nome_arquivo)

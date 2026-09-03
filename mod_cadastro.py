@@ -7,9 +7,9 @@ import re
 import secrets
 import json as _json
 from auth import perfis
+import mod_escopo
 from database import Funcionario, Fornecedor, Terceiro, Usuario, Funcao
 
-_PAPEIS = ("projeto_executivo", "medicao", "montagem", "assistencia")
 _REMUN = ("fixa", "variavel", "fixa_variavel")
 _REG_TRAB = ("presencial", "remoto", "misto")
 _REG_CONTR = ("registrado", "terceirizacao")
@@ -54,6 +54,35 @@ def _i(v):
         return None
 
 
+def _load_json_lista(s):
+    try:
+        v = _json.loads(s or "null")
+    except (TypeError, ValueError):
+        return []
+    return v if isinstance(v, list) else []
+
+
+def funcao_e_comissionada(funcao):
+    """ACHADO-47 — guarda do adicional de comissão: True só quando a função PRIMÁRIA já tem
+    ALGUMA comissão configurada (motor de vendas da loja, OU comissao_json com pct>0/faixas
+    preenchidas). O adicional soma sobre uma comissão que já existe — nunca cria uma do zero.
+    Mora aqui (não em mod_folha) porque opera só em dados de Funcao/cadastro — "folha" depende
+    de "cadastro" (modulos.py), nunca o contrário; mod_folha reexporta esta função."""
+    if not funcao:
+        return False
+    if funcao.usa_comissao_vendas:
+        return True
+    if not funcao.comissao_json:
+        return False
+    try:
+        com = _json.loads(funcao.comissao_json)
+    except (ValueError, TypeError):
+        return False
+    if com.get("por_meta"):
+        return bool(com.get("faixas"))
+    return float(com.get("pct") or 0.0) > 0.0
+
+
 def _digitos(s):
     return re.sub(r"\D", "", s or "")
 
@@ -65,10 +94,24 @@ def func_serialize(f, db=None):
          "remuneracao_tipo": f.remuneracao_tipo or "fixa",
          "remuneracao_fixa": f.remuneracao_fixa, "remuneracao_var": f.remuneracao_var,
          "status": f.status or "ativo", "usuario_id": f.usuario_id,
+         # ACHADO-47 — bloco Adicional (acúmulo de papéis, DECIDIDO 02/09).
+         "adicional_fixo": getattr(f, "adicional_fixo", None),
+         "adicional_comissao_pct": getattr(f, "adicional_comissao_pct", None),
+         "adicional_comissao_base": getattr(f, "adicional_comissao_base", None) or "val_liq_venda",
+         "adicional_obs": getattr(f, "adicional_obs", None) or "",
+         "funcao_comissionada": False,
          "acesso": {"tem_acesso": False, "email": f.email or "", "perfil": "operador"}}
     d.update(_serial_campos(f, ENDERECO_CAMPOS + BANCO_CAMPOS))
     if db is not None and f.funcao_id:
-        fn = db.get(Funcao, f.funcao_id); d["funcao_nome"] = fn.nome if fn else ""
+        fn = db.get(Funcao, f.funcao_id)
+        d["funcao_nome"] = fn.nome if fn else ""
+        # ACHADO-46: papéis da função (fonte preferida pro Mapa de Atribuições filtrar
+        # candidatos — nome vira fallback só quando isto vem vazio).
+        papeis_brutos = _load_json_lista(getattr(fn, "atribuicoes_json", None)) if fn else []
+        d["funcao_papeis"] = [p for p in papeis_brutos if p in mod_escopo.PAPEIS]
+        # a tela só oferece o campo de adicional de comissão quando isto é True (o servidor
+        # recusa de qualquer forma — ver func_aplicar — mas decoração NÃO é o gate, é só UX).
+        d["funcao_comissionada"] = funcao_e_comissionada(fn)
     if db is not None and f.usuario_id:
         u = db.get(Usuario, f.usuario_id)
         if u and u.ativo:
@@ -95,6 +138,25 @@ def func_aplicar(db, f, req, loja_id):
         f.remuneracao_var = _f(req.get("remuneracao_var"))
     if "status" in req:
         f.status = (_s(req.get("status")) or "ativo")
+    # ACHADO-47 (DECIDIDO 02/09) — Adicional (acúmulo de papéis): fixo é livre; comissão só
+    # quando a função PRIMÁRIA já é comissionada — guarda NO SERVIDOR (achado de UAT de 10/08:
+    # guarda só na tela é decoração). ValueError vira 400 automaticamente no chamador (main.py).
+    if "adicional_fixo" in req:
+        f.adicional_fixo = _f(req.get("adicional_fixo"))
+    if "adicional_comissao_pct" in req:
+        pct = _f(req.get("adicional_comissao_pct"))
+        if pct:
+            funcao_id = f.funcao_id if "funcao_id" not in req else _i(req.get("funcao_id"))
+            funcao = db.get(Funcao, funcao_id) if (db is not None and funcao_id) else None
+            if not funcao_e_comissionada(funcao):
+                raise ValueError("Adicional de comissão só é permitido quando a função "
+                                 "primária já é comissionada.")
+        f.adicional_comissao_pct = pct
+    if "adicional_comissao_base" in req:
+        base = _s(req.get("adicional_comissao_base"))
+        f.adicional_comissao_base = base if base == "val_liq_venda" else None
+    if "adicional_obs" in req:
+        f.adicional_obs = _s(req.get("adicional_obs"))
 
 
 def func_sync_acesso(db, f, req):
@@ -176,7 +238,10 @@ def terc_serialize(t, db=None):
          "status": t.status or "ativo"}
     d.update(_serial_campos(t, ENDERECO_CAMPOS + BANCO_CAMPOS))
     if db is not None and t.funcao_id:
-        fn = db.get(Funcao, t.funcao_id); d["funcao_nome"] = fn.nome if fn else ""
+        fn = db.get(Funcao, t.funcao_id)
+        d["funcao_nome"] = fn.nome if fn else ""
+        papeis_brutos = _load_json_lista(getattr(fn, "atribuicoes_json", None)) if fn else []
+        d["funcao_papeis"] = [p for p in papeis_brutos if p in mod_escopo.PAPEIS]
     return d
 
 
@@ -202,9 +267,14 @@ def funcao_serialize(f, db=None):
         except Exception: return None
     com = _load(getattr(f, "comissao_json", None)) or {}
     ben = _load(getattr(f, "beneficios_json", None)) or {}
+    papeis_brutos = _load(getattr(f, "atribuicoes_json", None)) or []
+    papeis = [p for p in papeis_brutos if p in mod_escopo.PAPEIS] if isinstance(papeis_brutos, list) else []
     return {"id": f.id, "nome": f.nome, "status": f.status or "ativo",
             "perfil_padrao": getattr(f, "perfil_padrao", None),
             "descricao": getattr(f, "descricao", None),
+            # ACHADO-46/47: papéis do Mapa de Atribuições que esta função executa — fonte
+            # PREFERIDA (elimina o acoplamento por nome), preenchida aqui pela primeira vez.
+            "papeis": papeis,
             "remuneracao_padrao": getattr(f, "remuneracao_padrao", None),
             "regime_trabalho": getattr(f, "regime_trabalho", None),
             "regime_contratacao": getattr(f, "regime_contratacao", None),
@@ -229,6 +299,12 @@ def funcao_aplicar(db, f, req, loja_id):
         f.perfil_padrao = _s(req.get("perfil_padrao")) or None
     if "descricao" in req:
         f.descricao = _s(req.get("descricao")) or None
+    if "papeis" in req:
+        # ACHADO-46/47: só os papéis válidos do Mapa de Atribuições entram — nunca um valor
+        # arbitrário do request vira "papel" pro resto do sistema.
+        brutos = req.get("papeis") or []
+        papeis = [p for p in brutos if p in mod_escopo.PAPEIS] if isinstance(brutos, list) else []
+        f.atribuicoes_json = _json.dumps(papeis) if papeis else None
     if "remuneracao_padrao" in req:
         v = _s(req.get("remuneracao_padrao")); f.remuneracao_padrao = v if v in _REMUN else None
     if "regime_trabalho" in req:

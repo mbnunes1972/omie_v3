@@ -2985,7 +2985,7 @@ dois endpoints, aceita/recusa). Controle negativo confirmado.
 
 ---
 
-## ACHADO-45 — nada impede que a venda seja igual ou menor que o custo de fábrica · PARCIALMENTE RESOLVIDO 02/09/2026
+## ACHADO-45 — nada impede que a venda seja igual ou menor que o custo de fábrica · RESOLVIDO 02/09/2026
 
 Decisão do Marcelo em 02/09, saída do ACHADO-44: **valor de venda nunca pode
 ser igual ou menor que o CFO.**
@@ -2998,65 +2998,92 @@ orçado e contratado com margem zero ou negativa sem que nada avise.
 a negativo por um percentual sem teto; aqui, ela já nasce negativa no
 arquivo. As duas portas dão no mesmo lugar.
 
-**Medir antes de escolher o momento da trava:** quantos ambientes já
-importados violam a regra hoje? A resposta decide se a recusa fica na
-importação (mais cedo, mais duro, risco de travar trabalho legítimo) ou na
-contratação (mais tarde, mas antes de virar contrato). Não escolher antes de
-medir.
+**Medido em 02/09:** zero violações em toda a base real — Homologação,
+Integração e Produção. A trava pode ser dura sem travar trabalho existente.
+
+### DECIDIDO 02/09 — a regra é uma só: markup > 1 dentro do XML
+
+**A primeira redação desta decisão estava errada, e o erro era meu.** Eu
+tinha escrito três condições, misturando duas coisas que não se misturam:
+o valor de venda do **contrato** e os valores do **XML**. O Marcelo
+corrigiu:
+
+> *"O valor de venda que comparo no arquivo XML é o valor do próprio XML com
+> markup, não é o valor de venda do contrato ser zero."*
+
+**O XML traz dois valores por item:**
+
+- `BUDGET/TOTAL` (`budget_total`) — o valor **com markup**, preço de venda;
+- `ORDER/TOTAL` (`order_total`) — o **custo de fábrica**, já com IPI e com a
+  receita de margem aplicada.
+
+**A regra, inteira:** para cada item, `budget_total > order_total` — ou seja,
+**o markup precisa ser > 1**. Arquivo em que isso não vale está errado, e a
+recusa é dura, com **"arquivo XML com erro, verifique o promob"** e botão OK.
+
+**Item com valor zero deixa de ser condição separada** — ele viola essa
+mesma regra e é recusado por ela. Não precisa de cláusula própria.
+
+**E o brinde não é caso disto.** Zerar um item é decisão comercial e
+acontece **no contrato**, não no XML — e lá ela já tem guarda: o portão do
+desconto composto (ACHADO-42). Se coube no limite de margem, foi uma decisão
+autorizada; se não coube, o portão recusa. As duas coisas vivem em camadas
+diferentes e nenhuma cobre a outra.
+
+**A quarentena existente (`qa_selo='bloqueado'`) não é substituída** —
+continua valendo para o que já cobria. O que entra é a recusa para markup ≤
+1, que não é "qualidade duvidosa", é arquivo errado.
+
+**Um ponto a confirmar na implementação:** a regra é **por item**, que é
+como os dois valores existem no XML. Reportar também o agregado por
+ambiente, para o caso de um item vir zerado da fábrica sem que o ambiente
+perca margem — se isso acontecer na base real, o caso precisa de nome antes
+de a recusa por item ficar de pé.
+
+**Medido em 02/09:** zero violações de venda ≤ CFO em toda a base real —
+Homologação, Integração e Produção. A trava pode ser dura sem travar
+trabalho existente.
 
 **Grupo:** 1.
 
-### Medição (02/09, antes de escolher o momento)
+### Conserto (02/09, DECIDIDO — regra corrigida): implementado no pool
 
-| ambiente | `pool_ambientes`: viola hoje | `arquivo_pe`: viola hoje |
-|---|---|---|
-| Homologação (único com dados reais) | 0/12 | 0/12 |
-| Integração | 0/0 (tabela vazia) | 0/0 (tabela vazia) |
-| Produção | 0/0 (tabela vazia — feature ainda não usada lá) | 0/0 (tabela vazia) |
+Medição por ITEM antes de travar (Homologação, único ambiente com dados
+reais): **0/795 itens em 12 ambientes violavam** `budget_total >
+order_total`. Checado especificamente o caso que o Marcelo pediu pra
+verificar antes de travar — item vindo zerado da fábrica sem o ambiente
+perder margem — e **nenhum caso assim foi encontrado**; não havia motivo
+para parar antes de travar.
 
-**Zero violações em toda a base real hoje.**
+`itens_com_markup_invalido(amb)` (`integracoes/promob_grupos.py`) percorre
+todo item de todo grupo e recusa quando `budget_total ≤ order_total +
+tolerância` (markup ≤ 1, empate incluído — a regra é "maior", nunca "maior
+ou igual"). Recusa dura no `POST /projetos/<nome>/pool`: **"Arquivo XML com
+erro, verifique o Promob."**, com botão OK.
 
-**Recomendação (a escolha é do Marcelo):** travar **na importação**. Com
-zero violações existentes em qualquer ambiente, não há nenhum trabalho
-legítimo em risco de ser bloqueado — o argumento a favor de esperar até a
-contratação (não travar cedo demais) não se sustenta quando a medição não
-encontra nenhum caso hoje. Travar cedo também evita que o dado ruim
-percorra o ciclo (a mesma lição do ACHADO-44/C1: quanto mais tarde a
-recusa, mais longe o erro já viajou antes de alguém notar).
+A quarentena existente (`avaliar_qualidade_xml`/`qa_selo='bloqueado'`,
+`mod_qualidade_xml.py`) não foi tocada — ela usa tolerância relativa
+(0,01%) e limiar agregado (5% do valor) diferentes desta regra (tolerância
+absoluta de centavos, por item), e continua cobrindo o que já cobria
+(margem "quase zero" espalhada por muitos itens, sem nenhum item
+isoladamente no prejuízo).
 
-### Achado dentro do achado: já existia uma trava, e ela é mais branda
+O upload de PE (`.../pe/upload`) já tinha a versão **agregada** por
+ambiente (`venda_maior_que_cfo`, ver acima) — as duas travas convivem: PE
+compara o ambiente inteiro; pool compara item por item, que é como os dois
+valores realmente existem no arquivo.
 
-Ao implementar, `avaliar_qualidade_xml` (`mod_qualidade_xml.py`, Spec §8)
-já bloqueia **exatamente** "venda ≤ custo" — por ITEM, com tolerância de
-ruído de 5%, gravando `qa_selo='bloqueado'` no `PoolAmbiente`. Mas como
-**quarentena**: o upload é aceito, o ambiente entra na base, e só é barrado
-de virar orçamento (`test_qualidade_upload_e2e.py`, anterior a esta
-rodada). Não é recusa no upload — é revisão antes do uso comercial.
+**Prova:** `tests/test_achado45_venda_maior_que_cfo.py` — pura
+(`itens_com_markup_invalido`, incl. empate e item zerado) + HTTP (recusa
+com item ruim; a quarentena antiga continua funcionando com o MESMO
+fixture de `test_qualidade_upload_e2e.py`, ajustado pra ficar acima do
+novo hard-reject). Controle negativo confirmado.
 
-Um hard-reject no `POST /projetos/<nome>/pool` teria duplicado essa trava
-com um comportamento mais duro (sem quarentena, sem chance de revisão) —
-**segunda porta pro mesmo destino**, e a regra do Marcelo (ROTEIRO.md,
-02/09) é perguntar antes de abrir. Não decidido sem essa pergunta.
-
-**Conserto aplicado (02/09, só onde não havia porta nenhuma):**
-`venda_maior_que_cfo(budget_total, order_total)` (`integracoes/promob_grupos.py`)
-recusa dura no **`POST /api/projetos/<nome>/pe/upload`** (`ArquivoPE`) — sem
-gate equivalente antes desta rodada. `POST /projetos/<nome>/pool` **não
-mudou**: continua coberto só pela quarentena existente.
-
-**Pergunta em aberto pro Marcelo:** o que fazer com o pool? (a) hard-reject
-também, substituindo a quarentena; (b) manter a quarentena como está — ela
-já cobre o caso, só não é tão dura quanto o resto desta rodada; (c) outra
-coisa.
-
-**Prova:** `tests/test_achado45_venda_maior_que_cfo.py` (6 — função pura
-incl. a fronteira venda==CFO, HTTP no upload de PE, tripwire do bypass de
-`xml_compl`, e uma prova de que o pool continua na quarentena antiga em
-vez de recusar). Controle negativo confirmado.
+**Grupo:** 1.
 
 ---
 
-## ACHADO-46 — a transferência de responsabilidade procura por NOME de função, e o mecanismo certo já existe sem uso
+## ACHADO-46 — a transferência de responsabilidade procura por NOME de função, e o mecanismo certo já existe sem uso · RESOLVIDO 02/09/2026
 
 Encontrado pelo Marcelo em 02/09: tentou transferir a responsabilidade do
 projeto dentro do Ciclo e *"não encontrou ninguém de projeto executivo"*.
@@ -3100,9 +3127,48 @@ os papéis — hoje o campo existe no banco e não é preenchido pela Config, qu
 
 **Grupo:** 1.
 
+### Conserto (02/09)
+
+`mod_escopo.funcao_compativel(papel, funcao_nome, papeis=None)` ganhou o
+parâmetro `papeis` (mesmo padrão de `funcao_operacional`, já existente):
+quando a função declara papéis (`Funcao.atribuicoes_json`), decide por
+eles — o nome vira fallback só para função ainda não migrada. Único
+chamador real (`_resolve_alvo`, `POST /projetos/<nome>/atribuicoes`)
+atualizado para passar os papéis.
+
+**Quinto irmão (`mod_assistencias.FUNCOES_ELEGIVEIS`):** medido — o
+catálogo de nomes era **idêntico** a `PAPEL_FUNCOES["montagem"]` nos três
+reais (nenhum funcionário com função customizada para montagem). **Decisão:
+unificar por IMPORT**, não copiar — `FUNCOES_ELEGIVEIS =
+mod_escopo.PAPEL_FUNCOES["montagem"]`, e a checagem de elegibilidade
+(`mod_assistencias.funcao_elegivel_assistencia`) reaproveita
+`funcao_compativel("montagem", ...)`, papel-primeiro-nome-fallback igual ao
+resto. Duas listas nunca mais divergem por estarem fisicamente separadas.
+
+**Tela de Funções:** ganhou os três checkboxes de papel (Config → Funções →
+Editar). `Funcao.atribuicoes_json` deixa de ser campo morto —
+`funcao_serialize`/`funcao_aplicar` (mod_cadastro.py) leem/gravam,
+validando contra `mod_escopo.PAPEIS` (nunca um valor arbitrário do
+request).
+
+**Backfill:** `FUNCOES_PADRAO_PAPEIS` (database.py) mapeia as 4 funções
+padrão que já correspondiam a um papel por nome (Projetista Executivo,
+Medidor, Montador, Supervisor de Montagem) — `backfill_funcoes_todas_lojas`
+já semeia as NOVAS com o papel; `backfill_papeis_funcoes_padrao` (novo,
+roda no start) preenche as JÁ EXISTENTES, só quando `atribuicoes_json`
+estiver vazio (nunca sobrescreve o que o cadastro já editou).
+
+**Aceite do achado:** funcionário cuja função se chama "Projetista" (não
+"Projetista Executivo") mas declara o papel `projeto_executivo` aparece na
+transferência — `tests/test_achado46_papel_por_atribuicoes_json.py`.
+
+**Prova:** também `tests/test_achado47_papeis_funcao.py` (serialize/aplicar
+de papéis, backfill seletivo, reaproveitamento do mod_assistencias).
+Controle negativo confirmado nos dois arquivos.
+
 ---
 
-## ACHADO-47 — uma pessoa só pode ter uma função, e a função é quem paga
+## ACHADO-47 — uma pessoa só pode ter uma função, e a função é quem paga · RESOLVIDO 02/09/2026
 
 Pedido do Marcelo em 02/09: *"uma mesma pessoa deve poder acumular mais de
 uma função (por exemplo o Projeto Executivo e a Medição frequentemente são
@@ -3152,20 +3218,30 @@ entre dois salários.
 **Dois pontos que este desenho deixa em aberto, e que precisam de resposta
 antes de virar código:**
 
-**1 · O adicional não diz por quê.** Ele fica no funcionário, não no papel
-acumulado. Quando o papel sair — a pessoa deixa de medir —, nada avisa que o
-adicional deveria sair junto. Um campo de motivo, ou a referência ao papel
-que o justifica, é o que impede o adicional órfão que ninguém revisa. É a
-mesma família do "nome ≠ comportamento" do ACHADO-17: o valor existe e não
-diz de onde veio.
+**1 · O adicional não diz por quê — RESOLVIDO em 02/09.** O Marcelo
+acrescentou um **campo de observações** ao bloco Adicional, para o motivo.
+Um só campo, servindo aos dois adicionais. O valor deixa de ser órfão.
 
-**2 · O adicional de comissão é custo novo, e todo custo precisa de rota
-contábil decidida no nascimento.** A lição do ACHADO-33 é literalmente esta:
-Montagem e Fábrica ficaram sem alimentador porque ninguém decidiu a rota
-quando o mecanismo nasceu. Antes de implementar, decidir: entra na
-`ComissaoFolha` junto com a comissão de venda? Provisiona em
-`2.1.04.12`, em `2.1.04.10`, ou em rubrica própria? E o veredito da
-Conciliação Final passa a enxergá-lo?
+**2 · O adicional de comissão é custo novo — RESPONDIDO em 02/09.**
+
+Decisão do Marcelo, e ela dispensa rubrica nova:
+
+> O adicional de comissão **só pode existir para funcionário cuja função
+> primária já seja comissionada**. Ele **soma sobre a comissão anterior** e
+> **provisiona junto** — o ciclo contábil fica preservado.
+
+É a resposta mais limpa possível para a pergunta que o ACHADO-33 nos ensinou
+a fazer: em vez de criar uma rota, o adicional **pega carona numa rota que
+já funciona**. Sem rubrica nova, sem alimentador novo, sem veredito novo, e
+a Conciliação Final o enxerga porque ele já está dentro do que ela olha.
+
+**A consequência é uma guarda, e ela vale no servidor:** função primária não
+comissionada ⇒ o campo de adicional de comissão não existe para aquele
+funcionário. Guarda só na tela é decoração — foi o achado de UAT de 10/08.
+
+**E o campo de observação é UM só** para os dois adicionais, fixo e
+comissão (decisão do Marcelo no mesmo momento) — o que responde o ponto 1
+acima.
 
 **E uma nota de aritmética:** a base padrão é o `Val_Liq`, a mesma grandeza
 que o portão do ACHADO-42 protege. Com o portão, ela não vai mais a
@@ -3179,5 +3255,51 @@ Gerente Administrativo/Financeiro, Diretor, Assistente Logístico,
 Conferente, Supervisor de Montagem, Assistente Administrativo, Projetista
 Executivo, Medidor, Montador, Ajudante de Montagem, SAC. O que falta não é a
 base: é **cada uma declarar seus papéis**.
+
+### Conserto (02/09) — bloco Adicional no cadastro do funcionário
+
+Quatro colunas novas em `Funcionario` (migration Alembic
+`a1b2c3d4e5f6`, `revises f47f22de46a7`): `adicional_fixo`,
+`adicional_comissao_pct`, `adicional_comissao_base` (só
+`'val_liq_venda'` suportada — "outras bases ficam para depois"),
+`adicional_obs` (um só campo, os dois adicionais).
+
+**Guarda no servidor** (`mod_cadastro.func_aplicar`, não só na tela):
+`adicional_comissao_pct` só é aceito quando `mod_folha.funcao_e_comissionada`
+(alias de `mod_cadastro.funcao_e_comissionada`, ver nota de arquitetura
+abaixo) é `True` para a função primária do funcionário — senão, `ValueError`
+→ 400. `adicional_fixo` é livre (não depende de a função ser comissionada).
+
+**Provisiona junto, sem alimentador novo:**
+- Fixo: soma dentro de `parte_fixa` em `mod_folha.calcular_folha` — mesmo
+  campo que já vira lançamento em 5.3.0X, sem tocar nada além do valor.
+- Comissão: soma **no MESMO item** de `ComissaoFolha` que o alimentador
+  de comissão por papel já cria (`mod_comissao.preparar_comissao_etapa`) —
+  `pct_efetivo = pct_da_função + adicional_comissao_pct`, um item só, uma
+  base só (Val_Liq do ambiente, a mesma da função). A guarda "função já
+  comissionada" é a própria condição `pct <= 0` que já existia ali — quem
+  chega a somar o adicional já passou por ela.
+- O caminho de VENDA do Consultor (`mod_folha._upsert_itens_venda`, fonte
+  única desde 2026-08-12, provisão constituída na assinatura do contrato)
+  **não foi tocado** — fora de escopo desta rodada (acumular Vendas com
+  outro papel não é o caso do achado, que é Projeto Executivo + Medição;
+  mexer na provisão de venda é risco desproporcional ao pedido).
+
+**Achado de arquitetura ao implementar:** `funcao_e_comissionada` não podia
+morar em `mod_folha.py` — "folha" DEPENDE de "cadastro" (`modulos.py`), não
+o contrário, e a função só olha campos de `Funcao` (domínio cadastro). Mora
+em `mod_cadastro.py`; `mod_folha.py` reexporta pra não quebrar quem já
+chamava `mod_folha.funcao_e_comissionada`. Pego por
+`test_arquitetura_modulos.py::test_dominios_so_importam_o_que_declaram` —
+o teste fez exatamente o que devia.
+
+**Tela:** Config → Funcionários → Editar ganhou a seção "Adicional (acúmulo
+de papéis)" — fixo, comissão (rótulo já avisa a condição), observações. A
+base declarada não tem seletor ainda (só um valor existe).
+
+**Prova:** `tests/test_achado47_adicional_funcionario.py` (9 — pura,
+`func_aplicar`/`func_serialize`, HTTP fim a fim nos dois sentidos, e o
+aceite central: `preparar_comissao_etapa` soma o adicional no MESMO item,
+nunca cria um segundo). Controle negativo confirmado.
 
 **Grupo:** 1.

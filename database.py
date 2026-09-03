@@ -8,6 +8,7 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship, validate
 from datetime import datetime
 import hashlib
 import hmac
+import json
 import os
 from auth import perfis
 
@@ -425,6 +426,17 @@ class Funcionario(Base):
     # nota "divida de Onda 2" em CLAUDE.md). Sem use_alter, um schema do zero (baseline
     # Alembic) nao consegue decidir se funcionarios ou usuarios entra primeiro.
     usuario_id         = Column(Integer,     ForeignKey("usuarios.id", use_alter=True), nullable=True)  # conta de login (se houver)
+    # ACHADO-47 (DECIDIDO 02/09) — bloco Adicional: remuneração do ACÚMULO de papéis (a função
+    # continua sendo UMA só, um só salário — o acúmulo se paga por aqui, não por uma 2ª função).
+    # adicional_comissao_pct só é válido quando a função PRIMÁRIA já é comissionada (guarda no
+    # servidor, mod_cadastro.func_aplicar) — soma sobre a comissão da função e provisiona JUNTO
+    # (mod_folha.calcular_folha), sem rubrica/alimentador/veredito novo.
+    adicional_fixo         = Column(Float,    nullable=True)
+    adicional_comissao_pct = Column(Float,    nullable=True)
+    # única base suportada por ora (decisão do usuário: "outras bases ficam para depois, mas o
+    # campo nasce dizendo qual base usa, em vez de assumir").
+    adicional_comissao_base = Column(String(20), nullable=True, default="val_liq_venda")
+    adicional_obs          = Column(Text,     nullable=True)   # um só campo, serve aos dois adicionais
     criado_em          = Column(DateTime,    default=datetime.utcnow)
 
 
@@ -2115,6 +2127,7 @@ def init_db():
     _sess = get_session()
     try:
         backfill_funcoes_todas_lojas(_sess)   # funções novas do catálogo em todas as lojas (idempotente)
+        backfill_papeis_funcoes_padrao(_sess) # papéis das funções padrão já existentes (ACHADO-46/47)
     finally:
         _sess.close()
     _simulador_autorizacao_seed_v1()   # lojas existentes já nascem autorizadas (idempotente, Sessão 185)
@@ -2189,6 +2202,17 @@ FUNCOES_PADRAO = [
     "Projetista Executivo", "Medidor", "Montador", "Ajudante de Montagem", "SAC",
 ]
 
+# ACHADO-46/47: as funções PADRÃO que já correspondem a um papel do Mapa de Atribuições nascem
+# com `atribuicoes_json` preenchido — é o que fazia `atribuicoes_json` ser campo morto (existia
+# no banco, nenhuma tela/seed o preenchia). Só as três que já tinham correspondência 1:1 por NOME
+# em mod_escopo.PAPEL_FUNCOES; as outras dez continuam sem papel algum (é o cadastro que decide).
+FUNCOES_PADRAO_PAPEIS = {
+    "Projetista Executivo":  ["projeto_executivo"],
+    "Medidor":               ["medicao"],
+    "Montador":              ["montagem"],
+    "Supervisor de Montagem": ["montagem"],
+}
+
 
 def _simulador_autorizacao_seed_v1():
     """Seed idempotente (Sessão 185, decisão do usuário): lojas EXISTENTES nascem autorizadas pro
@@ -2229,11 +2253,32 @@ def backfill_funcoes_todas_lojas(db):
         for nome in FUNCOES_PADRAO:
             if nome not in existentes:
                 usa = 1 if nome == "Consultor de Vendas" else 0
-                db.add(Funcao(loja_id=lid, nome=nome, status="ativo", usa_comissao_vendas=usa))
+                papeis = FUNCOES_PADRAO_PAPEIS.get(nome)
+                db.add(Funcao(loja_id=lid, nome=nome, status="ativo", usa_comissao_vendas=usa,
+                              atribuicoes_json=json.dumps(papeis) if papeis else None))
                 criadas += 1
     if criadas:
         db.commit()
     return criadas
+
+
+def backfill_papeis_funcoes_padrao(db):
+    """ACHADO-46/47: preenche `atribuicoes_json` das funções PADRÃO já existentes (lojas
+    seedadas antes desta rodada) que ainda não declaram papel nenhum — mesmo catálogo de
+    `FUNCOES_PADRAO_PAPEIS`. Idempotente e conservador: só toca função com `atribuicoes_json`
+    vazio (None ou '[]') — uma função que o cadastro já editou pela tela de Config nunca é
+    sobrescrita por este backfill. Retorna nº atualizadas."""
+    atualizadas = 0
+    candidatas = (db.query(Funcao)
+                    .filter(Funcao.nome.in_(FUNCOES_PADRAO_PAPEIS.keys()))
+                    .filter((Funcao.atribuicoes_json.is_(None)) | (Funcao.atribuicoes_json == "[]"))
+                    .all())
+    for f in candidatas:
+        f.atribuicoes_json = json.dumps(FUNCOES_PADRAO_PAPEIS[f.nome])
+        atualizadas += 1
+    if atualizadas:
+        db.commit()
+    return atualizadas
 
 
 

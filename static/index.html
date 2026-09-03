@@ -6025,6 +6025,14 @@ async function cfgFuncaoEditar(id){
         <label style="${lf}"><span>Regime de trabalho</span><select id="fn-regtrab" style="padding:5px 8px">${optSel(f.regime_trabalho,[['presencial','Presencial'],['remoto','Remoto'],['misto','Misto']])}</select></label>
         <label style="${lf}"><span>Regime de contratação</span><select id="fn-regcontr" style="padding:5px 8px">${optSel(f.regime_contratacao,[['registrado','Registrado'],['terceirizacao','Terceirização']])}</select></label>
       </div>
+      <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:10px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px">Papéis do Mapa de Atribuições</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Quem exerce esta função aparece como candidato nesses papéis — pelo PAPEL, não pelo nome da função (ACHADO-46).</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          ${Object.entries(_PAPEL_LABEL).map(([v,l]) => `<label style="display:flex;align-items:center;gap:6px;font-size:12px">
+            <input type="checkbox" class="fn-papel" value="${v}" ${(f.papeis||[]).includes(v)?'checked':''}> ${esc(l)}</label>`).join('')}
+        </div>
+      </div>
       <div id="fn-erro" style="color:var(--muted);font-size:12px;min-height:16px;margin:10px 0"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modal-funcao').remove()">Cancelar</button>
@@ -6038,10 +6046,12 @@ async function cfgFuncaoSalvar(){
   const erro = document.getElementById('fn-erro');
   const nome = (document.getElementById('fn-nome').value||'').trim();
   if(!nome){ erro.textContent='Informe o nome.'; return; }
+  const papeis = [...document.querySelectorAll('.fn-papel:checked')].map(c => c.value);
   const body = { nome, descricao: document.getElementById('fn-descricao').value,
     remuneracao_padrao: document.getElementById('fn-remun').value,
     regime_trabalho: document.getElementById('fn-regtrab').value,
-    regime_contratacao: document.getElementById('fn-regcontr').value };
+    regime_contratacao: document.getElementById('fn-regcontr').value,
+    papeis };
   const d = await (await fetch('/api/funcoes/'+id,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json().catch(()=>({}));
   if(!d.ok){ erro.textContent = d.erro||'Erro ao salvar.'; return; }
   document.getElementById('modal-funcao').remove();
@@ -7231,6 +7241,14 @@ const _CAD_DEFS = {
       {id:'email', lbl:'E-mail', tipo:'text', full:true},
       {id:'funcao_id', lbl:'Função', tipo:'select_funcoes'}, {id:'cargo', lbl:'Cargo (título)', tipo:'text'},
       {id:'status', lbl:'Status', tipo:'select', ops:[['ativo','Ativo'],['inativo','Inativo']]},
+      // ACHADO-47 (DECIDIDO 02/09) — bloco Adicional: remuneração do ACÚMULO de papéis (a
+      // função continua sendo UMA só — o acúmulo se paga aqui, nunca por uma 2ª função).
+      // adicional_comissao_pct só é aceito pelo SERVIDOR quando a função primária já é
+      // comissionada (mod_cadastro.func_aplicar) — o rótulo já avisa, mas quem trava é lá.
+      {id:'_sec_adicional', lbl:'Adicional (acúmulo de papéis)', tipo:'secao'},
+      {id:'adicional_fixo', lbl:'Adicional fixo (R$/mês)', tipo:'number'},
+      {id:'adicional_comissao_pct', lbl:'Adicional de comissão (%) — só se a função já for comissionada', tipo:'number'},
+      {id:'adicional_obs', lbl:'Observações do adicional (motivo)', tipo:'text', full:true},
       ..._CAMPOS_ENDERECO, ..._CAMPOS_BANCO,
     ], acesso:true },
   fornecedores: { titulo:'Fornecedor',
@@ -20499,8 +20517,10 @@ async function mapaProfissionaisGarantir(force){
   const f = await (await fetch('/api/funcionarios?status=ativo',{credentials:'same-origin'})).json().catch(()=>({}));
   const t = await (await fetch('/api/terceiros?status=ativo',{credentials:'same-origin'})).json().catch(()=>({}));
   const prof = [];
-  ((f && f.itens) || []).forEach(x => prof.push({tipo:'f', id:x.id, nome:x.nome, funcao_nome:x.funcao_nome||''}));
-  ((t && t.itens) || []).forEach(x => prof.push({tipo:'t', id:x.id, nome:x.nome, funcao_nome:x.funcao_nome||''}));
+  // ACHADO-46: funcao_papeis (Funcao.atribuicoes_json) é a fonte PREFERIDA de elegibilidade —
+  // funcao_nome vira fallback só quando a função não declara papel nenhum ainda.
+  ((f && f.itens) || []).forEach(x => prof.push({tipo:'f', id:x.id, nome:x.nome, funcao_nome:x.funcao_nome||'', funcao_papeis:x.funcao_papeis||[]}));
+  ((t && t.itens) || []).forEach(x => prof.push({tipo:'t', id:x.id, nome:x.nome, funcao_nome:x.funcao_nome||'', funcao_papeis:x.funcao_papeis||[]}));
   _mapaProfs = prof; return prof;
 }
 // focusAmbId (2026-08-06, clique no ambiente do Gantt Operacional): rola até a linha do
@@ -20539,12 +20559,22 @@ function mapaRender(d){
     (atrib[k] = atrib[k] || []).push(a);
   });
   const valorDe = a => a ? (a.funcionario_id?('f:'+a.funcionario_id):(a.terceiro_id?('t:'+a.terceiro_id):'')) : '';
+  // ACHADO-46: papel primeiro (funcao_papeis, de Funcao.atribuicoes_json) — nome só como
+  // fallback, e só quando a função não declara papel NENHUM ainda (mesma regra de
+  // mod_escopo.funcao_compativel, espelhada aqui porque o filtro é client-side).
+  const _elegivel = (p, papel) => (p.funcao_papeis && p.funcao_papeis.length)
+    ? p.funcao_papeis.includes(papel)
+    : (_PAPEL_FUNCOES[papel] || []).includes(p.funcao_nome);
   const opts = (papel, curSet) => {
-    const aceitas = _PAPEL_FUNCOES[papel] || [];
-    const elig = (_mapaProfs||[]).filter(p => aceitas.includes(p.funcao_nome));
+    const elig = (_mapaProfs||[]).filter(p => _elegivel(p, papel));
     let h = curSet.size ? '' : '<option value="">— ninguém —</option>';
     elig.forEach(p => { const v = p.tipo+':'+p.id;
       h += '<option value="'+v+'"'+(curSet.has(v)?' selected':'')+'>'+esc(p.nome)+' ('+esc(p.funcao_nome)+')</option>'; });
+    if (!elig.length && !curSet.size) {
+      // ACHADO-46: diz o motivo real (nenhum funcionário com o papel) em vez de um "— ninguém —"
+      // indistinguível de "ninguém foi escolhido ainda".
+      h = '<option value="" disabled selected>nenhum funcionário com o papel '+esc(_PAPEL_LABEL[papel]||papel)+'</option>';
+    }
     return h;
   };
   let html = '<table class="proj-table" style="width:100%"><thead><tr><th>Ambiente</th>'

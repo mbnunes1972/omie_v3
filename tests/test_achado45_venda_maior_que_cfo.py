@@ -2,19 +2,18 @@
 """docs/db/ACHADOS_CONTABEIS.md, ACHADO-45 — venda nunca pode ser igual ou menor que o custo de
 fábrica (CFO). `budget_total` e `order_total` vêm do MESMO XML e ninguém os comparava.
 
-Medido antes de travar (02/09, Homologação — único ambiente com dados reais hoje): 0/12
-`pool_ambientes` e 0/12 `arquivo_pe` violavam a regra; Integração e Produção estão zeradas
-(feature ainda não usada nelas).
+DECIDIDO 02/09 (2ª rodada, corrigindo a 1ª): a regra é uma só e é POR ITEM — `budget_total >
+order_total` (markup > 1) em TODO item do XML. Item com valor zero cai nesta mesma regra, não é
+caso separado. Recusa dura: "Arquivo XML com erro, verifique o Promob." A quarentena existente
+(`qa_selo='bloqueado'`, mod_qualidade_xml.py) NÃO é substituída — usa tolerância/limiar agregado
+diferentes e continua cobrindo o que já cobria (`test_qualidade_upload_e2e.py`, fixture ajustado
+pra ficar acima do novo hard-reject e ainda testar só a quarentena).
 
-**Achado ao implementar:** o upload de PE (`.../pe/upload`, `ArquivoPE`) não tinha NENHUMA trava
-equivalente — ganhou `venda_maior_que_cfo` como recusa dura, prospectiva. Mas o upload de POOL
-(`.../pool`, `PoolAmbiente`) JÁ TINHA uma trava — `avaliar_qualidade_xml` (mod_qualidade_xml.py,
-Spec §8) bloqueia "venda ≤ custo" há mais tempo, por ITEM (com tolerância de ruído de 5%), via
-`qa_selo='bloqueado'` — só que como QUARENTENA (cria o `PoolAmbiente`, barra a entrada em
-orçamento — `test_qualidade_upload_e2e.py`), não como recusa no upload. Um hard-reject aqui
-duplicaria/substituiria essa quarentena já testada — decisão de reconciliar as duas NÃO tomada
-sem perguntar ao Marcelo primeiro (regra das duas portas, ROTEIRO.md 02/09). Por isso o pool NÃO
-ganhou o hard-reject nesta rodada — só o upload de PE, onde não havia porta nenhuma."""
+Medido antes de travar (02/09, Homologação — único ambiente com dados reais hoje): 0/795 itens
+(12 ambientes) violavam a regra por item; checado também o caso de item zerado sem o ambiente
+perder margem — nenhum encontrado na base real. Integração e Produção estão zeradas (feature
+ainda não usada nelas). O upload de PE (`.../pe/upload`, `ArquivoPE`) recebeu a versão agregada
+(`venda_maior_que_cfo`, por ambiente) — não tinha NENHUMA trava antes desta rodada."""
 import json as _json
 import urllib.request as _urllib_req
 from datetime import datetime as _dt
@@ -87,13 +86,46 @@ def test_pure_venda_maior_que_cfo():
     assert pg.venda_maior_que_cfo(100.003, 100.0) is False, "diferença de fração de centavo não conta como margem real"
 
 
-def test_pool_upload_nao_recusa_mas_quarentena_a_quarentena_ja_existente(http_client_factory, seed, app_db):
-    """O pool NÃO ganhou o hard-reject nesta rodada (ver docstring do módulo) — mas a quarentena
-    pré-existente (`qa_selo='bloqueado'`) continua cobrindo o mesmo caso, do jeito que já era
-    testado antes desta rodada (`test_qualidade_upload_e2e.py`, não tocado)."""
+def test_pure_itens_com_markup_invalido():
+    amb_ok = {"grupos": [{"itens": [{"order_total": 100.0, "budget_total": 150.0}]}]}
+    amb_ruim = {"grupos": [{"itens": [
+        {"order_total": 100.0, "budget_total": 150.0},   # este item passa
+        {"order_total": 200.0, "budget_total": 150.0},   # este não — venda < CFO
+    ]}]}
+    amb_empate = {"grupos": [{"itens": [{"order_total": 100.0, "budget_total": 100.0}]}]}
+    amb_zero = {"grupos": [{"itens": [{"order_total": 50.0, "budget_total": 0.0}]}]}
+    assert pg.itens_com_markup_invalido(amb_ok) == []
+    assert len(pg.itens_com_markup_invalido(amb_ruim)) == 1
+    assert len(pg.itens_com_markup_invalido(amb_empate)) == 1, "empate (markup==1) também viola"
+    assert len(pg.itens_com_markup_invalido(amb_zero)) == 1, "item zerado cai na mesma regra, sem cláusula própria"
+
+
+def test_pool_upload_recusa_item_com_markup_invalido(http_client_factory, seed, app_db):
+    """DECIDIDO 02/09: a regra é por item — recusa dura, não quarentena."""
     _criar_briefing(app_db, seed, "Proj_L1")
+    db = app_db.get_session()
+    antes = db.query(app_db.PoolAmbiente).filter_by(projeto_id="Proj_L1").count()
+    db.close()
+
     c = _login(http_client_factory, "dir_l1")
     data = _upload_pool(c, "Proj_L1", "VendaMenor.xml", XML_VENDA_MENOR_QUE_CFO)
+    assert data.get("ok") is False
+    assert data.get("erro") == "Arquivo XML com erro, verifique o Promob."
+
+    db2 = app_db.get_session()
+    depois = db2.query(app_db.PoolAmbiente).filter_by(projeto_id="Proj_L1").count()
+    db2.close()
+    assert depois == antes, "PoolAmbiente foi criado mesmo com item de markup <= 1"
+
+
+def test_pool_upload_quarentena_antiga_continua_valendo_pro_que_ja_cobria(http_client_factory, seed, app_db):
+    """A quarentena (`qa_selo='bloqueado'`) não foi substituída — continua cobrindo o caso que já
+    cobria (margem quase nula, agregada, ACIMA do novo hard-reject por item). Mesmo fixture de
+    `test_qualidade_upload_e2e.py::XML_RUIM`, agora via o endpoint de pool."""
+    from tests.test_qualidade_upload_e2e import XML_RUIM
+    _criar_briefing(app_db, seed, "Proj_L1")
+    c = _login(http_client_factory, "dir_l1")
+    data = _upload_pool(c, "Proj_L1", "QuaseSemMargem.xml", XML_RUIM)
     assert data.get("ok") is True, data
 
     db = app_db.get_session()

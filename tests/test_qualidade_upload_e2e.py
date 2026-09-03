@@ -9,12 +9,14 @@ def _login(f, who):
     c = f(); c.login(who, "senha123"); assert c.cookie; return c
 
 
-# XML mínimo: 2 itens, ambos com ORDER==BUDGET (acréscimo zero) → 🔴
+# XML com acréscimo quase zero (0,009% — abaixo do limiar de "sem acréscimo" de
+# avaliar_qualidade_xml, 0,01%) → 🔴 na quarentena de qualidade. ACHADO-45 (DECIDIDO 02/09) trouxe
+# uma recusa DURA e separada pra markup <= 1 EXATO (item vendido no custo ou abaixo) — este
+# fixture tem que ficar ACIMA dela (margem absoluta de R$9,99, bem além da tolerância de R$0,005
+# do novo hard-reject) pra continuar testando a quarentena, não a recusa nova.
 XML_RUIM = '''<PROJECT DESCRIPTION="Teste" DATE="01/01/2026"><CATEGORY DESCRIPTION="X"><ITEMS>
 <ITEM REFERENCE="A" DESCRIPTION="a" UNIT="UN" QUANTITY="1" SHOWPRICE="Y">
-<PRICE TABLE="100" TOTAL="100"><MARGINS><ORDER TOTAL="100"/><BUDGET TOTAL="100"/></MARGINS></PRICE></ITEM>
-<ITEM REFERENCE="B" DESCRIPTION="b" UNIT="UN" QUANTITY="1" SHOWPRICE="Y">
-<PRICE TABLE="50" TOTAL="50"><MARGINS><ORDER TOTAL="50"/><BUDGET TOTAL="50"/></MARGINS></PRICE></ITEM>
+<PRICE TABLE="100000" TOTAL="100000"><MARGINS><ORDER TOTAL="100000"/><BUDGET TOTAL="100009.99"/></MARGINS></PRICE></ITEM>
 </ITEMS></CATEGORY></PROJECT>'''
 
 

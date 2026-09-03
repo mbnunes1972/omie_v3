@@ -9862,9 +9862,12 @@ class Handler(BaseHTTPRequestHandler):
                     if obj is None or obj.loja_id != lid:
                         self.send_json({"ok": False, "erro": "Profissional não encontrado"}, code=404); return
                     fnome = ""
+                    fpapeis = None
                     if getattr(obj, "funcao_id", None):
-                        _fn = db.get(Funcao, obj.funcao_id); fnome = _fn.nome if _fn else ""
-                    if fnome not in mod_assistencias.FUNCOES_ELEGIVEIS:
+                        _fn = db.get(Funcao, obj.funcao_id)
+                        fnome = _fn.nome if _fn else ""
+                        fpapeis = _papeis_da_funcao(_fn)
+                    if not mod_assistencias.funcao_elegivel_assistencia(fnome, fpapeis):
                         self.send_json({"ok": False,
                                         "erro": "Profissional não tem função elegível pra assistência"}, code=400)
                         return
@@ -12196,15 +12199,17 @@ class Handler(BaseHTTPRequestHandler):
                     for grupo in amb.get("grupos", [])
                     for item in grupo.get("itens", [])
                 )
-                # ACHADO-45 (docs/db/TAREFA_PERCURSO_0209.md): venda <= CFO já tem trava NESTE
-                # caminho — `avaliar_qualidade_xml` (mod_qualidade_xml.py, Spec §8) bloqueia
-                # exatamente "venda ≤ custo" há mais tempo, por ITEM (com tolerância de ruído),
-                # via `qa_selo='bloqueado'` — mas como QUARENTENA (cria o PoolAmbiente, barra só
-                # a entrada em orçamento), não como recusa no upload. Decisão pendente com o
-                # Marcelo: hard-reject aqui duplicaria/substituiria essa quarentena já testada
-                # (test_qualidade_upload_e2e.py) — não decidido sem perguntar (regra das duas
-                # portas, ROTEIRO.md 02/09). O upload de PE (`.../pe/upload`, sem gate equivalente
-                # hoje) já ganhou o hard-reject — ver `venda_maior_que_cfo`.
+                # ACHADO-45 (docs/db/TAREFA_PERCURSO_0209.md, DECIDIDO 02/09): markup > 1 EM TODO
+                # ITEM (budget_total > order_total) — recusa dura, arquivo errado, não quarentena.
+                # A quarentena por `qa_selo` (mod_qualidade_xml.py, Spec §8) NÃO é substituída —
+                # ela usa tolerância/limiar agregado diferentes e continua cobrindo o que já
+                # cobria (test_qualidade_upload_e2e.py, não tocado). Medido antes de travar:
+                # 0/795 itens reais (Homologação, 12 ambientes) violavam.
+                from integracoes.promob_grupos import itens_com_markup_invalido
+                if itens_com_markup_invalido(amb):
+                    self.send_json({"ok": False,
+                                    "erro": "Arquivo XML com erro, verifique o Promob."})
+                    return
                 _qa = avaliar_qualidade_xml(
                     [it for g in amb.get("grupos", []) for it in g.get("itens", [])])
 
@@ -13639,9 +13644,13 @@ class Handler(BaseHTTPRequestHandler):
                         if obj is None or obj.loja_id != loja_id:
                             return None, "Profissional não encontrado", 404
                         fnome = ""
+                        fpapeis = None
                         if getattr(obj, "funcao_id", None):
-                            _fn = db.get(Funcao, obj.funcao_id); fnome = _fn.nome if _fn else ""
-                        if not mod_escopo.funcao_compativel(papel, fnome):
+                            _fn = db.get(Funcao, obj.funcao_id)
+                            fnome = _fn.nome if _fn else ""
+                            fpapeis = _papeis_da_funcao(_fn)
+                        # ACHADO-46: papel primeiro (Funcao.atribuicoes_json), nome só como fallback
+                        if not mod_escopo.funcao_compativel(papel, fnome, fpapeis):
                             return None, "Profissional não tem função compatível com este papel", 400
                         return obj, None, None
 
@@ -18696,6 +18705,19 @@ def _ambientes_do_projeto(db, nome_safe):
     return [{"id": pa.id, "nome": pa.nome_exibicao or pa.nome}
             for pa in db.query(PoolAmbiente).filter_by(projeto_id=nome_safe)
                         .order_by(PoolAmbiente.id.asc()).all()]
+
+
+def _papeis_da_funcao(funcao):
+    """ACHADO-46/47 — papéis declarados em `Funcao.atribuicoes_json` (mod_escopo.PAPEIS), já
+    parseados. `None`/lista vazia quando a função não declara nada (ainda não migrada pela tela
+    de Funções) — cai no fallback por nome em `mod_escopo.funcao_compativel`."""
+    if funcao is None or not funcao.atribuicoes_json:
+        return None
+    try:
+        papeis = json.loads(funcao.atribuicoes_json)
+    except (TypeError, ValueError):
+        return None
+    return [p for p in papeis if p in mod_escopo.PAPEIS] if isinstance(papeis, list) else None
 
 
 def _atribuicoes_dicts(db, nome_safe):

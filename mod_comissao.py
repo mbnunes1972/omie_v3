@@ -169,6 +169,11 @@ def preparar_comissao_etapa(db, loja_id, etapa):
         pct = _pct_funcao(funcao, base)
         if pct <= 0:                    # função do executor sem comissão → sem item
             continue
+        # ACHADO-47 (DECIDIDO 02/09) — Adicional de comissão: soma sobre a comissão da função
+        # PRIMÁRIA (aqui já confirmada > 0, pela checagem acima) e provisiona JUNTO — mesmo
+        # item, mesmo alimentador, sem rubrica nova. A guarda "função já comissionada" é a
+        # própria condição `pct <= 0` logo acima: só chega aqui quem já tem comissão de papel.
+        pct_efetivo = pct + float(getattr(f, "adicional_comissao_pct", 0.0) or 0.0)
         ref = "%s:%s:%d" % (etapa.projeto_nome, etapa.etapa_codigo, func_id)
         item = db.query(ComissaoFolha).filter_by(ref_etapa=ref).first()
         if item is None:
@@ -178,8 +183,8 @@ def preparar_comissao_etapa(db, loja_id, etapa):
         if item.status == "confirmado":     # já foi para folha paga — não recalcula
             itens.append(item); continue
         base_ef = item.base_ajustada if item.base_ajustada is not None else base
-        item.competencia = comp; item.base = base; item.pct = pct
-        item.valor = round(float(base_ef) * pct / 100.0, 2); item.status = "previsto"
+        item.competencia = comp; item.base = base; item.pct = pct_efetivo
+        item.valor = round(float(base_ef) * pct_efetivo / 100.0, 2); item.status = "previsto"
         db.flush()
         itens.append(item)
     return itens[0] if itens else None

@@ -12,15 +12,27 @@ Realizar um caso dispara o lançamento contábil (motor v7 §6):
 from datetime import datetime
 
 import mod_contabil
+import mod_escopo
 from database import (AssistenciaCaso, AssistenciaExecutor, AssistenciaAnexo, PoolAmbiente,
                       Funcionario, Terceiro)
 
 SUB_TIPOS = {"montagem": "Assistência Montagem", "pos_conclusao": "Assistência Pós-Conclusão"}
 
-# Funções elegíveis pra executar uma assistência (2026-08-06) — mesmo catálogo que
-# mod_escopo.PAPEL_FUNCOES["montagem"], mas COPIADO (não importado): a Assistência tem
-# agendamento próprio agora, desacoplado do papel do Mapa (que não existe mais pra ela).
-FUNCOES_ELEGIVEIS = ("Montador", "Supervisor de Montagem")
+# Funções elegíveis pra executar uma assistência (2026-08-06): o critério real é "faz trabalho de
+# montagem" — o MESMO critério do papel 'montagem' do Mapa de Atribuições. A Assistência tem
+# agendamento próprio, desacoplado do papel 'assistencia' (removido de mod_escopo.PAPEIS em
+# 2026-08-06) — mas o catálogo de NOMES em si não precisa ser uma cópia (ACHADO-46, "quinto
+# irmão": duas listas com a mesma regra divergem no dia em que alguém edita uma). Importado, não
+# copiado — e `funcao_elegivel_assistencia` reaproveita o mesmo papel-primeiro-nome-fallback do
+# resto da rodada (ACHADO-46/47).
+FUNCOES_ELEGIVEIS = mod_escopo.PAPEL_FUNCOES["montagem"]
+
+
+def funcao_elegivel_assistencia(funcao_nome, papeis=None):
+    """True se a função (por papel 'montagem' declarado, ou por nome como fallback) pode executar
+    uma assistência. Mesma regra de `mod_escopo.funcao_compativel("montagem", ...)` — reaproveitada
+    aqui, não copiada, embora 'assistencia' não seja mais papel do Mapa."""
+    return mod_escopo.funcao_compativel("montagem", funcao_nome, papeis)
 
 # motivo -> (rótulo, tipo_custo). Tabela do doc (Modulos_Orizon_v5 módulo 10 / Financeiro v7 §6).
 MOTIVOS = {

@@ -18,6 +18,10 @@ from datetime import datetime
 import mod_contabil
 import mod_provisoes
 import mod_adiantamento
+# mod_cadastro (domínio "cadastro") é dependência declarada de "folha" em modulos.py — a guarda
+# `funcao_e_comissionada` mora lá (opera só em dados de Funcao/cadastro); reexportada aqui pra não
+# quebrar quem já chama mod_folha.funcao_e_comissionada.
+from mod_cadastro import funcao_e_comissionada
 from database import (Funcionario, Funcao, Projeto, Orcamento, FolhaPagamento, ComissaoFolha,
                       AdiantamentoFuncionario)
 
@@ -97,7 +101,14 @@ def _beneficios_total(funcao):
 def calcular_folha(db, loja_id, funcionario, competencia, cfg, base_override=None):
     """Calcula a remuneração a partir da FUNÇÃO do funcionário — nada digitado (exceto a base editável).
     Retorna parte_fixa, vendas_liq, base_comissao, faixa_pct, parte_variavel, beneficios, total.
-    `base_override` (se não None) força a base da comissão — usado ao editar a base na Folha."""
+    `base_override` (se não None) força a base da comissão — usado ao editar a base na Folha.
+
+    ACHADO-47 — Adicional (acúmulo de papéis): `adicional_fixo` soma direto na parte fixa;
+    `adicional_comissao_pct` soma na parte variável, mas SÓ quando `funcao_e_comissionada` — a
+    mesma base (Val_Liq de Venda) da comissão da função, nunca uma base própria. Os dois entram
+    dentro de `parte_fixa`/`parte_variavel` (nenhuma rubrica/alimentador/veredito novo — é a
+    MESMA conta 5.3.0X que já existe); `adicional_fixo`/`adicional_variavel` no retorno são só
+    a discriminação, pra transparência na tela."""
     funcao = db.get(Funcao, funcionario.funcao_id) if funcionario.funcao_id else None
     fixa = float(funcao.salario_fixo or 0.0) if funcao else 0.0
     comissao_fixa = float(getattr(funcao, "comissao_fixa", 0.0) or 0.0) if funcao else 0.0
@@ -119,10 +130,19 @@ def calcular_folha(db, loja_id, funcionario, competencia, cfg, base_override=Non
         base = 0.0 if base_override is None else float(base_override)
         pct = _resolver_pct_funcao(com, base)
     variavel = round(base * pct / 100.0, 2)
-    return {"parte_fixa": round(fixa, 2), "vendas_liq": round(vendas_liq, 2),
-            "base_comissao": round(base, 2), "faixa_pct": pct, "parte_variavel": variavel,
+
+    adicional_fixo = float(getattr(funcionario, "adicional_fixo", 0.0) or 0.0)
+    adicional_pct = float(getattr(funcionario, "adicional_comissao_pct", 0.0) or 0.0)
+    adicional_variavel = (round(base * adicional_pct / 100.0, 2)
+                          if (adicional_pct and funcao_e_comissionada(funcao)) else 0.0)
+
+    fixa_total = round(fixa + adicional_fixo, 2)
+    variavel_total = round(variavel + adicional_variavel, 2)
+    return {"parte_fixa": fixa_total, "vendas_liq": round(vendas_liq, 2),
+            "base_comissao": round(base, 2), "faixa_pct": pct, "parte_variavel": variavel_total,
             "beneficios": beneficios, "comissao_fixa": round(comissao_fixa, 2),
-            "total": round(fixa + variavel + beneficios + comissao_fixa, 2)}
+            "adicional_fixo": round(adicional_fixo, 2), "adicional_variavel": adicional_variavel,
+            "total": round(fixa_total + variavel_total + beneficios + comissao_fixa, 2)}
 
 
 def editar_base(db, loja_id, reg, base, cfg):

@@ -316,6 +316,36 @@ v2026.09.03-beta2`, `UPDATE alembic_version SET version_num=
 schema), `alembic current` → `82275b998a4a (head)`, `confirmar.sh` 15/0,
 smoke OK. Produção NÃO tocada nesta rodada.
 
+### Sexto deploy por tag — v2026.09.03-beta3 — 03/09/2026
+
+A `v2026.09.03-beta2` nasceu de suíte VERMELHA — o corte da tag aconteceu
+antes de rodar `pytest -q` completo depois da correção do revision id (a
+suíte só foi rodada por pedido explícito, depois do deploy já feito). 3
+falhas: `test_e2e_browser_ciclo_overlay`, `test_e2e_browser_conciliacao_
+final`, `test_e2e_browser_negociacao_layout` — as três com a mesma linha,
+`page.wait_for_selector("text=140.000,00")`, um locator sem escopo que
+casava com uma célula (escondida) da tabela de projetos por baixo do
+painel de negociação, e o Playwright trava no primeiro match em ordem de
+DOM mesmo com os outros 8 visíveis. Bisectado com `git worktree`: passava
+em `ed761b6` (antes do ACHADO-48), falhava em `HEAD` — a mudança em
+`_enriquecer_projetos_com_atraso` deslocou o timing o suficiente pra expor
+uma fragilidade que já existia no teste, não um defeito novo no app.
+Escopado para `#neg-subtotal` (único, dentro do painel de negociação);
+controle negativo confirmou a falha em alta frequência com o locator
+genérico (não 100% determinístico — é corrida, não travamento duro — mas
+o padrão é claro).
+
+Regra da esteira vale igual mesmo quando a ordem de quem pediu empurrou
+pra trás: tag só depois de suíte verde. `v2026.09.03-beta2` fica onde
+está (`4f7b831`), registro histórico de que existiu e foi superada — não
+movida, mesma lição do episódio do id de migration algumas horas antes.
+`v2026.09.03-beta3` (`30cb7e0`) é quem os servidores rodam. Nos dois: sem
+migration nova (só teste + doc, `git diff --stat` confirmado vazio para
+código de aplicação, nenhum serviço reiniciado), `git checkout
+v2026.09.03-beta3`, `confirmar.sh` 15/0, smoke OK. `pytest -q`: 2565
+passed, 4 xfailed (pré-existentes, ACHADO-01/19/20), 0 failed. Produção
+NÃO tocada nesta rodada.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

@@ -4901,6 +4901,16 @@ async function cfgAgendaRender(){
     +'<strong style="color:var(--text)">Agenda da Loja</strong>. A janela de trabalho de cada projeto/fase '
     +'vem do <strong style="color:var(--text)">cronograma de entrega</strong>; as produtividades abaixo '
     +'convertem a necessidade diária resultante em recurso necessário no período.</div>'
+    +titulo('Fuso horário')
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:8px;max-width:780px">ACHADO-48 — '
+    +'define a data de COMPETÊNCIA de tudo que o sistema registra pra esta loja (lançamentos do '
+    +'razão, conclusão de etapas, prazos). Nunca o relógio do servidor: sem ajuste aqui, vale '
+    +'Brasília.</div>'
+    +'<div style="margin-bottom:14px"><label class="field-label">Fuso horário da loja</label>'
+    +'<select id="cfg-ag-fuso" style="width:260px">'
+    +['America/Sao_Paulo','America/Noronha','America/Manaus','America/Rio_Branco'].map(tz =>
+        '<option value="'+tz+'"'+((_cfgFin.fuso_horario||'America/Sao_Paulo')===tz?' selected':'')+'>'+tz+'</option>').join('')
+    +'</select></div>'
     +titulo('Projeto Executivo')
     +'<div style="display:flex;gap:16px;flex-wrap:wrap">'
     +num('cfg-ag-prod-pe','Produtividade média (R$/dia)', ag.produtividade_pe_rs_dia ?? 20000, '500', 'Valor líquido de PE produzido por dia útil')
@@ -4942,6 +4952,9 @@ function cfgAgFeriadoAdd(){
 function cfgAgFeriadoDel(i){ _cfgAgFeriados.splice(i,1); _cfgAgFeriadosRender(); }
 async function cfgAgendaSalvar(lid){
   const num = id => parseFloat((document.getElementById(id)||{}).value);
+  // ACHADO-48: fuso_horario é chave de TOPO do config_financeira_json (não dentro de "agenda")
+  // — resolvida por mod_contabil.resolver_fuso_owner, fonte única do carimbo do razão.
+  _cfgFin.fuso_horario = (document.getElementById('cfg-ag-fuso')||{}).value || 'America/Sao_Paulo';
   _cfgFin.agenda = {
     ...(_cfgFin.agenda || {}),
     produtividade_montagem_rs_dupla_dia: num('cfg-ag-produtividade') || 7000,

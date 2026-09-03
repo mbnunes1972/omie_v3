@@ -9,8 +9,6 @@ Realizar um caso dispara o lançamento contábil (motor v7 §6):
   Fábrica -> realiza a Provisão de Garantia (execucao_reparo_garantia) + relatório "a cobrar da fábrica"
   Paga    -> gera venda ao cliente (venda_assistencia), sem tocar provisão
 """
-from datetime import datetime
-
 import mod_contabil
 import mod_escopo
 from database import (AssistenciaCaso, AssistenciaExecutor, AssistenciaAnexo, PoolAmbiente,
@@ -98,7 +96,9 @@ def criar_caso(db, loja_id, projeto_nome, sub_tipo, motivo, descricao, valor, us
                            valor=_num(valor), status="aberto", pool_ambiente_id=pool_ambiente_id,
                            data_inicio=data_inicio, data_fim=data_fim,
                            forma_pagamento=forma_pagamento, classificacao_avulsa=classificacao_avulsa,
-                           criado_em=quando or datetime.utcnow(), criado_por_id=usuario_id)
+                           # ACHADO-48 (02/09): fuso do dono do livro (o caso é sempre de UMA loja).
+                           criado_em=quando or mod_contabil.agora_no_fuso(db, "loja", loja_id),
+                           criado_por_id=usuario_id)
     db.add(caso)
     db.flush()
     return caso
@@ -175,7 +175,7 @@ def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
                                     historico="Assistência avulsa — %s" % (caso.descricao or caso.motivo))
     caso.status = "realizado"
     caso.ref_lancamento = ref
-    caso.realizado_em = quando or datetime.utcnow()
+    caso.realizado_em = quando or mod_contabil.agora_no_fuso(db, owner_tipo, owner_id)   # ACHADO-48
     return True, None
 
 

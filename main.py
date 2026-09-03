@@ -198,11 +198,23 @@ def _enriquecer_projetos_com_atraso(projetos):
     nomes = [p['nome_safe'] for p in projetos if p.get('nome_safe')]
     if not nomes:
         return
+    import mod_contabil
     db = get_session()
     try:
-        hoje = datetime.utcnow()
-        entregas = dict(db.query(Projeto.nome_safe, Projeto.data_entrega)
-                        .filter(Projeto.nome_safe.in_(nomes)).all())
+        entregas = {}
+        lojas_por_projeto = {}
+        for ns, de, lid in (db.query(Projeto.nome_safe, Projeto.data_entrega, Projeto.loja_id)
+                              .filter(Projeto.nome_safe.in_(nomes)).all()):
+            entregas[ns] = de
+            lojas_por_projeto[ns] = lid
+        # ACHADO-48 (02/09): "hoje" no fuso da LOJA de cada projeto (uma listagem pode cruzar
+        # lojas de uma mesma rede) — nunca o relógio do processo. Cache por loja_id: resolver o
+        # fuso é uma query a mais por loja distinta, não por projeto.
+        _hoje_por_loja = {}
+        def _hoje_da_loja(lid):
+            if lid not in _hoje_por_loja:
+                _hoje_por_loja[lid] = mod_contabil.agora_no_fuso(db, "loja", lid)
+            return _hoje_por_loja[lid]
         etapas_map = {}
         for e in db.query(CicloEtapa).filter(CicloEtapa.projeto_nome.in_(nomes)).all():
             etapas_map.setdefault(e.projeto_nome, []).append(
@@ -216,6 +228,7 @@ def _enriquecer_projetos_com_atraso(projetos):
             if ns not in entregas or (p.get('status') or "") in ("perdido", "concluido", "cancelado"):
                 p['atrasado'] = False
                 continue
+            hoje = _hoje_da_loja(lojas_por_projeto.get(ns))
             p['atrasado'] = _mcr.projeto_em_atraso(etapas_map.get(ns, []), de, hoje)
     finally:
         db.close()
@@ -499,21 +512,26 @@ def _maior_composto_com_parametros_pct(db, projeto_nome, orc_id_alvo=None,
 
 
 def _set_etapa_status(db, nome_safe, codigo, status, responsavel_id):
+    # ACHADO-48 (02/09): iniciado_em/concluido_em são competência de negócio (concluido_em vira
+    # `competencia` da comissão de papel logo abaixo) — fuso do dono do livro, nunca utcnow().
+    proj = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
+    _loja_id_etapa = proj.loja_id if proj else None
+    import mod_contabil
+    _agora_etapa = mod_contabil.agora_no_fuso(db, "loja", _loja_id_etapa)
     etapa = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
     if not etapa:
         etapa = CicloEtapa(projeto_nome=nome_safe, etapa_codigo=codigo)
         db.add(etapa)
     if etapa.status == "pendente" and status != "pendente":
-        etapa.iniciado_em = datetime.utcnow()
+        etapa.iniciado_em = _agora_etapa
     etapa.status = status
     if status in mod_ciclo.STATUS_CONCLUSIVOS:
-        etapa.concluido_em = datetime.utcnow()
+        etapa.concluido_em = _agora_etapa
         etapa.responsavel_id = responsavel_id
         try:                       # Fase 4: comissão do papel na conclusão da etapa (nunca bloqueia)
             import mod_comissao
             db.flush()             # concluido_em disponível
-            proj = db.query(Projeto).filter_by(nome_safe=nome_safe).first()
-            mod_comissao.preparar_comissao_etapa(db, (proj.loja_id if proj else None), etapa)
+            mod_comissao.preparar_comissao_etapa(db, _loja_id_etapa, etapa)
         except Exception as _e:
             print("[COMISSAO] preparar falhou:", _e)
     return etapa
@@ -986,7 +1004,8 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
             etapa7 = CicloEtapa(projeto_nome=nome_safe, etapa_codigo="7")
             db.add(etapa7)
         etapa7.status         = "concluido"
-        etapa7.concluido_em   = datetime.utcnow()
+        import mod_contabil
+        etapa7.concluido_em   = mod_contabil.agora_no_fuso(db, "loja", loja_id)   # ACHADO-48
         etapa7.responsavel_id = usuario_id   # None no gatilho ClickSign — coluna já é nullable
         db.commit()
         # Materializa a Aprovação financeira I (achado do usuário 2026-08-26, navegação): "8"
@@ -1005,7 +1024,7 @@ def _registrar_assinatura_contrato(db, contrato, parte, nome, cpf, ip_origem, lo
         try:
             import mod_cronograma
             _cfg_crono = _cfg_financeira_loja(db, loja_id)
-            _d0 = datetime.utcnow()
+            _d0 = mod_contabil.agora_no_fuso(db, "loja", loja_id)   # ACHADO-48
             mod_cronograma.gerar_cronograma_projeto(db, nome_safe, _cfg_crono, _d0)
             # Data-limite do Contrato (Fatia 3): D0 + prazo contratual em DIAS ÚTEIS. Só existe
             # após a assinatura (na geração do contrato ainda não há D0) — registrada aqui para
@@ -1962,7 +1981,7 @@ class Handler(BaseHTTPRequestHandler):
                               .filter(Recebivel.status == "previsto")
                               .filter(Recebivel.data_prevista >= de, Recebivel.data_prevista <= ate)
                               .order_by(Recebivel.data_prevista))
-                    _hoje = date.today()
+                    _hoje = mod_contabil.hoje_no_fuso(db, ot, oid)   # ACHADO-48
                     previstos = [{"id": r.id, "projeto": r.projeto_nome, "tipo": r.tipo,
                                  "numero": r.numero, "forma": r.forma, "valor_previsto": r.valor_previsto,
                                  "data_prevista": r.data_prevista.isoformat(),
@@ -2098,9 +2117,11 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 meses = 6
             try:
-                # UTC-naive como TODO o banco (datetime.utcnow) — hoje local desalinharia os
-                # buckets perto da virada de dia e a venda "sumiria" da série (tz skew)
-                hoje = datetime.utcnow().date()
+                # ACHADO-48 (02/09): o razão inteiro passou a ser carimbado no fuso do DONO do
+                # livro (mod_contabil.lancar), não mais UTC puro — os buckets têm que usar a
+                # MESMA fonte, senão É esta linha que desalinha e a venda "some" da série perto
+                # da virada de dia.
+                hoje = mod_contabil.hoje_no_fuso(db, ot, oid)
                 # janelas mensais: 1º dia de cada mês, terminando no mês corrente
                 inicios = []
                 anc = hoje.replace(day=1)
@@ -2220,7 +2241,8 @@ class Handler(BaseHTTPRequestHandler):
             tipo_periodo = (qs.get("periodo") or ["mes"])[0].strip().lower()
             if tipo_periodo not in ("mes", "trimestre", "ano"):
                 tipo_periodo = "mes"
-            ref = _parse_data((qs.get("ref") or [None])[0]) or datetime.utcnow()
+            import mod_contabil
+            ref = _parse_data((qs.get("ref") or [None])[0]) or mod_contabil.agora_no_fuso(db, ot, oid)   # ACHADO-48
             loja_id_q = (qs.get("loja_id") or [None])[0]
             loja_id = None
             try:
@@ -2417,7 +2439,7 @@ class Handler(BaseHTTPRequestHandler):
                 # sentido POR PROJETO (agregar entre projetos não tem sentido), então só enxerta
                 # quando ?projeto= foi passado (consolidado fica sem data/vencido).
                 if proj:
-                    hoje = date.today()
+                    hoje = mod_contabil.hoje_no_fuso(db, ot, oid)   # ACHADO-48
                     datas = {d.codigo_conta: d.data_prevista for d in
                              db.query(ProvisaoDataPrevista).filter_by(projeto_nome=proj).all()}
                     for p in rec["provisoes"]:
@@ -2502,7 +2524,8 @@ class Handler(BaseHTTPRequestHandler):
                     q = db.query(Recebivel).filter(Recebivel.loja_id.in_(lojas_owner))
                     if proj:
                         q = q.filter(Recebivel.projeto_nome == proj)
-                    hoje = date.today()
+                    import mod_contabil
+                    hoje = mod_contabil.hoje_no_fuso(db, ot, oid)   # ACHADO-48
                     for r in q.order_by(Recebivel.data_prevista).all():
                         vencido = r.status == "previsto" and r.data_prevista < hoje
                         recebiveis.append({
@@ -5079,7 +5102,8 @@ class Handler(BaseHTTPRequestHandler):
                             Orcamento.projeto_id == nome_safe,
                         ).count() > 0
                         if tem_negociacao and eh_legado:
-                            agora = datetime.utcnow()
+                            import mod_contabil
+                            agora = mod_contabil.agora_no_fuso(db, "loja", loja_id)   # ACHADO-48
                             for cod in ETAPAS_PRE:
                                 nova = CicloEtapa(
                                     projeto_nome=nome_safe,
@@ -9424,8 +9448,9 @@ class Handler(BaseHTTPRequestHandler):
                     # default inventado, mesma regra de valor > 0 exige cobrança do ACHADO-18.
                     if float(orc_aj.valor_total or 0) > 0:
                         import mod_recebiveis as _mrec
+                        import mod_contabil
                         if not _mrec.materializar(forma_pagamento_str, orc_aj.valor_total,
-                                                  datetime.utcnow(), "check"):
+                                                  mod_contabil.hoje_no_fuso(db, "loja", loja_id), "check"):
                             self.send_json({"ok": False, "erro": "O plano de pagamento do "
                                             "aditivo não gera nenhum recebível — informe "
                                             "entrada e/ou parcelas antes de concluir a "
@@ -9453,8 +9478,9 @@ class Handler(BaseHTTPRequestHandler):
                     _fin_provisoes_venda_seguro(orc_aj, nome, "prov:aditivo:" + str(aditivo.id))
                     # Recebíveis PRÓPRIOS do aditivo — guarda de idempotência já é por
                     # orcamento_id, então nada toca nos recebíveis do contrato.
+                    import mod_contabil
                     _materializar_recebiveis_venda_seguro(
-                        orc_aj, nome, loja_id, datetime.utcnow(),
+                        orc_aj, nome, loja_id, mod_contabil.agora_no_fuso(db, "loja", loja_id),   # ACHADO-48
                         "receb:aditivo:" + str(aditivo.id),
                         pagamento_json_str=forma_pagamento_str)
                 self.send_json({"ok": True, "status": aditivo.status})
@@ -10285,7 +10311,10 @@ class Handler(BaseHTTPRequestHandler):
                 proj = (dd.get("projeto") or "").strip() or None
                 valor = float(dd.get("valor") or 0)
                 confirmado = bool(dd.get("confirmado"))
-                hoje = date.today()
+                # ACHADO-48 (02/09): "hoje" no fuso do DONO DO LIVRO, nunca o relógio do
+                # processo — era exatamente a mistura date.today() (local) × Lancamento.data
+                # (utcnow) que deixava esta guarda inerte fora do horário comercial em UTC.
+                hoje = mod_contabil.hoje_no_fuso(db, ot, oid)
                 # ACHADO-35 (docs/db/TAREFA_PERCURSO_0109.md, item B1): a chave por valor+dia
                 # (07/08, pensada CONTRA o duplo-clique) recusava a SEGUNDA efetivação legítima
                 # do mesmo dia — e, antes do item 3 do ACHADO-32, recusava em silêncio (tela
@@ -10833,7 +10862,8 @@ class Handler(BaseHTTPRequestHandler):
                     p_meta.loja_id = loja_id
                     _db_ciclo.commit()
 
-                    agora = datetime.utcnow()
+                    import mod_contabil
+                    agora = mod_contabil.agora_no_fuso(_db_ciclo, "loja", loja_id)   # ACHADO-48
                     uid_ciclo = _usuario['id'] if _usuario else None
                     # Marca apenas Captação(1) e Criação do projeto(2). Briefing(3) fica
                     # pendente — vira a "etapa corrente" e deve ser preenchido (sub-projeto D).
@@ -10949,6 +10979,7 @@ class Handler(BaseHTTPRequestHandler):
             req       = json.loads(body) if body else {}
             db        = get_session()
             try:
+                import mod_contabil
                 ator = _ator_dict(db, usuario)
                 loja_id, _err = mod_tenancy.escopo_operacional(ator)
                 if _err:
@@ -10968,7 +10999,7 @@ class Handler(BaseHTTPRequestHandler):
                     b = Briefing(
                         cliente_id=cliente_id,
                         projeto_nome=nome_safe,
-                        data_atendimento=datetime.utcnow(),
+                        data_atendimento=mod_contabil.agora_no_fuso(db, "loja", loja_id),   # ACHADO-48
                         tipo_imovel="",
                         budget_declarado=0.0,
                         categoria_proposta="",
@@ -11008,7 +11039,7 @@ class Handler(BaseHTTPRequestHandler):
                         etapa3 = CicloEtapa(projeto_nome=nome_safe, etapa_codigo="3")
                         db.add(etapa3)
                     etapa3.status        = "concluido"
-                    etapa3.concluido_em  = datetime.utcnow()
+                    etapa3.concluido_em  = mod_contabil.agora_no_fuso(db, "loja", loja_id)   # ACHADO-48
                     etapa3.responsavel_id = usuario["id"] if usuario else None
                     db.commit()
                 self.send_json({"ok": True, "briefing": bd})
@@ -11041,9 +11072,10 @@ class Handler(BaseHTTPRequestHandler):
                 b = db.query(Briefing).filter_by(cliente_id=cliente_id)\
                       .order_by(Briefing.id.desc()).first()
                 if not b:
+                    import mod_contabil
                     b = Briefing(
                         cliente_id=cliente_id,
-                        data_atendimento=datetime.utcnow(),
+                        data_atendimento=mod_contabil.agora_no_fuso(db, "loja", loja_id),   # ACHADO-48
                         tipo_imovel="",
                         budget_declarado=0.0,
                         categoria_proposta="",
@@ -11685,12 +11717,12 @@ class Handler(BaseHTTPRequestHandler):
                 if valor <= 0:
                     self.send_json({"ok": False, "erro": "Informe um valor (> 0)"}, code=400); return
                 data_str = (req.get("data") or "").strip()
+                ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 try:
                     data_conf = (datetime.strptime(data_str[:10], "%Y-%m-%d").date()
-                                if data_str else date.today())
+                                if data_str else _mc.hoje_no_fuso(db, ot, own_id))   # ACHADO-48
                 except ValueError:
                     self.send_json({"ok": False, "erro": "Data inválida"}, code=400); return
-                ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 lan = _mc.registrar_recebimento_venda(db, ot, own_id, rec.projeto_nome, valor,
                                                       ref=rec.ref, data=data_conf,
                                                       duvidoso=(rec.status == "duvidoso"))
@@ -11778,7 +11810,7 @@ class Handler(BaseHTTPRequestHandler):
                 if rec.status != "previsto":
                     self.send_json({"ok": False, "erro": "Só recebíveis previstos podem virar duvidosos."}, code=409); return
                 ot, own_id = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
-                hoje = date.today()
+                hoje = _mc.hoje_no_fuso(db, ot, own_id)   # ACHADO-48
                 lan = _mc.reclassificar_recebivel_duvidoso(db, ot, own_id, rec.projeto_nome,
                                                             rec.valor_previsto, ref=rec.ref + ":duv",
                                                             data=hoje)
@@ -12021,7 +12053,8 @@ class Handler(BaseHTTPRequestHandler):
                 if "venda_programada" in req:
                     proj.venda_programada = 1 if req.get("venda_programada") else 0
                 if not proj.data_inicio:
-                    proj.data_inicio = datetime.utcnow()   # âncora do progressivo
+                    import mod_contabil
+                    proj.data_inicio = mod_contabil.agora_no_fuso(db, "loja", proj.loja_id)   # âncora do progressivo (ACHADO-48)
                 # Achado do usuário (2026-08-25): a entrega real (este campo) e a data prevista de
                 # Montagem/Assistência/Vistoria/Aprovação final (fixada uma vez no D0 da assinatura,
                 # via gerar_cronograma_projeto) são independentes — sem isto, um atraso de produção
@@ -13296,7 +13329,8 @@ class Handler(BaseHTTPRequestHandler):
                     # um evento passado não concluído (atrasado) deve ser para uma data presente ou
                     # futura" — reagendar de um passado pra OUTRO passado não é correção, seria reescrever
                     # o histórico.
-                    if nova_dt.date() < date.today():
+                    import mod_contabil
+                    if nova_dt.date() < mod_contabil.hoje_no_fuso(db, "loja", loja_id):   # ACHADO-48
                         self.send_json({"ok": False, "erro": "Não é possível agendar para uma data passada"}, code=400)
                         return
                     cod_anterior = mod_ciclo.etapa_anterior(etapa_cod)
@@ -14225,9 +14259,10 @@ class Handler(BaseHTTPRequestHandler):
                     # contrato inteiro fechando sem cobrança. Mesma guarda do aditivo, mesma
                     # regra do ACHADO-18: valor > 0 exige cobrança, nenhum default inventado.
                     import mod_recebiveis as _mrec
+                    import mod_contabil
                     _pag_json_check = pagamento_json_str or orcamento_dict.get("forma_pagamento", "") or ""
                     if not _mrec.materializar(_pag_json_check, orcamento_dict.get("valor_total", 0),
-                                              datetime.utcnow(), "check"):
+                                              mod_contabil.hoje_no_fuso(db, "loja", loja_id), "check"):
                         self.send_json({
                             "ok": False,
                             "erro": "O plano de pagamento não gera nenhum recebível — informe "
@@ -15088,11 +15123,12 @@ class Handler(BaseHTTPRequestHandler):
                     _fname, data = arquivos["arquivo"]
                     preview = mod_nfe.preview(data, markup)
                     ref = "TESTE-" + datetime.utcnow().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:8]
-                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
-                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
-                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
-                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
-                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # ACHADO-48 (02/09): offset calculado de verdade a partir do fuso do dono do
+                    # livro (mod_contabil.data_emissao_iso_no_fuso), nunca "-03:00" fixo com
+                    # ajuste manual — era essa mistura (servidor em UTC, sufixo "-03:00" grudado)
+                    # que fabricava um horário no futuro e a SEFAZ rejeitava (achado 2026-08-08).
+                    import mod_contabil
+                    data_emissao = mod_contabil.data_emissao_iso_no_fuso(db, "loja", loja.id)
                     nota = mapa_fiscal.montar_nota(emitente, cliente, preview["itens"], ref, data_emissao)
                     res = nfe_emissao.emitir(db, loja.id, projeto_nome, nota, tipo_documento="produto",
                                              emitente_id=emitente.id)
@@ -15296,11 +15332,12 @@ class Handler(BaseHTTPRequestHandler):
                     if _vseg is not None:
                         preview["itens"] = mod_nfe.rescalar_itens_para_total(preview["itens"], _vseg["mercadoria"])
                     ref = "NFE-" + nome_safe + "-" + str(doc.id)
-                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
-                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
-                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
-                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
-                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # ACHADO-48 (02/09): offset calculado de verdade a partir do fuso do dono do
+                    # livro (mod_contabil.data_emissao_iso_no_fuso), nunca "-03:00" fixo com
+                    # ajuste manual — era essa mistura (servidor em UTC, sufixo "-03:00" grudado)
+                    # que fabricava um horário no futuro e a SEFAZ rejeitava (achado 2026-08-08).
+                    import mod_contabil
+                    data_emissao = mod_contabil.data_emissao_iso_no_fuso(db, "loja", loja.id)
                     nota = mapa_fiscal.montar_nota(emitente, cliente, preview["itens"], ref, data_emissao)
                     res = nfe_emissao.emitir(db, loja_id, nome_safe, nota, tipo_documento="produto",
                                              emitente_id=emitente.id, fabrica_doc_id=doc.id)
@@ -15395,11 +15432,12 @@ class Handler(BaseHTTPRequestHandler):
                                         "erros": json.loads(reg.erros_json) if reg.erros_json else [],
                                         "xml_doc_id": reg.xml_doc_id, "danfe_doc_id": reg.danfe_doc_id}); return
                     ref = "NFSE-%s-%d" % (nome_safe, len(nfse_regs) + 1)
-                    # UTC-3 fixo via utcnow() (não datetime.now()): o relógio do sistema nas VPS
-                    # roda em UTC, então datetime.now()+"-03:00" grudado fabricava um horário 3h no
-                    # futuro — a SEFAZ rejeita ("Data-Hora de Emissão posterior ao horário de
-                    # recebimento"). Achado 2026-08-08 na 1ª emissão real em homologação.
-                    data_emissao = (datetime.utcnow() - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S-03:00")
+                    # ACHADO-48 (02/09): offset calculado de verdade a partir do fuso do dono do
+                    # livro (mod_contabil.data_emissao_iso_no_fuso), nunca "-03:00" fixo com
+                    # ajuste manual — era essa mistura (servidor em UTC, sufixo "-03:00" grudado)
+                    # que fabricava um horário no futuro e a SEFAZ rejeitava (achado 2026-08-08).
+                    import mod_contabil
+                    data_emissao = mod_contabil.data_emissao_iso_no_fuso(db, "loja", loja.id)
                     discriminacao = req.get("discriminacao") or "Serviço de montagem/instalação de móveis planejados"
                     # FASE B2.3 (T4): valor da NFS-e = parcela Serviço (pct_serv × Val_Cont), complemento da
                     # NF-e produto (juntos fecham o Val_Cont). Sem contrato/Val_Cont → mantém o valor informado.
@@ -16577,11 +16615,13 @@ class Handler(BaseHTTPRequestHandler):
                                     "faltam": _faltam}, code=400)
                                 return
                     if novo_status:
+                        import mod_contabil
+                        _agora_pge = mod_contabil.agora_no_fuso(db, "loja", loja_id)   # ACHADO-48
                         if etapa.status == "pendente" and novo_status != "pendente":
-                            etapa.iniciado_em = datetime.utcnow()
+                            etapa.iniciado_em = _agora_pge
                         etapa.status = novo_status
                         if novo_status in mod_ciclo.STATUS_CONCLUSIVOS:
-                            etapa.concluido_em  = datetime.utcnow()
+                            etapa.concluido_em  = _agora_pge
                             etapa.responsavel_id = aprovador.id if aprovador else usuario["id"]
                     if obs is not None:
                         etapa.observacoes = obs
@@ -17122,9 +17162,8 @@ def _briefing_locked(cliente_id: int, briefing_completo: bool, db) -> bool:
 
 def _marcar_etapa_cliente(cliente_id: int, etapa_codigo: str, db, usuario):
     """Marca uma etapa do ciclo como concluída em todos os projetos vinculados ao cliente."""
-    from datetime import datetime as _dt
+    import mod_contabil
     projetos = db.query(Projeto).filter_by(cliente_id=cliente_id).all()
-    agora = _dt.utcnow()
     uid = usuario["id"] if usuario else None
     for p in projetos:
         etapa = db.query(CicloEtapa).filter_by(
@@ -17134,8 +17173,10 @@ def _marcar_etapa_cliente(cliente_id: int, etapa_codigo: str, db, usuario):
             etapa = CicloEtapa(projeto_nome=p.nome_safe, etapa_codigo=etapa_codigo)
             db.add(etapa)
         if etapa.status != "concluido":
+            # ACHADO-48 (02/09): cada projeto pode ser de uma loja diferente — fuso resolvido
+            # POR PROJETO, nunca um "agora" único compartilhado entre lojas.
             etapa.status         = "concluido"
-            etapa.concluido_em   = agora
+            etapa.concluido_em   = mod_contabil.agora_no_fuso(db, "loja", p.loja_id)
             etapa.responsavel_id = uid
     db.commit()
 

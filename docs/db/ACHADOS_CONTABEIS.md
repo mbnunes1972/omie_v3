@@ -3303,3 +3303,172 @@ aceite central: `preparar_comissao_etapa` soma o adicional no MESMO item,
 nunca cria um segundo). Controle negativo confirmado.
 
 **Grupo:** 1.
+
+---
+
+## ACHADO-48 — o livro é datado em UTC e a empresa vive em UTC−3
+
+Encontrado pela Vera em 02/09, investigando três testes que falhavam antes
+de cortar a tag. **O diagnóstico dela está certo e é maior do que o sintoma
+que o revelou.**
+
+### O sintoma
+
+Três aceites do ACHADO-35 falhavam. `efetivado_no_dia` monta a janela do dia
+com `date.today()` — **hora local** —, e `lancar()` carimba o lançamento com
+`datetime.utcnow()` quando `data` não é passada (mod_contabil.py:1113). Em
+UTC−3, das ~21h em diante, o lançamento nasce "amanhã" em UTC, cai fora da
+janela de "hoje" local, e **a guarda contra efetivação duplicada fica
+inerte**. Bisect até `cba0159` (onde a guarda nasceu): falha lá também. Não
+é regressão; é o defeito desde o primeiro dia, visível só em certa hora.
+
+### O achado
+
+`lancar()` é a porta única do razão, e **11 dos 27 chamadores não passam
+`data`** — esses lançamentos ficam com `utcnow()`. `registrar_evento`, que é
+por onde a maior parte dos eventos de negócio entra, tem `data=None` por
+padrão e repassa.
+
+Ou seja: **a data de competência de boa parte do razão é a data UTC.** Uma
+venda fechada às 21h30 de 30 de setembro em Brasília é escriturada em **1º de
+outubro**. Ela cai no mês seguinte, na DRE seguinte, no `PeriodoContabil`
+seguinte. Loja de móveis planejados fecha às 20h, 21h, 22h — a janela errada
+é justamente o fim do expediente.
+
+### E o comportamento depende da máquina, o que é pior
+
+O sistema **não declara fuso nenhum**. `date.today()` é do relógio do
+processo; `utcnow()` é UTC. Então:
+
+- Em servidor com TZ local (a bancada da Vera), os dois discordam e a
+  **guarda quebra** — foi assim que apareceu.
+- Em servidor com TZ = UTC (o padrão de VPS), os dois concordam e a guarda
+  funciona — mas **a data continua errada em relação a Brasília**, e ninguém
+  percebe.
+
+A bancada é mais honesta que a produção. O defeito se esconde exatamente
+onde importa.
+
+**Medição que falta:** `timedatectl` nos três servidores. Ela diz qual das
+duas faces está de pé em cada um.
+
+### O conserto, e por que agora
+
+Um número só manda — a mesma regra do deságio e do markup de ajuste. **O
+fuso é declarado em um lugar**, e tanto o carimbo de `lancar()` quanto todo
+`date.today()` de regra de negócio saem dessa fonte única. O relógio da
+máquina deixa de decidir competência.
+
+### DECIDIDO 02/09 — o fuso é configuração, com Brasília por padrão
+
+Decisão do Marcelo: **campo de fuso horário no painel de configuração**,
+com **America/Sao_Paulo como padrão**. Quando não estiver ajustado, vale
+Brasília. Ajusta-se no futuro se algum dia houver loja em outro fuso — o
+Brasil tem quatro.
+
+**Onde mora, sem migration:** `Loja.config_financeira_json` já existe e já é
+lida por `_cfg_financeira_loja`. Uma chave `fuso_horario` ali resolve, sem
+coluna nova.
+
+**A cadeia de resolução, e o ponto que decide o achado:**
+
+```
+config da loja → config da rede → America/Sao_Paulo
+```
+
+**Nunca o relógio da máquina.** Configuração ausente cai em Brasília, não no
+`TZ` do processo. Se o fallback for a máquina, o defeito volta inteiro pela
+porta do default — que é exatamente como ele nasceu.
+
+O livro tem dono (`owner_tipo`/`owner_id`), então o fuso é resolvido pelo
+dono do livro: loja quando é loja, rede quando é rede.
+
+**O momento é este e não outro:** produção está sem dado real de cliente.
+Consertar o relógio depois significa migrar um razão com datas de significado
+misturado — algumas UTC, algumas locais, sem marca que as distinga. Hoje
+custa uma função; depois custa uma migração de livro.
+
+**Grupo:** 1.
+
+### Medição (02/09, antes do conserto)
+
+`timedatectl` inverteu a suposição do próprio achado:
+- Integração + Homologação (mesma máquina, 167.88.33.121): `Etc/UTC` — aqui a
+  guarda "funciona" (os dois relógios concordam), mas a competência grava
+  errada em relação a Brasília, sem ninguém ver.
+- Produção (179.197.77.9): `America/Sao_Paulo` (-03) — aqui é onde o sintoma
+  apareceria visível, como na bancada.
+
+Lançamentos na janela 00h-03h UTC (candidatos a ter nascido "amanhã" para
+Brasília): Homologação, 71 lançamentos no total (31/08 a 02/09), todos entre
+12h-21h UTC (9h-18h Brasília, expediente comercial) — **zero** na janela.
+Integração e Produção: bancos vazios (sem dado real de cliente). Nenhum
+lançamento com data deslocada em nenhuma base real — o defeito é
+estrutural/latente, ainda sem vítima nos dados. Confirma que este é o
+momento certo.
+
+### Conserto (02/09)
+
+Fonte única em `mod_contabil.py`: `resolver_fuso_owner(db, owner_tipo,
+owner_id)` lê `Loja.config_financeira_json['fuso_horario']` (cadeia loja →
+rede da loja → `America/Sao_Paulo`; owner "rede" pula direto pro degrau da
+rede); `Rede` não tem `config_financeira_json` hoje, então o degrau existe
+na cadeia mas não tem o que ler ainda — cai no default, documentado no
+código, não é bug. `agora_no_fuso`/`hoje_no_fuso` usam `zoneinfo` (stdlib,
+sem dependência nova) para dar a hora de parede do fuso, **sempre
+independente do relógio/TZ do processo** — é essa independência que fecha o
+achado. `data_emissao_iso_no_fuso` substitui o hack de NF-e/NFS-e
+(`utcnow() - timedelta(hours=3)`, "-03:00" fixo).
+
+`lancar()` agora carimba com `agora_no_fuso`, nunca `utcnow()`. Sem coluna
+nova, sem migration — `fuso_horario` é só mais uma chave no JSON que já
+existia. Campo novo em Config → Agenda e Capacidade (`static/index.html`,
+select com os quatro fusos do Brasil, default America/Sao_Paulo).
+
+**Os irmãos** (todo `date.today()`/`datetime.utcnow()` em caminho de regra
+de negócio, revisados um a um):
+
+Mudam (~32 sites, todos passaram a usar `agora_no_fuso`/`hoje_no_fuso`/
+`data_emissao_iso_no_fuso`, porque alimentam uma decisão de competência —
+mês da DRE, guarda de duplicidade, vencido/atraso, âncora de cronograma,
+emissão fiscal): o carimbo de `lancar()`; `alertas_contas_escape`;
+`sugestoes_despesas_mes_anterior` (e os dois `_intervalo_mes_*` que ela
+alimenta); a guarda `efetivado_no_dia`/`efetivar-provisao` (ACHADO-35, o
+alvo central); `reclassificar_recebivel_duvidoso`; confirmação de
+recebível; três comparações de "vencido" (fluxo de caixa, reconciliação de
+provisões, financeiro/recebíveis); `/financeiro/indicadores` e
+`/estrategico/indicadores`; todo carimbo de `CicloEtapa.iniciado_em`/
+`concluido_em` (etapas "4","7","9","10","11d","15","21", PATCH genérico de
+ciclo, `_set_etapa_status`) — cascade porque `concluido_em` alimenta
+`mod_comissao.preparar_comissao_etapa`'s `competencia`; `_registrar_
+assinatura_contrato` (etapa7 + âncora do cronograma); auto-complete de
+ETAPAS_PRE e etapas 1/2 na criação do projeto; briefing (conclusão +
+`data_atendimento` ×2); `_marcar_etapa_cliente`; `_enriquecer_projetos_
+com_atraso` (com cache por loja, porque uma listagem de rede cruza lojas de
+fusos potencialmente diferentes); validação de "não agendar no passado";
+`materializar(...,"check")` (×2) e `_materializar_recebiveis_venda_seguro`;
+`proj.data_inicio`; três `data_emissao` de NF-e/NFS-e; `mod_folha.pagar`
+(`pago_em`); `mod_assistencias.criar_caso`/`realizar_caso`.
+
+Ficam em `utcnow()` (~40 sites — timestamp de auditoria/log, "quando isso
+aconteceu", não competência): `assinado_em`, `clicksign_enviado_em` (×3),
+`ts=...isoformat()` de hash (×3), `gerado_em` (×4: contrato, aditivo,
+aprovação, solicitação), `atualizado_em` (×4), `resolvido_em` (chat),
+`carregado_em` (upload PE), `medicao_em`/`excecao_em`,
+`transferencia_solicitada_em`, `travada_em`, `unico = ...strftime(...)` (×6,
+nome de arquivo), janela de carência do ClickSign, ref "TESTE-...".
+
+**Prova:** `tests/test_achado48_fuso_horario.py` (5) — cadeia loja → rede →
+default; `agora_no_fuso` independe do TZ do processo (verificado); `lancar`
+carimba com `agora_no_fuso`, não `utcnow()` (fuso deliberadamente extremo,
+`Pacific/Kiritimati` UTC+14, pra tornar o desvio sempre detectável); os três
+aceites do ACHADO-35 passam com o processo em UTC e em America/Sao_Paulo.
+
+**Controle negativo:** reapontar `lancar()` para `utcnow()` faz o teste
+determinístico (`Pacific/Kiritimati`) falhar — confirmado. O controle via
+subprocess dos aceites do ACHADO-35 sob reversão é dependente da janela
+real de relógio (só falha durante o descompasso local/UTC de meia-noite,
+que se move com a hora real) — não é um controle negativo confiável por si
+só; o determinístico é a evidência primária.
+
+**Grupo:** 1.

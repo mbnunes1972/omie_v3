@@ -425,6 +425,88 @@ def _natureza(grupo):
     return "devedora" if grupo in (1, 5) else "credora"
 
 
+_FUSO_PADRAO = "America/Sao_Paulo"
+
+
+def _fuso_de_config_json(config_json_str):
+    """Extrai `fuso_horario` de um `config_financeira_json` bruto (string), ou None. Puro,
+    sem I/O — não distingue "campo ausente" de "JSON inválido", os dois viram None (o chamador
+    decide o próximo degrau da cadeia)."""
+    if not config_json_str:
+        return None
+    import json
+    try:
+        cfg = json.loads(config_json_str)
+    except (TypeError, ValueError):
+        return None
+    fuso = (cfg or {}).get("fuso_horario") if isinstance(cfg, dict) else None
+    return fuso or None
+
+
+def resolver_fuso_owner(db, owner_tipo, owner_id):
+    """ACHADO-48 (DECIDIDO 02/09) — fuso horário do DONO DO LIVRO, nunca o relógio da máquina.
+    Cadeia: config da loja → config da rede (da loja, se houver) → America/Sao_Paulo. Owner
+    "rede" pula direto pro degrau da rede (o livro já É da rede). `Rede` não tem
+    `config_financeira_json` hoje (só `Loja` tem) — o degrau existe na cadeia, mas não tem o que
+    ler ainda; cai no default. Nunca lê TZ do processo/sistema operacional — é exatamente essa
+    mistura (date.today() local × datetime.utcnow()) que causou o ACHADO-48."""
+    if owner_tipo == "loja":
+        loja = db.get(Loja, owner_id)
+        if loja is not None:
+            fuso = _fuso_de_config_json(getattr(loja, "config_financeira_json", None))
+            if fuso:
+                return fuso
+            if loja.rede_id:
+                rede = db.get(Rede, loja.rede_id)
+                fuso = _fuso_de_config_json(getattr(rede, "config_financeira_json", None)) if rede else None
+                if fuso:
+                    return fuso
+    elif owner_tipo == "rede":
+        rede = db.get(Rede, owner_id)
+        fuso = _fuso_de_config_json(getattr(rede, "config_financeira_json", None)) if rede else None
+        if fuso:
+            return fuso
+    return _FUSO_PADRAO
+
+
+def agora_no_fuso(db, owner_tipo, owner_id):
+    """'Agora' na hora de PAREDE do fuso do dono do livro (`resolver_fuso_owner`) — devolve
+    NAIVE (sem tzinfo), pro mesmo tipo que `Lancamento.data`/`date.today()` sempre usaram. Fonte
+    ÚNICA: o carimbo de `lancar()` e todo `date.today()`/`datetime.utcnow()` de regra de negócio
+    saem daqui — nunca mais do relógio do processo."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    fuso = resolver_fuso_owner(db, owner_tipo, owner_id)
+    try:
+        tz = ZoneInfo(fuso)
+    except Exception:
+        tz = ZoneInfo(_FUSO_PADRAO)
+    return _dt.now(tz).replace(tzinfo=None)
+
+
+def hoje_no_fuso(db, owner_tipo, owner_id):
+    """A data (sem hora) de hoje no fuso do dono do livro — mesma fonte de `agora_no_fuso`."""
+    return agora_no_fuso(db, owner_tipo, owner_id).date()
+
+
+def data_emissao_iso_no_fuso(db, owner_tipo, owner_id):
+    """ACHADO-48 (02/09) — data-hora de emissão (NF-e/NFS-e) no formato que a SEFAZ exige
+    (AAAA-MM-DDTHH:MM:SS±HH:MM), com o OFFSET calculado de verdade a partir do fuso do dono do
+    livro — nunca "-03:00" fixo. Substitui o hack anterior (`datetime.utcnow() - timedelta(hours=3)`
+    com sufixo hardcoded), que dependia do servidor rodar em UTC pra não fabricar um horário no
+    futuro (achado do usuário 2026-08-08) — a mesma classe de bug do ACHADO-48, resolvida na
+    fonte única, não mais com um ajuste manual por servidor."""
+    from zoneinfo import ZoneInfo
+    fuso = resolver_fuso_owner(db, owner_tipo, owner_id)
+    try:
+        tz = ZoneInfo(fuso)
+    except Exception:
+        tz = ZoneInfo(_FUSO_PADRAO)
+    from datetime import datetime as _dt
+    agora_tz = _dt.now(tz)
+    return agora_tz.strftime("%Y-%m-%dT%H:%M:%S") + agora_tz.strftime("%z")[:3] + ":" + agora_tz.strftime("%z")[3:]
+
+
 def resolver_owner(db, usuario):
     """`db` não é mais usado (a resolução virou pura, sem consultar `Loja`) — mantido na
     assinatura só pra não mexer nas ~26 chamadas existentes.
@@ -1109,8 +1191,11 @@ def lancar(db, owner_tipo, owner_id, conta_debito_id, conta_credito_id, valor,
             raise ValueError("conta %s é sintética; só analítica recebe lançamento" % c.codigo)
         if not c.ativa:
             raise ValueError("conta %s está inativa" % c.codigo)
-    from datetime import datetime as _dt
-    lan = Lancamento(owner_tipo=owner_tipo, owner_id=owner_id, data=data or _dt.utcnow(),
+    # ACHADO-48 (DECIDIDO 02/09): a competência do lançamento é a hora de PAREDE do fuso do
+    # dono do livro (`agora_no_fuso`), nunca `datetime.utcnow()` — era daqui que o defeito
+    # nascia (venda às 21h30 em Brasília escriturada em UTC, um dia/mês adiante).
+    lan = Lancamento(owner_tipo=owner_tipo, owner_id=owner_id,
+                     data=data or agora_no_fuso(db, owner_tipo, owner_id),
                      conta_debito_id=conta_debito_id, conta_credito_id=conta_credito_id,
                      valor=round(float(valor), 2), projeto_id=projeto_id, origem=origem,
                      historico=historico or "", ref=ref, motivo=motivo, ia_sugestao=ia_sugestao)
@@ -2811,15 +2896,15 @@ def alertas_contas_escape(db, owner_tipo, owner_id):
     plano — "5.4.20 Outras Despesas" (balde do que ninguém sabe classificar) e "5.6.10 Ajustes de
     Reconciliação" (só diferença sem origem identificável, desde T5). Não é notificação PUSH —
     não existe canal pra isso hoje (sem e-mail/central de avisos); é computado sob demanda,
-    incluído no dashboard financeiro. Escopo: mês corrente (UTC), sempre — independe do período
-    que o dashboard estiver mostrando.
+    incluído no dashboard financeiro. Escopo: mês corrente NO FUSO DO DONO DO LIVRO (ACHADO-48,
+    02/09 — era UTC sempre, discordando do calendário de quem lê o dashboard), sempre —
+    independe do período que o dashboard estiver mostrando.
     - 5.4.20: dispara se passar de 1% do custo fixo do mês (soma de débito de toda conta
       ANALÍTICA com natureza_custo='fixo'). Limiar frouxo de propósito (decisão do briefing) —
       apertar depois de ver o comportamento real.
     - 5.6.10: dispara com QUALQUER lançamento no mês — por definição (T5), toda entrada aqui é
       uma diferença sem origem identificável, não deveria ser hábito."""
-    from datetime import datetime as _dt
-    agora = _dt.utcnow()
+    agora = agora_no_fuso(db, owner_tipo, owner_id)
     ini_mes = agora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     alertas = []
 
@@ -3141,11 +3226,12 @@ def relatorio_natureza(db, owner_tipo, owner_id, ini=None, fim=None):
 
 
 # ── Sugestões de despesa do mês anterior (painel guiado de Lançamentos, 2026-08-09) ──────────
-def _intervalo_mes_anterior(ref=None):
-    """(ini, fim) do mês anterior a `ref` (default agora), dia cheio. replace(day=1) - 1 dia
-    rola sozinho pra dezembro do ano anterior em janeiro, sem caso especial."""
+def _intervalo_mes_anterior(ref):
+    """(ini, fim) do mês anterior a `ref`, dia cheio. replace(day=1) - 1 dia rola sozinho pra
+    dezembro do ano anterior em janeiro, sem caso especial. ACHADO-48 (02/09): `ref` deixou de
+    ter default aqui — o único chamador (`sugestoes_despesas_mes_anterior`) sempre passa
+    `agora_no_fuso(db, owner_tipo, owner_id)`, nunca o relógio do processo."""
     from datetime import datetime as _dt, time as _time, timedelta
-    ref = ref or _dt.utcnow()
     primeiro_atual = ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ultimo_dia_anterior = primeiro_atual - timedelta(days=1)
     ini = ultimo_dia_anterior.replace(day=1)
@@ -3153,10 +3239,10 @@ def _intervalo_mes_anterior(ref=None):
     return ini, fim
 
 
-def _intervalo_mes_atual(ref=None):
-    """(ini, fim) do mês em curso ATÉ `ref` — "já lançado" olha só o que já aconteceu."""
-    from datetime import datetime as _dt
-    ref = ref or _dt.utcnow()
+def _intervalo_mes_atual(ref):
+    """(ini, fim) do mês em curso ATÉ `ref` — "já lançado" olha só o que já aconteceu. ACHADO-48
+    (02/09): mesma nota de `_intervalo_mes_anterior` — sem default, `ref` vem sempre resolvido
+    pelo fuso do dono do livro."""
     return ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0), ref
 
 
@@ -3199,8 +3285,10 @@ def sugestoes_despesas_mes_anterior(db, owner_tipo, owner_id, ref=None):
     movimento líquido POSITIVO (D−C > 0) no mês anterior a `ref`, EXCETO
     `CONTAS_EXCLUIDAS_SUGESTAO_DESPESA`. contrapartida_sugerida = outra ponta do lançamento mais
     recente dessa conta na mesma janela. ja_lancado_mes_atual = já tem lançamento como débito no
-    mês em curso (a UI não insiste na sugestão)."""
+    mês em curso (a UI não insiste na sugestão). ACHADO-48 (02/09): sem `ref` explícito, "agora"
+    é a hora de parede no fuso do dono do livro (`agora_no_fuso`), nunca `datetime.utcnow()`."""
     seed_plano(db, owner_tipo, owner_id)
+    ref = ref or agora_no_fuso(db, owner_tipo, owner_id)
     ini_ant, fim_ant = _intervalo_mes_anterior(ref)
     ini_atu, fim_atu = _intervalo_mes_atual(ref)
     contas_g5 = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id,

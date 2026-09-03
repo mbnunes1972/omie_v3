@@ -13,7 +13,6 @@ cálculo próprio (agregado do mês, ignorando o redutor) e postava um lançamen
 dinheiro. Agora só uma: a provisão nasce na assinatura, e a Folha a resolve.
 """
 import json
-from datetime import datetime
 
 import mod_contabil
 import mod_provisoes
@@ -337,7 +336,9 @@ def pagar(db, owner_tipo, owner_id, reg):
     if (reg.beneficios or 0) > 0:
         mod_contabil.registrar_evento(db, owner_tipo, owner_id, "folha_beneficios", reg.beneficios, ref=ref + ":ben")
     mod_adiantamento.quitar_da_competencia(db, reg.funcionario_id, reg.competencia)   # baixa os adiantamentos abatidos
-    reg.status = "paga"; reg.ref_lancamento = ref; reg.pago_em = datetime.utcnow()
+    # ACHADO-48 (02/09): mesmo fuso do dono do livro que já carimbou os lançamentos acima.
+    reg.status = "paga"; reg.ref_lancamento = ref
+    reg.pago_em = mod_contabil.agora_no_fuso(db, owner_tipo, owner_id)
     return True, None
 
 

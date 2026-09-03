@@ -20,6 +20,9 @@ def _f(v):
 
 def config_financeira_default():
     return {
+        # ACHADO-48 (DECIDIDO 02/09): fuso da COMPETÊNCIA de tudo que esta loja registra —
+        # nunca o relógio do servidor. Resolvido por mod_contabil.resolver_fuso_owner.
+        "fuso_horario": "America/Sao_Paulo",
         "defaults_negociacao": {"comissao_arq_pct": 0.0, "fidelidade_pct": 0.0, "carga_trib_pct": 0.0},
         "provisoes": {k: 0.0 for k in _PROV_KEYS},
         # v6 §6.4: % contábil das provisões constituídas no fechamento (Financeiro, desacoplado do preço).

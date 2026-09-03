@@ -40,7 +40,7 @@ Hoje o upload aceita qualquer arquivo e quem rejeita é
 **Parsear no upload e recusar ali.**
 
 Medição já feita: as NF-e reais da fábrica
-(`tests/fixtures/nfe/NFe-1632*.xml`) parseiam sem erro — 12 itens, com NCM,
+(`nfe_amostras/NFe-1632*.xml`) parseiam sem erro — 12 itens, com NCM,
 CFOP, unidade. O parser está bom; falta a validação estar no lugar certo.
 
 ## 3 · Mostrar o detalhamento do erro do Focus · FEITO 03/09
@@ -160,7 +160,7 @@ acima: avançar é livre, fechar não é.
 1. Os itens 1 a 4 consertados, com aceite por item.
 2. O item 5 **não implementado** até a decisão acima — só o desenho escrito.
 3. Se a validação do item 2 rejeitar alguma das NF-e reais em
-   `tests/fixtures/nfe/`, isso é achado: elas parseiam hoje.
+   `nfe_amostras/`, isso é achado: elas parseiam hoje.
 
 
 ---

@@ -2009,7 +2009,7 @@ aditivação.
 
 ---
 
-## ACHADO-30 — documentos de fase não têm como ser trocados, nem ficam imutáveis depois
+## ACHADO-30 — documentos de fase não têm como ser trocados, nem ficam imutáveis depois · RESOLVIDO 03/09/2026 (F2-15, item 1 do bloco fiscal)
 
 Encontrado pelo Marcelo em 31/08. Vale para os arquivos de **medição** e
 para o **XML da NF-e da fábrica**, e provavelmente para os demais
@@ -2029,6 +2029,65 @@ já virou fato se lê de onde foi congelado* — estendida de lançamento
 contábil para documento.
 
 **Grupo:** 2 — não muda número, mas o documento é a prova do que foi feito.
+
+### DECIDIDO 03/09 — remover é MARCAR, não apagar
+
+O item pedia "apagar e substituir". Medido antes de escrever: **não existe rota
+de remoção nenhuma hoje** (zero), e o `CicloDocumento` promete no próprio
+docstring *"Append-only: nunca sobrescreve"*. Ou seja, não era consertar uma
+porta — era abrir a que nunca existiu, num modelo que promete o contrário. Por
+isso a pergunta foi feita antes (regra das duas portas), e a decisão do Marcelo
+foi a marcação: `removido_em`/`removido_por_id`, **registro e arquivo em disco
+preservados**.
+
+O que isso compra: a promessa append-only continua de pé; o rastro de que houve
+tentativa não some — mesma razão que fez o cancelamento silencioso virar veredito
+nomeado no ACHADO-16; e o arquivo não é destruído numa pasta (`PROJETOS/`) que
+**ainda não tem cópia fora do host** — um engano no apagar não teria de onde
+voltar hoje. O que isso não cobre, e fica dito: um arquivo subido por engano
+continua no disco; se algum dia for preciso destruí-lo, é decisão separada.
+
+### Conserto (03/09)
+
+Migration `b0ecb9ce82d2` (id gerado, nunca digitado — a lição do ACHADO-47),
+duas colunas nullable: todo documento existente nasce vivo.
+
+**A parte que importa mais que a tela: os portões.** `main._docs_vivos` virou a
+porta ÚNICA de leitura e **oito** leitores passaram por ela — três deles não são
+listagem, são portão: o `tem_xml` que libera concluir as etapas operacionais
+(12/13/14), o `tipos_presentes` das subfases do PE, e a escolha do
+`fabrica_doc_id` na emissão da NF-e. Um portão que contasse documento removido
+tornaria a remoção cosmética, e falharia em silêncio — que é o pior modo. Uma
+trava anti-órfão (`tests/test_achado30_remocao_documento.py`) varre o `main.py` e
+recusa qualquer leitura crua de `CicloDocumento` que não trate `removido_em`.
+
+**A rota** é POST (o servidor não tem `do_DELETE`), recusa 409 em fase concluída
+(a segunda metade da regra), e a **autoridade espelha a do upload daquela etapa**
+— capacidade fiscal da sessão na 15, `executar_pe` nas subfases do PE, com o mesmo
+atalho sessão-primeiro do upload — em vez de inventar uma terceira regra de quem
+manda no documento.
+
+**Na tela**, "Remover" aparece nas subfases do PE, na lista de XML da etapa 12 e
+no XML da fábrica da 15 — mas **não** num XML que já virou emissão: remover o
+documento de origem de uma NF-e autorizada seria buraco, não conserto.
+`removido_em` fica em `utcnow()` por ser timestamp de auditoria e não competência
+(a classificação do ACHADO-48), igual ao `enviado_em` irmão.
+
+**Prova:** 6 aceites — remoção some da tela com o registro intacto no banco (quem
+e quando); o portão da etapa 12 deixa de enxergar; fase concluída recusa (409);
+autoridade espelhada; segunda remoção devolve 404 sem reescrever o rastro; e a
+trava anti-órfão. O aceite do portão carrega **o próprio controle negativo
+dentro dele**: afirma que a consulta CRUA ainda vê o documento removido e que a
+porta única não vê — se alguém trocar `_docs_vivos` por `db.query` ali, o teste
+cai. Suíte completa: **2576 passed, 4 xfailed, 0 failed**.
+
+**Achado de processo, no meio do caminho:** a primeira versão do aceite da fase
+concluída concluía a etapa 11a e ia embora assim — os dois aceites seguintes, no
+mesmo projeto semeado, passaram a receber 409 por causa dele e não do que mediam.
+É a **LP-04** ("fixtures que montam estado direto no banco") se provando sozinha,
+no mesmo dia em que está adiada. Corrigido com `finally` que devolve o status.
+
+**Grupo:** 2.
 
 ---
 

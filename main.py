@@ -511,6 +511,18 @@ def _maior_composto_com_parametros_pct(db, projeto_nome, orc_id_alvo=None,
     return maior_pct, menor_val_liq
 
 
+def _docs_vivos(db, **filtros):
+    """ACHADO-30 — porta ÚNICA de leitura de `CicloDocumento`: nunca enxerga documento
+    removido. Remoção é MARCADA (`removido_em`), não DELETE, então toda consulta que não
+    filtrasse continuaria contando o que a fase já descartou — e o pior caso não é a tela
+    feia, é o PORTÃO: "existe XML da etapa 12?" respondendo sim por causa de um arquivo
+    removido, ou a emissão da NF-e aceitando um XML da fábrica descartado. Por isso a
+    trava anti-órfão em `tests/test_achado30_remocao_documento.py` obriga toda leitura
+    nova a passar por aqui."""
+    q = db.query(CicloDocumento).filter(CicloDocumento.removido_em.is_(None))
+    return q.filter_by(**filtros) if filtros else q
+
+
 def _set_etapa_status(db, nome_safe, codigo, status, responsavel_id):
     # ACHADO-48 (02/09): iniciado_em/concluido_em são competência de negócio (concluido_em vira
     # `competencia` da comissão de papel logo abaixo) — fuso do dono do livro, nunca utcnow().
@@ -5965,7 +5977,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    docs = db.query(CicloDocumento).filter_by(projeto_nome=nome_safe)\
+                    docs = _docs_vivos(db, projeto_nome=nome_safe)\
                              .order_by(CicloDocumento.enviado_em.desc()).all()
                     revs = db.query(CicloRevisao).filter_by(projeto_nome=nome_safe)\
                              .order_by(CicloRevisao.aberta_em.desc()).all()
@@ -6003,7 +6015,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _err}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    doc = db.query(CicloDocumento).filter_by(id=doc_id, projeto_nome=nome_safe).first()
+                    doc = _docs_vivos(db, id=doc_id, projeto_nome=nome_safe).first()
                     if not doc:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     caminho = os.path.join(_projeto_path(nome_safe), doc.arquivo_path)
@@ -6036,8 +6048,7 @@ class Handler(BaseHTTPRequestHandler):
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
                     tipo = mod_ciclo.tipo_doc_operacional(codigo)
-                    docs = (db.query(CicloDocumento)
-                              .filter_by(projeto_nome=nome_safe, etapa_codigo=codigo, tipo=tipo)
+                    docs = (_docs_vivos(db, projeto_nome=nome_safe, etapa_codigo=codigo, tipo=tipo)
                               .order_by(CicloDocumento.enviado_em.desc()).all()) if tipo else []
                     out = [{"id": d.id, "nome_original": d.nome_original,
                             "enviado_em": d.enviado_em.isoformat() if d.enviado_em else None} for d in docs]
@@ -6067,8 +6078,7 @@ class Handler(BaseHTTPRequestHandler):
                         self.send_json({"ok": False, "erro": _msg}, code=403); return
                     if _projeto_da_loja(db, nome_safe, loja_id) is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
-                    docs = (db.query(CicloDocumento)
-                              .filter_by(projeto_nome=nome_safe, etapa_codigo="15", tipo="nfe_fabrica_xml")
+                    docs = (_docs_vivos(db, projeto_nome=nome_safe, etapa_codigo="15", tipo="nfe_fabrica_xml")
                               .order_by(CicloDocumento.enviado_em.desc()).all())
                     emissoes = {e.fabrica_doc_id: e for e in
                                 db.query(DocumentoFiscal).filter_by(projeto_nome=nome_safe).all()
@@ -9119,7 +9129,7 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_chat, mod_chat_externo as _ext
                 import mimetypes as _mt
                 doc = db.get(CicloDocumento, int(m_enc.group(2)))
-                if doc is None or doc.projeto_nome != nome:
+                if doc is None or doc.projeto_nome != nome or doc.removido_em is not None:   # ACHADO-30
                     self.send_json({"ok": False, "erro": "Documento não encontrado."}, code=404); return
                 conv = mod_chat.get_or_create_conversa_projeto(db, loja_id, nome)
                 caminho = os.path.join(_projeto_path(nome), doc.arquivo_path)
@@ -14871,6 +14881,59 @@ class Handler(BaseHTTPRequestHandler):
                     db.close()
                 return
 
+            # POST /api/projetos/<nome>/ciclo/<codigo>/documentos/<id>/remover — ACHADO-30.
+            # Remoção MARCADA, nunca DELETE: some da tela e dos portões enquanto a fase está
+            # ABERTA; com a fase concluída, recusa (409) — é a regra 3 do plano ("o que já virou
+            # fato se lê de onde foi congelado") estendida de lançamento pra documento.
+            # A autoridade ESPELHA a de subir naquela etapa, em vez de inventar uma terceira
+            # regra de quem manda no documento: etapa 15 pela capacidade fiscal da sessão
+            # (`editar_dados_loja`, igual ao upload da NF-e da fábrica), subfases do PE por
+            # login+senha de `executar_pe` (igual ao upload delas).
+            m = _re.match(r'^/api/projetos/([^/]+)/ciclo/([^/]+)/documentos/(\d+)/remover$', path)
+            if m:
+                nome_safe, codigo, doc_id = unquote(m.group(1)), m.group(2), int(m.group(3))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
+                req = json.loads(body) if body else {}
+                db = get_session()
+                try:
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    doc = _docs_vivos(db, id=doc_id, projeto_nome=nome_safe, etapa_codigo=codigo).first()
+                    if not doc:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).first()
+                    if et is not None and et.status in mod_ciclo.STATUS_CONCLUSIVOS:
+                        self.send_json({"ok": False, "erro":
+                                        "Fase concluída — o documento não pode mais ser removido."}, code=409); return
+                    if codigo == "15":
+                        if not perfis.pode_usuario(usuario, "editar_dados_loja"):
+                            self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                        quem = usuario["id"]
+                    else:
+                        u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""),
+                                                    "executar_pe", sessao=usuario)
+                        if not u:
+                            self.send_json({"ok": False, "erro": "Ação exige login+senha de Projetista "
+                                            "Executivo, Conferente, Gerente ou Diretor."}, code=403); return
+                        quem = u.id
+                    # ACHADO-48: `removido_em` é timestamp de AUDITORIA ("quando isso aconteceu"),
+                    # não competência contábil — fica em utcnow(), igual ao `enviado_em` irmão.
+                    doc.removido_em = datetime.utcnow()
+                    doc.removido_por_id = quem
+                    db.commit()
+                    self.send_json({"ok": True, "documento_id": doc.id})
+                except Exception as e:
+                    db.rollback(); self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
             # POST /api/projetos/<nome>/ciclo/15/nfe-fabrica — upload da NF-e da fábrica
             # (etapa 15), append-only, gated por capacidade fiscal (editar_dados_loja).
             m = _re.match(r'^/api/projetos/([^/]+)/ciclo/15/nfe-fabrica$', path)
@@ -15020,7 +15083,7 @@ class Handler(BaseHTTPRequestHandler):
                     u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""), "executar_pe", sessao=usuario)
                     if not u:
                         self.send_json({"ok": False, "erro": "Ação exige login+senha de Projetista Executivo, Conferente, Gerente ou Diretor."}, code=403); return
-                    docs = db.query(CicloDocumento).filter_by(projeto_nome=nome_safe, etapa_codigo=codigo).all()
+                    docs = _docs_vivos(db, projeto_nome=nome_safe, etapa_codigo=codigo).all()
                     tipos_presentes = {d.tipo for d in docs}
                     todas = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe).all()
                     status_por = {e.etapa_codigo: e.status for e in todas}
@@ -15313,8 +15376,8 @@ class Handler(BaseHTTPRequestHandler):
                         cliente.inscricao_estadual = ie
                         db.add(cliente); db.commit()
                     doc_id = req.get("fabrica_doc_id")
-                    doc = db.query(CicloDocumento).filter_by(id=doc_id, projeto_nome=nome_safe,
-                                                             etapa_codigo="15", tipo="nfe_fabrica_xml").first() if doc_id else None
+                    doc = _docs_vivos(db, id=doc_id, projeto_nome=nome_safe,
+                                      etapa_codigo="15", tipo="nfe_fabrica_xml").first() if doc_id else None
                     if not doc:
                         self.send_json({"ok": False, "erro": "XML da fábrica inválido."}, code=400); return
                     try:
@@ -16502,8 +16565,8 @@ class Handler(BaseHTTPRequestHandler):
                     # relatório antes de concluir. Usa o obs recebido no request (se veio
                     # junto do status) ou o persistido na etapa.
                     if novo_status in mod_ciclo.STATUS_CONCLUSIVOS and etapa_cod in mod_ciclo.ETAPAS_OPERACIONAIS:
-                        tem_xml = db.query(CicloDocumento).filter_by(
-                            projeto_nome=nome_safe, etapa_codigo="12",
+                        tem_xml = _docs_vivos(
+                            db, projeto_nome=nome_safe, etapa_codigo="12",
                             tipo=mod_ciclo.tipo_doc_operacional("12")).first() is not None
                         obs_efetivo   = obs if obs is not None else etapa.observacoes
                         numeros_txt   = obs_efetivo if etapa_cod == "13" else None

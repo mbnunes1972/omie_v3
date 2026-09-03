@@ -1932,7 +1932,24 @@ class AjusteFabricaAplicacao(Base):
 
 
 class CicloDocumento(Base):
-    """Documento carregado numa subfase do ciclo. Append-only: nunca sobrescreve."""
+    """Documento carregado numa subfase do ciclo. Append-only: nunca sobrescreve.
+
+    ACHADO-30 (DECIDIDO 03/09, docs/db/TAREFA_BLOCO_FISCAL.md item 1): enquanto a fase está
+    ABERTA, um documento pode ser marcado como REMOVIDO (`removido_em`/`removido_por_id`) — a
+    tela deixa de oferecê-lo e todo portão deixa de contá-lo. Depois que a fase fecha, nada é
+    removível: é a regra 3 do plano ("o que já virou fato se lê de onde foi congelado")
+    estendida de lançamento para documento.
+
+    **Remover não é apagar, deliberadamente.** O registro e o arquivo em disco continuam
+    existindo: a promessa append-only segue de pé, e o rastro de que houve tentativa não some —
+    mesma razão que fez o cancelamento silencioso virar veredito nomeado no ACHADO-16. O que o
+    ACHADO-30 relata é a TELA acumulando tentativas erradas sem como remover a errada, e é a
+    tela que a remoção conserta.
+
+    **Toda LEITURA passa por `main._docs_vivos`** — inclusive os portões que perguntam "existe
+    documento?" (conclusão da etapa 12, subfases do PE, escolha do XML na emissão). Um portão
+    que contasse documento removido tornaria a remoção cosmética. `tests/test_achado30_
+    remocao_documento.py` tem a trava anti-órfão que impede a próxima leitura de esquecer."""
     __tablename__ = "ciclo_documentos"
 
     id             = Column(Integer,  primary_key=True, autoincrement=True)
@@ -1943,8 +1960,12 @@ class CicloDocumento(Base):
     nome_original  = Column(Text,     nullable=False)
     enviado_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
     enviado_em     = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # ACHADO-30 — remoção marcada (nunca DELETE); NULL = documento vivo.
+    removido_em     = Column(DateTime, nullable=True)
+    removido_por_id = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
 
-    enviado_por = relationship("Usuario", foreign_keys=[enviado_por_id])
+    enviado_por  = relationship("Usuario", foreign_keys=[enviado_por_id])
+    removido_por = relationship("Usuario", foreign_keys=[removido_por_id])
 
 
 class CicloRevisao(Base):

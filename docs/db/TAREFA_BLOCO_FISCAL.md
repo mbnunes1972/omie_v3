@@ -8,9 +8,13 @@ isto, com a etapa 15 registrada como não testada.
 
 ---
 
-## 1 · Apagar e substituir documento de fase (ACHADO-30)
+## 1 · Apagar e substituir documento de fase (ACHADO-30) · FEITO 03/09
 
-**É o que está travando agora.** Não há lixeira nem botão de sobrescrever;
+**Era o que estava travando.** DECIDIDO: remover é MARCAR, não apagar (`removido_em`/
+`removido_por_id`); detalhes do conserto no ACHADO-30 em `ACHADOS_CONTABEIS.md`.
+Os itens 2 a 5 seguem abertos.
+
+*O diagnóstico original, preservado:* não há lixeira nem botão de sobrescrever;
 as tentativas se acumulam na tela e não há como remover a errada.
 
 - **Enquanto a fase está aberta:** apagar e substituir livremente, vários

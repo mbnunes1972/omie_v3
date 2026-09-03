@@ -161,3 +161,91 @@ acima: avançar é livre, fechar não é.
 2. O item 5 **não implementado** até a decisão acima — só o desenho escrito.
 3. Se a validação do item 2 rejeitar alguma das NF-e reais em
    `tests/fixtures/nfe/`, isso é achado: elas parseiam hoje.
+
+
+---
+
+# Pacote de execução — itens 3, 4 e 5 (medido em 03/09)
+
+Escrito depois de fechar os itens 1 e 2, para ser executado pelo Claude Code na
+bancada. **As medições abaixo são leitura estática do código, com linha citada** —
+foram feitas numa sessão sem Postgres e sem rota para os servidores, então tudo que
+depende de RODAR (suíte, contagem em base real, `alembic current`) está marcado como
+tarefa de quem executa, nunca como fato já apurado.
+
+**Duas coisas que este pacote NÃO autoriza:**
+- **Não mexer no markup de ajuste.** É a metade não implementada do ACHADO-31, virou
+  **LP-15** em 03/09 e tem decisão própria. Item 2 fechado não é ACHADO-31 fechado.
+- **Não trocar o endereço do destinatário da nota.** `fiscal/mapa_fiscal.py:63-64` monta
+  o destinatário do **cadastro** do Cliente (`logradouro/numero/bairro/cidade/estado/cep`).
+  Existe também um endereço de instalação (`Cliente.inst_*`) que a nota **não** usa —
+  parece bug e não é decisão deste item; se for o caso, vira achado com número.
+
+## Item 3 — detalhamento do erro do Focus
+
+**Medido:** `FocusError` guarda a lista da SEFAZ em `self.erros`
+(`integracoes/focus_client.py:8-12`). **São TRÊS rotas que a engolem, não uma** — o texto
+original do item fala em "o handler", no singular:
+
+| rota | linha |
+|---|---|
+| `POST /api/admin/lojas/<id>/nfe/emitir-teste` | `main.py:15220` |
+| `POST /api/projetos/<nome>/ciclo/15/emitir-nfe` | `main.py:15433` |
+| `POST /api/projetos/<nome>/ciclo/15/emitir-nfse` | `main.py:15539` |
+
+As três fazem `except Exception as e: "Falha na emissão: " + str(e)`, e `str()` de uma
+exceção mostra só a mensagem — nunca o `.erros`. É a regra dos irmãos do ACHADO-26:
+consertar uma e deixar duas é o mesmo defeito com outro endereço.
+
+**O que fazer:** `except FocusError as e` **antes** do `except Exception`, devolvendo os
+`erros` no JSON (lista, além da mensagem) nas três; a tela mostra item a item. Manter o
+`except Exception` como rede de trás.
+
+**Aceite exigido:** um teste que injeta `FocusError(..., erros=[...])` e prova que a lista
+chega na resposta — **nas três rotas**. Sem decisão pendente; pode ser feito direto.
+
+## Item 4 — selo de "pronto para emitir"
+
+**Medido:** `fiscal/mod_fiscal.py:56-82`. No ramo `produto`, `prontidao_emitente` confere
+**apenas** `regime_tributario` e `uf`. O endereço do emitente inteiro passa, e o
+**destinatário não é conferido em lugar nenhum** — que é a terceira falta que custou o
+percurso de 01/09 (o erro de schema `cMun`/`xLgr`). No ramo `servico` ele já confere quatro
+campos, então o desenho de "lista nomeada do que falta" já existe e é o que estender.
+
+**Campos que o selo cobre (todos `nullable` hoje, conferido no modelo):**
+- *Emitente — identificação e regime:* `cnpj`, `inscricao_estadual`, `regime_tributario`,
+  `csosn_padrao`, `csosn_contribuinte`, `cfop_dentro_uf`, `cfop_fora_uf`, `municipio_ibge`,
+  `uf`, mais o token do ambiente ativo.
+- *Emitente — endereço:* `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`.
+- *Destinatário — endereço (Cliente):* `logradouro`, `numero`, `bairro`, `cidade`,
+  **`estado`** (o Cliente não tem coluna `uf`; `inst_uf` é do endereço de instalação, que a
+  nota não usa), `cep`.
+
+**DECISÃO PENDENTE — o selo avisa ou BARRA?** O texto do item diz "mostra o que falta" e
+"avisa antes"; não diz se recusa a emissão. *Recomendação:* barrar, **com medição antes** —
+contar nos três ambientes quantos emitentes e quantos clientes de projeto na etapa 15
+ficariam incompletos. Se der zero, barrar não custa nada e fecha a classe; se não der,
+a contagem vira a decisão. **Não barrar sem essa contagem** — é a regra que o projeto
+aplicou no ACHADO-44, no 45 e no 48.
+
+**Aceite exigido:** um teste por bloco (identificação, endereço do emitente, endereço do
+destinatário), provando que a falta é nomeada campo a campo; e a etapa 15 avisando antes de
+o usuário chegar na emissão. Nota de UX já medida no item: os dois botões de salvar
+(configuração fiscal e credenciais Focus) são independentes de propósito — falta dizer na
+tela que os dois são obrigatórios.
+
+## Item 5 — NF-e H e NF-e P
+
+**Já decidido em 01/09** (ver a seção do item): a receita é escriturada na H, a P troca o
+documento e não cria o fato; o projeto **não conclui** com a P pendente; marcador com "N"
+ao lado do nome do projeto. Com o ACHADO-13 consertado, a emissão da P fatura só o delta —
+zero se a H já faturou o total, então nada duplica.
+
+**DECISÕES PENDENTES antes de escrever:** (a) **onde** mora o gate "não conclui" — qual
+etapa/endpoint fecha o projeto hoje e passa a recusar; (b) **em quais listas** o marcador
+aparece (o item diz "toda lista e cabeçalho onde o projeto aparece", que precisa virar uma
+lista concreta de renderizadores).
+
+**Recomendação de ordem:** 3 e 4 primeiro, num candidato; o 5 sozinho depois. Ele é o único
+que muda **regra de fechamento de projeto**, e misturá-lo com dois consertos pequenos
+transforma um percurso de teste em três de uma vez.

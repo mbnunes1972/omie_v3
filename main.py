@@ -15162,6 +15162,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not usuario:
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
                 from fiscal import mod_nfe, mapa_fiscal, nfe_emissao, mod_fiscal
+                from integracoes.focus_client import FocusError
                 arquivos, campos = _parse_multipart_arquivos(body, self.headers.get("Content-Type", ""))
                 db = get_session()
                 try:
@@ -15217,6 +15218,11 @@ class Handler(BaseHTTPRequestHandler):
                                     "danfe_doc_id": reg.danfe_doc_id if reg else None})
                 except ValueError as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except FocusError as e:
+                    # ACHADO bloco fiscal item 3 (03/09): FocusError carrega a lista da SEFAZ em
+                    # .erros — str(e) só mostra a mensagem, a tela precisa do detalhe item a item.
+                    db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e),
+                                                    "erros": e.erros}, code=500)
                 except Exception as e:
                     db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e)}, code=500)
                 finally:
@@ -15345,6 +15351,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import mod_nfe, mapa_fiscal, nfe_emissao, mod_fiscal
+                from integracoes.focus_client import FocusError
                 try:
                     req = json.loads(body) if body else {}
                 except Exception:
@@ -15430,6 +15437,11 @@ class Handler(BaseHTTPRequestHandler):
                                     "danfe_doc_id": reg.danfe_doc_id if reg else None})
                 except ValueError as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except FocusError as e:
+                    # ACHADO bloco fiscal item 3 (03/09): FocusError carrega a lista da SEFAZ em
+                    # .erros — str(e) só mostra a mensagem, a tela precisa do detalhe item a item.
+                    db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e),
+                                                    "erros": e.erros}, code=500)
                 except Exception as e:
                     db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e)}, code=500)
                 finally:
@@ -15446,6 +15458,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                 from fiscal import mapa_fiscal, nfe_emissao, mod_fiscal
+                from integracoes.focus_client import FocusError
                 try:
                     req = json.loads(body) if body else {}
                 except Exception:
@@ -15536,6 +15549,11 @@ class Handler(BaseHTTPRequestHandler):
                                     "danfe_doc_id": reg.danfe_doc_id if reg else None})
                 except ValueError as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except FocusError as e:
+                    # ACHADO bloco fiscal item 3 (03/09): FocusError carrega a lista da SEFAZ em
+                    # .erros — str(e) só mostra a mensagem, a tela precisa do detalhe item a item.
+                    db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e),
+                                                    "erros": e.erros}, code=500)
                 except Exception as e:
                     db.rollback(); self.send_json({"ok": False, "erro": "Falha na emissão: " + str(e)}, code=500)
                 finally:

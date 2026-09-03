@@ -7541,6 +7541,13 @@ function _detalheErroRede(e){
   return msg || 'erro inesperado';
 }
 
+// Bloco fiscal item 3 (03/09): FocusError chega com a lista da SEFAZ em j.erros — item a item,
+// não só a mensagem genérica de str(e).
+function _detalheErrosFocus(erros){
+  if (!Array.isArray(erros) || !erros.length) return '';
+  return '\n\n' + erros.map(er => '- ' + (er.codigo ? er.codigo + ': ' : '') + (er.mensagem || String(er))).join('\n');
+}
+
 // ---- Page 00: Projetos -------------------------------------------------------
 const _PROJ_STATUS_LABEL = {
   quente:     { label: '<i class="ti ti-flame"></i> Quente',    cls: 'quente'     },
@@ -23310,7 +23317,7 @@ async function emitirNfseServico() {
       { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ valor_servico: valor }) });
     const j = await r.json();
-    if (!j.ok) { await avisoPopup(esc(j.erro || 'Falha na emissão.'), {titulo:'Emitir NFS-e'}); return; }
+    if (!j.ok) { await avisoPopup(esc((j.erro || 'Falha na emissão.') + _detalheErrosFocus(j.erros)), {titulo:'Emitir NFS-e'}); return; }
     showToast('NFS-e: ' + esc(j.status), false); await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NFS-e'}); }
 }
@@ -23328,7 +23335,7 @@ async function emitirNfeLoja(docId) {
       if (!ie) { await avisoPopup('Inscrição Estadual é obrigatória para emitir a NF-e deste cliente.', {titulo:'Emitir NF-e'}); return; }
       j = await _postEmitirNfe(Object.assign({}, body, { ie }));
     }
-    if (!j.ok) { await avisoPopup(esc(j.erro || 'Falha na emissão.'), {titulo:'Emitir NF-e'}); return; }
+    if (!j.ok) { await avisoPopup(esc((j.erro || 'Falha na emissão.') + _detalheErrosFocus(j.erros)), {titulo:'Emitir NF-e'}); return; }
     showToast('Emissão: ' + esc(j.status), false); await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NF-e'}); }
 }

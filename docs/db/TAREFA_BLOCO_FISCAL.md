@@ -43,7 +43,7 @@ Medição já feita: as NF-e reais da fábrica
 (`tests/fixtures/nfe/NFe-1632*.xml`) parseiam sem erro — 12 itens, com NCM,
 CFOP, unidade. O parser está bom; falta a validação estar no lugar certo.
 
-## 3 · Mostrar o detalhamento do erro do Focus
+## 3 · Mostrar o detalhamento do erro do Focus · FEITO 03/09
 
 `FocusError` **guarda** a lista de erros da SEFAZ em `self.erros`
 (integracoes/focus_client.py:12, alimentada de `dados.get("erros")`). O
@@ -57,7 +57,7 @@ que o sistema descartou uma linha antes de exibir.
 **Capturar `FocusError` explicitamente e devolver os `erros`** — cada um
 nomeia o campo e o motivo.
 
-## 4 · Selo de "pronto para emitir" na tela Fiscal
+## 4 · Selo de "pronto para emitir" na tela Fiscal · MEDIDO 03/09, decisão pendente do Marcelo
 
 O que custou o percurso do Marcelo: **nada valida a configuração do emitente
 antes da emissão**. Ele descobriu na última etapa, duas vezes seguidas —
@@ -227,6 +227,24 @@ contar nos três ambientes quantos emitentes e quantos clientes de projeto na et
 ficariam incompletos. Se der zero, barrar não custa nada e fecha a classe; se não der,
 a contagem vira a decisão. **Não barrar sem essa contagem** — é a regra que o projeto
 aplicou no ACHADO-44, no 45 e no 48.
+
+**Medido em 03/09, nos três ambientes reais** (script pontual, não commitado — leitura, sem
+travar nada):
+
+| ambiente | emitentes (total) | incompleto — identificação | incompleto — endereço | incompleto — token | clientes na etapa 15 | incompleto — endereço |
+|---|---|---|---|---|---|---|
+| Integração | 1 | 1 (`inscricao_estadual`, `csosn_padrao`, `csosn_contribuinte`, `cfop_dentro_uf`, `cfop_fora_uf`) | 1 | 1 | 0 | 0 |
+| Homologação | 1 | 1 (`csosn_padrao`, `csosn_contribuinte`) | 0 | 0 | 1 | 0 |
+| Produção | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Não deu zero.** 2 dos 2 emitentes reais (Integração + Homologação) ficariam incompletos
+pelo menos num grupo — a contagem não fecha a classe sozinha, vira decisão do Marcelo (avisar
+vs. barrar, e o que fazer com os 2 emitentes já incompletos se a resposta for barrar).
+"Clientes de projeto na etapa 15" medido como: `Cliente` ligado a um `Projeto` (`projetos_meta`)
+que tem alguma linha em `ciclo_etapas` com `etapa_codigo='15'` — sem filtrar por status da
+etapa (medida a população que já *chegou* na etapa de emissão, não só a que está parada nela
+agora); o único encontrado (Homologação) está completo no endereço. **Não implementado —
+aguardando a decisão.**
 
 **Aceite exigido:** um teste por bloco (identificação, endereço do emitente, endereço do
 destinatário), provando que a falta é nomeada campo a campo; e a etapa 15 avisando antes de

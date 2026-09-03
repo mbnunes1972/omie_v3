@@ -120,6 +120,29 @@ lia. Movida para `/root/orizon.env` (modo 600, `EnvironmentFile=`);
 `systemctl cat orizon` hoje nao mostra credencial nenhuma. Backup da
 unidade anterior em `/root/backups/orizon.service.bak.20260831_1604`.
 
+### Passo obrigatório — primeiro segredo fiscal em Produção
+
+Medido em 03/09: Produção não tem `config/fiscal.key` (nem a env
+`ORIZON_FISCAL_KEY`). `integracoes/cripto_segredos.py` gera uma chave
+Fernet sozinho, em silêncio, na primeira vez que qualquer coisa chamar
+`encrypt()`/`decrypt()` — e essa chave nasce SEM cópia em lugar nenhum
+além do disco daquele servidor.
+
+**No dia em que o primeiro segredo fiscal (token Focus, D4Sign, o que for)
+for configurado em Produção — antes de qualquer outra coisa:**
+
+1. Configurar o segredo normalmente (a chave é gerada nesse momento, se
+   ainda não existir).
+2. `cat /root/orizon-manager/config/fiscal.key` no servidor de Produção e
+   copiar os 44 bytes para o gerenciador de senhas do Marcelo, guardado
+   por uma pessoa — nunca em automação (mesmo raciocínio do backup:
+   segredo não se protege pela automação que o atacante também controla).
+3. Só depois seguir com o resto do trabalho do dia.
+
+Sem isso, o primeiro segredo fiscal real de Produção passa a depender de
+44 bytes que ninguém guardou — perder o disco perde a chave e tudo que
+ela decifra, sem aviso prévio, porque nada quebra até o dia em que quebra.
+
 ## Armadilhas encontradas na execucao real (28/08/2026)
 
 Quatro coisas que o ensaio no WSL nao revelou. Todas custaram tentativa.

@@ -188,7 +188,7 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     page.set_input_files("#xml-input-amb", xml_path)
     # auto-vincula ao orçamento ativo e fecha o modal sozinho — sem isso "Total do Contrato"
     # nunca sai de R$ 0,00.
-    page.wait_for_selector("text=140.000,00", timeout=10000)
+    page.wait_for_selector("#neg-subtotal:has-text('140.000,00')", timeout=10000)   # ACHADO da suite (03/09): locator genérico "text=140.000,00" casava com a linha (escondida) da lista de projetos por baixo — escopado no elemento do painel de negociação
 
     # ── 5. Aprovar orçamento / gerar contrato (exercita a guarda do ACHADO-24) ──────────
     # Cada gate é opcional e depende do estado (cliente é o próprio signatário? contatos já

@@ -150,7 +150,7 @@ def test_plano_15_parcelas_nao_colapsa_card_de_ambientes(page, servidor_e2e):
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(XML_ONE_AMBIENTE)
     page.set_input_files("#xml-input-amb", xml_path)
-    page.wait_for_selector("text=140.000,00", timeout=10000)
+    page.wait_for_selector("#neg-subtotal:has-text('140.000,00')", timeout=10000)   # ACHADO da suite (03/09): locator genérico "text=140.000,00" casava com a linha (escondida) da lista de projetos por baixo — escopado no elemento do painel de negociação
 
     # ── O gatilho do achado: modalidade com plano longo (Cartão de Crédito, 15x) ────────────
     page.select_option("#neg-pagamento", "cartao_credito")

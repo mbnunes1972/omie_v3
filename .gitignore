@@ -50,10 +50,14 @@ docs/especificacoes/Provisoes_Custo_Fabrica_Margem_Orizon_v*.docx
 docs/especificacoes/Controle_Entrega_Material_Orizon_v*.docx
 ~$*.docx
 
-# XML de projeto (Promob): os 22 MB são os *_PE.xml. Os XML SEM sufixo _PE são
-# FIXTURE de teste (test_qualidade_xml, test_pe_comparacao, test_contrato) e ficam
-# versionados — por isso o padrão é específico, não '/XML/'.
-/XML/*_PE.xml
+# XML de projeto (Promob): os 22 MB são os *_PE.xml. Os XML SEM sufixo _PE ficam
+# versionados — não são fixture de teste nenhum (medido 03/09: test_qualidade_xml/
+# test_pe_comparacao leem de PROJETOS/LELEU/xmls e PROJETOS/Casa_Nova/xmls, com skip
+# quando ausentes; test_contrato não lê XML nenhum; a afirmação anterior era falsa) —
+# são material de referência do Marcelo, mesma categoria de XML/. `**/` pega
+# qualquer subpasta: a ancoragem em '/XML/*_PE.xml' escapava de XML/ANTIGOS/ por
+# acidente, e é assim que 8 arquivos foram parar lá versionados por engano.
+/XML/**/*_PE.xml
 
 # Snapshot histórico dos docs
 docsLeonardo_md/

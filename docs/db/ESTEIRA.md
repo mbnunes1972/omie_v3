@@ -92,6 +92,21 @@ A bancada roda PostgreSQL 18 e a produção roda 16. **A bancada desce para
 dump PG18→PG16, ver `IMPLANTAR.md`). Ambiente de desenvolvimento que não
 espelha produção mente, e este já mentiu.
 
+**Exceção deliberada: o TZ do sistema operacional.** Desde o ACHADO-48
+(02/09), o fuso da competência contábil é configuração
+(`Loja.config_financeira_json['fuso_horario']`, resolvida por
+`mod_contabil.agora_no_fuso`) — **nunca** o relógio/TZ do processo ou da
+máquina. Isso significa que Integração/Homologação (`Etc/UTC`) e Produção
+(`America/Sao_Paulo`) rodarem em fusos DIFERENTES deixou de ser dívida de
+paridade e virou um canário: qualquer regressão que volte a ler
+`date.today()`/`datetime.utcnow()` num caminho de regra de negócio (em vez
+de `agora_no_fuso`/`hoje_no_fuso`) tende a se comportar diferente entre
+Integração/Homologação e Produção, e falhar em teste ANTES de chegar no
+cliente — exatamente o inverso do que aconteceu da primeira vez (a bancada
+com TZ local expôs o defeito; um servidor em UTC o escondia). **Não
+uniformizar o TZ dos três servidores** — é o que resta pra costurar essa
+rede, deliberadamente.
+
 ## Acesso remoto à bancada
 
 Recomendação: **rede privada** (Tailscale, WireGuard). Não abrir porta.

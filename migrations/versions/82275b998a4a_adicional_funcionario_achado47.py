@@ -9,7 +9,7 @@ Quatro colunas novas em `funcionarios`:
   - adicional_comissao_base (base declarada; única suportada por ora: 'val_liq_venda')
   - adicional_obs (um só campo de observações, serve aos dois adicionais)
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 82275b998a4a
 Revises: f47f22de46a7
 Create Date: 2026-09-02 00:00:00.000000
 
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
+revision: str = '82275b998a4a'
 down_revision: Union[str, Sequence[str], None] = 'f47f22de46a7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

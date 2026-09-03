@@ -3158,6 +3158,19 @@ já semeia as NOVAS com o papel; `backfill_papeis_funcoes_padrao` (novo,
 roda no start) preenche as JÁ EXISTENTES, só quando `atribuicoes_json`
 estiver vazio (nunca sobrescreve o que o cadastro já editou).
 
+**Medição que ficou faltando no commit `ed761b6` — feita em 03/09, a
+pedido do Marcelo, antes de ele começar o percurso:** quantos funcionários
+ficariam sem papel nenhum. Só `FUNCOES_PADRAO_PAPEIS` tem 4 das 13
+`FUNCOES_PADRAO` — as outras 9 (Consultor de Vendas, Gerente de Vendas,
+Gerente Administrativo/Financeiro, Diretor, Assistente Logístico,
+Conferente, Assistente Administrativo, Ajudante de Montagem, SAC) nascem
+sem papel, por desenho ("é o cadastro que decide", não um gap do
+backfill). Medido nas bases reais: Homologação, 2 de 5 funcionários (o
+Consultor de Vendas e a Assistente Administrativo) — exatamente as duas
+funções fora do mapa; Integração e Produção sem funcionário nenhum ainda.
+Nenhuma surpresa — confirma que a lista de 4 está certa e não faltou
+nenhuma correspondência óbvia.
+
 **Aceite do achado:** funcionário cuja função se chama "Projetista" (não
 "Projetista Executivo") mas declara o papel `projeto_executivo` aparece na
 transferência — `tests/test_achado46_papel_por_atribuicoes_json.py`.
@@ -3259,7 +3272,7 @@ base: é **cada uma declarar seus papéis**.
 ### Conserto (02/09) — bloco Adicional no cadastro do funcionário
 
 Quatro colunas novas em `Funcionario` (migration Alembic
-`a1b2c3d4e5f6`, `revises f47f22de46a7`): `adicional_fixo`,
+`82275b998a4a`, `revises f47f22de46a7`): `adicional_fixo`,
 `adicional_comissao_pct`, `adicional_comissao_base` (só
 `'val_liq_venda'` suportada — "outras bases ficam para depois"),
 `adicional_obs` (um só campo, os dois adicionais).

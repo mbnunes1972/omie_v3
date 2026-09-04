@@ -292,3 +292,63 @@ lista concreta de renderizadores).
 **Recomendação de ordem:** 3 e 4 primeiro, num candidato; o 5 sozinho depois. Ele é o único
 que muda **regra de fechamento de projeto**, e misturá-lo com dois consertos pequenos
 transforma um percurso de teste em três de uma vez.
+
+### Medição (04/09, madrugada — só leitura, nada implementado, nada decidido)
+
+**(a) Onde mora o gate "projeto não conclui".** **Uma porta só** — não é o caso das duas
+portas do C3. `Projeto.status` só é escrito por `upsert_projeto_status`; dos 4 chamadores
+(`main.py:1067`, `10433`, `11988`, `16563`), só UM passa `"concluido"` literal:
+`main.py:10433`, dentro do handler `POST /api/projetos/<nome>/ciclo/21/conciliar`
+(`main.py:10381-10434`), logo depois de `mod_contabil.conciliar_final(...)`
+(`main.py:10428-10430`). Os outros três: `1067` grava `"fechado"` (2ª assinatura, F2-7, estado
+diferente — não terminal); `11988` grava `status_final` no fluxo de CANCELAMENTO
+(`"cancelado"`/`"em_revisao"`, nunca `"concluido"`); `16563` é `PATCH /api/projetos/<nome>/status`
+com `VALIDOS = {'quente','morno','frio','perdido'}` — `"concluido"` nem é aceito ali, e o
+handler já recusa (403) se o contrato estiver assinado, então nunca alcançaria o pós-assinatura
+de qualquer forma. Os dois lugares que escrevem `CicloEtapa.status="concluido"` direto
+(`main.py:1018`, `11070`) são de ETAPA (7 e 3), não de PROJETO — não confundir.
+
+**Achado ao medir, relevante pro desenho:** o próprio gate de sequência do handler
+(`main.py:10416-10420`) já documenta que **a Etapa 15 (NF-e) é DESTRAVADA de propósito** —
+só a Etapa 20 precisa estar concluída pra liberar a 21. Ou seja, hoje NADA na cadeia de
+conclusão olha pra NF-e — o gate do item 5 (recusar `conciliar_final`/a etapa 21 com a P
+pendente) precisaria entrar NESTE handler (ou dentro do próprio `mod_contabil.conciliar_final`),
+não em outro lugar — é a única porta, e ela já sabe abrir mão de esperar a etapa 15 por decisão
+explícita registrada no código.
+
+**(b) Em quais listas/cabeçalhos o marcador aparece.** Enumerados por `grep` de
+`nome_projeto`/`nome_safe` renderizado em `static/index.html` — lista concreta, não mais
+"toda lista":
+
+| renderizador | arquivo:linha | o que é |
+|---|---|---|
+| `renderProjResultados` | `static/index.html:7579` (linha do nome: `7619`) | tabela principal de Projetos (Página 00) |
+| `_kanbanCard` | `static/index.html:7921-7929` | card do Kanban (view alternativa da mesma lista) |
+| `#proj-ctx-nome` (sidebar) | `static/index.html:7956` (`abrirProjeto`), `8398` (criação de projeto) | cabeçalho do projeto ativo na barra lateral — 2 chamadores escrevem o mesmo elemento |
+| `#amb-proj-nome` | `static/index.html:8557` (`carregarPaginaAmbientes`) | cabeçalho da página de Ambientes |
+| título da conversa | `static/index.html:17998` (`abrirConversaProjeto`) | `'📁 ' + nome_projeto`, título do Chat full-page |
+| cabeçalho da Negociação | `static/index.html:19835` | linha "pasta + nome" acima da tela de Negociação |
+| cabeçalho do Ciclo | `static/index.html:23636` | "Projeto: X" no topo do fichário do Ciclo |
+| modal "cliente encontrado" | `static/index.html:12268` | lista de projetos do cliente, ao cadastrar de novo |
+| `<select>` de filtro (×3) | `static/index.html:5069`, `6955`, `7143` | dropdowns (Agenda, e dois outros filtros) — texto da `<option>`, sem `esc()` de HTML extra, marcador aqui seria só textual (ex. prefixo "[N] ") |
+
+9 renderizadores distintos, dos quais os 3 `<select>` só aceitam texto puro (sem `<span>`/badge
+HTML) — o marcador ali precisaria ser um prefixo textual, diferente do badge HTML dos demais.
+Nenhuma verificação de que esta lista seja EXAUSTIVA além do que o grep alcançou (não cobre,
+por exemplo, notificações por e-mail ou PDF que citem o nome do projeto, se existirem).
+
+**(c) O ACHADO-13 realmente faz a P faturar só o delta?** **Confirmado, verdadeiro — com uma
+condição que o desenho do item 5 precisa preservar.** `mod_contabil.faturar_segmento`
+(`mod_contabil.py:1553-1592`) já é delta-aware por construção: recebe o TOTAL esperado do
+segmento, lê o que já está reconhecido (`_mov(..., "credor")`, líquido de estornos) e fatura só
+a diferença — `delta <= 0.005` é no-op, devolve `[]`. Quem chama é
+`_fin_faturamento_segmentado_seguro` (`main.py:1518-1539`), com `valor_seg` vindo do
+**orçamento do contrato** (`_valores_segmentados_do_projeto`, Val_Cont × segmentação
+congelada na assinatura) — **não do valor de face do documento fiscal**. Os dois pontos que
+chamam esse wiring hoje são exatamente as rotas de emissão de produto/serviço
+(`main.py:15456` dentro de `ciclo/15/emitir-nfe`, `main.py:15571` dentro de
+`ciclo/15/emitir-nfse`), com o MESMO `valor_seg` todo dia. **A condição:** a garantia "P fatura
+zero" só se sustenta se o item 5 reusar essa MESMA chamada para a emissão H e para a P (mesmo
+`valor_seg`, calculado do contrato, nunca do documento) — se alguém trocar `valor_seg` pelo
+valor de face da nota P (que pode divergir do Val_Cont por arredondamento/desconto do
+documento), o delta deixa de ser zero por definição, não por bug.

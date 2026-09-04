@@ -202,7 +202,7 @@ instrumentar o que exatamente o teste lê que poderia vir sujo (a conta 2.1.06, 
 registrado aqui pra não se perder, não investigado a fundo ainda.
 
 **LP-17 · Dois testes que ainda comparavam `datetime.utcnow()` com competência já migrada pro
-ACHADO-48 · RESOLVIDO 04/09, `<hash-LP17>`.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h
+ACHADO-48 · RESOLVIDO 04/09, `b7bb834`.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h
 Brasília — a própria janela do ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_
 por_assinatura` e `test_lancamentos_api.py::test_get_lancamentos_fim_do_dia_inclui_lancamento_
 de_hoje` falharam na suíte completa, confirmados via `git worktree` como pré-existentes (falham

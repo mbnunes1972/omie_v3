@@ -61,6 +61,10 @@ def parse_nfe(xml):
         "dhEmi": _txt(ide, "dhEmi"), "natOp": _txt(ide, "natOp"),
         "emit": {"cnpj": _txt(emit, "CNPJ"), "nome": _txt(emit, "xNome"), "crt": _txt(emit, "CRT")},
         "dest": {"nome": _txt(dest, "xNome"), "doc": _txt(dest, "CNPJ") or _txt(dest, "CPF")},
+        # ACHADO-51 (04/09): chave de acesso — o Id de <infNFe> ("NFe" + 44 dígitos). É o que
+        # identifica a nota DE VERDADE (o mesmo documento chega com nomes de arquivo diferentes) —
+        # nunca deduplicar por nome_original.
+        "chave": inf.get("Id"),
     }
     itens = []
     for det in inf.findall("det"):

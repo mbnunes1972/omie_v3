@@ -3817,3 +3817,39 @@ só DENTRO do mesmo projeto/etapa — não decide esse caso mais amplo.
 **Decidido pelo Marcelo em 04/09: bloquear** (não só avisar) uma segunda
 carga da mesma NF-e, dentro do mesmo projeto/etapa.
 
+### Conserto (04/09)
+
+`fiscal/mod_nfe.py` — `parse_nfe()` passou a extrair a chave de acesso do
+próprio `<infNFe Id="NFe...">` (o mesmo elemento já lido e validado pelo
+parse, sem caminho novo de leitura) e devolvê-la em
+`cabecalho["chave"]`.
+
+`main.py`, `POST /ciclo/15/nfe-fabrica`: depois da conferência de estrutura
+(ACHADO-31) e antes de criar o `CicloDocumento`, lê a chave do XML recebido
+e compara contra a chave de cada documento **vivo** (`_docs_vivos`, não a
+tabela crua) do mesmo projeto/etapa/tipo. Dois pontos de desenho que o
+conserto não podia errar:
+
+- **Dedup pela CHAVE, nunca pelo nome do arquivo** — a mesma nota chega com
+  nomes diferentes (foi exatamente o caso do Marcelo: mesmo arquivo,
+  poderia ter sido renomeado entre os dois uploads) e nome diferente não
+  faz nota diferente.
+- **Respeita o ACHADO-30** — a trava olha só `_docs_vivos`; um documento
+  **removido** não bloqueia um novo upload da mesma nota, senão remover
+  vira uma porta sem volta.
+
+Recusa com `400` e mensagem nomeando o arquivo já carregado (`nome_original`
+do documento vivo com a mesma chave) — quem vê o erro sabe qual documento
+remover, se for o caso.
+
+**Escopo desta rodada:** a trava é só dentro do mesmo projeto/etapa. A
+mesma chave em projeto diferente (medida acima, 2 casos reais em
+Homologação) segue em aberto — decisão do Marcelo, não tomada aqui.
+
+**Aceite:** `tests/test_achado51_nfe_fabrica_duplicata.py` (3 testes) —
+segundo upload da mesma chave (nomes de arquivo diferentes) é recusado
+citando o arquivo já carregado; chave diferente não é bloqueada; remover e
+recarregar a mesma nota continua permitido (prova do ACHADO-30). Controle
+negativo: trava desativada, o teste de recusa falha (upload duplicado
+passa); restaurada, os 3 voltam a passar.
+

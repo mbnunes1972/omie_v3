@@ -3645,3 +3645,44 @@ que se move com a hora real) — não é um controle negativo confiável por si
 só; o determinístico é a evidência primária.
 
 **Grupo:** 1.
+
+
+## ACHADO-49 — o Remover da etapa 12 herdou a autoridade do PE, e a tela cala quando a credencial não vem · ABERTO 04/09/2026
+
+Achado pelo Marcelo no percurso do `v2026.09.04-beta1` em Homologação
+(04/09) — a primeira coisa que ele clicou: *"o botão remover não
+funcionou"*. É defeito do que o F2-15 entregou 24 horas antes.
+
+**Onde.** O card que a tela mostra como etapa 8 ("Conferência e Implantação
+do Pedido") é, por dentro, o código `12` — `_renderCardImplantacao` em
+`static/index.html`. O botão existe, está renderizado e chama
+`removerDocCiclo('12', ...)`. Não é botão solto.
+
+**Causa 1 — a autoridade não espelha o upload.** O ACHADO-30 fixou a regra
+no próprio comentário da rota: *"a autoridade ESPELHA a de subir naquela
+etapa, em vez de inventar uma terceira regra de quem manda no documento"* —
+etapa 15 pela capacidade fiscal da sessão, subfases do PE por login+senha de
+`executar_pe`. Mas a rota tem só DOIS ramos (`if codigo == "15"` / `else`), e
+a etapa 12 **não é subfase do PE**: caiu no `else` e herdou a exigência do PE.
+Medido nas duas pontas:
+
+| ação na etapa 12 | credencial exigida |
+|---|---|
+| subir o pedido (`POST /ciclo/12/pedido-xml`) | nenhuma — a tela manda só o arquivo |
+| remover (`POST /ciclo/12/documentos/<id>/remover`) | login+senha de `executar_pe` |
+
+Na etapa 12 a remoção é ESTRITAMENTE mais dura que o upload: a terceira regra
+que a regra proibia. O `else` foi escrito pensando nas subfases e não
+enumerou quem mais cairia nele.
+
+**Causa 2 — falha silenciosa.** Em `removerDocCiclo`, quando
+`pedirCredenciaisGerente` devolve vazio (cancelado, ou quem está logado não
+tem a capacidade), a função faz `return` **sem nenhuma mensagem**. É o padrão
+"estado antes da credencial" do ACHADO-38/B3, que o projeto já consertou
+quatro vezes em telas diferentes — e que voltou pela porta nova. Do lado do
+usuário: o botão não faz nada, sem explicação.
+
+**Não medido ainda, e obrigatório antes de consertar:** quais OUTRAS etapas
+caem no mesmo `else` sem serem subfase do PE. Consertar só a 12 repete o erro
+que o ACHADO-26 nomeou — a correção tem que enumerar os irmãos.
+

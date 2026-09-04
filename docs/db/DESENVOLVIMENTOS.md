@@ -120,3 +120,14 @@ solicitar a medição — que é o que o cliente assina no termo.
   negociação nova. O paralelo natural é o que já existe na venda — vários
   orçamentos, um vence. Não decidido; **não confundir com o ACHADO-21**, que
   trata de revisão depois da assinatura e é defeito, não ausência.
+
+
+## Fases independentes, recebimento e entrada fiscal (04/09/2026)
+
+Frente inteira levantada pelo Marcelo no percurso do `v2026.09.04-beta1` em
+Homologação. Não é defeito — é ausência, que é o assunto deste arquivo.
+Fila: **LP-18** em `LISTA_PARALELA.md` (adiada de propósito, com motivo).
+Desenho e decisões em aberto: `TAREFA_FASES_E_RECEBIMENTO.md`.
+Consequência na fila ativa: suspende o item 5 do bloco fiscal
+(`ROTEIRO.md`, F2-21).
+

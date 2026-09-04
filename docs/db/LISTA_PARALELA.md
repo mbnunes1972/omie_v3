@@ -187,6 +187,13 @@ corresponde ao que saiu.
 (a face da nota deixar de bater com a receita de mercadoria escriturada) já está registrada no
 próprio ACHADO-31.
 
+**Fronteira definida em 04/09** (percurso do Marcelo, ver LP-18): o Markup de Ajuste é um
+multiplicador sobre os valores DE FÁBRICA, para ajustar ao preço de venda — logo ele só existe
+no ramo "com NF-e de origem". No ramo "Estoque" não há valor de fábrica para multiplicar: o
+usuário digita o PREÇO DE VENDA direto, e nenhum multiplicador se aplica. Isso **não resolve** a
+LP-15 — delimita onde ela vale, e impede o erro de leitura oposto (registrado porque foi
+cometido nesta conversa: ler o Estoque como o destino do markup, quando é o contrário).
+
 **LP-16 · `test_aceite_achado12.py::test_projeto_com_aditivo_termina_com_2106_zerado` — dívida de
 isolamento, não de código.** Achado ao fechar o F2-17 (bloco fiscal itens 3/4, 03/09): numa rodada
 de `pytest -q` completo o teste falhou; rodado sozinho, passa; rodado de novo na suíte inteira
@@ -229,6 +236,35 @@ fonte pra `datetime.utcnow()`, os dois falham de forma determinística, independ
 *Não mexido:* LP-16 (`test_aceite_achado12`, dependente de ordem) é outra classe de problema,
 fora deste conserto. A varredura mais ampla por outros "irmãos" do ACHADO-48 em `tests/*.py`
 não foi feita — só os dois nomeados aqui.
+
+---
+
+**LP-18 · Fases independentes, recebimento na Logística e entrada fiscal — a frente que o
+percurso de 04/09 abriu.** Levantada pelo Marcelo percorrendo o `v2026.09.04-beta1` em
+Homologação, junto com o ACHADO-49. **Não é achado**: nada disso está errado — nada disso
+existe. É ausência, e o desenho está em `docs/db/TAREFA_FASES_E_RECEBIMENTO.md`.
+
+**Por que aqui e não na fila ativa**, contra a regra 2 desta lista: a regra manda o
+*correlacionado* para a fila ativa, e esta frente não é correlacionada ao bloco fiscal — é
+outro assunto, que só encosta nele no fim. E é grande o bastante para engolir o que resta do
+bloco fiscal se for misturada. O ACHADO-49, que nasceu no mesmo percurso, esse **é**
+correlacionado (defeito do F2-15) e foi para a fila ativa como F2-20 — os dois caminhos, lado a
+lado, no mesmo dia.
+
+**O que a frente cobre** (uma linha cada; o desenho fica na TAREFA):
+- carregar e implantar pedidos POR FASE, cada fase concluindo sozinha — hoje um arquivo só dá a
+  etapa inteira por concluída
+- indicador no painel do ciclo quando uma fase seguiu e a outra ficou para trás — caso real: a
+  obra exigiu tocar a Fase 2 e a Fase 1 ficou sem finalizar
+- Logística e Expedição: o recebimento não tem ação de concluir; precisa de carga de NF-e e de
+  pedidos em relação N:N, conferência de volumes (os da nota × os efetivamente recebidos),
+  campo de observações, tudo persistido; a Visão Geral deixa de listar número de pedido e passa
+  a ser resumo da fase
+- emissão da NF-e POR FASE, perguntando NF-e de Origem (lista das carregadas no recebimento) ou
+  "Estoque" (preço de venda digitado, sem markup — ver a fronteira na LP-15)
+
+**Consequência imediata na fila ativa:** o item 5 do bloco fiscal (NF-e H/P) fica **suspenso**
+até esta frente ter decisão — `ROTEIRO.md`, F2-21.
 
 ---
 

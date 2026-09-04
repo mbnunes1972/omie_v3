@@ -14916,10 +14916,16 @@ class Handler(BaseHTTPRequestHandler):
             # Remoção MARCADA, nunca DELETE: some da tela e dos portões enquanto a fase está
             # ABERTA; com a fase concluída, recusa (409) — é a regra 3 do plano ("o que já virou
             # fato se lê de onde foi congelado") estendida de lançamento pra documento.
-            # A autoridade ESPELHA a de subir naquela etapa, em vez de inventar uma terceira
-            # regra de quem manda no documento: etapa 15 pela capacidade fiscal da sessão
-            # (`editar_dados_loja`, igual ao upload da NF-e da fábrica), subfases do PE por
-            # login+senha de `executar_pe` (igual ao upload delas).
+            # A autoridade ESPELHA a de subir — mas quando a etapa tem MAIS DE UMA porta de
+            # entrada, o espelho tem que ser da porta que produziu AQUELE DOCUMENTO, não da
+            # etapa inteira (ACHADO-52, 04/09 — o enunciado do ACHADO-30 estava um grau
+            # amplo demais). Por porta: etapa 15 pela capacidade fiscal da sessão
+            # (`editar_dados_loja`, igual ao upload da NF-e da fábrica); subfases do PE por
+            # login+senha, `executar_pe` OU `revisar_pe` conforme o `tipo` do documento —
+            # `pe_relatorio_complementar` só nasce em `/ciclo/<codigo>/revisao` (`revisar_pe`);
+            # qualquer outro tipo de subfase nasce em `/ciclo/<codigo>/documento`
+            # (`executar_pe`). Sem isso, um Operador (tem executar_pe, não tem revisar_pe)
+            # podia remover um relatório de revisão que ele jamais poderia ter subido.
             m = _re.match(r'^/api/projetos/([^/]+)/ciclo/([^/]+)/documentos/(\d+)/remover$', path)
             if m:
                 nome_safe, codigo, doc_id = unquote(m.group(1)), m.group(2), int(m.group(3))
@@ -14956,6 +14962,16 @@ class Handler(BaseHTTPRequestHandler):
                         if _blk:
                             self.send_json({"ok": False, "erro": _blk}, code=409); return
                         quem = usuario["id"]
+                    elif doc.tipo == "pe_relatorio_complementar":
+                        # ACHADO-52: este documento só existe porque alguém com revisar_pe
+                        # subiu pela porta de revisão — a remoção espelha ESSA porta, não a
+                        # de execução da subfase.
+                        u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""),
+                                                    "revisar_pe", sessao=usuario)
+                        if not u:
+                            self.send_json({"ok": False, "erro": "Ação exige login+senha de Gerente "
+                                            "de Vendas, Gerente Adm/Financeiro ou Diretor."}, code=403); return
+                        quem = u.id
                     else:
                         u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""),
                                                     "executar_pe", sessao=usuario)

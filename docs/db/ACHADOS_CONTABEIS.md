@@ -3853,3 +3853,54 @@ recarregar a mesma nota continua permitido (prova do ACHADO-30). Controle
 negativo: trava desativada, o teste de recusa falha (upload duplicado
 passa); restaurada, os 3 voltam a passar.
 
+---
+
+## ACHADO-52 — a remoção nas subfases do PE é mais FROUXA que a porta que subiu o documento · RESOLVIDO 04/09/2026
+
+Medido em 04/09 (F2-22): as subfases do PE têm **duas portas de entrada**,
+não uma. `POST .../ciclo/<codigo>/documento` (execução, exige
+`executar_pe`) e `POST .../ciclo/<codigo>/revisao` (revisão, exige
+`revisar_pe` — "Gerente de Vendas, Gerente Adm/Financeiro ou Diretor" —
+e sobe um `arquivo` obrigatório, o relatório complementar, com
+`tipo="pe_relatorio_complementar"`). A remoção
+(`.../documentos/<id>/remover`) tinha **uma regra só** para tudo que não
+é a etapa 15: `executar_pe`, sempre.
+
+`auth/perfis.py`: `master` (`executar_pe`+`revisar_pe`), `gerencial`
+(ambos), **`operador` (`executar_pe`=True, `revisar_pe`=False)**.
+Consequência real: **o Operador podia remover o relatório de revisão que
+ele jamais poderia ter subido.** É o ACHADO-49 na direção oposta — lá a
+remoção era mais DURA que o upload (etapa 12, herdou `executar_pe` sem
+precisar); aqui é mais FROUXA (subfases do PE, `executar_pe` não é
+suficiente pra este tipo de documento). As duas são o mesmo defeito: a
+remoção não espelha quem subiu.
+
+O enunciado do ACHADO-30 ("a autoridade ESPELHA a de subir NAQUELA
+ETAPA") estava um grau amplo demais — quando a etapa tem mais de uma
+porta de entrada, o espelho tem que ser da porta que produziu **aquele
+documento**, não da etapa inteira. Corrigido o comentário da rota junto
+com o código.
+
+### Conserto (04/09)
+
+Medido antes de codar: o upload de revisão grava um `tipo` distinto —
+`"pe_relatorio_complementar"` — que `mod_ciclo.tipo_doc_de()` (usado pelo
+upload de execução) **nunca** produz (seus 4 valores são
+`pe_planta_pontos`, `pe_relatorio_alinhamento`, `pe_projeto_executivo`,
+`pe_pe_assinado`). Discriminador limpo, já existente — nenhuma coluna
+nova.
+
+`main.py`, rota de remoção: o `else` (subfases do PE) virou dois ramos —
+`doc.tipo == "pe_relatorio_complementar"` exige `revisar_pe`; qualquer
+outro tipo de subfase continua exigindo `executar_pe`, como antes.
+
+**Aceite:** `tests/test_achado52_remover_espelha_porta_de_revisao.py` (3
+testes) — Operador (`cons_l1`, credencial própria e correta) recusado
+(403) ao tentar remover um relatório de revisão; quem tem `revisar_pe`
+(`dir_l1`) remove o mesmo documento sem problema; controle-irmão: um
+documento normal de subfase (porta de execução) continua exigindo
+`executar_pe` — o conserto não afrouxou esse caminho, só corrigiu o da
+revisão. Controle negativo: ramo novo desativado, o teste do Operador
+falha (a remoção que deveria ser recusada passa); restaurado, os 3
+voltam a passar.
+

@@ -21,6 +21,7 @@ import pytest
 
 from fiscal import nfe_emissao
 from integracoes.emissor_fiscal import resultado_de_focus
+from tests.test_nfe_etapa15_e2e import _reset15
 
 
 def _login(f, who):
@@ -194,6 +195,12 @@ def test_emitir_nfe_passa_com_aditivo_assinado_positivo_mesmo_com_contrato_zerad
     db.add(app_db.Aditivo(projeto_nome=nome, contrato_id=contrato.id,
                           orcamento_complemento_id=orc_complemento.id, status="assinado"))
     db.commit(); db.close()
+
+    # ACHADO-51 (04/09): sem isso, este upload colide pela CHAVE com o mesmo XML que
+    # `test_emitir_nfe_recusa_valor_total_zero` já carregou neste mesmo projeto/etapa e
+    # deixou vivo — mesma classe de isolamento entre testes corrigida no arquivo novo do
+    # achado (regra dos irmãos: este teste é irmão do problema, não uma exceção a ele).
+    _reset15(app_db, nome)
 
     c = _login(http_client_factory, "dir_l2")
     st_up, up = _upload_xml(c, nome, _fixture_xml())

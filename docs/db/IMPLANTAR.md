@@ -385,3 +385,14 @@ Retorna a tag exata quando o HEAD esta nela (`v2026.08.31-beta1`) ou
 `<tag-anterior>-N-g<hash>` se alguem rodou `pull`/`checkout` de um commit
 fora de tag — nesse segundo caso o servidor esta fora do procedimento da
 esteira e precisa voltar pra uma tag antes de qualquer outra coisa.
+
+E a bancada, no mesmo fechamento. Ela não aparece no `git describe` de servidor
+nenhum, e por isso já ficou duas migrations atrás sem ninguém notar (04/09, ver
+`ESTEIRA.md`, `## Paridade`):
+
+    cd /mnt/e/2026/DESENVOLVIMENTO/orizon-manager
+    set -a && . ./.env && set +a && python3 -m alembic current
+
+Tem que devolver a MESMA revisão que os servidores. Se não devolver,
+`alembic upgrade head` antes de qualquer percurso local — a suíte monta o
+próprio schema e não denuncia esse atraso; o app aberto na tela, sim.

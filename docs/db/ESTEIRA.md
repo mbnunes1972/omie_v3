@@ -107,6 +107,17 @@ com TZ local expôs o defeito; um servidor em UTC o escondia). **Não
 uniformizar o TZ dos três servidores** — é o que resta pra costurar essa
 rede, deliberadamente.
 
+**A bancada também tem banco, e ele fica para trás.** A esteira carimba os
+servidores e, até 04/09, não dizia nada sobre o banco de aplicação da bancada.
+Medido nesse dia: os três ambientes rodavam o MESMO código
+(`v2026.09.04-beta1`), mas o banco `orizon` local estava em `f47f22de46a7` —
+duas migrations atrás (`82275b998a4a`, ACHADO-47, e `b0ecb9ce82d2`,
+ACHADO-30), ambas de 03/09. Ficou dois dias assim sem ninguém notar porque **a
+suíte monta o próprio schema**: `pytest -q` fica verde com o banco de aplicação
+desatualizado, e quem quebra é só o app aberto na tela — justamente o percurso
+manual, que é o último a acontecer. Por isso o fechamento do deploy passou a
+incluir a bancada: ver `IMPLANTAR.md`, `## Conferir o que esta rodando`.
+
 ## Acesso remoto à bancada
 
 Recomendação: **rede privada** (Tailscale, WireGuard). Não abrir porta.

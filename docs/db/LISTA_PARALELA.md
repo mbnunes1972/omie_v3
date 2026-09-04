@@ -201,23 +201,34 @@ instrumentar o que exatamente o teste lê que poderia vir sujo (a conta 2.1.06, 
 *Adiado:* não é item de bloco nenhum, achado incidental durante o fechamento de outra frente —
 registrado aqui pra não se perder, não investigado a fundo ainda.
 
-**LP-17 · Dois testes que ainda comparam `datetime.utcnow()` com competência já migrada pro
-ACHADO-48.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h Brasília — a própria janela do
-ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_por_assinatura` e
-`test_lancamentos_api.py::test_get_lancamentos_fim_do_dia_inclui_lancamento_de_hoje` falharam
-na suíte completa, confirmados via `git worktree` como pré-existentes (falham idêntico no
-commit anterior a este candidato, `44a8e80`) — não são regressão do F2-18. Mecanismo: o segundo
-teste monta `hoje = datetime.utcnow().date().isoformat()` (`tests/test_lancamentos_api.py:46`) e
-filtra o range por ele, mas `POST /api/financeiro/lancamentos` carimba a competência via
-`agora_no_fuso` (América/São_Paulo, ACHADO-48) — no instante em que os dois relógios discordam
-(depois das 21h em Brasília), o lançamento nasce "hoje" em São Paulo e "amanhã" em UTC, cai fora
-do range que o teste pediu. `test_indicadores.py` provavelmente tem o mesmo tipo de mistura num
-ponto ainda não localizado da série mensal.
-*Adiado:* são "os irmãos" do próprio ACHADO-48 que ficaram pra trás — o achado corrigiu o
-APLICATIVO (`main.py`/`mod_contabil.py`) mas não auditou os TESTES que constroem "hoje" com
-`utcnow()` direto para comparar contra o resultado. Precisa de uma varredura (`grep
-datetime.utcnow` em `tests/*.py` comparando contra endpoint que já usa fuso) — não feita aqui,
-fora do escopo do bloco fiscal.
+**LP-17 · Dois testes que ainda comparavam `datetime.utcnow()` com competência já migrada pro
+ACHADO-48 · RESOLVIDO 04/09, `<hash-LP17>`.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h
+Brasília — a própria janela do ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_
+por_assinatura` e `test_lancamentos_api.py::test_get_lancamentos_fim_do_dia_inclui_lancamento_
+de_hoje` falharam na suíte completa, confirmados via `git worktree` como pré-existentes (falham
+idêntico no commit anterior, `44a8e80`) — não eram regressão do F2-18.
+
+**Mecanismo confirmado nos dois:** `test_lancamentos_api.py` montava `hoje = datetime.utcnow()
+.date().isoformat()` e filtrava o range por ele, mas `POST /api/financeiro/lancamentos` carimba
+a competência via `agora_no_fuso` (América/São_Paulo, ACHADO-48) — na janela em que os dois
+relógios discordam, o lançamento nasce "hoje" em São Paulo e "amanhã" em UTC, cai fora do range
+pedido. `test_indicadores.py` tinha a MESMA classe de mistura, mas não na construção de "hoje"
+— na `ContratoAssinatura` que decide a série "vendas": o teste não passava `assinado_em`
+explícito, o default de coluna (`datetime.utcnow`) carimbava a assinatura, e o endpoint bucketa
+essa data contra `mod_contabil.hoje_no_fuso` (mesmo ACHADO-48) — mesma janela, mesmo defeito,
+lugar diferente.
+
+**Conserto:** os dois testes passaram a derivar a data que comparam da MESMA fonte que o
+endpoint usa — `mod_contabil.hoje_no_fuso`/`agora_no_fuso`, nunca `datetime.utcnow()`. Prova:
+os dois passam sob tempo real (dentro e fora da janela), e sob `TZ=UTC`/`TZ=America/Sao_Paulo`
+forçado no processo (mesmo padrão de `test_achado48_fuso_horario.py`). Controle negativo: como
+a janela real já tinha fechado no momento do conserto, a reprodução foi forçada com o mesmo
+truque do ACHADO-48 (fuso extremo, `Pacific/Pago_Pago`, UTC−11, na loja do teste) — revertida a
+fonte pra `datetime.utcnow()`, os dois falham de forma determinística, independente da hora real.
+
+*Não mexido:* LP-16 (`test_aceite_achado12`, dependente de ordem) é outra classe de problema,
+fora deste conserto. A varredura mais ampla por outros "irmãos" do ACHADO-48 em `tests/*.py`
+não foi feita — só os dois nomeados aqui.
 
 ---
 

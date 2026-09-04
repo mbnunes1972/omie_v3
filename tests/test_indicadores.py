@@ -154,6 +154,12 @@ def _login(f, who):
 def test_endpoint_tenancy_e_venda_por_assinatura(http_client_factory, seed, app_db):
     # QA Vera 🔴/🟠: (1) contrato de loja FORA do owner (avulsa) não vaza; (2) venda conta
     # pela 1ª ASSINATURA (rascunho gerado não conta; assinatura conta no mês certo).
+    # LP-17 (03/09, rescaldo do ACHADO-48/F2-14): a série "vendas" do endpoint bucketa por
+    # ContratoAssinatura.assinado_em contra `mod_contabil.hoje_no_fuso` (fuso do dono do livro,
+    # America/Sao_Paulo por padrão) — o default de coluna (`datetime.utcnow`) só concorda com
+    # esse "hoje" por acidente de horário. A assinatura que decide o teste carimba explícito,
+    # pela mesma fonte que o endpoint usa, não pelo default do modelo.
+    import mod_contabil
     from datetime import datetime as _dt
     db = app_db.get_session()
     # loja AVULSA (owner próprio) com contrato assinado gordo — não pode aparecer p/ dir_l1
@@ -190,8 +196,9 @@ def test_endpoint_tenancy_e_venda_por_assinatura(http_client_factory, seed, app_
 
     # assina o contrato da rede → vira venda de 100.000 (e SÓ ela)
     db = app_db.get_session()
+    agora = mod_contabil.agora_no_fuso(db, "loja", seed["loja1_id"])
     db.add(app_db.ContratoAssinatura(contrato_id=ct1_id, parte="loja", nome="L",
-                                     cpf="0", hash_sha256="x"))
+                                     cpf="0", hash_sha256="x", assinado_em=agora))
     db.commit(); db.close()
     st, body = c.get("/api/financeiro/indicadores?meses=3")
     ind = body["indicadores"]

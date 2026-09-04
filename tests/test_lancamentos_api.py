@@ -35,15 +35,23 @@ def test_lancamento_sintetica_400(http_client_factory, seed, app_db):
 def test_get_lancamentos_fim_do_dia_inclui_lancamento_de_hoje(http_client_factory, seed, app_db):
     """`fim` vindo de <input type=date> chega à meia-noite; sem levar pro fim do dia, um
     lançamento feito mais tarde no mesmo dia ficava fora do range [hoje, hoje] — achado ao
-    testar o filtro combinado projeto+período em Lançamentos (2026-08-07)."""
-    from datetime import datetime
+    testar o filtro combinado projeto+período em Lançamentos (2026-08-07).
+
+    LP-17 (03/09, rescaldo do ACHADO-48/F2-14): "hoje" tem que vir da MESMA fonte que
+    `mod_contabil.lancar()` usa pra carimbar (`hoje_no_fuso`, fuso do dono do livro) — não de
+    `datetime.utcnow()`. Os dois só concordavam por acidente de horário; na janela em que o
+    relógio do processo (UTC) e o fuso configurado (America/Sao_Paulo, default) discordam de
+    dia, o lançamento carimbado por `hoje_no_fuso` caía fora do range que `utcnow()` pedia."""
+    import mod_contabil
     c = http_client_factory(); c.login("dir_l1", "senha123")
     ids = _ids(c)
     st, _ = c.post("/api/financeiro/lancamentos", {
         "conta_debito_id": ids["1.1.01"], "conta_credito_id": ids["4.1.01"],
         "valor": 42.0, "projeto_id": "Proj_FimDia"})
     assert st == 201
-    hoje = datetime.utcnow().date().isoformat()
+    db = app_db.get_session()
+    hoje = mod_contabil.hoje_no_fuso(db, "loja", seed["loja1_id"]).isoformat()
+    db.close()
     st2, d2 = c.get("/api/financeiro/lancamentos?projeto=Proj_FimDia&ini=" + hoje + "&fim=" + hoje)
     assert st2 == 200 and any(l["valor"] == 42.0 for l in d2["lancamentos"]), d2
 

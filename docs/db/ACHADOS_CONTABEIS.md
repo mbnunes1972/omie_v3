@@ -3682,7 +3682,99 @@ tem a capacidade), a função faz `return` **sem nenhuma mensagem**. É o padrã
 quatro vezes em telas diferentes — e que voltou pela porta nova. Do lado do
 usuário: o botão não faz nada, sem explicação.
 
-**Não medido ainda, e obrigatório antes de consertar:** quais OUTRAS etapas
-caem no mesmo `else` sem serem subfase do PE. Consertar só a 12 repete o erro
-que o ACHADO-26 nomeou — a correção tem que enumerar os irmãos.
+**Medido em 04/09 (F2-20), antes de consertar — os irmãos do `else`.** Os únicos quatro pontos
+que criam `CicloDocumento` são: `/ciclo/<codigo>/documento` (subfases do PE — 11a/11b/11c/11e,
+`SUBFASES_PE`, autoridade `executar_pe`, mesma do `else`), `/ciclo/<codigo>/pedido-xml` (só
+aceita `codigo="12"` — `mod_ciclo.ETAPAS_OPERACIONAIS["13"]`/`["14"]` não têm `tipo_doc`, então
+`tipo_doc_operacional` devolve `None` pra eles e a rota recusa antes de chegar a criar
+documento), `/ciclo/15/nfe-fabrica` (etapa 15, tem ramo próprio no `remover`) e `/ciclo/<codigo>
+/revisao` (só 11b/11c, as únicas com `revisavel: True`). **Conclusão: nenhuma OUTRA etapa além
+da 12 cai no `else` sem ser subfase do PE** — 13 e 14 nunca geram documento, então nunca chegam
+no `remover` de verdade (404 antes).
+
+**Achado adjacente, mesma família, NÃO a mesma causa — registrado aqui, não vira item próprio
+do conserto:** o upload de `/ciclo/<codigo>/revisao` (documento `pe_relatorio_complementar`,
+11b/11c) exige `revisar_pe` (Gerente de Vendas, Gerente Adm/Financeiro, Diretor) — uma
+capacidade DIFERENTE de `executar_pe` (Projetista Executivo, Conferente, Gerente, Diretor), que
+é o que o `remover` sempre exige pra qualquer código fora da 15. Quem tem só `executar_pe` e
+não `revisar_pe` consegue remover um relatório complementar que não teria permissão de subir. Não
+é a mesma causa do ACHADO-49 (aqui a etapa É subfase do PE de verdade) — é uma segunda
+dissonância upload×remoção, dentro da mesma etapa. Fica registrado; não decidido se conserta
+nesta rodada.
+
+---
+
+## ACHADO-50 — nota em processamento é reportada como FALHA · ABERTO 04/09/2026
+
+Achado pelo Marcelo no mesmo percurso do `v2026.09.04-beta1` em Homologação:
+emitiu a NF-e da loja e a tela devolveu *"Falha na emissão: A nota fiscal
+ainda está em processamento"*.
+
+**A cadeia, com linha citada:**
+- `integracoes/emissor_fiscal.py:50` mapeia o status `"processando_
+  autorizacao"` da Focus para `StatusNota.PROCESSANDO`.
+- `fiscal/nfe_emissao.py:102-103` — resultado `PROCESSANDO` chama
+  `aguardar(ref)` (`focus_client.aguardar_processamento`,
+  `integracoes/focus_client.py:90`), que polla a Focus por `timeout=60`,
+  `intervalo=3`.
+- Esgotado o tempo sem a SEFAZ resolver, o resultado **continua**
+  `PROCESSANDO`, e a rota devolve `"Falha na emissão: A nota fiscal ainda
+  está em processamento"` — a mensagem que o Marcelo viu.
+- O prefixo `"Falha na emissão: "` é do `except Exception` genérico — este
+  caminho **não é uma exceção**, é um retorno normal com `status=
+  PROCESSANDO`, e por isso **não passa** pelo `except FocusError` que o
+  F2-17 (item 3 do bloco fiscal) acabou de acrescentar. É outro ramo, não o
+  mesmo defeito do item 3.
+- `static/index.html:23256` — o botão "Consultar" (que resolveria
+  exatamente este caso, perguntando à Focus se já saiu) só é desenhado numa
+  linha de emissão **já registrada** (com `DocumentoFiscal` existente); a
+  resposta de "Falha" não cria essa linha, então o botão nunca aparece pra
+  quem mais precisa dele.
+
+**O defeito:** pendente não é falha. A nota foi aceita pela SEFAZ e está na
+fila — muito provavelmente autorizada segundos ou minutos depois, fora da
+janela de 60s que o processo HTTP consegue esperar. A mensagem diz ao
+usuário que a emissão falhou; o que aconteceu foi só "ainda não terminou".
+O usuário conclui, razoavelmente, que precisa emitir de novo — e é aqui que
+o ACHADO-51/1a se tocam: a Focus deduplica por `ref`, então reemitir não
+duplica a nota na SEFAZ, mas o sintoma (usuário achando que precisa agir de
+novo sobre algo que já está resolvendo sozinho) é o problema real.
+
+---
+
+## ACHADO-51 — nada impede carregar a mesma NF-e da fábrica duas vezes · ABERTO 04/09/2026
+
+Observado pelo Marcelo na etapa 15, em Homologação: `NFe-163298.xml`
+aparece **duas vezes** na lista de documentos carregados, cada linha com
+seu próprio campo de markup e seu próprio botão de emitir — dois caminhos
+de emissão abertos para o mesmo documento fiscal.
+
+**Medido em 04/09 (F2-20):** `POST /ciclo/15/nfe-fabrica` (`main.py:14958`)
+não faz nenhuma deduplicação — confere a estrutura do XML (ACHADO-31,
+`mod_nfe.problemas_de_upload`) e cria um `CicloDocumento` novo
+incondicionalmente, sempre. Não há leitura de chave de acesso em lugar
+nenhum do upload hoje (`fiscal/mod_nfe.py` não extrai `chNFe`/`Id` do
+`infNFe`).
+
+**Contagem real, três ambientes** (script pontual de leitura, não
+commitado — extrai a chave do atributo `Id="NFe..."` de `infNFe` de cada
+arquivo vivo e agrupa por projeto):
+
+| ambiente | documentos `nfe_fabrica_xml` vivos | duplicata dentro do mesmo projeto | mesma chave em projetos diferentes |
+|---|---|---|---|
+| Integração | 0 | — | — |
+| Homologação | 10 | **1** — `Projeto_3`, chave `NFe4315...2981002365275`, dois documentos (`NFe-163298.xml` × 2) | **2** casos — a mesma chave aparece em `Projeto_3`+`Teste_1`+`Teste_2` (uma) e em `Projeto_3`+`Teste_1` (outra) |
+| Produção | 0 (base sem essa migration ainda — `ciclo_documentos` de Produção não tem `removido_em`; medido sem esse filtro, mesmo resultado: zero) | — | — |
+
+A duplicata que o Marcelo viu é exatamente a medida (`Projeto_3`). O
+segundo achado da medição — mesma chave em projetos diferentes — é dado
+real, não hipótese: acontece hoje em Homologação (projetos de teste
+reaproveitando a mesma amostra de XML). **Fica em aberto, decisão do
+Marcelo:** mesma chave em projeto DIFERENTE é erro (nota da fábrica não
+pode servir dois projetos) ou caso legítimo (reimportação intencional,
+mesma compra ressarcida em dois pedidos)? A trava desta rodada (F2-20) é
+só DENTRO do mesmo projeto/etapa — não decide esse caso mais amplo.
+
+**Decidido pelo Marcelo em 04/09: bloquear** (não só avisar) uma segunda
+carga da mesma NF-e, dentro do mesmo projeto/etapa.
 

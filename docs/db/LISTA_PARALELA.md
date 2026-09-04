@@ -262,6 +262,11 @@ lado, no mesmo dia.
   a ser resumo da fase
 - emissão da NF-e POR FASE, perguntando NF-e de Origem (lista das carregadas no recebimento) ou
   "Estoque" (preço de venda digitado, sem markup — ver a fronteira na LP-15)
+- os botões de carregar e de emitir precisam morar DENTRO da tabela de fases, associados a cada
+  fase — hoje ficam soltos na etapa inteira, sem dizer a qual fase pertencem; e as notas se
+  associam aos AMBIENTES do projeto, não à etapa como um todo (achado do Marcelo, 04/09,
+  percurso do `v2026.09.04-beta1` — mesmo dia do ACHADO-49/50/51, classificado por ele mesmo
+  como LP, não achado de bloco fiscal)
 
 **Consequência imediata na fila ativa:** o item 5 do bloco fiscal (NF-e H/P) fica **suspenso**
 até esta frente ter decisão — `ROTEIRO.md`, F2-21.

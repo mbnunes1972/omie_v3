@@ -346,6 +346,34 @@ v2026.09.03-beta3`, `confirmar.sh` 15/0, smoke OK. `pytest -q`: 2565
 passed, 4 xfailed (pré-existentes, ACHADO-01/19/20), 0 failed. Produção
 NÃO tocada nesta rodada.
 
+### Sétimo deploy por tag — v2026.09.04-beta1 — 04/09/2026 (madrugada, sem percurso)
+
+**ESTE DEPLOY TEM MIGRATION NOVA — diferente do sexto, que não tinha.** Não
+copiar aquele template: aqui houve parar o serviço, `alembic upgrade head` e
+subir de novo, nos dois. Entre `v2026.09.03-beta3` e este candidato entrou
+uma única migration, `b0ecb9ce82d2` (ACHADO-30, `82275b998a4a` → `b0ecb9ce82d2`).
+
+Candidato de madrugada — só prova por TESTE, sem ninguém pra clicar em tela.
+LP-17 resolvida (`b7bb834`/`0e1800c` — os dois testes que comparavam
+`datetime.utcnow()` com competência já migrada pro ACHADO-48 passam a derivar
+de `hoje_no_fuso`/`agora_no_fuso`); item 5 do bloco fiscal só MEDIDO
+(`d8b8c29` — as duas decisões pendentes, nada implementado). `pytest -q`
+rodado DUAS vezes completo, `TZ=UTC` e `TZ=America/Sao_Paulo` forçados no
+processo (a janela real de discordância já tinha fechado — verde por causa
+da hora não conta, regra do ESTEIRA.md): **2601 passed, 0 failed, 4 xfailed**
+nos dois fusos.
+
+Tag `v2026.09.04-beta1` (`d8b8c29`) — nome pela data do corte (04/09, não
+"beta4"). `v2026.09.03-beta3` fica onde está, não movida. Nos dois
+servidores, nessa ordem (Integração, depois Homologação): backup
+(`pg_dump`) → `systemctl stop` → `git fetch --tags && git checkout
+v2026.09.04-beta1` → `alembic upgrade head` (`82275b998a4a` →
+`b0ecb9ce82d2`) → `alembic current` confirma o head → `systemctl start` →
+`confirmar.sh` 15/0 → smoke (401 login inválido, 200 index/login) →
+`git describe --tags` confirmado exato (`v2026.09.04-beta1`, sem sufixo
+`-N-g<hash>`) nos dois. **Produção NÃO tocada** — madrugada, sem ninguém
+acompanhando, por instrução explícita.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

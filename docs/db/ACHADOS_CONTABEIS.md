@@ -3781,7 +3781,7 @@ testes falham (mensagem ausente); restaurada, voltam a passar.
 
 ---
 
-## ACHADO-51 — nada impede carregar a mesma NF-e da fábrica duas vezes · ABERTO 04/09/2026
+## ACHADO-51 — nada impede carregar a mesma NF-e da fábrica duas vezes · RESOLVIDO 04/09/2026
 
 Observado pelo Marcelo na etapa 15, em Homologação: `NFe-163298.xml`
 aparece **duas vezes** na lista de documentos carregados, cada linha com
@@ -3842,9 +3842,10 @@ Recusa com `400` e mensagem nomeando o arquivo já carregado (`nome_original`
 do documento vivo com a mesma chave) — quem vê o erro sabe qual documento
 remover, se for o caso.
 
-**Escopo desta rodada:** a trava é só dentro do mesmo projeto/etapa. A
-mesma chave em projeto diferente (medida acima, 2 casos reais em
-Homologação) segue em aberto — decisão do Marcelo, não tomada aqui.
+**Escopo desta rodada (F2-20):** a trava era só dentro do mesmo
+projeto/etapa. A mesma chave em projeto diferente (medida acima, 2 casos
+reais em Homologação) ficou em aberto — estendida no mesmo dia, ver
+abaixo (F2-22).
 
 **Aceite:** `tests/test_achado51_nfe_fabrica_duplicata.py` (3 testes) —
 segundo upload da mesma chave (nomes de arquivo diferentes) é recusado
@@ -3852,6 +3853,58 @@ citando o arquivo já carregado; chave diferente não é bloqueada; remover e
 recarregar a mesma nota continua permitido (prova do ACHADO-30). Controle
 negativo: trava desativada, o teste de recusa falha (upload duplicado
 passa); restaurada, os 3 voltam a passar.
+
+### Extensão (04/09, F2-22) — mesma chave em projetos diferentes
+
+**Decidido pelo Marcelo:** uma mesma NF-e não pode cobrir dois projetos —
+bloquear também ENTRE projetos, não só dentro do mesmo. Os 2 casos
+medidos em Homologação são teste dele (poucas NF-e disponíveis para
+reusar), não há nada contábil a desfazer; a trava é prospectiva, como
+sempre.
+
+**Exceção que o Marcelo levantou e que muda o desenho:** projeto
+**CANCELADO** libera a chave — uma nota recebida cujo projeto foi
+cancelado pode voltar a ser processada em outro. A trava não é "esta
+chave já existe", é "esta chave está VIVA em projeto ATIVO". Duas
+condições, não uma:
+- documento removido não bloqueia (já valia, via `_docs_vivos`, ACHADO-30);
+- projeto cancelado não bloqueia (condição nova).
+
+Medido antes de codar: o cancelamento já marca o projeto de um jeito
+consultável — `_projeto_cancelado(nome_safe, db)` (`main.py:17382`) lê
+`Projeto.status == "cancelado"`, e já é reusado por `_contrato_assinado`
+como fonte única da trava pós-cancelamento. Discriminador existente,
+nenhum estado novo precisou nascer.
+
+**Medição de hoje (mesmos dois ambientes de sempre, Produção fora por
+instrução — ver `IMPLANTAR.md`):** Integração, 0 documentos vivos, 0
+casos. Homologação, os mesmos 2 casos cruzados já medidos acima
+(`Projeto_3`+`Teste_1`+`Teste_2` e `Projeto_3`+`Teste_1`) — os três
+projetos envolvidos estão com `status="fechado"`, nenhum `"cancelado"`;
+`cancelado_definitivo=0` nos três. Nenhum caso real de hoje se beneficia
+da exceção — é regra prospectiva, escrita para o próximo cancelamento,
+não para desfazer os de agora.
+
+`main.py`, mesma rota: a busca por chave deixou de filtrar por
+`projeto_nome` (`_docs_vivos(db, etapa_codigo="15",
+tipo="nfe_fabrica_xml")`, sem mais o filtro de projeto) — percorre todo
+documento vivo do tipo, em qualquer projeto. Quando o documento
+encontrado é de OUTRO projeto, a rota pula (`continue`) se
+`_projeto_cancelado` for verdadeiro pra aquele projeto; senão recusa
+nomeando o projeto que já tem a nota (mensagem distinta da do caso
+"mesmo projeto" — cita o projeto, não só o arquivo).
+
+**Aceite:** `tests/test_achado51_chave_entre_projetos.py` (3 testes) —
+mesma chave em projeto diferente é recusada nomeando o projeto que já a
+tem; projeto cancelado libera a chave (a MESMA tentativa que falhava
+antes de cancelar passa a funcionar depois, sem tocar em mais nada);
+remover e recarregar no mesmo projeto continua permitido, sem precisar
+cancelar (controle-irmão — a extensão pra fora não podia endurecer o
+caso já resolvido dentro). Dois controles negativos: (1) escopo
+entre-projetos desativado — as duas travas cruzadas falham; (2) só a
+exceção do cancelamento desativada — só o teste do cancelamento falha,
+os outros dois continuam passando. Restaurado, os 6 testes do arquivo
+irmão + este voltam a passar juntos.
 
 ---
 

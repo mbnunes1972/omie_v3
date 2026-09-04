@@ -439,6 +439,34 @@ v2026.09.04-beta1` → `alembic upgrade head` (`82275b998a4a` →
 `-N-g<hash>`) nos dois. **Produção NÃO tocada** — madrugada, sem ninguém
 acompanhando, por instrução explícita.
 
+### Oitavo deploy por tag — v2026.09.04-beta2 — 04/09/2026
+
+**Sem migration nova** — `git diff --stat` de `migrations/` entre
+`v2026.09.04-beta1` e este candidato vazio; caso do "sem migration"
+(mesmo template do segundo/terceiro deploy), não do template do sétimo.
+
+O F2-20 inteiro (ACHADO-49/50/51, `cef4587`..`cd48760`) tinha ficado
+commitado mas nunca tagueado/implantado — este é o primeiro deploy desde
+`v2026.09.04-beta1` (`d8b8c29`), e carrega os dois candidatos juntos:
+F2-20 (Remover da etapa 12 espelha o upload; nota `PROCESSANDO` ganha
+mensagem dedicada; NF-e da fábrica em duplicata bloqueada por chave,
+dentro do mesmo projeto) e F2-22 (diagnóstico só-leitura de Produção
+registrado — ver `### Produção — diagnóstico de 04/09` acima; ACHADO-52,
+remoção da subfase de PE volta a espelhar a porta — execução ou revisão
+— que subiu o documento; ACHADO-51 estendido pra bloquear a mesma chave
+também ENTRE projetos, com a exceção de projeto cancelado liberando a
+chave). `pytest -q` completo: **2615 passed, 0 failed, 4 xfailed**.
+
+Tag `v2026.09.04-beta2` (`240103d`) — nome pela data do corte, `-beta1`
+já ocupada por `d8b8c29`. Nos dois servidores, nessa ordem (Integração,
+depois Homologação): `systemctl stop` → `git fetch --tags && git
+checkout v2026.09.04-beta2` → `systemctl start` → `confirmar.sh` 15/0 →
+smoke (401 login inválido, 200 `index.html`/`login.html`) → `git
+describe --tags` confirmado exato nos dois. **Produção NÃO tocada** —
+ela agora tem tratamento próprio (não volta por `pull`/checkout de tag
+avulsa; volta reconstruída, ver `### Produção — diagnóstico de 04/09`
+acima).
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

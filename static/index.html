@@ -23031,13 +23031,21 @@ async function removerDocCiclo(codigo, docId, nome) {
     {titulo: 'Remover documento'});
   if (!ok) return;
   let corpo = {};
-  if (codigo !== '15') {
+  // ACHADO-49 (04/09): a 12 não é subfase do PE — a autoridade espelha a do próprio upload
+  // (POST /ciclo/12/pedido-xml não pede credencial nenhuma), não a do PE. Só as subfases de
+  // verdade (11a/11b/11c/11e) pedem executar_pe aqui.
+  if (codigo !== '15' && codigo !== '12') {
     const cred = await pedirCredenciaisGerente({
       capacidade: 'executar_pe',
       titulo: 'Remover documento',
       mensagem: 'Login e senha de quem executa o PE (Projetista Executivo, Gerente, Diretor…).'
     });
-    if (!cred) return;
+    if (!cred) {
+      // ACHADO-49 causa 2 (04/09): estado antes da credencial (ACHADO-38/B3) — cancelar ou não
+      // ter a capacidade não pode ficar em silêncio, o botão não pode parecer que não fez nada.
+      await avisoPopup('Remoção cancelada — credencial não confirmada.', {titulo:'Remover documento'});
+      return;
+    }
     if (!cred.auto) corpo = { login: cred.login, senha: cred.senha };
   }
   try {

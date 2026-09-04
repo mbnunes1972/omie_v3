@@ -14934,6 +14934,16 @@ class Handler(BaseHTTPRequestHandler):
                         if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                             self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
                         quem = usuario["id"]
+                    elif codigo == "12":
+                        # ACHADO-49 (04/09): a 12 não é subfase do PE — caiu no `else` pensado
+                        # pra elas e herdou executar_pe, mais duro que o próprio upload
+                        # (POST /ciclo/12/pedido-xml não pede credencial nenhuma além do gate de
+                        # execução). A autoridade ESPELHA a de subir nesta etapa, como o ACHADO-30
+                        # documentou — aqui é o gate de execução, não uma credencial.
+                        _blk = _bloqueio_execucao_etapa(db, nome_safe, loja_id, "12")
+                        if _blk:
+                            self.send_json({"ok": False, "erro": _blk}, code=409); return
+                        quem = usuario["id"]
                     else:
                         u = _usuario_com_capacidade(db, req.get("login", ""), req.get("senha", ""),
                                                     "executar_pe", sessao=usuario)

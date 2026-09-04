@@ -6067,17 +6067,36 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": False, "erro": "Não autenticado"}, code=401); return
                 if not perfis.pode_usuario(usuario, "editar_dados_loja"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403); return
+                from fiscal import mod_fiscal
                 db = get_session()
                 try:
                     ator = _ator_dict(db, usuario)
                     loja_id, _err = mod_tenancy.escopo_operacional(ator)
                     if _err:
                         self.send_json({"ok": False, "erro": _err}, code=403); return
-                    _bloq, _msg = _bloqueio_modulo(path, db.get(Loja, loja_id) if loja_id else None)
+                    loja = db.get(Loja, loja_id) if loja_id else None
+                    _bloq, _msg = _bloqueio_modulo(path, loja)
                     if _bloq:
                         self.send_json({"ok": False, "erro": _msg}, code=403); return
-                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                    meta = _projeto_da_loja(db, nome_safe, loja_id)
+                    if meta is None:
                         self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    # Bloco fiscal item 4 (03/09) — AVISO ANTECIPADO: a etapa 15 mostra o que falta
+                    # ANTES do usuário chegar no botão de emitir, mesma lista nomeada que barra na
+                    # emissão (prontidao_emitente/prontidao_destinatario), não uma checagem paralela.
+                    def _pront(tipo):
+                        try:
+                            em = mod_fiscal.resolver_emitente(db, loja, tipo) if loja else None
+                        except ValueError as e:
+                            return str(e)
+                        return mod_fiscal.prontidao_emitente(em, tipo) if em else None
+                    cliente = db.get(Cliente, meta.cliente_id) if meta.cliente_id else None
+                    selo_fiscal = {
+                        "emitente_produto": _pront("produto"),
+                        "emitente_servico": _pront("servico"),
+                        "destinatario": mod_fiscal.prontidao_destinatario(cliente) if cliente else
+                                        "Projeto sem cliente para o destinatário.",
+                    }
                     docs = (_docs_vivos(db, projeto_nome=nome_safe, etapa_codigo="15", tipo="nfe_fabrica_xml")
                               .order_by(CicloDocumento.enviado_em.desc()).all())
                     emissoes = {e.fabrica_doc_id: e for e in
@@ -6118,7 +6137,7 @@ class Handler(BaseHTTPRequestHandler):
                         "xml_doc_id": nfse_reg.xml_doc_id, "danfe_doc_id": nfse_reg.danfe_doc_id,
                         "emitente_cnpj": emn.cnpj if emn else None,
                         "emitente_razao": emn.razao_social if emn else None}
-                    self.send_json({"ok": True, "fabrica_xmls": out, "nfse": nfse})
+                    self.send_json({"ok": True, "fabrica_xmls": out, "nfse": nfse, "selo_fiscal": selo_fiscal})
                 finally:
                     db.close()
                 return
@@ -15193,6 +15212,9 @@ class Handler(BaseHTTPRequestHandler):
                     cliente = db.get(Cliente, projeto.cliente_id) if projeto.cliente_id else None
                     if not cliente:
                         self.send_json({"ok": False, "erro": "O projeto não tem cliente para o destinatário."}, code=400); return
+                    _pront_dest = mod_fiscal.prontidao_destinatario(cliente)
+                    if _pront_dest:
+                        self.send_json({"ok": False, "erro": _pront_dest}, code=400); return
                     try:
                         markup = float(campos.get("markup_pct") or 0)
                     except ValueError:
@@ -15387,6 +15409,9 @@ class Handler(BaseHTTPRequestHandler):
                     cliente = db.get(Cliente, projeto.cliente_id) if projeto.cliente_id else None
                     if not cliente:
                         self.send_json({"ok": False, "erro": "O projeto não tem cliente para o destinatário."}, code=400); return
+                    _pront_dest = mod_fiscal.prontidao_destinatario(cliente)
+                    if _pront_dest:
+                        self.send_json({"ok": False, "erro": _pront_dest}, code=400); return
                     # Contribuinte exige Inscrição Estadual na NF-e. Se ainda não estiver cadastrada,
                     # coleta a IE do body no ato da emissão e persiste no Cliente.
                     if (cliente.tipo_dest == "contribuinte") and not (cliente.inscricao_estadual or "").strip():
@@ -15486,6 +15511,9 @@ class Handler(BaseHTTPRequestHandler):
                     cliente = db.get(Cliente, projeto.cliente_id) if projeto.cliente_id else None
                     if not cliente:
                         self.send_json({"ok": False, "erro": "O projeto não tem cliente para o destinatário."}, code=400); return
+                    _pront_dest = mod_fiscal.prontidao_destinatario(cliente)
+                    if _pront_dest:
+                        self.send_json({"ok": False, "erro": _pront_dest}, code=400); return
                     # IBGE do tomador é obrigatório para a NFS-e (L999 "Tomador Não Identificado").
                     # Clientes novos já capturam via ViaCEP no cadastro; para os antigos, backfill best-effort.
                     # Consistência (auditoria A11): alinha cidade/UF à MESMA fonte (ViaCEP) que define o IBGE,

@@ -165,9 +165,13 @@ def seed(app_db):
 
     # Emitente próprio de cada loja (identidade fiscal — Task 1/2/4). loja.emitente_id = self.
     def mk_emitente(cnpj, razao, uf="SP"):
+        # Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR) — prontidao_emitente passou a exigir
+        # csosn_contribuinte e municipio_ibge no ramo produto; o seed precisa nascer completo.
         em = app_db.Emitente(cnpj=cnpj, razao_social=razao, regime_tributario="simples",
-                             csosn_padrao="101", cfop_dentro_uf="5102", cfop_fora_uf="6102",
-                             inscricao_estadual="ISENTO", logradouro="Rua Emit", numero="1",
+                             csosn_padrao="101", csosn_contribuinte="101",
+                             cfop_dentro_uf="5102", cfop_fora_uf="6102",
+                             inscricao_estadual="ISENTO", municipio_ibge="3550308",
+                             logradouro="Rua Emit", numero="1",
                              bairro="Centro", cidade="Sao Paulo", uf=uf, cep="01000-000",
                              ambiente_ativo="homologacao")
         db.add(em); db.flush()

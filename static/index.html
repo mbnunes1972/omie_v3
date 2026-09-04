@@ -17016,6 +17016,12 @@ async function adminFiscalCarregar(kind, id){
   const tokH = d.token_homolog_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
   const tokP = d.token_prod_definido ? '✓ definido — deixe em branco para manter' : 'não definido';
   panel.innerHTML =
+    // Bloco fiscal item 4 (03/09) — nota de UX medida no achado: os dois botões de salvar são
+    // independentes de PROPÓSITO (configuração fiscal muda com pouca frequência; credenciais
+    // Focus são só segredo), mas os DOIS são obrigatórios pra emitir — nada aqui avisava isso.
+    `<div style="border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:14px;font-size:11px;color:var(--muted)">
+      <i class="ti ti-info-circle"></i> Os dois botões abaixo — "Salvar configuração fiscal" e "Salvar credenciais Focus" — são independentes e os <b>dois são obrigatórios</b> antes de emitir. Salvar só um deixa o emitente incompleto.
+    </div>` +
     sec('Identificação fiscal') +
     `<div class="grid2" style="gap:14px">${inp('cnpj','CNPJ do emitente')}${inp('razao_social','Razão social')}${inp('inscricao_estadual','Inscrição estadual')}${inp('inscricao_municipal','Inscrição municipal')}</div>` +
     sec('Regime tributário') +
@@ -23293,7 +23299,20 @@ function _renderCardEmissaoNfe(dados, bloqueada) {
       ${corpoNfse}
     </div>`;
   }
-  return `<div style="margin-bottom:10px">${linhas}</div>${upload}${secaoNfse}${concluido ? '<p style="color:var(--ok);margin:8px 0 0">✓ NF-e emitida.</p>' : ''}`;
+  // Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR + AVISAR) — aviso antecipado: as mesmas listas
+  // nomeadas que barram na emissão (selo_fiscal, GET .../ciclo/15/nfe), mostradas ANTES do botão.
+  let avisoSelo = '';
+  if (!concluido) {
+    const selo = _nfe15.selo_fiscal || {};
+    const faltas = [selo.emitente_produto, selo.emitente_servico, selo.destinatario].filter(Boolean);
+    if (faltas.length) {
+      avisoSelo = `<div style="border:1px solid var(--warn);background:color-mix(in srgb, var(--warn) 12%, transparent);border-radius:6px;padding:8px 10px;margin-bottom:10px;font-size:.8rem;color:var(--warn)">
+        <div style="font-weight:700;margin-bottom:4px"><i class="ti ti-alert-triangle"></i> Antes de emitir, falta configurar:</div>
+        ${faltas.map(f => `<div>${esc(f)}</div>`).join('')}
+      </div>`;
+    }
+  }
+  return `${avisoSelo}<div style="margin-bottom:10px">${linhas}</div>${upload}${secaoNfse}${concluido ? '<p style="color:var(--ok);margin:8px 0 0">✓ NF-e emitida.</p>' : ''}`;
 }
 
 async function enviarNfeFabrica(inputFile) {

@@ -187,6 +187,38 @@ corresponde ao que saiu.
 (a face da nota deixar de bater com a receita de mercadoria escriturada) já está registrada no
 próprio ACHADO-31.
 
+**LP-16 · `test_aceite_achado12.py::test_projeto_com_aditivo_termina_com_2106_zerado` — dívida de
+isolamento, não de código.** Achado ao fechar o F2-17 (bloco fiscal itens 3/4, 03/09): numa rodada
+de `pytest -q` completo o teste falhou; rodado sozinho, passa; rodado de novo na suíte inteira
+(mesmo código, sem nenhuma mudança), passa também. Ou seja, existe uma combinação de ordem/estado
+compartilhado entre este teste e algum outro que só se manifesta às vezes — a mesma classe de
+problema que o ESTEIRA.md já nomeia ("resolva o isolamento, não o teste"), e que fecha o CI num
+dia e quebra no outro sem ninguém ter mexido em nada.
+*O que falta antes de consertar:* identificar QUAL outro teste deixa estado que este lê — não dá
+pra reproduzir por comando único ainda (a falha não é determinística por posição fixa na suíte,
+só ocorreu uma vez em várias rodadas). Precisa de um `pytest-randomly`/bisect de ordem, ou de
+instrumentar o que exatamente o teste lê que poderia vir sujo (a conta 2.1.06, pelo nome do teste).
+*Adiado:* não é item de bloco nenhum, achado incidental durante o fechamento de outra frente —
+registrado aqui pra não se perder, não investigado a fundo ainda.
+
+**LP-17 · Dois testes que ainda comparam `datetime.utcnow()` com competência já migrada pro
+ACHADO-48.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h Brasília — a própria janela do
+ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_por_assinatura` e
+`test_lancamentos_api.py::test_get_lancamentos_fim_do_dia_inclui_lancamento_de_hoje` falharam
+na suíte completa, confirmados via `git worktree` como pré-existentes (falham idêntico no
+commit anterior a este candidato, `44a8e80`) — não são regressão do F2-18. Mecanismo: o segundo
+teste monta `hoje = datetime.utcnow().date().isoformat()` (`tests/test_lancamentos_api.py:46`) e
+filtra o range por ele, mas `POST /api/financeiro/lancamentos` carimba a competência via
+`agora_no_fuso` (América/São_Paulo, ACHADO-48) — no instante em que os dois relógios discordam
+(depois das 21h em Brasília), o lançamento nasce "hoje" em São Paulo e "amanhã" em UTC, cai fora
+do range que o teste pediu. `test_indicadores.py` provavelmente tem o mesmo tipo de mistura num
+ponto ainda não localizado da série mensal.
+*Adiado:* são "os irmãos" do próprio ACHADO-48 que ficaram pra trás — o achado corrigiu o
+APLICATIVO (`main.py`/`mod_contabil.py`) mas não auditou os TESTES que constroem "hoje" com
+`utcnow()` direto para comparar contra o resultado. Precisa de uma varredura (`grep
+datetime.utcnow` em `tests/*.py` comparando contra endpoint que já usa fuso) — não feita aqui,
+fora do escopo do bloco fiscal.
+
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

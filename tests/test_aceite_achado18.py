@@ -119,6 +119,12 @@ def _perfil(app_db, loja_id):
         loja.emitente_id = em.id
     em.ambiente_ativo = "homologacao"
     em.focus_token_homolog_enc = fiscal_cripto.encrypt("tok-homolog")
+    # Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR) — prontidao_destinatario agora exige o
+    # endereço do Cliente; o seed nasce só com nome/cpf, então completa aqui (só se vazio).
+    for cli in db.query(app_db.Cliente).filter_by(loja_id=loja_id).all():
+        if not (cli.logradouro or "").strip():
+            cli.logradouro, cli.numero, cli.bairro = "Rua do Cliente", "10", "Centro"
+            cli.cidade, cli.estado, cli.cep = "Sao Paulo", "SP", "01000-000"
     db.commit(); db.close()
 
 

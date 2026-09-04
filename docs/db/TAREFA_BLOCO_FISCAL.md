@@ -57,7 +57,7 @@ que o sistema descartou uma linha antes de exibir.
 **Capturar `FocusError` explicitamente e devolver os `erros`** — cada um
 nomeia o campo e o motivo.
 
-## 4 · Selo de "pronto para emitir" na tela Fiscal · MEDIDO 03/09, decisão pendente do Marcelo
+## 4 · Selo de "pronto para emitir" na tela Fiscal · FEITO 03/09 (DECIDIDO: BARRAR + AVISAR)
 
 O que custou o percurso do Marcelo: **nada valida a configuração do emitente
 antes da emissão**. Ele descobriu na última etapa, duas vezes seguidas —
@@ -243,14 +243,39 @@ vs. barrar, e o que fazer com os 2 emitentes já incompletos se a resposta for b
 "Clientes de projeto na etapa 15" medido como: `Cliente` ligado a um `Projeto` (`projetos_meta`)
 que tem alguma linha em `ciclo_etapas` com `etapa_codigo='15'` — sem filtrar por status da
 etapa (medida a população que já *chegou* na etapa de emissão, não só a que está parada nela
-agora); o único encontrado (Homologação) está completo no endereço. **Não implementado —
-aguardando a decisão.**
+agora); o único encontrado (Homologação) está completo no endereço.
 
-**Aceite exigido:** um teste por bloco (identificação, endereço do emitente, endereço do
-destinatário), provando que a falta é nomeada campo a campo; e a etapa 15 avisando antes de
-o usuário chegar na emissão. Nota de UX já medida no item: os dois botões de salvar
-(configuração fiscal e credenciais Focus) são independentes de propósito — falta dizer na
-tela que os dois são obrigatórios.
+**Decisão do Marcelo: BARRAR + AVISAR.** Os 2 emitentes já incompletos NÃO receberam
+tratamento retroativo — nenhum emitiu nota (Produção tem 0 emitentes) e o próprio selo na tela
+é o caminho de conserto.
+
+### Conserto (03/09)
+
+`prontidao_emitente` (ramo produto, `fiscal/mod_fiscal.py`) ganhou a lista nomeada de
+identificação + endereço, no mesmo formato que o ramo serviço já usava — gate de regime
+(`!= "simples"`) mantido intacto, CSOSN sempre exigível (não condicional ao regime, por causa
+desse gate). `prontidao_destinatario` — função IRMÃ, não misturada na assinatura do emitente —
+confere o endereço do Cliente. As três rotas de emissão chamam as duas e recusam (400) com a
+lista completa. `GET .../ciclo/15/nfe` ganhou `selo_fiscal` (as duas listas, ou `null` quando
+completo) — a etapa 15 mostra o aviso ANTES do botão de emitir, mesma lista que barraria.
+Nota de UX: painel Fiscal ganhou um aviso de que os dois botões de salvar (configuração +
+credenciais Focus) são independentes mas os DOIS são obrigatórios.
+
+**Aceite:** `tests/test_mod_fiscal.py` (7 novos — identificação, token do ambiente ativo,
+endereço do emitente, CSOSN incondicional ao regime, `prontidao_destinatario` completo/
+incompleto/não confere `inst_uf`) + `tests/test_bloco_fiscal_item4_selo_emitente.py` (6 — GET
+`selo_fiscal` completo/incompleto por lado, HTTP barra por emitente, HTTP barra por
+destinatário, HTTP passa com tudo completo). Controle negativo: revertido
+`fiscal/mod_fiscal.py`+`main.py` (`git stash`), as 12 asserções novas falham (5 no arquivo do
+item 4, 7 em test_mod_fiscal.py); restaurado, voltam a passar.
+
+**Achado ao implementar:** o seed compartilhado de teste (`tests/conftest.py`) e cinco cópias
+independentes do helper `_perfil()` espalhadas em arquivos de teste (`test_nfe_etapa15_e2e.py`,
+`test_nfe_emitir_teste_e2e.py`, `test_bloco_fiscal_item3_erros_focus.py`,
+`test_aceite_achado18.py`, `test_dre_ciclo_completo_e2e.py`) nasciam com `Emitente`/`Cliente`
+incompletos sob a regra nova — corrigidos para nascerem completos (campos setados
+incondicionalmente, não só na criação, para sobreviver a um teste anterior que zerou de
+propósito).
 
 ## Item 5 — NF-e H e NF-e P
 

@@ -53,23 +53,59 @@ def pode_ativar_producao(placeholders):
     return not placeholders
 
 
+def _vazio(v):
+    return not (str(v).strip() if v is not None else "")
+
+
+# Bloco fiscal item 4 (docs/db/TAREFA_BLOCO_FISCAL.md) — DECIDIDO do Marcelo: BARRAR. O ramo
+# produto conferia só regime+UF; endereço do emitente inteiro passava e o destinatário não era
+# conferido em lugar nenhum (a falta que custou o percurso de 01/09, erro de schema cMun/xLgr).
+_CAMPOS_EMITENTE_IDENTIFICACAO = [
+    ("cnpj", "CNPJ"), ("inscricao_estadual", "Inscrição Estadual"),
+    ("regime_tributario", "regime tributário"), ("csosn_padrao", "CSOSN padrão"),
+    ("csosn_contribuinte", "CSOSN contribuinte"), ("cfop_dentro_uf", "CFOP dentro da UF"),
+    ("cfop_fora_uf", "CFOP fora da UF"), ("municipio_ibge", "código IBGE do município"),
+    ("uf", "UF"),
+]
+_CAMPOS_EMITENTE_ENDERECO = [
+    ("logradouro", "logradouro"), ("numero", "número"), ("bairro", "bairro"),
+    ("cidade", "cidade"), ("uf", "UF"), ("cep", "CEP"),
+]
+_CAMPOS_DESTINATARIO_ENDERECO = [
+    ("logradouro", "logradouro"), ("numero", "número"), ("bairro", "bairro"),
+    ("cidade", "cidade"), ("estado", "estado"), ("cep", "CEP"),
+]
+
+
 def prontidao_emitente(emitente, tipo_doc):
     """Mensagem de erro se o Emitente NÃO está pronto para emitir `tipo_doc` ('produto'|'servico'),
     ou None se estiver pronto. Barra ANTES de chamar a Focus o que hoje geraria (a) nota autorizada
     porém ERRADA em silêncio — regime ≠ Simples usa PIS/COFINS/CSOSN do Simples; UF do emitente vazia
     cai em CFOP interestadual — ou (b) recusa com erro genérico por dado fiscal faltante.
     Descoberto na auditoria fiscal 2026-07-07 (achados A2/A3/A5)."""
-    def _vazio(v):
-        return not (str(v).strip() if v is not None else "")
     regime = (getattr(emitente, "regime_tributario", None) or "").strip().lower()
     if tipo_doc == "produto":
+        # Gate duro, não afrouxado pelo item 4: sem Simples Nacional, nem chega a valer a pena
+        # nomear os outros campos — e é por causa dele que CSOSN abaixo é sempre exigível (não
+        # condicional ao regime).
         if regime != "simples":
             return ("Emissão de NF-e de produto hoje só é suportada para o Simples Nacional "
                     "(regime do emitente: %s). Ajuste o regime do emitente no painel Fiscal."
                     % (regime or "não informado"))
-        if _vazio(getattr(emitente, "uf", None)):
-            return "Configure a UF do emitente no painel Fiscal antes de emitir a NF-e (define o CFOP)."
-        return None
+        faltando_id = [rotulo for campo, rotulo in _CAMPOS_EMITENTE_IDENTIFICACAO
+                       if _vazio(getattr(emitente, campo, None))]
+        ambiente = (getattr(emitente, "ambiente_ativo", None) or "homologacao")
+        token_campo = "focus_token_homolog_enc" if ambiente == "homologacao" else "focus_token_prod_enc"
+        if _vazio(getattr(emitente, token_campo, None)):
+            faltando_id.append("token da Focus (ambiente %s)" % ambiente)
+        faltando_end = [rotulo for campo, rotulo in _CAMPOS_EMITENTE_ENDERECO
+                        if _vazio(getattr(emitente, campo, None))]
+        if not faltando_id and not faltando_end:
+            return None
+        partes = []
+        if faltando_id:  partes.append("identificação (" + ", ".join(faltando_id) + ")")
+        if faltando_end: partes.append("endereço (" + ", ".join(faltando_end) + ")")
+        return "Configure no painel Fiscal antes de emitir a NF-e — " + "; ".join(partes) + "."
     if tipo_doc == "servico":
         faltando = []
         if _vazio(getattr(emitente, "inscricao_municipal", None)):   faltando.append("Inscrição Municipal")
@@ -79,6 +115,19 @@ def prontidao_emitente(emitente, tipo_doc):
         if faltando:
             return "Configure no painel Fiscal antes de emitir a NFS-e: " + ", ".join(faltando) + "."
         return None
+    return None
+
+
+def prontidao_destinatario(cliente):
+    """Mensagem de erro se o Cliente (destinatário da nota) NÃO tem endereço completo, ou None se
+    estiver pronto. Função IRMÃ de `prontidao_emitente`, não a mesma — a assinatura é do emitente,
+    e misturar o Cliente ali quebraria a fronteira do módulo (o chamador resolve os dois e compõe).
+    `Cliente` não tem coluna `uf` — usa `estado`; `inst_uf` é do endereço de instalação, que a nota
+    não usa."""
+    faltando = [rotulo for campo, rotulo in _CAMPOS_DESTINATARIO_ENDERECO
+                if _vazio(getattr(cliente, campo, None))]
+    if faltando:
+        return "Configure o endereço do cliente (destinatário da nota): " + ", ".join(faltando) + "."
     return None
 
 

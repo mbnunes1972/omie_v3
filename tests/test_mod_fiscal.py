@@ -46,7 +46,13 @@ from types import SimpleNamespace
 
 
 def _emit_pronto_produto(**kw):
-    base = dict(regime_tributario="simples", uf="SP", inscricao_estadual="123")
+    # Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR) — prontidao_emitente passou a exigir a lista
+    # inteira de identificação + endereço no ramo produto; este fixture nasce COMPLETO sob a
+    # regra nova (era só regime+UF+IE antes do achado).
+    base = dict(regime_tributario="simples", uf="SP", inscricao_estadual="123", cnpj="19152134000156",
+                csosn_padrao="102", csosn_contribuinte="101", cfop_dentro_uf="5102", cfop_fora_uf="6102",
+                municipio_ibge="3550308", ambiente_ativo="homologacao", focus_token_homolog_enc="tok",
+                logradouro="Rua A", numero="1", bairro="Centro", cidade="Sao Paulo", cep="01000-000")
     base.update(kw); return SimpleNamespace(**base)
 
 
@@ -78,6 +84,61 @@ def test_prontidao_servico_ok():
 def test_prontidao_servico_sem_im_barra():
     e = mf.prontidao_emitente(_emit_pronto_servico(inscricao_municipal=None), "servico")
     assert e and "Inscrição Municipal" in e
+
+
+# ── Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR) — extensão do ramo produto ──────────────────
+
+def test_prontidao_produto_identificacao_incompleta_nomeia_campo_a_campo():
+    e = mf.prontidao_emitente(_emit_pronto_produto(cnpj=None, csosn_padrao="", csosn_contribuinte=None), "produto")
+    assert e and "identificação" in e
+    assert "CNPJ" in e and "CSOSN padrão" in e and "CSOSN contribuinte" in e
+
+
+def test_prontidao_produto_token_ambiente_ativo_faltando_barra():
+    e = mf.prontidao_emitente(_emit_pronto_produto(focus_token_homolog_enc=None), "produto")
+    assert e and "token" in e.lower() and "homologacao" in e
+    e2 = mf.prontidao_emitente(_emit_pronto_produto(ambiente_ativo="producao", focus_token_prod_enc=None),
+                               "produto")
+    assert e2 and "producao" in e2
+
+
+def test_prontidao_produto_endereco_incompleto_nomeia_campo_a_campo():
+    e = mf.prontidao_emitente(_emit_pronto_produto(logradouro=None, cep=""), "produto")
+    assert e and "endereço" in e
+    assert "logradouro" in e and "CEP" in e
+
+
+def test_prontidao_produto_csosn_exigivel_mesmo_com_tudo_mais_completo():
+    # Regra do item 4: CSOSN não é condicional ao regime (o gate de regime já garante Simples) —
+    # com tudo mais completo, faltar só o CSOSN ainda barra.
+    e = mf.prontidao_emitente(_emit_pronto_produto(csosn_padrao=None), "produto")
+    assert e and "CSOSN padrão" in e
+
+
+# ── prontidao_destinatario (função IRMÃ, não mistura Cliente em prontidao_emitente) ───────────
+
+def _cliente_pronto(**kw):
+    base = dict(logradouro="Rua B", numero="2", bairro="Jardim", cidade="Sao Paulo",
+                estado="SP", cep="02000-000")
+    base.update(kw); return SimpleNamespace(**base)
+
+
+def test_prontidao_destinatario_ok():
+    assert mf.prontidao_destinatario(_cliente_pronto()) is None
+
+
+def test_prontidao_destinatario_endereco_incompleto_nomeia_campo_a_campo():
+    e = mf.prontidao_destinatario(_cliente_pronto(logradouro=None, estado="", cep=None))
+    assert e and "logradouro" in e and "estado" in e and "CEP" in e
+
+
+def test_prontidao_destinatario_nao_confere_uf_generico_de_instalacao():
+    # Cliente não tem coluna uf — só 'estado'. Um objeto com 'inst_uf' preenchido mas sem
+    # 'estado' continua incompleto (a nota nunca lê o endereço de instalação).
+    cli = _cliente_pronto(estado=None)
+    cli.inst_uf = "SP"
+    e = mf.prontidao_destinatario(cli)
+    assert e and "estado" in e
 
 
 def test_prontidao_servico_sem_ibge_ou_cod_ou_iss_barra():

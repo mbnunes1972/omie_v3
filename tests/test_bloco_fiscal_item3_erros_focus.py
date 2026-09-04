@@ -48,9 +48,9 @@ def _perfil(app_db, loja_id, ambiente="homologacao"):
     em = db.get(app_db.Emitente, loja.emitente_id) if loja.emitente_id else None
     if em is None:
         em = app_db.Emitente(cnpj="90000000000%02d" % loja_id, razao_social="LOJA X",
-                             regime_tributario="simples", csosn_padrao="102",
-                             cfop_dentro_uf="5102", cfop_fora_uf="6102", uf="SP",
-                             cidade="Sao Paulo", logradouro="Rua A", numero="1",
+                             regime_tributario="simples", csosn_padrao="102", csosn_contribuinte="101",
+                             inscricao_estadual="123456789", cfop_dentro_uf="5102", cfop_fora_uf="6102",
+                             uf="SP", cidade="Sao Paulo", logradouro="Rua A", numero="1",
                              bairro="Centro", cep="01000-000")
         db.add(em); db.flush()
         loja.emitente_id = em.id
@@ -61,6 +61,12 @@ def _perfil(app_db, loja_id, ambiente="homologacao"):
     em.aliquota_iss = 5.0
     em.focus_token_homolog_enc = fiscal_cripto.encrypt("tok-homolog")
     em.focus_token_prod_enc = fiscal_cripto.encrypt("tok-prod")
+    # Bloco fiscal item 4 (03/09, DECIDIDO: BARRAR) — prontidao_destinatario agora exige o
+    # endereço do Cliente; o seed nasce só com nome/cpf, então completa aqui (só se vazio).
+    for cli in db.query(app_db.Cliente).filter_by(loja_id=loja_id).all():
+        if not (cli.logradouro or "").strip():
+            cli.logradouro, cli.numero, cli.bairro = "Rua do Cliente", "10", "Centro"
+            cli.cidade, cli.estado, cli.cep = "Sao Paulo", "SP", "01000-000"
     db.commit(); db.close()
 
 

@@ -3779,6 +3779,19 @@ serviço, `FakeEmissor` que nunca sai de `processando_autorizacao`) — prova
 aparecer). Controle negativo: `_mensagem_status_nota` esvaziada, os dois
 testes falham (mensagem ausente); restaurada, voltam a passar.
 
+**Passo explícito para o percurso seguinte (F2-22):** o conserto acima foi
+escrito sobre mecanismo **INFERIDO** — a bancada não reproduz o sintoma
+exato ("Falha na emissão: A nota fiscal ainda está em processamento")
+com o `FakeEmissor`, só o efeito colateral (pendência sem mensagem
+dedicada). Isso não invalida o conserto (a mensagem dedicada e o
+"Consultar" resolvem a classe toda, não um caminho específico), mas o
+achado só fecha de verdade quando o fenômeno for **reproduzido onde
+aconteceu**: no próximo percurso de Marcelo em Homologação, tentar
+emitir uma NF-e de loja com o cenário que gerou o sintoma original (ou
+provocá-lo deliberadamente, se souber como) e confirmar que a mensagem
+nova aparece no lugar da antiga. Enquanto isso não acontecer, este
+achado permanece ABERTO — implementado, mas não fechado.
+
 ---
 
 ## ACHADO-51 — nada impede carregar a mesma NF-e da fábrica duas vezes · RESOLVIDO 04/09/2026

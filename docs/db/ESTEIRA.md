@@ -68,6 +68,12 @@ servidor e olhar o `git log`. Passa a valer:
 Isso muda o trabalho da Vera: o fim de um ciclo passa a ser "suíte verde +
 tag criada", não "commitado".
 
+Caso real: Produção saiu da esteira três dias antes desta regra existir
+(`git checkout main` manual em 28/08, marco em 31/08) e ninguém percebeu
+por 7 dias. Diagnóstico completo e o que fazer no rebuild — inclusive um
+achado que não tem a ver com estar fora da tag — em `IMPLANTAR.md`,
+`### Produção — diagnóstico de 04/09 e o que fazer quando reconstruir`.
+
 ## Teste fora da rodada padrão apodrece
 
 Um teste que só roda quando alguém lembra de invocá-lo é da mesma família do

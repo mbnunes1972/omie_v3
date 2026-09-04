@@ -143,6 +143,71 @@ Sem isso, o primeiro segredo fiscal real de Produção passa a depender de
 44 bytes que ninguém guardou — perder o disco perde a chave e tudo que
 ela decifra, sem aviso prévio, porque nada quebra até o dia em que quebra.
 
+### Produção — diagnóstico de 04/09 e o que fazer quando reconstruir
+
+Diagnóstico só leitura, pedido depois de o fechamento do F2-20 reportar
+Produção fora da esteira. Nada foi tocado — nenhum fetch, checkout,
+migration, restart ou mudança de config/permissão.
+
+**Estado:** `git describe --tags` devolve `v2026.08.26i-homolog-88-g5e234bb`;
+HEAD em `5e234bb`, de 31/08.
+
+**Como saiu da esteira:** pelo `reflog`, alguém fez `git checkout main` à
+mão no servidor em 28/08 04:11:15 -03, saindo de `2f35ec2` (tag
+`v2026.08.13b-prod`, vigente de 13/08 a 28/08); depois três `pull --ff`
+sucessivos até `5e234bb` em 31/08 01:27. Isso é **três dias antes** de o
+`ESTEIRA.md` existir (31/08) — não é violação de uma regra vigente, é o
+servidor que ficou de fora quando a regra nasceu. Sem culpar ninguém: o
+que importa é que ninguém percebeu por 7 dias.
+
+**Não está quebrado.** `alembic current` = `f47f22de46a7`, que é o head
+daquela árvore específica — `migrations/versions/` deste checkout só tem
+8 arquivos, e `b0ecb9ce82d2` (ACHADO-30) e `82275b998a4a` (ACHADO-47) não
+existem nela. `ciclo_documentos` tem 8 colunas, sem `removido_em`; o
+código não tem `_docs_vivos` em lugar nenhum (zero ocorrências). Código e
+schema estão em paridade entre si, só que os dois três semanas atrás. O
+alarme inicial (código novo lendo coluna que não existe) era falso —
+não há código novo ali.
+
+**Sem uso real.** 1 usuário cadastrado (`mbn1972@gmail.com`), 0 sessões
+(tabela `sessoes` vazia), 0 upload em `ciclo_documentos` desde 28/08,
+~3500 requisições em 9 dias quase todas de scanner automatizado, zero
+`POST` de login real. Serviço ativo, journal sem erro desde 29/08.
+
+**Sondagens de bot (`.git`, `.env`, `phpinfo`) não acharam nada.**
+Caminhos com prefixo de dicionário (`/wordpress/.env`, `/laravel/.git/
+config`, …) → 404. Caminhos exatos (`/.git/config`, `/.env`,
+`/.git-credentials`, …) → 301, mas com corpo **fixo de 178 bytes em
+todos** — arquivos reais diferentes teriam tamanhos diferentes; é
+redirect genérico do app, não o nginx entregando conteúdo do disco.
+Zero 200 e zero 206 em toda a base de logs rotacionados. Confirmado no
+config: o `server` ativo (`orizonone`) só tem `location = /privacidade`
+(alias fora do repositório) e `location /` → `proxy_pass
+127.0.0.1:8765` — nenhum `root`/`alias` aponta pro repositório em lugar
+nenhum. `/root/orizon.env` em 600; `/root/orizon-manager/.git` em 755,
+mas `/root` em si está em 700 — não atravessável por ninguém além de
+root, com ou sem nginx.
+
+**O achado que fica, e que muda o rebuild:** o processo do app roda como
+**root** (uid 0), não como usuário de serviço próprio. As três camadas
+acima (nginx sem root/alias, `.env` 600, `/root` 700) protegem contra o
+lado de fora; nenhuma protege contra o próprio app — e o app é root, o
+nginx manda toda requisição pra ele, e ele faz parsing de XML de
+terceiros (NF-e da fábrica). Uma falha de execução ali não vira "alguém
+leu um arquivo", vira a máquina inteira, com o `.env` que o 600
+aparentemente guardava. Contradiz a regra permanente de bind em
+`127.0.0.1` — que existe pelo mesmo motivo e foi seguida à risca.
+
+**Conclusão registrada, nenhuma ação imediata:** Produção não volta por
+`pull` nem por migration avulsa — volta **reconstruída** a partir de uma
+tag, pelo procedimento deste documento, quando a linha atual (F2-22 em
+diante) tiver sido percorrida em Homologação e aprovada pelo Marcelo. O
+usuário de serviço próprio (app fora do root, `.env` e diretório com dono
+próprio, não mais `root:root`) é criado **nesse momento** — custa quase
+nada dentro de um rebuild que já vai parar o serviço e recriar tudo, e
+custa uma janela de parada inteira se for feito isolado depois. Não
+tocar Produção antes disso, nem "só" para criar esse usuário.
+
 ## Armadilhas encontradas na execucao real (28/08/2026)
 
 Quatro coisas que o ensaio no WSL nao revelou. Todas custaram tentativa.

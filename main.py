@@ -1515,6 +1515,18 @@ def vavo_contratado_do_projeto(db, nome_safe):
     return _somar_campo_contratado_do_projeto(db, nome_safe, "vavo")
 
 
+def _mensagem_status_nota(status_value):
+    """ACHADO-50 (04/09): pendente não é falha. Uma nota em PROCESSANDO — a SEFAZ aceitou e
+    ainda está resolvendo, o polling de `aguardar_processamento` (60s) só não alcançou o
+    desfecho dentro do próprio request HTTP — não é erro nenhum; "Consultar" (que já aparece
+    pra qualquer emissão registrada, autorizada ou não) resolve em instantes. Devolve None pros
+    demais status (a tela já trata autorizado/erro/cancelado pelo próprio valor)."""
+    if status_value == "processando":
+        return ("A nota foi aceita e está na fila da SEFAZ — ainda não saiu o resultado. "
+                "Use \"Consultar\" em instantes; não é preciso emitir de novo.")
+    return None
+
+
 def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc):
     """Wiring do faturamento SEGMENTADO (FASE B2). O valor do segmento vem do ORÇAMENTO DO CONTRATO
     (`Val_Cont × segmentação efetiva`, congelada na assinatura), NÃO do valor de face do documento
@@ -15468,6 +15480,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": True, "ref": ref,
                                     "status": res.status.value, "chave": res.chave, "numero": res.numero,
                                     "serie": res.serie, "mensagem_sefaz": res.mensagem_sefaz, "erros": res.erros,
+                                    "mensagem": _mensagem_status_nota(res.status.value),
                                     "xml_doc_id": reg.xml_doc_id if reg else None,
                                     "danfe_doc_id": reg.danfe_doc_id if reg else None})
                 except ValueError as e:
@@ -15583,6 +15596,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json({"ok": True, "ref": ref,
                                     "status": res.status.value, "chave": res.chave, "numero": res.numero,
                                     "serie": res.serie, "mensagem_sefaz": res.mensagem_sefaz, "erros": res.erros,
+                                    "mensagem": _mensagem_status_nota(res.status.value),
                                     "xml_doc_id": reg.xml_doc_id if reg else None,
                                     "danfe_doc_id": reg.danfe_doc_id if reg else None})
                 except ValueError as e:
@@ -15631,7 +15645,8 @@ class Handler(BaseHTTPRequestHandler):
                     if res.status.value == "autorizado":
                         _set_etapa_status(db, nome_safe, "15", "emitida", usuario["id"]); db.commit()
                     self.send_json({"ok": True, "status": res.status.value, "chave": res.chave,
-                                    "mensagem_sefaz": res.mensagem_sefaz, "erros": res.erros})
+                                    "mensagem_sefaz": res.mensagem_sefaz, "erros": res.erros,
+                                    "mensagem": _mensagem_status_nota(res.status.value)})
                 except ValueError as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
                 except Exception as e:

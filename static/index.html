@@ -23345,7 +23345,10 @@ async function emitirNfseServico() {
         body: JSON.stringify({ valor_servico: valor }) });
     const j = await r.json();
     if (!j.ok) { await avisoPopup(esc((j.erro || 'Falha na emissão.') + _detalheErrosFocus(j.erros)), {titulo:'Emitir NFS-e'}); return; }
-    showToast('NFS-e: ' + esc(j.status), false); await carregarCiclo();
+    // ACHADO-50 (04/09): pendente não é falha — mensagem dedicada, não só o status cru.
+    if (j.mensagem) { await avisoPopup(esc(j.mensagem), {titulo:'NFS-e em processamento'}); }
+    else { showToast('NFS-e: ' + esc(j.status), false); }
+    await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NFS-e'}); }
 }
 
@@ -23363,7 +23366,10 @@ async function emitirNfeLoja(docId) {
       j = await _postEmitirNfe(Object.assign({}, body, { ie }));
     }
     if (!j.ok) { await avisoPopup(esc((j.erro || 'Falha na emissão.') + _detalheErrosFocus(j.erros)), {titulo:'Emitir NF-e'}); return; }
-    showToast('Emissão: ' + esc(j.status), false); await carregarCiclo();
+    // ACHADO-50 (04/09): pendente não é falha — mensagem dedicada, não só o status cru.
+    if (j.mensagem) { await avisoPopup(esc(j.mensagem), {titulo:'NF-e em processamento'}); }
+    else { showToast('Emissão: ' + esc(j.status), false); }
+    await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + esc(_detalheErroRede(e)), {titulo:'Emitir NF-e'}); }
 }
 
@@ -23378,7 +23384,10 @@ async function consultarNfeLoja(ref) {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/ciclo/15/nfe/consultar`, { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ref }) });
     const j = await r.json();
     if (!j.ok) { await avisoPopup(j.erro || 'Falha.', {titulo:'Consultar NF-e'}); return; }
-    showToast('Status: ' + j.status, false); await carregarCiclo();
+    // ACHADO-50 (04/09): pendente não é falha — mensagem dedicada, não só o status cru.
+    if (j.mensagem) { await avisoPopup(j.mensagem, {titulo:'NF-e em processamento'}); }
+    else { showToast('Status: ' + j.status, false); }
+    await carregarCiclo();
   } catch(e) { await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Consultar NF-e'}); }
 }
 

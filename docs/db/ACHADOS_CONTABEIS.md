@@ -3740,6 +3740,45 @@ o ACHADO-51/1a se tocam: a Focus deduplica por `ref`, então reemitir não
 duplica a nota na SEFAZ, mas o sintoma (usuário achando que precisa agir de
 novo sobre algo que já está resolvendo sozinho) é o problema real.
 
+### Conserto (04/09)
+
+**Nota de rigor, não escondida:** simulando com `FakeEmissor` uma primeira
+tentativa que esgota o timeout de `aguardar_processamento` sem sair de
+`PROCESSANDO`, a rota **já devolvia** `ok:true, status:"processando"` — sem
+o prefixo `"Falha na emissão: "` que o Marcelo viu. Não foi possível
+reproduzir o sintoma exato por esse caminho com o código de hoje; é
+possível que o percurso em Homologação tenha rodado uma versão anterior a
+algum conserto recente (ex.: F2-17), ou que o gatilho real seja uma
+resubmissão (2ª tentativa de emissão com o mesmo `ref` enquanto a 1ª ainda
+processa) recebendo um erro genuinamente vindo da Focus — algo que um
+`FakeEmissor` não reproduz sem saber o comportamento real da API externa
+nesse caso específico. O conserto abaixo fecha a classe de qualquer forma,
+não depende de qual caminho exato produziu o sintoma.
+
+`_mensagem_status_nota` (nova, `main.py`) devolve uma mensagem dedicada
+quando o status é `"processando"` — "a nota foi aceita e está na fila da
+SEFAZ... use Consultar em instantes" — nas três respostas que hoje devolvem
+status de nota (`emitir-nfe`, `emitir-nfse`, `nfe/consultar`). O caminho de
+consulta já existia (`_renderCardEmissaoNfe` desenha "Consultar" pra
+qualquer emissão registrada, autorizada ou não) — confirmado, não
+reconstruído. Frontend: as três chamadas mostram essa mensagem num
+`avisoPopup` central em vez do toast genérico de status cru, quando ela
+vem preenchida.
+
+**Decisão sobre o timeout de 60s: mantido.** Aumentar o timeout só empurra
+o problema pra um número maior — o request HTTP continua bloqueado
+esperando, e mais cedo ou mais tarde alguém vai bater numa SEFAZ lenta o
+bastante pra estourar qualquer valor escolhido. Tratar bem o "ainda não
+saiu" (mensagem dedicada + Consultar sempre disponível) é a resposta que
+não tem teto — funciona pra 60s, pra 6 minutos, pra 6 horas.
+
+**Aceite:** `tests/test_achado50_pendente_nao_e_falha.py` (2 — produto e
+serviço, `FakeEmissor` que nunca sai de `processando_autorizacao`) — prova
+`ok:true`, mensagem dedicada citando "fila da SEFAZ", e que o `GET
+.../ciclo/15/nfe` já expõe a emissão pendente (o que faz "Consultar"
+aparecer). Controle negativo: `_mensagem_status_nota` esvaziada, os dois
+testes falham (mensagem ausente); restaurada, voltam a passar.
+
 ---
 
 ## ACHADO-51 — nada impede carregar a mesma NF-e da fábrica duas vezes · ABERTO 04/09/2026

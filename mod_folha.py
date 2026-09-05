@@ -299,16 +299,21 @@ def pagar(db, owner_tipo, owner_id, reg, decidido_por_id=None):
     projeto, a Provisão de Comissão de Vendas já constituída no contrato daquele projeto
     (mod_contabil.efetivar_provisao, mesmo mecanismo da Reconciliação). Isso fecha a provisão (que
     antes ficava aberta pra sempre — a Folha pagava por fora, num lançamento duplicado e
-    desconectado) e lança a despesa formal (5.3.01) na hora do pagamento real.
+    desconectado), na data real do pagamento.
+
+    F2-27 (docs/db/MODELO_CONTABIL.md): `efetivar_provisao` aqui é só a perna de CAIXA — a
+    despesa formal (5.3.01) já foi reconhecida INTEIRA na EMISSÃO da NF-e do projeto
+    (`reconhecer_provisoes_segmento`), não mais aqui no pagamento.
 
     Ajuste do gerente no ato do pagamento (2026-08-17): se `it.valor` (possivelmente ajustado via
     base_ajustada/pct_ajustado) diverge do que foi originalmente provisionado no contrato, sobra um
-    resíduo na provisão/ativo diferido — `mod_contabil.resolver_por_ato_nomeado` fecha esse resíduo
-    (sobra: cancela sem tocar DRE, nunca foi gasto; falta: só zera o mecânico, a despesa da
-    diferença já foi reconhecida no `efetivar_provisao` acima). Roda SEMPRE que há projeto (mesmo
-    valor 0 — gerente pode zerar uma comissão indevida, a provisão original não pode ficar órfã), e
-    com `ref` DISTINTO do `efetivar_provisao` (mesmo ref faria resolver_saldo_provisao achar o
-    lançamento já feito e virar no-op silencioso). Retorna (ok, erro)."""
+    resíduo na provisão — `mod_contabil.resolver_por_ato_nomeado` fecha esse resíduo nas CONTAS DE
+    CONCILIAÇÃO (F2-27, razão nova: sobra vira Receita de Conciliação — "recebeu"; falta vira
+    Despesa de Conciliação — "absorveu"; o ativo já não entra mais aqui, foi zerado na emissão).
+    Roda SEMPRE que há projeto (mesmo valor 0 — gerente pode zerar uma comissão indevida, a
+    provisão original não pode ficar órfã), e com `ref` DISTINTO do `efetivar_provisao` (mesmo ref
+    faria resolver_saldo_provisao achar o lançamento já feito e virar no-op silencioso). Retorna
+    (ok, erro)."""
     if reg.status == "paga":
         return True, None
     if reg.status != "aprovada":

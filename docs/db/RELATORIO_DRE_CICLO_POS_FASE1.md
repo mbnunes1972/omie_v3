@@ -265,15 +265,15 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | receita_bruta | 61750.00 | 61750.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
 | receita_liquida | 61750.00 | 61750.00 | 90000.00 | sim |
-| cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
+| cmv_csp | 27300.00 | 42000.00 | 42000.00 | **NÃO** |
+| lucro_bruto | 34450.00 | 19750.00 | 48000.00 | **NÃO** |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
+| ebitda | 34450.00 | 19750.00 | 48000.00 | **NÃO** |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 61750.00 | 19750.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 34450.00 | 19750.00 | 48000.00 | **NÃO** |
 
 **Saldos das contas-chave:**
 
@@ -297,15 +297,15 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | receita_bruta | 95000.00 | 95000.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
 | receita_liquida | 95000.00 | 95000.00 | 90000.00 | sim |
-| cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| cmv_csp | 42000.00 | 42000.00 | 42000.00 | sim |
+| lucro_bruto | 53000.00 | 53000.00 | 48000.00 | sim |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| ebitda | 53000.00 | 53000.00 | 48000.00 | sim |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 53000.00 | 53000.00 | 48000.00 | sim |
 
 **Saldos das contas-chave:**
 
@@ -329,15 +329,15 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | receita_bruta | 95000.00 | 95000.00 | 90000.00 | sim |
 | deducoes | 0.00 | 0.00 | 0.00 | sim |
 | receita_liquida | 95000.00 | 95000.00 | 90000.00 | sim |
-| cmv_csp | 0.00 | 42000.00 | 42000.00 | **NÃO** |
-| lucro_bruto | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| cmv_csp | 42000.00 | 42000.00 | 42000.00 | sim |
+| lucro_bruto | 53000.00 | 53000.00 | 48000.00 | sim |
 | despesas_comerciais | 0.00 | 0.00 | 0.00 | sim |
 | despesas_administrativas | 0.00 | 0.00 | 0.00 | sim |
 | constituicao_provisoes | 0.00 | 0.00 | 0.00 | sim |
-| ebitda | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| ebitda | 53000.00 | 53000.00 | 48000.00 | sim |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 95000.00 | 53000.00 | 48000.00 | **NÃO** |
+| lucro_liquido | 53000.00 | 53000.00 | 48000.00 | sim |
 
 **Saldos das contas-chave:**
 
@@ -369,7 +369,7 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | ebitda | 53000.00 | 53000.00 | 48000.00 | sim |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 53000.00 | 53000.00 | 48000.00 | sim |
+| lucro_liquido | 95000.00 | 95000.00 | 90000.00 | sim |
 
 **Saldos das contas-chave:**
 

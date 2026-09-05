@@ -79,7 +79,7 @@ _PROVS = """[
    "provisionado": 64043.46, "efetivado": 0.0, "saldo": -64043.46, "resolvido": 0.0,
    "resolvido_liquido": 0.0, "saldo_aberto": -64043.46, "exige_veredito": true,
    "resolucao_tipo": null, "resolucao_destino_nome": null,
-   "vereditos_validos": ["efetivada", "ainda_vai_chegar"],
+   "vereditos_validos": ["absorver", "adiar"],
    "data_prevista": null, "vencido": false}
 ]"""
 
@@ -139,12 +139,12 @@ def test_resolver_abre_box_na_linha_com_opcoes_do_servidor_e_nao_navega(page, se
     assert box.is_visible(), "'Resolver' tem que abrir o box NA PRÓPRIA LINHA — nunca navegar"
     assert page.url == urlAntes, "clicar em 'Resolver' não pode navegar (era um link <a> antes)"
 
-    # só os vereditos que o SERVIDOR mandou (efetivada, ainda_vai_chegar) — nunca fixos na tela
-    # (ACHADO-41): "Não se aplica"/"Encerrada · valor menor" não vieram em vereditos_validos.
-    assert box.locator("button", has_text="Efetivada").count() == 1
-    assert box.locator("button", has_text="Ainda vai chegar").count() == 1
-    assert box.locator("button", has_text="Não se aplica").count() == 0
-    assert box.locator("button", has_text="Encerrada").count() == 0
+    # só os vereditos que o SERVIDOR mandou (absorver, adiar) — nunca fixos na tela
+    # (ACHADO-41): "Receber"/"Encerrar" não vieram em vereditos_validos.
+    assert box.locator("button", has_text="Absorver").count() == 1
+    assert box.locator("button", has_text="Adiar").count() == 1
+    assert box.locator("button", has_text="Receber").count() == 0
+    assert box.locator("button", has_text="Encerrar").count() == 0
 
     page.locator("#lista-prov-container button", has_text="Resolver").click()
     assert box.is_hidden(), "'Resolver' de novo tem que fechar o box (alterna)"

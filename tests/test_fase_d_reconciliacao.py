@@ -38,14 +38,15 @@ def test_efetivar_idempotente(app_db):
 
 def test_efetivar_provisao_forma_pagamento_direto_baixa_caixa(app_db):
     """2026-08-07: forma_pagamento='direto' (módulo Assistências, loja paga na hora) credita Caixa
-    em vez de Fornecedores a Pagar."""
+    em vez de Fornecedores a Pagar. F2-27: `efetivar_provisao` é só a perna de CAIXA agora — a
+    despesa (5.1.02) nasce na emissão (`reconhecer_provisoes_segmento`), não aqui."""
     db = app_db.get_session(); ot, oid = "loja", 6012; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07", forma_pagamento="direto")
     assert _s(db, ot, oid, "2.1.04.07") == 100.0
     assert _s(db, ot, oid, "1.1.01") == -900.0        # baixou direto do caixa (crédito)
     assert _s(db, ot, oid, "2.1.01") == 0.0           # Fornecedores intocado
-    assert _s(db, ot, oid, "5.1.02") == 900.0         # despesa real (Frete de Fábrica) reconhecida
+    assert _s(db, ot, oid, "5.1.02") == 0.0           # despesa NÃO nasce mais aqui — só na emissão
     db.close()
 
 
@@ -100,17 +101,23 @@ def test_reconciliacao_projeto(app_db):
     db.close()
 
 
-def test_resolver_saldo_sobra_cancela_sem_receita(app_db):
-    """2026-08-07: frete_fabrica tem despesa em tempo real (reconhecida na própria efetivação) — a
-    sobra CANCELA contra o ativo diferido, sem virar receita (nada a reverter)."""
+def test_resolver_saldo_sobra_vira_receita_de_conciliacao(app_db):
+    """F2-27 (docs/db/MODELO_CONTABIL.md), RAZÃO NOVA — ao lado da antiga que este teste travava
+    até 05/09 (a sobra cancelava contra o ativo, sem tocar a DRE): a despesa nasce na EMISSÃO
+    (`reconhecer_provisoes_segmento`), pelo provisionado INTEGRAL; o pagamento é só a perna de
+    caixa; o resíduo entre o reconhecido e o pago não tem mais ativo contra o quê cancelar (a
+    emissão já zerou) — vira Receita de Conciliação (4.5.01), NUNCA 4.4.02 (o destino antigo,
+    aposentado pra esta família)."""
     db = app_db.get_session(); ot, oid = "loja", 603; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
-    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07")   # despesa real já reconhecida
+    mc.reconhecer_provisoes_segmento(db, ot, oid, "P", "mercadoria", 100.0, ref_base="rec:doc1")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 900.0, ref="ef:P:07")   # pagou menos do que foi reconhecido
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.07", ref="rs:P:07")
     assert _s(db, ot, oid, "2.1.04.07") == 0.0       # provisão zerada
-    assert _s(db, ot, oid, "1.1.06.07") == 0.0       # ativo diferido cancelado junto
-    assert _s(db, ot, oid, "4.4.02") == 0.0          # SEM virar receita
-    assert _s(db, ot, oid, "5.1.02") == 900.0        # despesa real (frete fábrica), intocada
+    assert _s(db, ot, oid, "1.1.06.07") == 0.0       # ativo já tinha zerado na emissão
+    assert _s(db, ot, oid, "4.4.02") == 0.0          # destino ANTIGO — aposentado, nunca mais tocado
+    assert _s(db, ot, oid, "4.5.01") == 100.0        # Receita de Conciliação — o resíduo (1000−900)
+    assert _s(db, ot, oid, "5.1.02") == 1000.0       # despesa real (frete fábrica) = o PROVISIONADO INTEGRAL
     # reconciliação: efetivado NÃO conta a resolução; expõe resolvido à parte
     rec = {l["codigo"]: l for l in mc.reconciliacao(db, ot, oid, projeto_id="P")["provisoes"]}
     assert rec["2.1.04.07"]["provisionado"] == 1000.0 and rec["2.1.04.07"]["efetivado"] == 900.0
@@ -118,18 +125,20 @@ def test_resolver_saldo_sobra_cancela_sem_receita(app_db):
     db.close()
 
 
-def test_resolver_saldo_falta_cancela_sem_despesa_extra(app_db):
-    """2026-08-07: custo real (1200) > provisionado (1000) — a despesa JÁ foi reconhecida por inteiro
-    na própria efetivação; a falta só cancela o residual, sem despesa NOVA (senão duplicaria)."""
+def test_resolver_saldo_falta_vira_despesa_de_conciliacao(app_db):
+    """F2-27, RAZÃO NOVA: custo real pago (1200) > provisionado reconhecido (1000) — o excedente
+    vira Despesa de Conciliação (5.7.01), NUNCA 5.6.10 (o destino antigo)."""
     db = app_db.get_session(); ot, oid = "loja", 604; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"frete_fabrica": 1000.0}, ref_base="pf:P")
-    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 1200.0, ref="ef:P:07")   # custo real > provisão
+    mc.reconhecer_provisoes_segmento(db, ot, oid, "P", "mercadoria", 100.0, ref_base="rec:doc1")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 1200.0, ref="ef:P:07")   # pagou mais do que foi reconhecido
     assert _s(db, ot, oid, "2.1.04.07") == -200.0    # falta (saldo negativo)
-    assert _s(db, ot, oid, "5.1.02") == 1200.0       # despesa real JÁ reconhecida por inteiro
+    assert _s(db, ot, oid, "5.1.02") == 1000.0       # despesa real = o PROVISIONADO INTEGRAL, intocada aqui
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.07", ref="rs:P:07")
     assert _s(db, ot, oid, "2.1.04.07") == 0.0       # zerada
-    assert _s(db, ot, oid, "5.6.10") == 0.0          # SEM despesa extra
-    assert _s(db, ot, oid, "5.1.02") == 1200.0       # despesa real, intocada
+    assert _s(db, ot, oid, "5.6.10") == 0.0          # destino ANTIGO — aposentado, nunca mais tocado
+    assert _s(db, ot, oid, "5.7.01") == 200.0        # Despesa de Conciliação — o excedente (1200−1000)
+    assert _s(db, ot, oid, "5.1.02") == 1000.0       # despesa real, intocada
     db.close()
 
 

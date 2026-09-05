@@ -57,14 +57,17 @@ def test_ajuste_delta_af_funciona_para_os_novos(app_db):
     db.close()
 
 
-def test_cust_esp_nunca_efetivado_exige_veredito_e_nao_se_aplica_cancela_sem_dre(app_db):
+def test_cust_esp_nunca_pago_exige_veredito_e_receber_vira_receita_de_conciliacao(app_db):
     # ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8): até 2026-08-30, uma rubrica nunca efetivada
     # era cancelada em silêncio na Conciliação Final — "nada foi gasto" aplicado a um saldo que podia
     # muito bem ser "foi gasto e ninguém lançou" (o próprio ACHADO-16). Agora a conciliação recusa sem
-    # um veredito nomeado; só com 'nao_se_aplica' (+ motivo escrito, confirmando que a rubrica não
-    # incidiu) o saldo reverte por decisão explícita de alguém — não mais por omissão.
+    # um veredito nomeado; só com 'receber' o saldo reverte por decisão explícita de alguém — não
+    # mais por omissão. F2-27 (docs/db/MODELO_CONTABIL.md): a despesa (5.3.17) já nasceu na
+    # emissão, pelo PROVISIONADO INTEGRAL — o veredito só decide o destino do que nunca foi pago
+    # (Receita de Conciliação, 4.5.01, nunca mais 4.4.02).
     db = app_db.get_session(); ot, oid = "loja", 953; mc.seed_plano(db, ot, oid)
     mc.constituir_provisoes_fechamento(db, ot, oid, "P", {"cust_esp": 120.0}, ref_base="pf:P")
+    mc.reconhecer_provisoes_segmento(db, ot, oid, "P", "mercadoria", 100.0, ref_base="rec:doc1")
 
     import pytest
     with pytest.raises(ValueError, match="falta veredito"):
@@ -72,12 +75,13 @@ def test_cust_esp_nunca_efetivado_exige_veredito_e_nao_se_aplica_cancela_sem_dre
     assert _s(db, ot, oid, "2.1.04.20") == 120.0   # recusa não toca nada
 
     out = mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P", vereditos={
-        "2.1.04.20": {"veredito": "nao_se_aplica", "motivo": "orçamento incluiu Custo Especial; obra não usou"},
+        "2.1.04.20": {"veredito": "receber", "motivo": "orçamento incluiu Custo Especial; obra não usou"},
     })
-    assert out["2.1.04.20"]["veredito"] == "nao_se_aplica"
+    assert out["2.1.04.20"]["veredito"] == "receber"
     assert out["2.1.04.20"]["valor_revertido"] == 120.0
     assert _s(db, ot, oid, "2.1.04.20") == 0.0
-    assert _s(db, ot, oid, "1.1.06.20") == 0.0    # ativo cancelado junto
-    assert _s(db, ot, oid, "5.3.17") == 0.0       # despesa NUNCA reconhecida — confirmado que não incidiu
-    assert _s(db, ot, oid, "4.4.02") == 0.0       # e não vira receita tampouco
+    assert _s(db, ot, oid, "1.1.06.20") == 0.0    # ativo já tinha zerado na emissão
+    assert _s(db, ot, oid, "5.3.17") == 120.0     # despesa = o PROVISIONADO INTEGRAL, reconhecido na emissão
+    assert _s(db, ot, oid, "4.4.02") == 0.0       # destino ANTIGO — aposentado, nunca mais tocado
+    assert _s(db, ot, oid, "4.5.01") == 120.0     # Receita de Conciliação — nunca foi pago, vira sobra
     db.close()

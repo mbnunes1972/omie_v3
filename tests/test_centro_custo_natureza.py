@@ -401,14 +401,14 @@ def test_migracao_classificacao_grupo5_preenche_conforme_a_tabela(app_db):
     db = app_db.get_session(); ot, oid = "loja", 990
     mc.seed_plano(db, ot, oid); mc.seed_centro_custo(db, ot, oid)
     # a migração roda em TODOS os owners — outros testes do módulo já deixaram owners com
-    # contas grupo 5 pendentes de classificar, então o contador GLOBAL não é 59 (mesma pegadinha
+    # contas grupo 5 pendentes de classificar, então o contador GLOBAL não é 60 (mesma pegadinha
     # já resolvida em test_migracao_idempotente pra migrar_centro_custo_natureza_v1). O que
     # importa é o estado DESTE owner (990), checado direto abaixo.
     out = mc.migrar_classificacao_grupo5_v1(db)
-    assert out["centro_custo_setado"] >= 59 and out["natureza_setado"] >= 59
+    assert out["centro_custo_setado"] >= 60 and out["natureza_setado"] >= 60
     contas = _contas(db, ot, oid); ccs = _ccs(db, ot, oid)
     todas_g5 = [c for cod, c in contas.items() if cod in mc.CLASSIFICACAO_GRUPO5_V1]
-    assert len(todas_g5) == 59
+    assert len(todas_g5) == 60   # 59 + "5.7.01 Despesa de Conciliação" (F2-27)
     assert all(c.centro_custo_id is not None and c.natureza_custo is not None for c in todas_g5)
     montagem = contas["5.2.01"]
     assert montagem.centro_custo_id == ccs["1.3"].id and montagem.natureza_custo == "variavel"

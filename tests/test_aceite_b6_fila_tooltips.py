@@ -69,11 +69,11 @@ def page(page):
 
 
 # os 4 vereditos "válidos" aqui são só pra exercitar as 4 tooltips num teste só — na Fila real
-# (ACHADO-41) uma linha nunca tem os 4 ao mesmo tempo, sempre 2-3 conforme o sinal do saldo.
+# (ACHADO-41) uma linha nunca tem os 4 ao mesmo tempo, sempre 2 conforme o sinal do saldo (F2-27).
 _MOCK_FILA = """{"ok": true, "fila": [
   {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
    "provisionado": 1000.0, "efetivado": 400.0, "saldo_aberto": 600.0, "constituida_em": "2026-08-01T00:00:00",
-   "vereditos_validos": ["efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]}
+   "vereditos_validos": ["absorver", "receber", "encerrar", "adiar"]}
 ]}"""
 
 
@@ -102,10 +102,10 @@ def test_cada_veredito_tem_tooltip_com_o_efeito_no_livro(page, servidor_e2e):
     page.wait_for_selector("#filaprov-box button", state="attached")
 
     esperado = {
-        "Efetivada": "provisionado",
-        "Encerrada · valor menor": "custou menos",
-        "Não se aplica": "NUNCA incidiu",
-        "Ainda vai chegar": "IMPEDE a Conciliação Final",
+        "Absorver": "empresa absorve o que faltou",
+        "Receber": "sobrou volta pro resultado",
+        "Encerrar": "Bateu exato",
+        "Adiar": "IMPEDE a Conciliação Final",
     }
     for rotulo, trecho in esperado.items():
         btn = page.locator("#filaprov-box button", has_text=rotulo)
@@ -121,7 +121,7 @@ def test_cada_veredito_tem_tooltip_com_o_efeito_no_livro(page, servidor_e2e):
 _MOCK_FILA_SOBRA = """{"ok": true, "fila": [
   {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
    "provisionado": 1000.0, "efetivado": 400.0, "saldo_aberto": 600.0, "constituida_em": "2026-08-01T00:00:00",
-   "vereditos_validos": ["encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]}
+   "vereditos_validos": ["receber", "adiar"]}
 ]}"""
 
 
@@ -132,10 +132,10 @@ _MOCK_FILA_AGRUPADA = """{"ok": true, "contagens": {"em_aberto": 1, "fechadas_ze
   {"projeto_id": "Projeto Mock", "codigo": "2.1.04.06", "nome": "Custo de Fábrica",
    "provisionado": 1000.0, "efetivado": 0.0, "saldo_aberto": 1000.0, "constituida_em": "2026-08-01T00:00:00",
    "grupo": "em_aberto",
-   "vereditos_validos": ["encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]},
+   "vereditos_validos": ["receber", "adiar"]},
   {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
    "provisionado": 0.0, "efetivado": 0.0, "saldo_aberto": 0.0, "constituida_em": null,
-   "grupo": "fechada_zerada", "vereditos_validos": ["ainda_vai_chegar", "efetivada", "encerrada_valor_menor", "nao_se_aplica"]}
+   "grupo": "fechada_zerada", "vereditos_validos": ["adiar", "absorver", "receber", "encerrar"]}
 ]}"""
 
 
@@ -168,11 +168,11 @@ def test_fila_agrupa_em_aberto_e_fechadas_com_contagem_rotulada(page, servidor_e
     assert "Fechadas / zeradas (1)" in texto, texto
 
     # a linha em aberto oferece botão de veredito; a fechada/zerada só mostra o rótulo, sem ação.
-    assert page.locator("#filaprov-box button", has_text="Ainda vai chegar").count() == 1
+    assert page.locator("#filaprov-box button", has_text="Adiar").count() == 1
     assert page.locator("#filaprov-box", has_text="— resolvida —").count() >= 1
 
 
-def test_linha_em_sobra_nao_desenha_botao_efetivada(page, servidor_e2e):
+def test_linha_em_sobra_nao_desenha_botao_absorver(page, servidor_e2e):
     base = servidor_e2e
     page.goto(base + "/static/login.html")
     page.fill("#email", "e2e_master")
@@ -196,8 +196,8 @@ def test_linha_em_sobra_nao_desenha_botao_efetivada(page, servidor_e2e):
     page.evaluate("() => { filaProvisoesCarregar(); }")
     page.wait_for_selector("#filaprov-box button", state="attached")
 
-    assert page.locator("#filaprov-box button", has_text="Efetivada").count() == 0, (
-        "linha em SOBRA não pode oferecer 'Efetivada' — o backend recusaria")
-    assert page.locator("#filaprov-box button", has_text="Encerrada").count() == 1
-    assert page.locator("#filaprov-box button", has_text="Não se aplica").count() == 1
-    assert page.locator("#filaprov-box button", has_text="Ainda vai chegar").count() == 1
+    assert page.locator("#filaprov-box button", has_text="Absorver").count() == 0, (
+        "linha em SOBRA não pode oferecer 'Absorver' — o backend recusaria")
+    assert page.locator("#filaprov-box button", has_text="Encerrar").count() == 0
+    assert page.locator("#filaprov-box button", has_text="Receber").count() == 1
+    assert page.locator("#filaprov-box button", has_text="Adiar").count() == 1

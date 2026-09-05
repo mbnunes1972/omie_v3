@@ -172,6 +172,11 @@ def _rodar_cenario(app_db, cenario, oid):
     # passo 10: o VALOR faturado é o VAVO, não o Val_Cont cheio) ──
     mc.faturar_segmento(db, ot, oid, P, "mercadoria", vavo + valor_aditivo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, impostos_valor, ref_base="imp:" + P)
+    # F2-27 (docs/db/MODELO_CONTABIL.md): a emissão volta a reconhecer despesa — provisionado
+    # INTEGRAL das 17 rubricas de despesa em tempo real, segmentado. Esta bateria só emite
+    # 'mercadoria' (nunca 'servico'), então pct_mercadoria=100 — replica
+    # main.py:_fin_faturamento_segmentado_seguro na mesma ordem (fatura → impostos → reconhece).
+    mc.reconhecer_provisoes_segmento(db, ot, oid, P, "mercadoria", 100.0, ref_base="rec:" + P)
     ciclo.passo("nfe")
 
     # ── recebimento: coleta tudo que 1.1.02 registra como em aberto (venda original + aditivo,

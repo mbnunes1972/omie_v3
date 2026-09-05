@@ -5,7 +5,9 @@ ambiente real (XML), contrato aprovado (exercita a guarda de recebível do ACHAD
 Termo Aditivo negociado/gerado/assinado pelas duas partes — a segunda assinatura passa pelo
 modal de forma de pagamento novo do ACHADO-25 —, veredito dado PELA FILA DE PROVISÕES (não pela
 API), Conciliação Final concluída pela tela de sempre (corpo `{}`, sem campo de veredito —
-ACHADO-26), e o custo conferido em 5.1.01.
+ACHADO-26), e a reversão conferida em 4.5.01 (F2-27: este fluxo nunca emite NF-e de verdade —
+Produção é "marcar como feito" — então 5.1.01 nunca chega a ser reconhecida; o veredito 'Receber'
+reverte a provisão inteira pra Receita de Conciliação, não mais pra 5.1.01 como antes do F2-27).
 
 FAZ parte da suíte padrão (docs/db/ESTEIRA.md — "teste fora da rodada padrão apodrece": ele
 existe pra pegar a classe de regressão do ACHADO-25/26, e só pega se rodar sempre). O isolamento
@@ -353,8 +355,23 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     # nome, não mais a única linha do projeto na tabela.
     linha = page.locator("tr", has_text=nome_projeto).filter(has_text="Custo de Fábrica")
     linha.wait_for()
-    linha.get_by_role("button", name="Encerrada · valor menor").click()
-    page.fill("#_filaprov-valor", "100000")
+    # F2-27 (docs/db/MODELO_CONTABIL.md): 'Encerrada · valor menor' foi renomeado/colapsado em
+    # 'Receber' — e deixou de aceitar um valor digitado (o veredito não escolhe mais QUANTO
+    # reconhecer, só reverte o saldo de provisão INTEIRO que sobrou pra Receita de Conciliação;
+    # motivo passou a opcional, sem input de valor).
+    ativo_id_antes = None
+    saldo_prov_antes = None
+    import mod_contabil as _mc
+    db_antes = _sessao_teste()
+    try:
+        ot_antes, oid_antes = _mc.resolver_owner(db_antes, {"loja_id": 1, "rede_id": None})
+        conta_prov = db_antes.query(database.Conta).filter_by(
+            owner_tipo=ot_antes, owner_id=oid_antes, codigo="2.1.04.06").first()
+        saldo_prov_antes = _mc.saldo_conta(db_antes, ot_antes, oid_antes, conta_prov.id)
+    finally:
+        db_antes.bind.dispose()
+        db_antes.close()
+    linha.get_by_role("button", name="Receber").click()
     page.get_by_role("button", name="Confirmar", exact=True).last.click()
     page.wait_for_selector("text=Veredito registrado")
 
@@ -371,15 +388,25 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     _click_confirmar(page)
     page.wait_for_selector("text=Números finais conciliados")
 
-    # ── 12. Verificação — custo em 5.1.01 (Postgres, fonte de verdade) ──────────────────
+    # ── 12. Verificação — Postgres, fonte de verdade ────────────────────────────────────
+    # F2-27 (docs/db/MODELO_CONTABIL.md): despesa (5.1.01) só nasce na EMISSÃO real da NF-e
+    # (reconhecer_provisoes_segmento); este fluxo, de propósito (ver docstring do módulo — Produção
+    # é "marcar como feito", nunca a Etapa 15 clicada de verdade), nunca emite uma NF-e — então
+    # 5.1.01 continua 0.0, e o veredito 'Receber' reverte a provisão INTEIRA (não paga, nunca
+    # reconhecida) pra Receita de Conciliação (4.5.01), não mais pra 5.1.01 como antes do F2-27.
     import mod_contabil as mc
     db = _sessao_teste()
     try:
         ot, oid = mc.resolver_owner(db, {"loja_id": 1, "rede_id": None})
         despesa_5101 = mc.total_lancado(db, ot, oid, "5.1.01", "debito", nome_projeto)
+        conta_prov = db.query(database.Conta).filter_by(owner_tipo=ot, owner_id=oid, codigo="2.1.04.06").first()
+        saldo_prov_depois = mc.saldo_conta(db, ot, oid, conta_prov.id)
+        receita_conciliacao = mc.total_lancado(db, ot, oid, "4.5.01", "credito", nome_projeto)
         status = db.get(database.Projeto, nome_projeto).status
     finally:
         db.bind.dispose()
         db.close()
     assert status == "concluido", status
-    assert abs(despesa_5101 - 100000.0) < 0.5, despesa_5101
+    assert despesa_5101 == 0.0, despesa_5101                       # nunca reconhecida — sem emissão
+    assert saldo_prov_depois == 0.0, saldo_prov_depois              # provisão zerada pelo veredito
+    assert abs(receita_conciliacao - saldo_prov_antes) < 0.5, (receita_conciliacao, saldo_prov_antes)

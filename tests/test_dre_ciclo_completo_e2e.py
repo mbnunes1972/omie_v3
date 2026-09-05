@@ -367,8 +367,7 @@ def test_ciclo_completo_tres_visoes_dre(app_db, seed, projetos_dir, contratos_di
     finally:
         db.close()
     st, b = c.post("/api/projetos/%s/ciclo/21/conciliar" % nome,
-                   {"vereditos": {"2.1.04.06": {"veredito": "encerrada_valor_menor",
-                                                "valor_efetivado": 42000.0}}})
+                   {"vereditos": {"2.1.04.06": {"veredito": "receber"}}})
     assert st == 200 and b["ok"], b
     marco("8_conclusao_projeto")
 

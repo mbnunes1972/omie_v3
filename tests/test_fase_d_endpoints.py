@@ -60,19 +60,19 @@ def test_efetivar_bloqueado_para_assistencia_e_garantia(http_client_factory, see
 def test_resolver_saldo_endpoint(http_client_factory, seed):
     # F2-3 (docs/db/TAREFA_FILA_PROVISOES.md, ACHADO-26): 2.1.04.08 (Provisão de Frete Local) é
     # matching pleno — exige veredito nomeado, não zera mais pelo desvio direto. A porta da
-    # frente é a fila (`veredito=efetivada`, mesmo caso de FALTA do teste original) — a fila é
-    # sempre POR PROJETO, então precisa de um (o teste original efetivava sem nenhum).
+    # frente é a fila (`veredito=absorver`, F2-27, mesmo caso de FALTA do teste original) — a fila
+    # é sempre POR PROJETO, então precisa de um (o teste original efetivava sem nenhum).
     nome = seed["projeto_l1"]
     c = http_client_factory(); c.login("dir_l1", "senha123")
     # efetiva 900 numa provisão sem constituição → saldo negativo (falta) → resolver manda p/ despesa
     c.post("/api/financeiro/efetivar-provisao",
            {"conta": "2.1.04.08", "valor": 300.0, "ref": "ef8", "projeto": nome})
     st, d = c.post("/api/financeiro/fila-provisoes/veredito",
-                   {"projeto": nome, "conta": "2.1.04.08", "veredito": "efetivada"})
+                   {"projeto": nome, "conta": "2.1.04.08", "veredito": "absorver"})
     assert st == 200 and d["ok"] is True, d
     # idempotente: 2º veredito não faz nada (saldo já zero, mesma ref)
     st, d = c.post("/api/financeiro/fila-provisoes/veredito",
-                   {"projeto": nome, "conta": "2.1.04.08", "veredito": "efetivada"})
+                   {"projeto": nome, "conta": "2.1.04.08", "veredito": "absorver"})
     assert st == 200 and d["ok"] is True
 
 

@@ -62,8 +62,7 @@ def test_rubrica_migra_de_grupo_ao_ser_resolvida(http_client_factory, seed, app_
     assert linha["grupo"] == "em_aberto"
 
     st, body = c.post("/api/financeiro/fila-provisoes/veredito",
-                      {"projeto": nome, "conta": "2.1.04.06",
-                       "veredito": "encerrada_valor_menor", "valor_efetivado": 500.0})
+                      {"projeto": nome, "conta": "2.1.04.06", "veredito": "receber"})
     assert st == 200 and body.get("ok"), body
 
     st, body = c.get("/api/financeiro/fila-provisoes")

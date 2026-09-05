@@ -118,10 +118,15 @@ def test_realizar_paga_gera_venda_sem_provisao(app_db):
     db.close()
 
 
-def test_realizar_loja_reconhece_despesa_na_competencia_real(app_db):
-    """2026-08-07: realizar um caso Loja/Fábrica também reconhece a despesa formal (baixa do ativo
-    diferido), na competência REAL do atendimento — não mais estimada de uma vez na NF-e. Cenário
-    realista: a provisão nasce na venda (constituir_provisoes_fechamento) ANTES do caso ser aberto."""
+def test_realizar_loja_so_move_a_perna_de_caixa(app_db):
+    """Até 07/08/2026 realizar um caso Loja/Fábrica também reconhecia a despesa formal (baixa do
+    ativo diferido) na competência REAL do atendimento (RAZÃO VELHA, aposentada). F2-27
+    (docs/db/MODELO_CONTABIL.md): `efetivar_provisao` (o motor que `realizar_caso` chama por
+    baixo) ficou perna ÚNICA — só provisão × caixa/fornecedores. A despesa formal (5.2.13) só
+    nasce na EMISSÃO (`reconhecer_provisoes_segmento`), pelo PROVISIONADO INTEGRAL — decoupled do
+    valor REAL do caso (300 aqui): o ativo só baixa, e só pelo que foi provisionado (1000), nunca
+    pelos 300 do atendimento. Cenário realista: a provisão nasce na venda
+    (constituir_provisoes_fechamento) ANTES do caso ser aberto."""
     db = app_db.get_session()
     loja_id, usuario_id = _nova_loja_e_usuario(app_db, db, "5")
     mc.seed_plano(db, "loja", loja_id)
@@ -129,9 +134,13 @@ def test_realizar_loja_reconhece_despesa_na_competencia_real(app_db):
     caso = ma.criar_caso(db, loja_id, "Proj5", "pos_conclusao", "erro_montagem", "x", 300.0, usuario_id)
     ok, err = ma.realizar_caso(db, "loja", loja_id, caso)
     assert ok, err
-    assert _saldo(db, loja_id, "5.2.13") == 300.0        # despesa formal reconhecida (Assistência Técnica)
-    assert _saldo(db, loja_id, "1.1.06.05") == 700.0     # ativo diferido baixado só na proporção efetivada
-    assert _saldo(db, loja_id, "2.1.04.05") == 700.0     # provisão sobrevive (700 ainda em aberto)
+    assert _saldo(db, loja_id, "5.2.13") == 0.0          # nada reconhecido ainda — sem emissão
+    assert _saldo(db, loja_id, "1.1.06.05") == 1000.0    # ativo diferido intacto — efetivar não o toca mais
+    assert _saldo(db, loja_id, "2.1.04.05") == 700.0     # provisão baixou os 300 pagos (perna de caixa)
+    # emitida a NF-e (provisionado INTEGRAL, decoupled do valor real do caso): despesa = 1000, não 300
+    mc.reconhecer_provisoes_segmento(db, "loja", loja_id, "Proj5", "mercadoria", 100.0, ref_base="rec:Proj5")
+    assert _saldo(db, loja_id, "5.2.13") == 1000.0
+    assert _saldo(db, loja_id, "1.1.06.05") == 0.0
     db.close()
 
 

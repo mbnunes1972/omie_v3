@@ -1531,7 +1531,15 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
     """Wiring do faturamento SEGMENTADO (FASE B2). O valor do segmento vem do ORÇAMENTO DO CONTRATO
     (`Val_Cont × segmentação efetiva`, congelada na assinatura), NÃO do valor de face do documento
     fiscal. No segmento 'mercadoria' também reconhece o CMV = **CFO** congelado (1× por projeto, ref
-    `cmv:<projeto>`). **Fail-soft/isolado/idempotente**, como os demais wirings `_fin_*_seguro`."""
+    `cmv:<projeto>`).
+
+    F2-27 (docs/db/MODELO_CONTABIL.md, Passo 3) — ACHADO-22 fechado: esta é a emissão, e a
+    emissão volta a reconhecer despesa — só que pelo PROVISIONADO INTEGRAL das 17 rubricas de
+    despesa em tempo real, segmentado (`mod_contabil.reconhecer_provisoes_segmento`), não mais o
+    "matching pleno" antigo (que reconhecia o VALOR DE FACE do documento fiscal, sem casar com o
+    provisionamento). Cada rubrica reconhece só a fatia deste segmento; a soma das duas fecha o
+    provisionado total quando os dois documentos fiscais tiverem emitido. **Fail-soft/isolado/
+    idempotente**, como os demais wirings `_fin_*_seguro`."""
     try:
         if not loja_id or segmento not in ("mercadoria", "servico"):
             return
@@ -1551,16 +1559,17 @@ def _fin_faturamento_segmentado_seguro(loja_id, projeto_nome, segmento, ref_doc)
             mod_contabil.faturar_segmento(db, ot, oid, projeto_nome, segmento, valor_seg, ref_base="fat:" + ref_doc)
             # Impostos (B2.6): efetiva a parcela do segmento (proporcional Merc/Serv) — dedução na DRE +
             # obrigação fiscal real, baixando a provisão diferida constituída no contrato.
-            from mod_orcamento_params import segmentar as _segmentar
+            pct_merc = vals["seg"]["pct_mercadoria"]
             imp_total = mod_contabil.total_lancado(db, ot, oid, "2.1.04.13", "credito", projeto_nome)
             if imp_total > 0:
-                imp_merc, imp_serv = _segmentar(imp_total, vals["seg"]["pct_mercadoria"])
+                from mod_orcamento_params import segmentar as _segmentar
+                imp_merc, imp_serv = _segmentar(imp_total, pct_merc)
                 imp_seg = imp_merc if segmento == "mercadoria" else imp_serv
                 mod_contabil.efetivar_impostos_segmento(db, ot, oid, projeto_nome, imp_seg, ref_base="imp:" + ref_doc)
-            # 2026-08-07: a NF-e NÃO reconhece mais despesa (extinto o "matching pleno" — as despesas de
-            # projeto de móveis planejados ocorrem espalhadas ao longo do ciclo, muitas depois da própria
-            # NF-e). A despesa nasce só na efetivação real (mod_contabil.efetivar_provisao /
-            # mod_assistencias.realizar_caso), na competência real do custo.
+            # F2-27: o ato de reconhecimento — provisionado INTEGRAL das 17 rubricas, segmentado
+            # (ref_base próprio, "rec:<ref_doc>", nunca colide com "fat:"/"imp:" acima).
+            mod_contabil.reconhecer_provisoes_segmento(db, ot, oid, projeto_nome, segmento, pct_merc,
+                                                       ref_base="rec:" + ref_doc)
         finally:
             db.close()
     except Exception as e:
@@ -10427,11 +10436,11 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             # FASE D2 — Conciliação Final (etapa 21). ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo
             # 8): não resolve mais saldo de provisão sozinha — cada rubrica aberta exige um
-            # veredito NOMEADO no corpo ({"vereditos": {"<codigo>": {"veredito":, "valor_efetivado":,
-            # "motivo":, "forma_pagamento":}}}); sem veredito para alguma rubrica aberta, ou com
-            # 'ainda_vai_chegar' em qualquer uma, `conciliar_final` recusa (ValueError) e nada é
-            # commitado — o projeto continua aberto. ENCERRA o projeto (status "Concluído") só
-            # quando toda rubrica foi resolvida. Gate financeiro.
+            # veredito NOMEADO no corpo ({"vereditos": {"<codigo>": {"veredito":, "motivo":}}});
+            # sem veredito para alguma rubrica aberta, ou com 'adiar' em qualquer uma,
+            # `conciliar_final` recusa (ValueError) e nada é commitado — o projeto continua
+            # aberto. ENCERRA o projeto (status "Concluído") só quando toda rubrica foi resolvida.
+            # Gate financeiro.
             from urllib.parse import unquote as _unquote
             nome_safe = _unquote(m.group(1))
             ctx = _contabil_ctx(self, exige_edicao=True)
@@ -10527,9 +10536,7 @@ class Handler(BaseHTTPRequestHandler):
                 ref = "fila:%s:%s" % (proj, conta)
                 v = mod_contabil.resolver_veredito_provisao(
                     db, ot, oid, proj, conta, veredito, ref=ref,
-                    valor_efetivado=dd.get("valor_efetivado"), motivo=dd.get("motivo"),
-                    decidido_por_id=usuario.get("id"),
-                    forma_pagamento=dd.get("forma_pagamento") or "a_prazo")
+                    motivo=dd.get("motivo"), decidido_por_id=usuario.get("id"))
                 db.commit()
                 self.send_json({"ok": True, "veredito": {
                     "veredito": v.veredito, "valor_efetivado": v.valor_efetivado,

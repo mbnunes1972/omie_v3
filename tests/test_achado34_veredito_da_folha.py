@@ -55,7 +55,10 @@ def test_aceite1_folha_paga_grava_veredito_nomeado(seed, app_db):
     vs = _vereditos(db, app_db, ot, oid, "PVer1")
     assert len(vs) == 1, "a folha tem que deixar exatamente um veredito nomeado"
     v = vs[0]
-    assert v.veredito in ("efetivada", "encerrada_valor_menor")
+    # F2-27: renomeados — 'absorver' (FALTA), 'receber' (SOBRA) ou 'encerrar' (bateu exato);
+    # qual dos três sai depende de arredondamento do valor calculado da comissão contra o
+    # provisionado (300.0) — o aceite é que SEMPRE existe um, nunca None/omisso.
+    assert v.veredito in ("absorver", "receber", "encerrar")
     assert "folha:%d" % reg.id in (v.motivo or ""), "o motivo nomeia o ato que decidiu"
     assert reg.competencia in (v.motivo or ""), "e a competência da folha"
     assert v.decidido_por_id == u.id, "quem pagou a folha é quem decidiu"
@@ -63,15 +66,16 @@ def test_aceite1_folha_paga_grava_veredito_nomeado(seed, app_db):
     db.close()
 
 
-def test_aceite2_sobra_vira_encerrada_valor_menor_e_o_relatorio_enxerga(seed, app_db):
-    """O gerente zera a comissão: sobra a provisão inteira. Veredito de SOBRA, e o projeto passa a
-    aparecer no relatório de encerrados por reversão — a consequência exata que o achado registra
-    como perdida ('nunca enxerga esses casos — não existe veredito nenhum pra listar')."""
+def test_aceite2_sobra_vira_receber_e_o_relatorio_enxerga(seed, app_db):
+    """O gerente zera a comissão: sobra a provisão inteira. Veredito de SOBRA ('receber', F2-27 —
+    renomeado de 'encerrada_valor_menor'), e o projeto passa a aparecer no relatório de
+    encerrados por reversão — a consequência exata que o achado registra como perdida ('nunca
+    enxerga esses casos — não existe veredito nenhum pra listar')."""
     db = app_db.get_session()
     ot, oid, _reg, _u = _paga_folha(db, app_db, "PVer2", 300.0, ajuste=(0.0, 0.0))
     vs = _vereditos(db, app_db, ot, oid, "PVer2")
     assert len(vs) == 1
-    assert vs[0].veredito == "encerrada_valor_menor"
+    assert vs[0].veredito == "receber"
     assert round(float(vs[0].valor_revertido or 0), 2) == 300.0
     rel = mod_contabil.relatorio_projetos_encerrados_por_reversao(db, ot, oid)
     linha = [p for p in rel if p["projeto_nome"] == "PVer2"]
@@ -81,27 +85,39 @@ def test_aceite2_sobra_vira_encerrada_valor_menor_e_o_relatorio_enxerga(seed, ap
 
 
 def test_aceite3_o_livro_nao_muda_na_sobra(seed, app_db):
-    """Controle de que a porta nova não mexeu na contabilidade: mesmos números que
-    `test_pagar_ajuste_pra_baixo_ate_zero_cancela_sem_dre` já travava — provisão fechada, nenhuma
-    despesa reconhecida, e a rota 'sem DRE' preservada (nem 4.4.02 nem 5.6.10 tocadas)."""
+    """Controle de que a porta nova não mexeu na contabilidade: provisão fechada, e a rota
+    'sem DRE direta' preservada (nem 4.4.02 nem 5.6.10 tocadas — os destinos ANTIGOS,
+    aposentados). F2-27: sem emissão simulada nesta rodada, a despesa (5.3.01) segue 0 — a
+    sobra vai pra Receita de Conciliação (4.5.01), em bloco próprio."""
     db = app_db.get_session()
     ot, oid, _reg, _u = _paga_folha(db, app_db, "PVer3", 300.0, ajuste=(0.0, 0.0))
     assert mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PVer3") == 0.0
     assert mod_folha.saldo_provisao_venda(db, ot, oid, "PVer3") == 0.0
     for cod in ("4.4.02", "5.6.10"):
         assert mod_contabil._mov(db, ot, oid, cod, "devedor", None, None, projeto_id="PVer3") == 0.0
+    assert mod_contabil._mov(db, ot, oid, "4.5.01", "credor", None, None, projeto_id="PVer3") == 300.0
     db.close()
 
 
-def test_aceite4_falta_vira_efetivada_e_a_despesa_real_continua_igual(seed, app_db):
-    """Ajuste pra cima (efetivado > provisionado): o veredito é 'efetivada' — o único que o sinal
-    do saldo admite (ACHADO-41) — e a despesa formal segue pelo valor ajustado, como antes."""
+def test_aceite4_falta_vira_absorver_e_a_despesa_fica_no_provisionado_integral(seed, app_db):
+    """F2-27 (docs/db/MODELO_CONTABIL.md): ajuste pra cima (pago > provisionado) — o veredito é
+    'absorver' (renomeado de 'efetivada' — o único que o sinal do saldo admite, ACHADO-41). A
+    despesa formal (5.3.01) NÃO segue mais o valor pago — fica fixa no PROVISIONADO INTEGRAL
+    (300, reconhecido na emissão); o excedente pago (200) vira Despesa de Conciliação (5.7.01),
+    nunca uma segunda despesa em 5.3.01 (duplicaria)."""
     db = app_db.get_session()
     ot, oid, _reg, _u = _paga_folha(db, app_db, "PVer4", 300.0, ajuste=(10000.0, 5.0))
+    # simula a emissão que reconhece o provisionado original (300) — pagamento nunca toca o
+    # ativo, então a ordem entre pagar e emitir não muda o valor reconhecido (mesma prova do
+    # exemplo de seis contas do MODELO_CONTABIL.md).
+    mod_contabil.reconhecer_provisoes_segmento(db, ot, oid, "PVer4", "mercadoria", 100.0,
+                                               ref_base="rec:PVer4")
+    db.commit()
     vs = _vereditos(db, app_db, ot, oid, "PVer4")
     assert len(vs) == 1
-    assert vs[0].veredito == "efetivada"
-    assert mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PVer4") == 500.0
+    assert vs[0].veredito == "absorver"
+    assert mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PVer4") == 300.0
+    assert mod_contabil._mov(db, ot, oid, "5.7.01", "devedor", None, None, projeto_id="PVer4") == 200.0
     assert mod_folha.saldo_provisao_venda(db, ot, oid, "PVer4") == 0.0
     db.close()
 

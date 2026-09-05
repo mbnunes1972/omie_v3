@@ -2,8 +2,8 @@
 
 Reversão de resíduo melhora a margem, então "projetos encerrados por reversão" é exatamente o
 relatório que evita o veredito virar uma formalidade em três meses: lista, por projeto, o total
-revertido ('encerrada_valor_menor' + 'nao_se_aplica'), ordenado do maior pro menor, com o motivo
-ao lado. 'efetivada' e 'ainda_vai_chegar' não entram — não são reversão."""
+revertido ('receber' — F2-27: colapso de 'encerrada_valor_menor' + 'nao_se_aplica'), ordenado do
+maior pro menor, com o motivo ao lado. 'absorver' e 'adiar' não entram — não são reversão."""
 import mod_contabil as mc
 
 
@@ -15,23 +15,24 @@ def _s(db, ot, oid, cod):
 def test_relatorio_ordena_por_valor_revertido_desc_e_traz_motivo(app_db):
     db = app_db.get_session(); ot, oid = "loja", 746; mc.seed_plano(db, ot, oid)
 
-    # Projeto A: reversão pequena (nao_se_aplica, 50)
+    # Projeto A: reversão pequena (receber, 50)
     mc.constituir_provisoes_fechamento(db, ot, oid, "A", {"cust_esp": 50.0}, ref_base="pf:A")
     mc.conciliar_final(db, ot, oid, "A", ref_base="cf:A", vereditos={
-        "2.1.04.20": {"veredito": "nao_se_aplica", "motivo": "obra não usou Custo Especial"},
+        "2.1.04.20": {"veredito": "receber", "motivo": "obra não usou Custo Especial"},
     })
 
-    # Projeto B: reversão grande (encerrada_valor_menor, resíduo de 900 sobre 1000)
+    # Projeto B: reversão grande (receber, resíduo de 900 sobre 1000)
     mc.constituir_provisoes_fechamento(db, ot, oid, "B", {"custo_fabrica": 1000.0}, ref_base="pf:B")
+    mc.efetivar_provisao(db, ot, oid, "B", "2.1.04.06", 100.0, ref="ef:B")   # sobra 900
     mc.conciliar_final(db, ot, oid, "B", ref_base="cf:B", vereditos={
-        "2.1.04.06": {"veredito": "encerrada_valor_menor", "valor_efetivado": 100.0},
+        "2.1.04.06": {"veredito": "receber"},
     })
 
-    # Projeto C: 'efetivada' (sem sobra) — não é reversão, não deve aparecer no relatório
+    # Projeto C: 'absorver' (falta, sem sobra) — não é reversão, não deve aparecer no relatório
     mc.constituir_provisoes_fechamento(db, ot, oid, "C", {"custo_fabrica": 500.0}, ref_base="pf:C")
     mc.efetivar_provisao(db, ot, oid, "C", "2.1.04.06", 600.0, ref="ef:C")   # falta -100
     mc.conciliar_final(db, ot, oid, "C", ref_base="cf:C", vereditos={
-        "2.1.04.06": {"veredito": "efetivada"},
+        "2.1.04.06": {"veredito": "absorver"},
     })
 
     rel = mc.relatorio_projetos_encerrados_por_reversao(db, ot, oid)
@@ -39,13 +40,13 @@ def test_relatorio_ordena_por_valor_revertido_desc_e_traz_motivo(app_db):
     assert nomes == ["B", "A"]                        # maior reversão primeiro
     assert rel[0]["valor_revertido_total"] == 900.0
     assert rel[1]["valor_revertido_total"] == 50.0
-    assert "C" not in nomes                           # 'efetivada' não é reversão
+    assert "C" not in nomes                           # 'absorver' não é reversão
 
     rub_a = rel[1]["rubricas"][0]
     assert rub_a["motivo"] == "obra não usou Custo Especial"
-    assert rub_a["veredito"] == "nao_se_aplica"
+    assert rub_a["veredito"] == "receber"
     rub_b = rel[0]["rubricas"][0]
-    assert rub_b["veredito"] == "encerrada_valor_menor" and rub_b["valor_efetivado"] == 100.0
+    assert rub_b["veredito"] == "receber" and rub_b["valor_revertido"] == 900.0
     db.close()
 
 
@@ -63,7 +64,7 @@ def test_endpoint_projetos_encerrados_por_reversao(http_client_factory, seed, ap
 
     c = http_client_factory(); c.login("dir_l1", "senha123")
     st, body = c.post("/api/projetos/%s/ciclo/21/conciliar" % nome, {
-        "vereditos": {"2.1.04.20": {"veredito": "nao_se_aplica", "motivo": "não incidiu"}},
+        "vereditos": {"2.1.04.20": {"veredito": "receber", "motivo": "não incidiu"}},
     })
     assert st == 200 and body.get("ok"), body
 

@@ -6111,8 +6111,13 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     docs = (_docs_vivos(db, projeto_nome=nome_safe, etapa_codigo="15", tipo="nfe_fabrica_xml")
                               .order_by(CicloDocumento.enviado_em.desc()).all())
+                    # ACHADO-54 (04/09): mais de uma tentativa pode existir pro mesmo fabrica_doc_id
+                    # (numeração nova por tentativa, ver `nfe_emissao`/rota de emitir) — ORDER BY
+                    # garante que o dict fica com a ÚLTIMA (maior id), nunca uma tentativa antiga
+                    # sobrevivendo por acaso da ordem do banco.
                     emissoes = {e.fabrica_doc_id: e for e in
-                                db.query(DocumentoFiscal).filter_by(projeto_nome=nome_safe).all()
+                                db.query(DocumentoFiscal).filter_by(projeto_nome=nome_safe)
+                                  .order_by(DocumentoFiscal.id.asc()).all()
                                 if e.fabrica_doc_id is not None}
                     _emit_cache = {}
                     def _emitente(eid):
@@ -15497,6 +15502,29 @@ class Handler(BaseHTTPRequestHandler):
                                       etapa_codigo="15", tipo="nfe_fabrica_xml").first() if doc_id else None
                     if not doc:
                         self.send_json({"ok": False, "erro": "XML da fábrica inválido."}, code=400); return
+                    # ACHADO-54 (04/09): NF-e por TENTATIVA, mesma regra já aplicada à NFS-e
+                    # (`emitir-nfse`, abaixo) — um `ref` constante (antigo "NFE-<projeto>-<doc.id>")
+                    # fazia a SEFAZ enxergar toda nova tentativa com o MESMO número, e um retry
+                    # depois de rejeição chega com payload levemente diferente (data/hora nova) →
+                    # chave diferente pro MESMO número → "Duplicidade de NF-e com diferença na
+                    # Chave de Acesso" (print do Marcelo, projeto Teste 2, série 001 nº 19/20). Um
+                    # `ref` NOVO por tentativa força a Focus a pedir um número novo à SEFAZ.
+                    nfe_regs = (db.query(DocumentoFiscal)
+                                  .filter_by(fabrica_doc_id=doc.id)
+                                  .order_by(DocumentoFiscal.id.asc()).all())
+                    # Idempotente enquanto a última está autorizada OU ainda processando (evita 2ª
+                    # nota antes de a 1ª resolver). Só erro (rejeitada) ou cancelada libera nova
+                    # tentativa — mesmo corte que a NFS-e já usa.
+                    if nfe_regs and nfe_regs[-1].status in ("autorizado", "processando"):
+                        reg = nfe_regs[-1]
+                        if reg.status == "autorizado":
+                            _set_etapa_status(db, nome_safe, "15", "emitida", usuario["id"]); db.commit()
+                        self.send_json({"ok": True, "ref": reg.ref, "status": reg.status,
+                                        "chave": reg.chave_nfe, "numero": reg.numero, "serie": reg.serie,
+                                        "mensagem_sefaz": reg.mensagem_sefaz,
+                                        "erros": json.loads(reg.erros_json) if reg.erros_json else [],
+                                        "mensagem": _mensagem_status_nota(reg.status),
+                                        "xml_doc_id": reg.xml_doc_id, "danfe_doc_id": reg.danfe_doc_id}); return
                     try:
                         markup = float(req.get("markup_pct") or 0)
                     except (TypeError, ValueError):
@@ -15511,7 +15539,7 @@ class Handler(BaseHTTPRequestHandler):
                     _vseg = _valores_segmentados_do_projeto(db, loja_id, nome_safe)
                     if _vseg is not None:
                         preview["itens"] = mod_nfe.rescalar_itens_para_total(preview["itens"], _vseg["mercadoria"])
-                    ref = "NFE-" + nome_safe + "-" + str(doc.id)
+                    ref = "NFE-%s-%d-%d" % (nome_safe, doc.id, len(nfe_regs) + 1)
                     # ACHADO-48 (02/09): offset calculado de verdade a partir do fuso do dono do
                     # livro (mod_contabil.data_emissao_iso_no_fuso), nunca "-03:00" fixo com
                     # ajuste manual — era essa mistura (servidor em UTC, sufixo "-03:00" grudado)

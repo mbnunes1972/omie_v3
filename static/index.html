@@ -23252,8 +23252,15 @@ function _renderCardEmissaoNfe(dados, bloqueada) {
   const proj = projetoAtivo ? projetoAtivo.nome_safe : '';
   const linhas = (_nfe15.fabrica_xmls || []).map(x => {
     const e = x.emissao;
-    if (e) {
-      const cor = e.status === 'autorizado' ? 'var(--ok)' : e.status === 'erro' ? 'var(--warn)' : e.status === 'cancelado' ? 'var(--muted)' : 'var(--info)';
+    // ACHADO-54 (04/09): só TRAVA a linha (só Consultar/Cancelar, sem saída) quando a emissão
+    // está autorizada ou em processamento — igual ao corte que a NFS-e já usa. Em `erro` ou
+    // `cancelado` a nota nunca foi processada de verdade; regra do Marcelo: "caso a nota não
+    // seja carregada ela precisa sair da tela, não precisa ficar nenhum registro de um
+    // documento que não foi processado" — a linha volta a oferecer nova tentativa (com
+    // numeração NOVA, ver a rota) e Remover, com o motivo da tentativa anterior à vista.
+    const travado = e && (e.status === 'autorizado' || e.status === 'processando');
+    if (travado) {
+      const cor = e.status === 'autorizado' ? 'var(--ok)' : 'var(--info)';
       const dl = (id, rot) => id ? `<a class="btn-ciclo" style="font-size:.75rem;text-decoration:none" target="_blank" rel="noopener" href="/api/projetos/${encodeURIComponent(proj)}/ciclo/documento/${id}">${rot}</a>` : '';
       return `<div style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px;font-size:.82rem">
         <div><i class="ti ti-file"></i>${esc(x.nome_original || '')} — <span style="color:${cor};font-weight:700">${esc(e.status || '')}</span>${e.chave ? ' · ' + esc(e.chave) : ''}</div>
@@ -23265,7 +23272,9 @@ function _renderCardEmissaoNfe(dados, bloqueada) {
           ${podeEmitir && e.status === 'autorizado' ? `<button class="btn-ciclo" style="font-size:.75rem" onclick="cancelarNfeLoja('${esc(e.ref)}')">Cancelar</button>` : ''}
         </div></div>`;
     }
+    const aviso = e ? `<div style="color:var(--warn);font-size:.75rem;flex-basis:100%"><i class="ti ti-alert-triangle"></i> Tentativa anterior: <b>${esc(e.status || '')}</b>${e.mensagem_sefaz ? ' — ' + esc(e.mensagem_sefaz) : ''}. Ajuste se necessário e emita novamente.</div>` : '';
     return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:.82rem;flex-wrap:wrap">
+        ${aviso}
         <span style="flex:1"><i class="ti ti-file"></i>${esc(x.nome_original || '')}</span>
         ${podeEmitir ? `<input id="nfe-markup-${x.id}" type="number" step="0.01" value="30" title="Markup %" style="width:70px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:.8rem">
           <button class="btn-ciclo" style="font-size:.8rem" onclick="emitirNfeLoja(${x.id})">Emitir NF-e da Loja</button>

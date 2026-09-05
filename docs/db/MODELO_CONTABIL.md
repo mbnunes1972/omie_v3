@@ -148,6 +148,80 @@ Cust_Var, timing típico no ciclo); a última coluna é leitura, não decisão �
 | 2.1.04.20 | Custo Especial | `_RUBRICAS_CUST_AD` (cust_esp) | não (Cust_Ad) | variável — item ad-hoc do orçamento, não rateado | depende do motivo específico do lançamento — mesma família de natureza mista da Viagem |
 | 2.1.04.21 | Comissão Administrativa | `_RUBRICAS` (com_adm) | sim | overhead administrativo, % sobre Val_Liq, constituído no fechamento | despesa de período — é o próprio exemplo que o CPC 47 dá ("administrativo"), a rubrica só está no Cust_Var hoje por convenção do motor, não por natureza |
 
+## A classificação, decidida (05/09/2026)
+
+`[DECIDIDO]` Sob o CPC 47, "incremental à obtenção" e "para cumprir o contrato"
+têm o **mesmo destino** — os dois ativam e reconhecem com a receita. A distinção
+serve para justificar, não para decidir. Logo a coluna final tem três valores:
+**difere**, **rota própria**, ou **sem mecanismo**.
+
+**Das 21 contas, 17 diferem até a emissão.** As quatro restantes:
+
+| conta | destino | quando | onde na DRE |
+|---|---|---|---|
+| `2.1.04.13` Impostos | rota própria | na emissão, com a receita | **dedução da receita bruta** — nunca custo nem despesa. Variância em `4.3.01`, na linha de dedução |
+| `2.1.04.19` Custo Financeiro | rota própria, **por ramo** (ver abaixo) | ver abaixo | grupo financeiro, abaixo do resultado operacional |
+| `2.1.04.01` Comissão | **sem mecanismo — remover** | — | — |
+| `2.1.04.04` Devolução | **sem mecanismo — a construir** | na competência da ocorrência | **redução de receita**, não custo |
+
+**Por que a Comissão Administrativa (`2.1.04.21`) difere**, contra a leitura
+preliminar que a tratava como despesa de período: `[DECIDIDO, razão do Marcelo]`
+ela é um **percentual da venda atribuído ao staff da loja**, de papel semelhante
+ao da comissão do vendedor. É obrigação com terceiro e incremental à obtenção do
+contrato — não é rateio de overhead. Difere como as demais.
+
+**Por que a Comissão (`2.1.04.01`) sai:** `[MEDIDO]` ela nasceu no primeiro motor
+de eventos (`b00fb63`, "5 regras do .docx §5"), antes de existir o fluxo real de
+comissão. Quando ele foi construído virou a `2.1.04.12` (Retenção de Comissão de
+Vendas) e a `01` ficou órfã — o ACHADO-05 provou o evento `pagamento_comissao`
+morto. E o caso "comissão eventual" já tem endereço: `despesa_avulsa`, criada em
+07/08 para despesa direta sem provisão de projeto.
+
+## A regra geral da variância
+
+`[DECIDIDO 05/09]` **A variância nunca reabre a competência anterior.** Ela entra
+na competência em que se torna conhecida, **na seção da DRE a que o item original
+pertence**:
+
+- variância de **custo de contrato** → bloco de **Conciliação**, isolado
+  justamente para não contaminar a margem operacional do mês corrente
+- variância de **imposto** → linha de **dedução de receita** (`4.3.01`)
+- variância de **retenção financeira** → `4.4.05 Ajuste de Retenção Financeira`,
+  no momento da conferência da retenção (= mês da antecipação)
+
+Em todos os casos, o relatório de **margem por projeto** atribui a variância ao
+projeto de origem, independentemente do mês em que ela tocou o resultado. A DRE
+classifica por natureza; o relatório de projeto agrega por origem.
+
+## O que entra em Contas a Receber no contrato: o VAVO
+
+`[MEDIDO]` Não é o Val_Cont. O ACHADO-02 (30/08) decidiu e escreveu a razão no
+código (`main.py`, antes de `registro_venda_contrato`):
+
+> *"registra o VAVO — não o Val_Cont cheio — em Receita a Realizar
+> (1.1.02 × 2.1.06); não toca a DRE. **O preço do móvel não muda conforme a forma
+> de pagamento** — o custo financeiro (Val_Cont − VAVO) segue rota própria,
+> abaixo, por ramo."*
+
+É o tratamento que o CPC 47 pede quando há componente financeiro relevante:
+registrar a venda pelo preço à vista e separar o financiamento.
+
+**Os dois ramos do custo financeiro (Val_Cont − VAVO), decididos em 30/08:**
+
+- **financeira** (Aymoré/Cartão): a retenção esperada é **posição de balanço —
+  nada no resultado**. Só a **diferença** entre a retenção esperada e a real toca
+  o resultado, em `4.4.05`, na conferência. Não é despesa financeira corrente.
+- **loja / loja_antecipação**: **receita financeira a apropriar** (capital
+  próprio, sem despesa), *pro rata temporis* ao longo das parcelas. O deságio do
+  banco na antecipação é custo **separado**, só no evento da antecipação.
+  `[MEDIDO]` A estrutura já existe: `1.1.07 Recebíveis de Parcelamentos` carrega
+  **só os juros**, com o VAVO permanecendo em `1.1.02`.
+
+Consequência a manter escrita: no ramo **loja**, como os juros correm ao longo
+das parcelas, **o resultado daquela safra só fecha quando a última parcela
+correr**. É a natureza da conta, não defeito — mas sem esta nota alguém olha uma
+safra entregue e conclui que falta receita.
+
 ## As contas de Conciliação
 
 `[DECIDIDO 05/09]` Duas contas novas — **Receita de Conciliação** e **Despesa de
@@ -284,9 +358,8 @@ com lojas reais lançando seria reconciliação de competências já carimbadas.
    - **`devolver_venda`** (mod_contabil.py:2793) é o TERCEIRO consumidor de 2.1.06
      (`D 2.1.06 × C 1.1.02`, reversão proporcional por devolução) — não achado
      nenhum quarto consumidor no código.
-2. `[MEDIDO 05/09, F2-26]` A classificação rubrica a rubrica sob o CPC 47 —
-   tabela completa na seção acima. A leitura preliminar está preenchida; a
-   decisão final (linha por linha) continua `[ABERTO]`, é do Marcelo.
+2. `[DECIDIDO 05/09]` A classificação rubrica a rubrica sob o CPC 47 — fechada
+   com o Marcelo. Ver a seção "A classificação, decidida" logo abaixo da tabela.
 3. `[DECIDIDO 05/09, F2-26]` O que cada veredito lança no modelo novo — fechado
    com o modelo, sem precisar de decisão nova (a interface se DERIVA do
    princípio da seção "As contas de Conciliação"):

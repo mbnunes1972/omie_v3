@@ -11298,8 +11298,16 @@ function agendarParametros(){
 }
 
 // Auto-save dos PARÂMETROS do modal (debounced). Backend recalcula e devolve o breakdown.
+// ACHADO-53 (04/09): dois portões, não um — abrir o modal (populate) NUNCA agenda salvamento
+// (`_mpPopulando`), e em modo leitura (contrato assinado) NADA agenda salvamento
+// (`_mpModoLeitura`), mesmo que algum caminho futuro volte a disparar o handler durante a
+// carga. O 403 do backend ("Contrato assinado — alterações não permitidas") está certo — o
+// defeito era só emitir o POST sem o usuário ter mexido em nada.
 let _mpSalvarTimer = null;
+let _mpPopulando = false;
+let _mpModoLeitura = false;
 function agendarSalvarParametros(){
+  if (_mpPopulando || _mpModoLeitura) return;
   clearTimeout(_mpSalvarTimer);
   _mpSalvarTimer = setTimeout(salvarParametrosAuto, 500);
 }
@@ -11714,6 +11722,10 @@ function _aplicarPreviewNaTela(s) {
 }
 
 function abrirModalParams(){
+  // ACHADO-53 (04/09): popular campo nunca agenda salvamento — todo o preenchimento abaixo
+  // fica sob este portão, mesmo que algum toggle chamado aqui dispare `agendarParametros` como
+  // efeito colateral (ver `agendarSalvarParametros`).
+  _mpPopulando = true;
   const m  = (projetoAtivo && projetoAtivo.margens) || {};
   // Total dos ambientes incluidos na negociacao
   const isEP07  = _orcamentoAtivoId !== null;
@@ -11772,11 +11784,13 @@ function abrirModalParams(){
   // modo somente-leitura quando o contrato já está assinado/vigente (projeto fechado)
   _aplicarModoLeituraParams(typeof _contratoAssinado !== 'undefined' && !!_contratoAssinado);
   _renderImpostosLock();   // reflete a margem real (Cust_Var/Marg_Cont) sob o cadeado de impostos
+  _mpPopulando = false;
 }
 
 // Abre o modal de Parâmetros em modo leitura (contrato assinado): inputs travados,
 // botão Salvar oculto, badge "somente leitura". Reversível para projetos não-assinados.
 function _aplicarModoLeituraParams(ro){
+  _mpModoLeitura = !!ro;
   const modal = document.getElementById('modal-params');
   if (!modal) return;
   modal.querySelectorAll('input, select, textarea').forEach(el => {

@@ -467,6 +467,36 @@ ela agora tem tratamento próprio (não volta por `pull`/checkout de tag
 avulsa; volta reconstruída, ver `### Produção — diagnóstico de 04/09`
 acima).
 
+### Nono deploy por tag — v2026.09.05-beta1 — 05/09/2026
+
+**Sem migration nova** — `git diff --stat` de `migrations/` entre
+`v2026.09.04-beta2` e este candidato vazio.
+
+F2-23, saído do percurso do Marcelo em Homologação (04/09): ACHADO-54
+(NF-e de produto rejeitada era beco sem saída — `ref` por tentativa,
+mesma regra da NFS-e, mais a tela voltando a oferecer nova
+tentativa/Remover quando a emissão está em `erro`); ACHADO-53 (abrir os
+parâmetros de um projeto assinado não dispara mais `POST /parametros`
+— dois portões, `_mpPopulando`/`_mpModoLeitura`, no ponto de
+consequência); ACHADO-51 estendido de novo (NF-e cancelada libera a
+mesma chave da fábrica — terceira condição; e as recusas "mesma etapa"
+e "selo do destinatário" passam a dizer o que bloqueou, por quê, e a
+saída, mesmo padrão da recusa "outro projeto"); ACHADO-36 estendido
+(faixa do ciclo — 31 `showToast(..., true)` convertidos pra
+`avisoPopup`). Achado ao rodar a suíte inteira: seis testes
+pré-existentes quebraram por dependerem do formato antigo do `ref`
+(constante por documento) ou do texto antigo da mensagem de
+destinatário — corrigidos pra ler o `ref`/mensagem reais em vez de
+reconstruir. `pytest -q` completo: **2630 passed, 0 failed, 4 xfailed**.
+
+Tag `v2026.09.05-beta1` (`5ff46c8`) — nome pela data do corte. Nos dois
+servidores, nessa ordem (Integração, depois Homologação): `systemctl
+stop` → `git fetch --tags && git checkout v2026.09.05-beta1` →
+`systemctl start` → `confirmar.sh` 15/0 → smoke (401 login inválido,
+200 `index.html`/`login.html`) → `git describe --tags` confirmado
+exato nos dois. **Produção NÃO tocada** — tratamento próprio, ver
+`### Produção — diagnóstico de 04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

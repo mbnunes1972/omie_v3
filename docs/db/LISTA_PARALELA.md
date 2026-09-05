@@ -309,33 +309,6 @@ fonte com um valor negativo/longo). Ergonomia pura, mesma família da LP-10
 (botões desalinhados na mesma tela).
 *Adiado:* não muda número nem trava fluxo. (Marcelo, 05/09.)
 
-**LP-20 · Rótulos do veredito (Absorver/Receber/Encerrar/Adiar) — a
-mecânica de "Receber" ainda não tem lançamento.**
-F2-25 Passo 4 (05/09) pediu que o veredito da Lista de Provisões
-ganhasse os rótulos Absorver/Receber/Encerrar (as três que encerram) e
-Adiar (separado). Ao fechar o mapeamento com o Marcelo: Absorver =
-FALTA (empresa absorve o que faltou — bate com `efetivada`); Receber =
-SOBRA feita a maior, mas lançada como RECEITA de verdade (nenhum
-veredito hoje faz isso — `nao_se_aplica`/`encerrada_valor_menor`
-revertem sem tocar a DRE, sempre ativo×provisão); Encerrar = despesa
-real exatamente igual à provisão, zera sem sobra nem falta. O Marcelo
-também levantou, nessa conversa, que o lançamento na DRE acontece de
-verdade no "momento fiscal" (emissão da NF-e) — a antecipação simula o
-fato no contrato e processa o resto entre ativo/passivo sem tocar a
-DRE — e ele próprio identificou um problema em aberto: como tratar
-provisões ainda não fechadas quando a DRE precisa fechar na emissão da
-NF-e.
-*O que falta antes de existir:* desenho de COMO "Receber" lança receita
-de verdade (conta, timing — competência da NF-e ou do veredito?) e uma
-resposta pro problema da NF-e com provisões pendentes. Sem isso, só o
-relabeling seria enganoso — pareceria a mesma mecânica de sempre com
-nome novo, quando o pedido real é lançar receita.
-*Adiado:* é mecanismo contábil novo, não relabeling de botão — fora do
-escopo "só o botão e o box" do Passo 4 e do "NÃO AUTORIZA" original (o
-resto da LP-13). Os rótulos atuais (Efetivada/Encerrada · valor
-menor/Não se aplica/Ainda vai chegar) continuam valendo até esta frente
-fechar desenho com o Marcelo. (Marcelo, 05/09, percurso do F2-25.)
-
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima
@@ -346,3 +319,16 @@ fechar desenho com o Marcelo. (Marcelo, 05/09, percurso do F2-25.)
   real aparecer com frequência.
 - **ACHADO-15.** Aposentado em 31/08: a divergência de meio de ciclo é o
   modelo, não defeito.
+- **LP-20 · Rótulos do veredito (Absorver/Receber/Encerrar/Adiar).**
+  DECIDIDO em 05/09, depois de `docs/db/MODELO_CONTABIL.md` fechar o
+  modelo (F2-26): o que travava o mapeamento era não saber se "Receber"
+  precisava de um lançamento de receita novo — agora sabe-se que sim, e
+  o modelo já diz onde. Absorver (gastou mais que o provisionado) →
+  Despesa de Conciliação, competência da conciliação; Receber (gastou
+  menos) → Receita de Conciliação, mesma competência; Encerrar (bateu
+  exato) → fecha sem tocar o resultado; Adiar → mantém a rubrica
+  aberta, com data prevista. Detalhe e o porquê de "Receber" não ser
+  receita de venda em `MODELO_CONTABIL.md`, seção "As contas de
+  Conciliação" e "Pendências". Não implementado ainda — isso é
+  desenho, a implementação é a frente própria que o modelo já descreve
+  ("Onde isto entra no plano").

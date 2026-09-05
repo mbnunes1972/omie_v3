@@ -108,11 +108,45 @@ o do **CPC 47 / IFRS 15**:
 - **despesa de período** (prospecção geral, viagem não vinculada, administrativo)
   → reconhece quando incorre
 
-`[ABERTO]` A classificação **rubrica a rubrica** sob esse critério ainda não foi
-feita. O código já tem uma separação criada por outro motivo e que provavelmente
-serve de ponto de partida: `mod_provisoes._RUBRICAS` (as 12 que somam no
-`Cust_Var`) × `_RUBRICAS_CUST_AD` (os 5 custos adicionais, que explicitamente
-não entram no Cust_Var) × `_RUBRICA_CUST_FIN`. Revisar uma a uma antes de codar.
+`[MEDIDO 05/09, F2-26]` A classificação **rubrica a rubrica** sob esse critério,
+preenchida até a leitura preliminar — **a decisão final é do Marcelo** (ver tabela
+completa na próxima seção). O agrupamento hoje no código (`mod_provisoes._RUBRICAS`
+× `_RUBRICAS_CUST_AD` × `_RUBRICA_CUST_FIN` × `_RUBRICA_CUST_FAB`) foi criado por
+OUTRO motivo (evitar dobrar o Cust_Var) e não corresponde 1:1 à classificação do
+CPC 47 — as duas grades são independentes; a coluna "grupo hoje" na tabela existe
+só pra rastrear a rubrica até o código, não porque o agrupamento atual seja o
+critério certo.
+
+## A classificação CPC 47, rubrica a rubrica (medido 05/09, F2-26)
+
+As 21 contas do grupo `2.1.04.x`, com a leitura preliminar sob o critério da seção
+anterior. `[MEDIDO]` até a penúltima coluna (código lido, grupo hoje, entra no
+Cust_Var, timing típico no ciclo); a última coluna é leitura, não decisão —
+`[ABERTO]`, aguarda o Marcelo.
+
+| código | nome | grupo hoje | entra no Cust_Var? | quando incorre no ciclo | leitura preliminar CPC 47 |
+|---|---|---|---|---|---|
+| 2.1.04.01 | Comissão | excluída (`_PROV_PAINEL_EXCLUI`) | não | — | n/a — sem mecanismo ativo (ACHADO-05), fora do painel |
+| 2.1.04.02 | Montagem | `_RUBRICAS` (prov_mont) | sim | depois da entrega — serviço de instalação na casa do cliente | para cumprir o contrato (obrigação de entregar montado) |
+| 2.1.04.03 | Garantia | `_RUBRICAS` (prov_gar) | sim | depois da entrega, ao longo do tempo — reparos sob garantia | para cumprir o contrato, mas é garantia tipo-assurance (CPC 47/CPC 25) — provisão de custo esperado, não um contrato de serviço à parte |
+| 2.1.04.04 | Devolução | excluída (`_PROV_PAINEL_EXCLUI`) | não | — | n/a — sem mecanismo ativo, fora do painel |
+| 2.1.04.05 | Assistência Técnica | `_RUBRICAS` (assist) | sim | depois da entrega, ao longo do tempo — chamados de atendimento | para cumprir o contrato — mesma ressalva de assurance-warranty da Garantia |
+| 2.1.04.06 | Custo de Fábrica | `_RUBRICA_CUST_FAB` (base do Cust_Var, não soma) | é a BASE, não uma parcela somada | antes da entrega — produção/aquisição na fábrica | para cumprir o contrato — o COGS primário da venda |
+| 2.1.04.07 | Frete de Fábrica | `_RUBRICAS` (frete_fab) | sim | antes da entrega — transporte fábrica→loja | para cumprir o contrato |
+| 2.1.04.08 | Frete Local | `_RUBRICAS` (frete_loc) | sim | perto da entrega — transporte loja→cliente | para cumprir o contrato |
+| 2.1.04.09 | Insumos Locais | `_RUBRICAS` (ins_loc) | sim | perto da entrega — material complementar na instalação | para cumprir o contrato |
+| 2.1.04.10 | Comissão de Medidor | `_RUBRICAS` (com_med) | sim | cedo, antes da fábrica produzir — medição do ambiente | para cumprir o contrato (etapa necessária pra entregar certo, não pra fechar a venda) |
+| 2.1.04.11 | Comissão de Projeto/Executivo | `_RUBRICAS` (com_proj_exec) | sim | cedo, antes da fábrica produzir — produção do projeto executivo | para cumprir o contrato (mesma razão da Medição) |
+| 2.1.04.12 | Retenção de Comissão de Vendas | `_RUBRICAS` (com_venda) | sim | na venda, mas com retenção/liberação num marco do ciclo (nome sugere holdback) | incremental à obtenção do contrato — o exemplo clássico do CPC 47 |
+| 2.1.04.13 | Impostos | rota própria (`_PROV_FORA_DO_VEREDITO`, ACHADO-01) | sim (Prov_Imp) | na emissão da NF-e — fato gerador fiscal | não é custo de contrato — é DEDUÇÃO da receita, tratamento à parte (já com rota própria) |
+| 2.1.04.14 | Outros Fornecedores | `_RUBRICAS` (out_forn) | sim | perto da entrega — fornecedor não-Dalmóbile | para cumprir o contrato (mesma família de Frete/Insumos) |
+| 2.1.04.15 | Comissão de Arquiteto | `_RUBRICAS_CUST_AD` (com_arq) | não (Cust_Ad) | na venda — indicação/referência daquela venda específica | incremental à obtenção do contrato — o outro exemplo que o próprio CPC 47 cita |
+| 2.1.04.16 | Programa de Fidelidade | `_RUBRICAS_CUST_AD` (pro_fid) | não (Cust_Ad) | na venda — incentivo ligado a fechar aquela venda | incremental à obtenção do contrato, SE for de fato vinculado a esta venda (a confirmar caso a caso) |
+| 2.1.04.17 | Custo de Viagem | `_RUBRICAS_CUST_AD` (cust_via) | não (Cust_Ad) | variável — depende do motivo da viagem | ambíguo: visita ao cliente antes de fechar → obtenção; viagem ligada à execução → cumprimento; a rubrica não distingue a natureza |
+| 2.1.04.18 | Brinde | `_RUBRICAS_CUST_AD` (brinde) | não (Cust_Ad) | no fechamento da venda — brinde de negociação | incremental à obtenção do contrato — incentivo de fechamento |
+| 2.1.04.19 | Custo Financeiro | rota própria (`_PROV_FORA_DO_VEREDITO`, ACHADO-01) | sim (Cust_Fin, base separada) | ao longo do parcelamento — custo do crédito ao cliente | não é custo de contrato (obtenção/cumprimento) nem despesa de período no sentido do CPC 47 — é componente financeiro da transação (IFRS 15 tem guidance própria pra isso) |
+| 2.1.04.20 | Custo Especial | `_RUBRICAS_CUST_AD` (cust_esp) | não (Cust_Ad) | variável — item ad-hoc do orçamento, não rateado | depende do motivo específico do lançamento — mesma família de natureza mista da Viagem |
+| 2.1.04.21 | Comissão Administrativa | `_RUBRICAS` (com_adm) | sim | overhead administrativo, % sobre Val_Liq, constituído no fechamento | despesa de período — é o próprio exemplo que o CPC 47 dá ("administrativo"), a rubrica só está no Cust_Var hoje por convenção do motor, não por natureza |
 
 ## As contas de Conciliação
 
@@ -164,11 +198,33 @@ consultor. É gestão, não contabilidade — por isso convivem sem competir.
 | `resolver_saldo_provisao` | **5 chamadores** |
 | eventos `reconhecimento_despesa_*` | **15 rubricas** |
 | arquivos de teste que tocam as três funções | **28** |
+| — dos quais asseguram especificamente a doutrina de 07/08 | **7** `[MEDIDO 05/09, F2-26]` |
 
 A solda das duas pernas está concentrada numa função só — por isso separá-las é
-viável. **O custo real está nos 28 arquivos de teste:** o verde de hoje codifica
-a doutrina de 07/08, e mudando a doutrina esses aceites mudam de significado.
-Precisam ser rederivados, não remendados.
+viável. **O custo real não está nos 28 arquivos — está nos 7** que de fato
+travam "sobra/falta cancela contra o ativo SEM tocar a DRE" (checagem direta de
+uma conta 4.4.02/5.6.10/5.x ficando em zero, não só do saldo da provisão
+zerando — isso os outros 21 também verificam, e continua verdadeiro no modelo
+novo). Só estes 7 mudam de SIGNIFICADO, não só de asserção — precisam ser
+rederivados, não remendados. Os outros 21 tocam `efetivar_provisao`/
+`reconhecer_despesa_efetivacao`/`resolver_saldo_provisao` por outros motivos
+(idempotência, DRE por projeto, devolução, centro de custo, partida dobrada,
+ciclo completo, guardas/exclusões de Impostos e Custo Financeiro — que têm
+rota própria e não fazem parte desta doutrina) e continuam válidos:
+
+- `tests/test_fase_d_reconciliacao.py` — `test_resolver_saldo_sobra_cancela_sem_receita`
+  / `test_resolver_saldo_falta_cancela_sem_despesa_extra` (4.4.02/5.6.10 == 0)
+- `tests/test_fase_d2_reclass.py` — `test_sobra_custo_fabrica_cancela_sem_dre`
+  (4.4.02 == 0 pro Custo de Fábrica especificamente)
+- `tests/test_fase_d2_conciliacao_final.py` — `test_conciliar_final_resolve_sobra_e_falta_com_veredito`
+  (4.4.02/5.6.10 == 0 via `conciliar_final`, duas rubricas ao mesmo tempo)
+- `tests/test_aceite_achado16.py` — `test_veredito_encerrada_valor_menor_reconhece_custo_real_antes_de_reverter`
+  (5.1.01 == só o efetivado; o resíduo não soma na despesa)
+- `tests/test_aceite_fila_provisoes.py` — mesma asserção, pela rota da Fila
+- `tests/test_custos_adicionais_provisao.py` — `test_cust_esp_nunca_efetivado_exige_veredito_e_nao_se_aplica_cancela_sem_dre`
+  (5.3.17/4.4.02 == 0)
+- `tests/test_achado34_veredito_da_folha.py` — `test_aceite3_o_livro_nao_muda_na_sobra`
+  (4.4.02/5.6.10 == 0 via a porta da folha)
 
 **O que muda de sentido sem quebrar:** o veredito deixa de *cancelar resíduo* e
 passa a *levar resíduo ao resultado*. Toda a maquinaria continua valendo — a
@@ -191,17 +247,67 @@ com lojas reais lançando seria reconciliação de competências já carimbadas.
 
 ## Pendências que bloqueiam a implementação
 
-1. `[ABERTO]` `[MEDIDO]` O evento `faturamento` aparece como
-   `D 1.1.02 × C 4.1.01` — debitando Contas a Receber **de novo**. Se o contrato
-   já debitou 1.1.02 e a NF-e debita outra vez sem consumir o 2.1.06, o
-   recebível dobra e a Receita a Realizar nunca se desfaz. Pode ser que
-   `faturar_segmento` (delta-aware desde o ACHADO-13) trate por outro caminho.
-   **Medir antes de qualquer desenho** — é a peça exata que a Diferida precisa.
-2. `[ABERTO]` A classificação rubrica a rubrica sob o CPC 47 (ver acima).
-3. `[ABERTO]` O que cada veredito lança no modelo novo. Os quatro nomes que o
-   Marcelo definiu — Absorver, Receber, Encerrar, Adiar — **são a interface
-   deste modelo**. Não construir os botões antes desta decisão: "Receber"
-   prometeria um lançamento que a regra de 07/08 proíbe em 15 das 19 rubricas.
+1. `[MEDIDO 05/09, F2-26]` **Não é isso — o recebível não dobra. Mas há um problema
+   real, diferente, confirmado ao vivo.** `faturar_segmento` (mod_contabil.py:1559)
+   é delta-aware e SPLITA o delta em duas pernas, cada uma seu próprio evento:
+   - **perna "adiantado"** (`D 2.1.06 × C 4.1.01/4.2.01`, mod_contabil.py:1461-1464):
+     consome o pool de 2.1.06 (`saldo_adiantamento_projeto`, linha 1553) até o limite
+     do que ele tem disponível. Esta é a perna que roda em TODO caso real medido.
+   - **perna "a_receber"** (`D 1.1.02 × C 4.1.01/4.2.01`): só dispara para o RESTO,
+     quando o valor faturado excede o que sobrou em 2.1.06 — cenário que exigiria a
+     venda ter side crescido (aditivo) sem 2.1.06 correspondente, ou algum erro de
+     segmentação. Medido em Homologação (3 projetos faturados: Projeto_3, Teste_1,
+     Teste_4) — **nenhum** dos três jamais acionou essa perna. `1.1.02` fica
+     intocado por faturamento em todos os casos reais; ele só zera quando o CLIENTE
+     paga (`D 1.1.01 × C 1.1.02`), como o exemplo de seis contas já descreve.
+   - **O problema real, medido ao vivo:** `Teste_1` e `Teste_4` estão **status
+     "fechado"** (projeto concluído) com **2.1.06 aberto** — R$ 63.330,58 e
+     R$ 68.870,01 respectivamente, nunca consumidos. Causa: cada um teve só UM
+     documento fiscal (`nfe_loja_xml`, segmento "mercadoria") — nenhum NFS-e de
+     serviço. `valor_seg` vem de `_valores_segmentados_do_projeto` (Val_Cont ×
+     segmentação, `main.py:1544`) — a parte "serviço" da segmentação nunca teve
+     evento fiscal que a faturasse, e `faturar_segmento` só roda quando ALGUÉM
+     chama (não há verificação de completude no fechamento do ciclo). `Projeto_3`
+     tem 2.1.06 = 1.1.02 (parecendo "nunca faturado") porque a única NF-e que
+     emitiu foi CANCELADA (`estorno_cancelamento_nfe`, reverte a perna adiantado
+     por inteiro) — isso é correto, não é o defeito.
+   - **Consequência pro modelo:** confirma exatamente o que "O indicador de
+     desbalanceamento" (acima) já previa — um projeto "fechado" com "a Apropriar"
+     zerado e Provisão aberta é esperado (fase pós-NF-e); mas um projeto "fechado"
+     com **Receita a Realizar (2.1.06) aberta** é outro sinal, ainda pior: nem toda
+     a receita contratada foi reconhecida. Hoje NENHUMA tela mostra isso — ninguém
+     saberia que Teste_1/Teste_4 têm R$63k/R$69k de receita nunca faturada sem essa
+     query direta no banco. Isso PRECISA de um indicador antes (ou junto) da
+     Diferida — sem ele, fechar o ciclo com faturamento incompleto fica invisível
+     pra sempre, do mesmo jeito que o ACHADO-16 era invisível antes do
+     contra-controle.
+   - **`devolver_venda`** (mod_contabil.py:2793) é o TERCEIRO consumidor de 2.1.06
+     (`D 2.1.06 × C 1.1.02`, reversão proporcional por devolução) — não achado
+     nenhum quarto consumidor no código.
+2. `[MEDIDO 05/09, F2-26]` A classificação rubrica a rubrica sob o CPC 47 —
+   tabela completa na seção acima. A leitura preliminar está preenchida; a
+   decisão final (linha por linha) continua `[ABERTO]`, é do Marcelo.
+3. `[DECIDIDO 05/09, F2-26]` O que cada veredito lança no modelo novo — fechado
+   com o modelo, sem precisar de decisão nova (a interface se DERIVA do
+   princípio da seção "As contas de Conciliação"):
+   - **Absorver** (gastou mais que o provisionado — FALTA) → Despesa de
+     Conciliação, na competência da conciliação.
+   - **Receber** (gastou menos — SOBRA) → Receita de Conciliação, mesma
+     competência.
+   - **Encerrar** (bateu exato — sem sobra nem falta) → fecha sem tocar o
+     resultado (não há resíduo a levar a lugar nenhum).
+   - **Adiar** → não resolve nada; mantém a rubrica aberta, com data prevista
+     (já é o comportamento de `ainda_vai_chegar` — só o nome muda).
+
+   Por que "Receber" **não é receita de venda**: as contas de Conciliação ficam
+   **depois** do resultado operacional do período, em bloco próprio — a receita
+   de venda é base de comissão, meta e indicador, e misturar um resíduo de
+   provisionamento ali de dentro contaminaria os três. Ver "As contas de
+   Conciliação" acima para o detalhe (inclusive a leitura por safra).
+
+   Registrado em `docs/db/LISTA_PARALELA.md`, LP-20 (Fechados). **Ainda não
+   implementado** — isto é desenho fechado, a implementação entra na frente
+   própria (ver "Onde isto entra no plano").
 4. `[ABERTO]` Os 15 rótulos `reconhecimento_despesa_*` dizem "Reconhecimento de
    despesa **NA NF-E**" — resíduo do matching pleno extinto em 07/08. Hoje é
    mentira; no modelo novo volta a ser verdade. Ajustar junto, não antes.

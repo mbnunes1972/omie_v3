@@ -43,12 +43,40 @@ def test_contagem_total_de_showtoast_de_erro_no_sistema():
 
     A regex usa `[^;]*`, que atravessa quebra de linha — por isso a contagem certa não é a de
     `grep` (linha a linha; perde a chamada de main.py:4211/index.html que quebra em duas linhas).
-    200 no candidato v2026.09.01-beta1 (antes desta rodada); 36 convertidos nesta rodada
-    (financeiro/provisões, B1+B2); 164 seguem no resto do sistema — higiene, fica pra depois."""
+    200 no candidato v2026.09.01-beta1 (antes desta rodada); 36 convertidos no B2
+    (financeiro/provisões); 31 convertidos no F2-23/ACHADO-36 (ciclo — Projeto/Transferência de
+    etapa/PE/Medição, ver `FAIXAS_CICLO` abaixo); 133 seguem no resto do sistema — higiene, fica
+    pra depois."""
     with open(INDEX_HTML, encoding="utf-8") as f:
         conteudo = f.read()
     total = len(re.findall(r"showToast\([^;]*,\s*true\)", conteudo))
-    assert total == 164, "a contagem mudou — reveja o número reportado (%d)" % total
+    assert total == 133, "a contagem mudou — reveja o número reportado (%d)" % total
+
+
+# ── F2-23 (04/09) — faixa do ciclo (Projeto/Transferência de etapa/PE/Medição) ───────────────────
+# Não é um bloco contíguo como o financeiro — são as funções que o percurso do Marcelo atravessa
+# (abrir projeto, transferir etapa, ClickSign de PE e de Medição), espalhadas pelo arquivo.
+FAIXAS_CICLO = [
+    (7932, 7980),      # abrirProjeto
+    (19793, 19840),    # _cicloTransferResponder / _cicloTransferConfirmar
+    (22147, 22220),    # PE: enviarAprovacaoPEParaClickSign / _confirmarEnvioClickSignPE /
+                       # verificarClickSignPEAgora / reenviarConviteClickSignPE
+    (22664, 22682),    # peConciliacaoReprovar
+    (23498, 23552),    # toggleSalvarEtapa / reabrirEtapaCascata
+    (24214, 24325),    # Medição: gerarSolicitacaoMedicao / enviarSolicitacaoMedicaoParaClickSign /
+                       # _confirmarEnvioClickSignMedicao / verificarClickSignMedicaoAgora /
+                       # reenviarConviteClickSignMedicao
+]
+
+
+def test_nenhum_showtoast_de_erro_sobra_na_faixa_do_ciclo():
+    with open(INDEX_HTML, encoding="utf-8") as f:
+        linhas = f.readlines()
+    achados = []
+    for ini, fim in FAIXAS_CICLO:
+        texto = "".join(linhas[ini - 1:fim])
+        achados += re.findall(r"showToast\([^;]*,\s*true\)", texto)
+    assert achados == [], "showToast(..., true) ainda na faixa do ciclo:\n%r" % achados
 
 
 # ── E2E de navegador: prova que o popup É o do design system, não o overlay manuscrito ──────────
@@ -128,3 +156,24 @@ def test_recusa_do_modulo_financeiro_usa_o_popup_do_design_system(page, servidor
     assert ok_btn.count() == 1
     ok_btn.click()
     page.wait_for_selector('h4:has-text("Financeiro")', state="detached", timeout=5000)
+
+
+def test_recusa_da_faixa_do_ciclo_usa_o_popup_do_design_system(page, servidor_e2e):
+    """F2-23: `_cicloTransferConfirmar` sem destino escolhido — antes `showToast(..., true)`
+    (ia parar no #erro-modal-overlay manuscrito), agora `avisoPopup` do design system."""
+    base = servidor_e2e
+    page.goto(base + "/static/login.html")
+    page.fill("#email", "e2e_master")
+    page.fill("#senha", "senha123")
+    page.click("#loginBtn")
+    page.wait_for_url(base + "/")
+
+    page.evaluate("() => { _cicloTransferState = {alvoCod: '11a'}; _cicloTransferConfirmar(); }")
+
+    page.wait_for_selector('h4:has-text("Ciclo")', timeout=5000)
+    page.wait_for_selector("text=Escolha um destino.", timeout=5000)
+    assert page.locator("#erro-modal-overlay").count() == 0
+    ok_btn = page.locator('[data-act="ok"]')
+    assert ok_btn.count() == 1
+    ok_btn.click()
+    page.wait_for_selector('h4:has-text("Ciclo")', state="detached", timeout=5000)

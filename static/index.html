@@ -7937,12 +7937,12 @@ async function abrirProjeto(nome_safe){
     // vazamento dentro de _alinharLojaAoProjeto: só troca para loja acessível.
     const _pBase = (_projListaBase || []).find(x=>x.nome_safe===nome_safe);
     if (_pBase && _pBase.loja_id && !_alinharLojaAoProjeto(_pBase.loja_id)){
-      showToast('Este projeto pertence a uma loja à qual você não tem acesso.', true);
+      avisoPopup('Este projeto pertence a uma loja à qual você não tem acesso.', {titulo:'Projeto'});
       return;
     }
     const r = await fetch('/projetos/'+encodeURIComponent(nome_safe));
     const d = await r.json();
-    if(!d.ok){ showToast('Erro: '+(d.erro||'falha'), true); return; }
+    if(!d.ok){ avisoPopup('Erro: '+(d.erro||'falha'), {titulo:'Projeto'}); return; }
     // Resetar estado do ciclo antes de trocar de projeto
     if (_cicloAberto) fecharCiclo();
     _cicloData = {};
@@ -7973,7 +7973,7 @@ async function abrirProjeto(nome_safe){
     await carregarOrcamentos();  // EP-07: carrega lista de orçamentos
     carregarCicloSilencioso();   // carrega dados do ciclo em background para verificar aprovação
     goPage(2);  // vai direto para negociação
-  }catch(e){ showToast('Erro: '+_detalheErroRede(e), true); }
+  }catch(e){ avisoPopup('Erro: '+_detalheErroRede(e), {titulo:'Projeto'}); }
 }
 
 // ── EP-07: Orçamentos ─────────────────────────────────────────────────────────
@@ -19801,7 +19801,7 @@ async function _cicloTransferResponder(transferir) {
     )).json().catch(() => ({}));
     _cicloTransferState = null;
     _cicloRenderTransferPrompt();
-    if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + (d.erro || 'falha'), {titulo:'Ciclo'}); return; }
     showToast('Fase concluída — responsável mantido.', false);
     return;
   }
@@ -19820,7 +19820,7 @@ async function _cicloTransferConfirmar() {
   if (!st) return;
   const raw = document.getElementById('ciclo-transf-dest');
   const n = raw ? parseInt(raw.value, 10) : NaN;
-  if (!n) { showToast('Escolha um destino.', true); return; }
+  if (!n) { avisoPopup('Escolha um destino.', {titulo:'Ciclo'}); return; }
   const payload = {etapa_alvo_codigo: st.alvoCod, transferir: true};
   if (n < 0) payload.terceiro_id = -n; else payload.funcionario_id = n;
   const d = await (await fetch(
@@ -19828,7 +19828,7 @@ async function _cicloTransferConfirmar() {
     { method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload) }
   )).json().catch(() => ({}));
-  if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+  if (!d.ok) { avisoPopup('Erro: ' + (d.erro || 'falha'), {titulo:'Ciclo'}); return; }
   _cicloTransferState = null;
   _cicloRenderTransferPrompt();
   showToast(d.automatica
@@ -22151,8 +22151,8 @@ async function enviarAprovacaoPEParaClickSign() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe`,
                           { credentials: 'same-origin' });
     d = await r.json();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
-  if (!d.ok || !d.aprovacao) { showToast('Erro ao carregar a aprovação do PE.', true); return; }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Projeto Executivo'}); return; }
+  if (!d.ok || !d.aprovacao) { avisoPopup('Erro ao carregar a aprovação do PE.', {titulo:'Projeto Executivo'}); return; }
   _peApClicksignDefaults = d.clicksign_defaults || {};
   _abrirModalConfirmarClickSignPE();
 }
@@ -22161,7 +22161,7 @@ async function _confirmarEnvioClickSignPE() {
   const emailLoja    = (document.getElementById('csap-email-loja')?.value || '').trim();
   const emailCliente = (document.getElementById('csap-email-cliente')?.value || '').trim();
   if (!emailLoja || !emailCliente) {
-    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+    avisoPopup('E-mail da loja e do cliente são obrigatórios.', {titulo:'Projeto Executivo'}); return;
   }
   const btn = document.querySelector('#modal-clicksign-pe-confirmar [data-act="enviar"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
@@ -22171,7 +22171,7 @@ async function _confirmarEnvioClickSignPE() {
         body: JSON.stringify({ email_loja: emailLoja, email_cliente: emailCliente }) });
     const d = await r.json();
     if (!d.ok) {
-      showToast('Erro: ' + d.erro, true);
+      avisoPopup('Erro: ' + d.erro, {titulo:'Projeto Executivo'});
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
       return;
     }
@@ -22179,7 +22179,7 @@ async function _confirmarEnvioClickSignPE() {
     showToast('Aprovação do PE enviada para assinatura eletrônica (ClickSign).', false);
     peComplementoRender();
   } catch(e) {
-    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Projeto Executivo'});
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
   }
 }
@@ -22202,10 +22202,10 @@ async function verificarClickSignPEAgora() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/verificar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + d.erro, {titulo:'Projeto Executivo'}); return; }
     _avisarStatusClickSign(d.status);
     peComplementoRender();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Projeto Executivo'}); }
 }
 
 async function reenviarConviteClickSignPE() {
@@ -22213,9 +22213,9 @@ async function reenviarConviteClickSignPE() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/aprovacao-pe/clicksign/reenviar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + d.erro, {titulo:'Projeto Executivo'}); return; }
     showToast('Convite reenviado.', false);
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Projeto Executivo'}); }
 }
 
 async function peAditivoGerar(){
@@ -22674,7 +22674,7 @@ async function peConciliacaoReprovar(){
       {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
        body: JSON.stringify({login: cred.login, senha: cred.senha, motivo})}).then(r=>r.json());
     if(!j.ok){ await avisoPopup(j.erro||'Erro', {titulo:'Reprovar AF2'}); return; }
-    showToast('AF2 reprovada.', true);
+    avisoPopup('AF2 reprovada.', {titulo:'Projeto Executivo'});
     peConciliacaoRender();
     await carregarCiclo();
   } catch(e){ await avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Reprovar AF2'}); }
@@ -23510,10 +23510,10 @@ async function toggleSalvarEtapa(codigo) {
       }
     );
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + (d.erro || 'falha'), {titulo:'Ciclo'}); return; }
     showToast(novoStatus === 'concluido' ? 'Etapa concluída!' : 'Etapa reaberta.');
     await carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Ciclo'}); }
 }
 
 let _reabrirCodigo = null;
@@ -23540,11 +23540,11 @@ async function reabrirEtapaCascata(login, senha) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login, senha }) });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + (d.erro || 'falha'), true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + (d.erro || 'falha'), {titulo:'Ciclo'}); return; }
     showToast('Etapas reabertas: ' + (d.resetadas || []).join(', '));
     _reabrirCodigo = null;
     await carregarCiclo();
-  } catch (e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch (e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Ciclo'}); }
 }
 
 // Revisar contrato: com senha gerencial, devolve o contrato à fase de Orçamento
@@ -24216,11 +24216,11 @@ async function gerarSolicitacaoMedicao() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/gerar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + d.erro, {titulo:'Medição'}); return; }
     showToast('Documento gerado!', false);
     carregarSolicitacaoMedicao();
     carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Medição'}); }
 }
 
 async function enviarSolicitacaoMedicaoParaClickSign() {
@@ -24230,8 +24230,8 @@ async function enviarSolicitacaoMedicaoParaClickSign() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao`,
                           { credentials: 'same-origin' });
     d = await r.json();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); return; }
-  if (!d.ok || !d.solicitacao) { showToast('Erro ao carregar a solicitação de medição.', true); return; }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Medição'}); return; }
+  if (!d.ok || !d.solicitacao) { avisoPopup('Erro ao carregar a solicitação de medição.', {titulo:'Medição'}); return; }
   _smModalDefaults = d.clicksign_defaults || {};
   _abrirModalConfirmarClickSignMedicao();
 }
@@ -24267,7 +24267,7 @@ async function _confirmarEnvioClickSignMedicao() {
   const emailLoja    = (document.getElementById('csm-email-loja')?.value || '').trim();
   const emailCliente = (document.getElementById('csm-email-cliente')?.value || '').trim();
   if (!emailLoja || !emailCliente) {
-    showToast('E-mail da loja e do cliente são obrigatórios.', true); return;
+    avisoPopup('E-mail da loja e do cliente são obrigatórios.', {titulo:'Medição'}); return;
   }
   const btn = document.querySelector('#modal-clicksign-medicao-confirmar [data-act="enviar"]');
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
@@ -24277,7 +24277,7 @@ async function _confirmarEnvioClickSignMedicao() {
         body: JSON.stringify({ email_loja: emailLoja, email_cliente: emailCliente }) });
     const d = await r.json();
     if (!d.ok) {
-      showToast('Erro: ' + d.erro, true);
+      avisoPopup('Erro: ' + d.erro, {titulo:'Medição'});
       if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
       return;
     }
@@ -24285,7 +24285,7 @@ async function _confirmarEnvioClickSignMedicao() {
     showToast('Solicitação de medição enviada para assinatura eletrônica (ClickSign).', false);
     carregarSolicitacaoMedicao();
   } catch(e) {
-    showToast('Erro de rede: ' + _detalheErroRede(e), true);
+    avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Medição'});
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-signature"></i> Confirmar e enviar'; }
   }
 }
@@ -24295,11 +24295,11 @@ async function verificarClickSignMedicaoAgora() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/verificar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + d.erro, {titulo:'Medição'}); return; }
     _avisarStatusClickSign(d.status);
     carregarSolicitacaoMedicao();
     carregarCiclo();
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Medição'}); }
 }
 
 async function reenviarConviteClickSignMedicao() {
@@ -24307,9 +24307,9 @@ async function reenviarConviteClickSignMedicao() {
     const r = await fetch(`/api/projetos/${encodeURIComponent(projetoAtivo.nome_safe)}/medicao/solicitacao/clicksign/reenviar`,
       { method: 'POST', credentials: 'same-origin' });
     const d = await r.json();
-    if (!d.ok) { showToast('Erro: ' + d.erro, true); return; }
+    if (!d.ok) { avisoPopup('Erro: ' + d.erro, {titulo:'Medição'}); return; }
     showToast('Convite reenviado.', false);
-  } catch(e) { showToast('Erro de rede: ' + _detalheErroRede(e), true); }
+  } catch(e) { avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Medição'}); }
 }
 
 // Assinatura Digital — seção UNIFICADA (achado do usuário 2026-08-19): Contrato, Solicitação de

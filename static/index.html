@@ -19929,9 +19929,17 @@ function _etapaSatisfeita(codigo) {
 // não "sem ação concreta"): sem essa linha garantida, "Contrato" nunca voltaria a "concluida".
 function _statusFichario(codigo) {
   if (_FICHA_SUBS[codigo]) {
-    const todas = [codigo, ..._FICHA_SUBS[codigo]];
-    const falta = todas.some(c => !_etapaSatisfeita(c));
-    if (!falta) return 'concluida';
+    // ACHADO-57 (05/09): a leniência "toggleável sem linha = satisfeita" (_etapaSatisfeita)
+    // existe pra SUBFASE opcional sem pendência não travar o grupo (17a, "Pendências de
+    // montagem" — achado da Vera 2026-08-26). Aplicá-la também ao CÓDIGO-MÃE (17 é
+    // toggleavel:true também) fazia QUALQUER projeto novo mostrar "Montagem: Concluída" antes
+    // de a Montagem sequer começar — as duas coisas nunca tinham linha, as duas "satisfaziam"
+    // por omissão. A mãe do grupo SEMPRE precisa de status conclusivo de verdade; só os FILHOS
+    // usam a leniência.
+    const dadosMae = _cicloData[codigo] || {};
+    const maeConcluida = STATUS_CONCLUSIVOS.has(dadosMae.status);
+    const faltaFilho = _FICHA_SUBS[codigo].some(c => !_etapaSatisfeita(c));
+    if (maeConcluida && !faltaFilho) return 'concluida';
     if (_etapaBloqueada(codigo)) return 'nao_iniciada';
     return 'andamento';
   }

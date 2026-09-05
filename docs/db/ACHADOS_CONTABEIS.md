@@ -4335,6 +4335,73 @@ ambiente.
 
 ---
 
+## ACHADO-57 — a etapa Montagem se dá por concluída sozinha · RESOLVIDO 05/09/2026
+
+Relato + print do Marcelo (05/09, projeto novo em Homologação): logo
+após a aprovação/assinatura do contrato, a etapa 10 (Montagem, código
+interno "17") apareceu como "Concluída" — e o MESMO card mostrava, ao
+mesmo tempo, "✓ Concluída", "🔒 Conclua a etapa anterior antes de
+iniciar esta" e "Pendente", com a etapa 9 (Logística e Expedição)
+ainda em aberto. Depois, sozinha, ela voltou a ficar em aberto. Três
+estados contraditórios no mesmo card = status derivado brigando com
+status persistido.
+
+**Medido primeiro** (`static/index.html`, `_statusFichario`): "17" é
+cabeça de grupo (`_FICHA_SUBS['17'] = ['17a']`, a subfase "Pendências
+de montagem") e, ao mesmo tempo, o próprio "17" está marcado
+`toggleavel: true` no `ETAPAS_CICLO`. `_etapaSatisfeita(codigo)` trata
+"toggleável sem NENHUMA linha no banco" como satisfeita — leniência
+escrita de propósito (achado da Vera, 2026-08-26) pra "17a" não travar
+o grupo quando não existe pendência de montagem nenhuma. O bug: essa
+MESMA leniência era aplicada também ao CÓDIGO-MÃE, porque
+`_statusFichario` roda `_etapaSatisfeita` em `[codigo, ...filhos]`
+igual pros dois. Um projeto ACABADO de assinar não tem linha nenhuma
+de "17" nem de "17a" ainda — as duas "satisfazem" por omissão, e
+`_statusFichario('17')` devolvia `'concluida'` **desde a criação do
+projeto**, antes de Montagem sequer começar. Assim que QUALQUER linha
+real de "17" nascia (cronograma, ou o usuário abrindo a etapa), a
+leniência parava de valer e o "Concluída" sumia sozinho — exatamente o
+"depois, sozinha, ela voltou a ficar em aberto" do relato.
+
+O `status` PERSISTIDO nunca mentiu — é puramente um artefato de
+EXIBIÇÃO (`_statusFichario` é função só do frontend; o backend não tem
+lógica equivalente, confirmado por busca). Isto não é cosmético mesmo
+assim: Montagem concluída é evento de dinheiro relevante (LP-11 já
+nomeia `execucao_montagem` — hoje morto, sem gatilho — na conclusão de
+"17"); um usuário vendo "Concluída" sem ter concluído nada pode agir
+sobre essa crença falsa, e uma automação futura ligada a esse status
+erraria calada.
+
+**Medido em Homologação (só leitura, 05/09):** `Projeto_3` e `Teste_2`
+têm HOJE "17" com status `"pendente"` e NENHUMA linha de "17a" — a
+condição exata do achado, ao vivo, sem precisar reproduzir nada
+artificialmente.
+
+### Conserto (05/09)
+
+`_statusFichario`: a leniência do "toggleável sem linha" continua só
+pros FILHOS do grupo (`_FICHA_SUBS[codigo]`); a MÃE do grupo sempre
+precisa de `STATUS_CONCLUSIVOS.has(status)` de verdade — nunca da
+omissão. Verificado: "17" é o ÚNICO código que é ao mesmo tempo cabeça
+de grupo E `toggleavel:true` — "7"/"11"/"13" (as outras cabeças de
+grupo) não têm essa combinação, não precisam de conserto (regra dos
+irmãos conferida, ninguém mais afetado).
+
+**Aceite:** `tests/test_achado57_montagem_nao_nasce_concluida_e2e.py`
+(3 testes) — projeto novo (nem "17" nem "17a" com linha) não nasce
+"concluida"; com a etapa anterior ("16") pendente, `_statusFichario`
+concorda com `_etapaBloqueada` (não fica contraditório); controle-irmão
+— Montagem genuinamente concluída, sem pendência aberta, continua
+reconhecida como concluída (a leniência original, a que resolvia "17"
+preso em andamento pra sempre, não foi perdida). Controle negativo:
+revertido pro cálculo antigo (mãe incluída na leniência), os dois
+primeiros testes falham reproduzindo o card contraditório exato
+(`'concluida' != 'concluida'` — a asserção que exige diferença falha
+porque o bug devolve o mesmo valor errado); restaurado, os 3 voltam a
+passar.
+
+---
+
 ## ACHADO-58 — o aceite do Remover prova a ROTA, não a TELA (verde falso) · RESOLVIDO 05/09/2026
 
 O Marcelo percorreu o `v2026.09.05-beta1` e os DOIS botões Remover

@@ -42,18 +42,19 @@ def test_todos_os_eventos_lancam_no_par_de_conta_e_valor_declarados(app_db):
 
 
 # ── 2. funções com mais de uma perna ─────────────────────────────────────────────────────────
-def test_efetivar_provisao_duas_pernas_com_o_mesmo_valor(app_db):
-    """despesa×ativo (reconhecer_despesa_efetivacao) e provisão×payable (a perna direta em
-    efetivar_provisao) usam o MESMO `valor` do chamador — nenhuma capa independentemente da
-    outra (ao contrário de reclassificar_provisao, ver abaixo)."""
+def test_efetivar_provisao_agora_e_perna_unica(app_db):
+    """F2-27 (docs/db/MODELO_CONTABIL.md): até 05/09/2026 `efetivar_provisao` tinha DUAS pernas —
+    despesa×ativo (via `reconhecer_despesa_efetivacao`) MAIS provisão×payable — testadas aqui com
+    o MESMO valor. Desde o F2-27 a despesa nasce na emissão (`reconhecer_provisoes_segmento`),
+    nunca mais na efetivação: `efetivar_provisao` ficou perna ÚNICA (provisão×payable/caixa). Não
+    sobra uma segunda perna pra comparar valor — a garantia do schema (débito==crédito por
+    lançamento) já cobre a única perna que resta."""
     db = app_db.get_session(); ot, oid = "loja", 6301; mc.seed_plano(db, ot, oid)
     mc.registrar_evento(db, ot, oid, "fechamento_venda_montagem", 500.0, ref="fv:P")
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.02", 500.0, ref="ef:P", forma_pagamento="a_prazo")
-    l_desp = _lan_por_ref(db, ot, oid, "ef:P:d")
+    assert mc.lancamento_por_ref(db, ot, oid, "ef:P:d") is None   # perna de despesa não existe mais
     l_prov = _lan_por_ref(db, ot, oid, "ef:P")
-    assert l_desp.valor == 500.0 and l_prov.valor == 500.0
-    assert _cod(db, ot, oid, l_desp.conta_debito_id) == "5.2.01"
-    assert _cod(db, ot, oid, l_desp.conta_credito_id) == "1.1.06.02"
+    assert l_prov.valor == 500.0
     assert _cod(db, ot, oid, l_prov.conta_debito_id) == "2.1.04.02"
     assert _cod(db, ot, oid, l_prov.conta_credito_id) == "2.1.01"
     db.close()

@@ -3530,8 +3530,9 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
     nem duplica nada. Recalcula receita/despesa das rubricas com despesa-em-tempo-real (as 15 do
     antigo "matching pleno") usando o valor CONSTITUÍDO (a provisão da venda — a estimativa),
     atribuído a uma data diferente da real. Deduções, despesas administrativas/financeiras, outras
-    receitas e impostos NÃO mudam (rota própria, fora desta simulação) — vêm sempre do `dre()` real,
-    mesmo período.
+    receitas, Conciliação (ACHADO-60, F2-27: receita/despesa/resultado_conciliacao — 4.5.01/5.7.01,
+    reversão de resíduo no fechamento, independente da data simulada aqui) e impostos NÃO mudam
+    (rota própria, fora desta simulação) — vêm sempre do `dre()` real, mesmo período.
       - 'competencia_estimada': despesa = constituído de cada rubrica, na data da NF-e (mesma data da
         receita real) — reproduz o antigo "matching pleno". Receita = a real.
       - 'antecipacao_contrato': receita E despesa simuladas na data da VENDA/contrato assinado —
@@ -3603,7 +3604,16 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
     ebit = round(ebitda - real["depreciacao"], 2)
     resultado_financeiro = real["resultado_financeiro"]
     outras_receitas = real["outras_receitas"]
-    resultado_antes_impostos = round(ebit + resultado_financeiro + outras_receitas, 2)
+    # ACHADO-60 (F2-27, 05/09/2026): resultado_conciliacao (4.5.01/5.7.01) é reversão de resíduo no
+    # FECHAMENTO do projeto — independente da data de recognição simulada aqui (mesma família de
+    # resultado_financeiro/outras_receitas: pass-through do real, fora do escopo desta simulação).
+    # Tinha ficado de fora quando o dre() real ganhou o bloco — a MESMA omissão do ACHADO-60,
+    # só que aqui (não numa fórmula de margem, na soma de resultado_antes_impostos).
+    receita_conciliacao = real["receita_conciliacao"]
+    despesa_conciliacao = real["despesa_conciliacao"]
+    resultado_conciliacao = real["resultado_conciliacao"]
+    resultado_antes_impostos = round(
+        ebit + resultado_financeiro + outras_receitas + resultado_conciliacao, 2)
     lucro_liquido = round(resultado_antes_impostos - real["impostos"], 2)
     detalhe_cmv_csp = sorted(
         ({"codigo": cod, "nome": nomes_conta.get(cod, cod), "valor": v}
@@ -3624,6 +3634,8 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
         "constituicao_provisoes": const_prov, "ebitda": ebitda,
         "depreciacao": real["depreciacao"], "ebit": ebit,
         "resultado_financeiro": resultado_financeiro, "outras_receitas": outras_receitas,
+        "receita_conciliacao": receita_conciliacao, "despesa_conciliacao": despesa_conciliacao,
+        "resultado_conciliacao": resultado_conciliacao,
         "resultado_antes_impostos": resultado_antes_impostos,
         "impostos": real["impostos"], "lucro_liquido": lucro_liquido,
         "obs": ("Simulação (leitura, nunca lançada): despesa das rubricas com despesa em tempo real "
@@ -3639,6 +3651,8 @@ def dre_simulada(db, owner_tipo, owner_id, modo, ini=None, fim=None):
             "constituicao_provisoes": real["detalhe"]["constituicao_provisoes"],
             "resultado_financeiro": real["detalhe"]["resultado_financeiro"],
             "outras_receitas": real["detalhe"]["outras_receitas"],
+            "receita_conciliacao": real["detalhe"]["receita_conciliacao"],
+            "despesa_conciliacao": real["detalhe"]["despesa_conciliacao"],
         },
     }
 
@@ -3844,6 +3858,17 @@ def listar_rateios(db, owners):
     return out
 
 
+# ACHADO-60 (docs/db/ACHADOS_CONTABEIS.md): despesa codes counted inside margem_contribuicao's
+# deduction — usado por margem_projetada (F2-27) pra saber quais ativos "a Apropriar"
+# (_PROV_DESPESA_POR_ATIVO) ainda pesam no "pior caso" e quais são só custo_servico informativo.
+_MARGEM_DESPESA_PREFIXOS = ("5.1.", "5.3.")
+_MARGEM_DESPESA_CODIGOS = {"5.2.01", "5.2.12", "5.2.13"}
+
+
+def _em_margem_contribuicao(despesa_cod):
+    return despesa_cod.startswith(_MARGEM_DESPESA_PREFIXOS) or despesa_cod in _MARGEM_DESPESA_CODIGOS
+
+
 # ── DRE por projeto / margem de contribuição (sub-projeto #5) ─────────────────
 def margem_projeto(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
     """Margem de contribuição de um projeto (v5 §5): receita − custo direto de produto −
@@ -3851,13 +3876,22 @@ def margem_projeto(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
     Garantia entra pelo **valor bruto** (custo real da loja); repasse à fábrica é controle à parte (§6.2).
     NÃO aloca despesa fixa (isso é o rateio da Auditoria).
 
-    2026-08-07 (achado do usuário — "não reflete o estágio atual do projeto"): desde que a despesa
-    passou a ser reconhecida na efetivação real (não mais estimada de uma vez na NF-e), essa margem
-    só reflete o que JÁ foi efetivado — um projeto recém-faturado aparece com margem quase cheia,
-    mesmo que ainda falte gastar boa parte da provisão. `saldo_provisao_aberto` (o mesmo total que o
-    painel de Reconciliação mostra) e `margem_projetada` (margem_contribuicao − a PARTE do saldo
-    aberto ainda não gasta) dão o quadro completo: realizado até agora × pior caso se toda a provisão
-    pendente for gasta."""
+    2026-08-07 (achado do usuário — "não reflete o estágio atual do projeto"): margem_contribuicao
+    só reflete o que já foi RECONHECIDO como despesa — um projeto recém-faturado, com o custo ainda
+    todo por reconhecer, aparece com margem quase cheia. `saldo_provisao_aberto` (o mesmo total que
+    o painel de Reconciliação mostra) e `margem_projetada` dão o quadro completo: realizado até
+    agora × pior caso se todo o custo pendente vier a ser reconhecido.
+
+    ACHADO-60 (F2-27, 05/09/2026): até aqui `margem_projetada` descontava `saldo_provisao_aberto`
+    (2.1.04.x, PASSIVO — o que ainda não foi PAGO) do `margem_contribuicao`. Isso era correto
+    enquanto reconhecimento e pagamento andavam juntos (`efetivar_provisao` fazia as duas pernas na
+    mesma chamada): todo saldo de provisão em aberto era, por construção, despesa ainda não
+    reconhecida. O F2-27 separou os dois eixos (docs/db/MODELO_CONTABIL.md: "o caixa se move contra
+    o passivo; o resultado se move contra o ativo") — desde então uma rubrica pode estar
+    INTEIRAMENTE reconhecida (ativo 1.1.06.xx zerado, despesa já em margem_contribuicao) e ainda
+    assim ter saldo de provisão aberto (não paga). Descontar esse saldo de novo duplicava o custo.
+    `margem_projetada` agora lê o ATIVO (`_PROV_DESPESA_POR_ATIVO`, a mesma família de rubricas de
+    despesa em tempo real) — o que ainda NÃO foi reconhecido — não mais o PASSIVO."""
     m = lambda pref, sen: _mov(db, owner_tipo, owner_id, pref, sen, ini, fim, projeto_id=projeto_id)
     receita = round(m("4.1", "credor") + m("4.2", "credor"), 2)
     custo_produto = m("5.1", "devedor")      # inclui o Frete de Fábrica (5.1.02, formalismo S109)
@@ -3874,9 +3908,14 @@ def margem_projeto(db, owner_tipo, owner_id, projeto_id, ini=None, fim=None):
     # (reconciliar proporcional_custo_direto) — NÃO entra de novo na margem.
     custo_servico = m("5.2", "devedor")
     saldo_aberto = reconciliacao(db, owner_tipo, owner_id, projeto_id=projeto_id, ini=ini, fim=fim)["totais"]["saldo_aberto"]
-    # só desconta a parte AINDA NÃO gasta (saldo_aberto > 0); saldo negativo (já gastou mais que o
-    # provisionado) já está refletido em margem_contribuicao — subtrair de novo duplicaria o excesso.
-    margem_projetada = round(margem - max(saldo_aberto, 0.0), 2)
+    # ACHADO-60 (F2-27): "pior caso" = o que ainda está no ativo (1.1.06.xx), não reconhecido —
+    # não mais o saldo de provisão (passivo, não pago). Só as rubricas cujo destino de despesa
+    # entra em margem_contribuicao (_em_margem_contribuicao); 1.1.06.08/09 (Insumos/Frete Local,
+    # despesa em 5.2.08/09) ficam de fora — não pesam na margem, então não pesam no projetado.
+    nao_reconhecido = round(sum(
+        m(ativo_cod, "devedor") for ativo_cod, despesa_cod in _PROV_DESPESA_POR_ATIVO.items()
+        if _em_margem_contribuicao(despesa_cod)), 2)
+    margem_projetada = round(margem - max(nao_reconhecido, 0.0), 2)
     return {"projeto_id": projeto_id, "receita": receita, "custo_produto": custo_produto,
             "custo_servico": custo_servico,
             "prov_montagem": prov_montagem, "prov_assistencia": prov_assistencia,

@@ -65,8 +65,8 @@ def test_apos_conciliar_final_saldo_aberto_zerado(app_db):
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.06", 900.0, ref="ef06")   # sobra 100
     mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.07", 450.0, ref="ef07")   # falta -50
     mc.conciliar_final(db, ot, oid, "P", ref_base="cf:P", vereditos={
-        "2.1.04.06": {"veredito": "encerrada_valor_menor", "valor_efetivado": 0},
-        "2.1.04.07": {"veredito": "efetivada"},
+        "2.1.04.06": {"veredito": "receber"},
+        "2.1.04.07": {"veredito": "absorver"},
     })
     for l in mc.reconciliacao(db, ot, oid, projeto_id="P")["provisoes"]:
         assert l["saldo_aberto"] == 0.0, l["codigo"]

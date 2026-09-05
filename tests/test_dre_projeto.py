@@ -22,40 +22,84 @@ def test_margem_projeto(app_db):
 
 
 def test_margem_projeto_expoe_saldo_aberto_e_margem_projetada(app_db):
-    """2026-08-07 (achado do usuário): margem_contribuicao só reflete o que já foi EFETIVADO — um
-    projeto recém-faturado com provisão ainda toda em aberto aparece com margem quase cheia.
-    saldo_provisao_aberto + margem_projetada dão o quadro completo (realizado × pior caso)."""
+    """2026-08-07 (achado do usuário): margem_contribuicao só reflete o que já foi RECONHECIDO — um
+    projeto recém-faturado com o custo ainda todo por reconhecer aparece com margem quase cheia.
+    saldo_provisao_aberto + margem_projetada dão o quadro completo (realizado × pior caso).
+
+    ACHADO-60 (F2-27, 05/09/2026): o que muda o estágio agora é a EMISSÃO
+    (`reconhecer_provisoes_segmento`), não mais a efetivação — `efetivar_provisao` (pagamento)
+    sozinho não move mais margem_contribuicao nem margem_projetada (ver
+    test_efetivar_sozinho_nao_move_margem_nem_projetada, abaixo)."""
     db = app_db.get_session(); mc.seed_plano(db, "loja", 22)
     mc.registrar_evento(db, "loja", 22, "registro_venda_contrato", 10000.0, projeto_id="P", ref="v:P")
     mc.constituir_provisoes_fechamento(db, "loja", 22, "P", {"montagem": 1000.0}, ref_base="pf:P")
     mc.registrar_evento(db, "loja", 22, "faturamento", 10000.0, projeto_id="P", ref="fat:P")
-    # nada efetivado ainda: margem_contribuicao "cheia", mas saldo_provisao_aberto expõe o risco
+    # nada reconhecido ainda: margem_contribuicao "cheia", mas saldo_provisao_aberto expõe o risco
     r0 = mc.margem_projeto(db, "loja", 22, "P")
     assert r0["margem_contribuicao"] == 10000.0
     assert r0["saldo_provisao_aberto"] == 1000.0
-    assert r0["margem_projetada"] == 9000.0     # pior caso: se gastar toda a provisão pendente
-    # efetiva parte (400 de 1000): margem_contribuicao cai (despesa real reconhecida), saldo_aberto reduz
-    mc.efetivar_provisao(db, "loja", 22, "P", "2.1.04.02", 400.0, ref="ef:P")
+    assert r0["margem_projetada"] == 9000.0     # pior caso: se reconhecer toda a provisão pendente
+    # emite a NF-e (reconhece o provisionado INTEGRAL, F2-27): margem_contribuicao cai o valor cheio
+    mc.reconhecer_provisoes_segmento(db, "loja", 22, "P", "mercadoria", 100.0, ref_base="rec:P")
     r1 = mc.margem_projeto(db, "loja", 22, "P")
-    assert r1["margem_contribuicao"] == 9600.0    # 10000 - 400 (montagem, já vira despesa real)
-    assert r1["saldo_provisao_aberto"] == 600.0
-    assert r1["margem_projetada"] == 9000.0       # realizado + o que falta = sempre o mesmo pior caso
+    assert r1["margem_contribuicao"] == 9000.0    # 10000 - 1000 (montagem, provisionado integral)
+    assert r1["saldo_provisao_aberto"] == 1000.0  # ainda NÃO paga — o eixo do passivo não se move
+    assert r1["margem_projetada"] == 9000.0       # == margem_contribuicao — já reconhecida, nada a projetar
     db.close()
 
 
 def test_margem_projetada_nao_soma_excedente_ja_refletido(app_db):
-    """Se o custo real já superou o provisionado, saldo_provisao_aberto fica NEGATIVO — o excesso já
-    está em margem_contribuicao (despesa real, reconhecida na efetivação); margem_projetada não deve
-    descontar de novo (senão contaria o excesso duas vezes)."""
+    """Se o custo já superou o provisionado, o ativo (1.1.06.02) zera antes do reconhecimento
+    inteiro consumir o saldo — margem_contribuicao só reconhece o que HAVIA no ativo (o
+    provisionado, não o excesso); margem_projetada não deve descontar de novo (senão contaria
+    o que já está zerado como se ainda faltasse reconhecer)."""
     db = app_db.get_session(); mc.seed_plano(db, "loja", 23)
     mc.registrar_evento(db, "loja", 23, "registro_venda_contrato", 10000.0, projeto_id="P", ref="v:P")
     mc.constituir_provisoes_fechamento(db, "loja", 23, "P", {"montagem": 1000.0}, ref_base="pf:P")
     mc.registrar_evento(db, "loja", 23, "faturamento", 10000.0, projeto_id="P", ref="fat:P")
-    mc.efetivar_provisao(db, "loja", 23, "P", "2.1.04.02", 1200.0, ref="ef:P")   # custo real > provisão
+    mc.reconhecer_provisoes_segmento(db, "loja", 23, "P", "mercadoria", 100.0, ref_base="rec:P")
     r = mc.margem_projeto(db, "loja", 23, "P")
-    assert r["saldo_provisao_aberto"] == -200.0
-    assert r["margem_contribuicao"] == 8800.0     # 10000 - 1200 (despesa real, já reflete o excesso)
-    assert r["margem_projetada"] == 8800.0        # == margem_contribuicao (nada mais a descontar)
+    assert r["saldo_provisao_aberto"] == 1000.0   # ainda não paga (eixo do passivo, à parte)
+    assert r["margem_contribuicao"] == 9000.0     # 10000 - 1000 (o provisionado, tudo que o ativo tinha)
+    assert r["margem_projetada"] == 9000.0        # == margem_contribuicao (ativo zerado, nada mais a reconhecer)
+    db.close()
+
+
+def test_efetivar_sozinho_nao_move_margem_nem_projetada(app_db):
+    """ACHADO-60 (F2-27, 05/09/2026): pagar (`efetivar_provisao`) sem antes ter emitido a NF-e não
+    move mais margem_contribuicao (a despesa só nasce na emissão) nem margem_projetada (que agora
+    lê o ativo, não o passivo) — só reduz saldo_provisao_aberto (o passivo, o que falta pagar).
+    Controle-irmão dos dois testes acima: prova que o eixo do pagamento ficou mesmo isolado do
+    eixo do reconhecimento."""
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 27)
+    mc.registrar_evento(db, "loja", 27, "registro_venda_contrato", 10000.0, projeto_id="P", ref="v:P")
+    mc.constituir_provisoes_fechamento(db, "loja", 27, "P", {"montagem": 1000.0}, ref_base="pf:P")
+    mc.registrar_evento(db, "loja", 27, "faturamento", 10000.0, projeto_id="P", ref="fat:P")
+    mc.efetivar_provisao(db, "loja", 27, "P", "2.1.04.02", 400.0, ref="ef:P")
+    r = mc.margem_projeto(db, "loja", 27, "P")
+    assert r["margem_contribuicao"] == 10000.0    # nada reconhecido — pagamento sozinho não move
+    assert r["saldo_provisao_aberto"] == 600.0     # o passivo SIM reduziu — pagou 400 de 1000
+    assert r["margem_projetada"] == 9000.0         # ainda o pior caso pleno (ativo intacto, nada reconhecido)
+    db.close()
+
+
+def test_margem_projetada_janela_pos_emissao_pre_pagamento(app_db):
+    """ACHADO-60 (F2-27, 05/09/2026) — o caso que NÃO EXISTIA antes do F2-27: emitida a NF-e (custo
+    já reconhecido, ativo zerado) mas a provisão ainda não paga (passivo aberto). Antes do F2-27
+    isto era impossível (reconhecimento e pagamento aconteciam na MESMA chamada); agora é a janela
+    mais comum do ciclo. margem_projetada tem que ler o ATIVO (zerado → nada a projetar), nunca
+    o saldo de provisão aberto (que seguiria de pé, e duplicaria o custo se fosse descontado)."""
+    db = app_db.get_session(); mc.seed_plano(db, "loja", 28)
+    mc.registrar_evento(db, "loja", 28, "registro_venda_contrato", 10000.0, projeto_id="P", ref="v:P")
+    mc.constituir_provisoes_fechamento(db, "loja", 28, "P", {"montagem": 1000.0}, ref_base="pf:P")
+    mc.registrar_evento(db, "loja", 28, "faturamento", 10000.0, projeto_id="P", ref="fat:P")
+    mc.reconhecer_provisoes_segmento(db, "loja", 28, "P", "mercadoria", 100.0, ref_base="rec:P")
+    r = mc.margem_projeto(db, "loja", 28, "P")
+    ativo_id = db.query(mc.Conta).filter_by(owner_tipo="loja", owner_id=28, codigo="1.1.06.02").first().id
+    assert mc.saldo_conta(db, "loja", 28, ativo_id) == 0.0        # ativo zerado — tudo reconhecido
+    assert r["saldo_provisao_aberto"] == 1000.0                   # passivo intacto — nada pago ainda
+    assert r["margem_contribuicao"] == 9000.0
+    assert r["margem_projetada"] == 9000.0                        # sem duplo-conto — a bug que o ACHADO-60 fechou
     db.close()
 
 

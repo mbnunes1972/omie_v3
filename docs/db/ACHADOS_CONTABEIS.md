@@ -4755,3 +4755,91 @@ aparece); restaurado, volta a passar. Regressão completa (E2E + fase D
 
 ---
 
+## ACHADO-60 — margem_projetada duplicava o custo na janela pós-emissão/pré-pagamento · RESOLVIDO 05/09/2026 (F2-27)
+
+Achado na própria verificação do F2-27 (camada (c) da suíte, não um
+relato do Marcelo): dois testes de `test_dre_projeto.py` passaram a
+falhar com o modelo novo, e a causa não era teste desatualizado — era
+`margem_projeto` lendo o eixo errado.
+
+**Não é defeito antigo — é fórmula que ficou desatualizada.**
+`margem_projetada` (mod_contabil.py) descontava `saldo_provisao_aberto`
+(o saldo da conta de PROVISÃO, 2.1.04.x — passivo, o que ainda não foi
+PAGO) do `margem_contribuicao`, como "pior caso: se gastar toda a
+provisão pendente". Isso era correto enquanto reconhecimento e
+pagamento andavam juntos: `efetivar_provisao`, antes do F2-27, fazia as
+duas pernas (despesa×ativo E provisão×caixa) na MESMA chamada — todo
+saldo de provisão em aberto era, por construção, despesa ainda não
+reconhecida.
+
+O F2-27 (docs/db/MODELO_CONTABIL.md) separou os dois eixos de
+propósito: "o caixa se move contra o passivo; o resultado se move
+contra o ativo". Desde então, `1.1.06.xx` (ativo "a Apropriar") mede o
+que ainda NÃO foi reconhecido; `2.1.04.x` (provisão) mede o que ainda
+NÃO foi pago — os dois podem divergir livremente. Uma rubrica pode
+estar INTEIRAMENTE reconhecida (ativo zerado na emissão, despesa já
+em `margem_contribuicao`) e ainda ter saldo de provisão aberto (a
+fatura não venceu). Nessa janela — a mais comum do ciclo pós-F2-27,
+não um caso de canto — `margem_projetada` descontava o mesmo custo
+DUAS vezes: uma em `margem_contribuicao` (já reconhecido) e outra ao
+subtrair `saldo_provisao_aberto` (que continuava de pé, sem relação
+nenhuma com reconhecimento). Medido: projeto com R$1000 provisionados,
+NF-e emitida, nada pago — `margem_contribuicao` caía pra 9000 (correto,
+reconheceu o custo), mas `margem_projetada` caía pra 8000 (descontou o
+mesmo 1000 de novo).
+
+**Levantamento dos irmãos (pedido antes do conserto):** toda fórmula de
+resultado/KPI que lê `2.1.04.x`/`reconciliacao()` foi auditada.
+`fila-provisoes`, `reconciliacao-provisoes` (`vencido`, agrupamento
+em_aberto/fechada_zerada) e o painel da Fila leem o mesmo saldo, mas
+para status de PAGAMENTO (rota certa — PASSIVO é exatamente o eixo do
+não-pago). `mod_pe_comparacao.reconciliacao_estimada`/
+`saldo_margem_estimado` leem `provisionado` (o valor contratado/PE), não
+`saldo_aberto` — eixo diferente, não afetado. `margem_todos_projetos` e
+`reconciliar` (rateio) chamam `margem_projeto` e não duplicam a
+fórmula. `margem_projetada` foi o ÚNICO lugar lendo o passivo para uma
+conta de RESULTADO.
+
+### Conserto (05/09, F2-27)
+
+`margem_projetada` passou a somar o saldo DEVEDOR (ainda não baixado)
+das contas de ativo em `_PROV_DESPESA_POR_ATIVO` — as mesmas 17
+rubricas de despesa em tempo real — restrito às que efetivamente pesam
+em `margem_contribuicao` (`_em_margem_contribuicao`: grupos 5.1.\*/5.3.\*
+inteiros + 5.2.01/5.2.12/5.2.13; de fora ficam 5.2.08/09, Insumos/Frete
+Local, que são só `custo_servico` informativo). `saldo_provisao_aberto`
+não mudou de sentido — continua o passivo, pro painel de pagamento.
+
+**Aceite:** `tests/test_dre_projeto.py` — os dois testes que
+quebraram foram rederivados pra emitir a NF-e
+(`reconhecer_provisoes_segmento`) em vez de pagar
+(`efetivar_provisao`), já que é a emissão que agora move
+`margem_contribuicao`. Dois testes novos: um controle-irmão provando
+que pagar SOZINHO (sem emitir) não move nem `margem_contribuicao` nem
+`margem_projetada` (só `saldo_provisao_aberto`); e um dedicado à janela
+pós-emissão/pré-pagamento — o caso que não existia antes do F2-27 —
+provando que `margem_projetada` fecha em cima de `margem_contribuicao`
+(sem duplo-conto) com o ativo zerado e o passivo ainda de pé.
+
+**Segunda ocorrência, mesma família (achado na verificação em camadas,
+não repetição do mesmo conserto):** `dre_simulada()` (modo
+"competencia_estimada") também ficou pra trás — quando `dre()` real
+ganhou o bloco de Conciliação (4.5.01/5.7.01), a soma de
+`resultado_antes_impostos` de `dre_simulada` não foi atualizada pra
+incluir `resultado_conciliacao`. Não é confusão de eixo desta vez (é
+uma simples omissão de propagação), mas a mesma causa-raiz do
+ACHADO-60: uma fórmula de resultado que existia ANTES do bloco de
+Conciliação existir, e ninguém voltou nela quando o bloco nasceu.
+Medido: projeto com sobra de custo de fábrica revertida por "Receber"
+— `dre()` real reflete a Receita de Conciliação corretamente,
+`dre_simulada()` não, e a diferença exata entre `lucro_liquido` real e
+simulado é o valor revertido (não um artefato de arredondamento).
+Conserto: `dre_simulada` passou a herdar `receita_conciliacao`/
+`despesa_conciliacao`/`resultado_conciliacao` de `real[...]` (mesmo
+padrão de pass-through já usado por `resultado_financeiro`/
+`outras_receitas`) e somá-lo em `resultado_antes_impostos`. Aceite:
+`tests/test_dre_ciclo_completo_e2e.py::test_ciclo_completo_tres_visoes_dre`
+(a divergência no marco final `8_conclusao_projeto` fecha a zero).
+
+---
+

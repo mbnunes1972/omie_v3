@@ -369,7 +369,7 @@ Gerado por `tests/test_dre_ciclo_completo_e2e.py`. **Teste de medição, não de
 | ebitda | 53000.00 | 53000.00 | 48000.00 | sim |
 | resultado_financeiro | 0.00 | 0.00 | 0.00 | sim |
 | outras_receitas | 0.00 | 0.00 | 0.00 | sim |
-| lucro_liquido | 53000.00 | 53000.00 | 48000.00 | sim |
+| lucro_liquido | 95000.00 | 95000.00 | 90000.00 | sim |
 
 **Saldos das contas-chave:**
 

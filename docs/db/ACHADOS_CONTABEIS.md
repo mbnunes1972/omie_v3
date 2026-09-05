@@ -4212,3 +4212,26 @@ por causa): `ref` voltando a ser constante, o teste de retentativa
 falha; a condição de trava da tela voltando a `!!e`, o teste de erro
 falha. Restaurados, os 5 voltam a passar.
 
+---
+
+## ACHADO-56 — a Revisão de PE fica VERDE antes do veredito de absorver/cobrar · ABERTO 05/09/2026
+
+Achado do percurso do Marcelo em Homologação (05/09), no candidato
+`v2026.09.05-beta1`: a subfase de Revisão de PE (11c) some fechada
+("Concluída") antes de o veredito de absorver/cobrar a diferença ser
+dado — mesma família do ACHADO-39 (C2): **fase não pode se dar por
+concluída antes do reconhecimento contábil que ela mesma exige.** Uma
+etapa que fecha "verde" sem o veredito escreve uma auditoria enganosa —
+alguém lendo o ciclo do projeto vê "Revisão de PE: concluída" sem saber
+que ainda existe um lado da conta (absorver custo × cobrar do cliente)
+sem decisão.
+
+**Não consertado nesta rodada** — só registrado, por instrução
+explícita. Fica para um próximo candidato: medir onde exatamente o
+status "concluído" da subfase 11c é escrito relativo ao momento em que
+o veredito de absorver/cobrar é exigido/dado, e travar a conclusão até
+o veredito existir — mesmo desenho que o ACHADO-39 já aplicou pro
+ambiente.
+
+---
+

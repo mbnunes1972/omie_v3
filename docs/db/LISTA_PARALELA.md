@@ -155,6 +155,31 @@ Resolve o **ACHADO-37** (a fila empilhando todos os projetos) de graça.
 acabou de ser estabilizada. Desenho completo na Parte A do
 `TAREFA_CONCILIACAO_UI.md`. (Marcelo, 01/09, e reafirmado em 02/09.)
 
+**Desenho FECHADO com o Marcelo em 05/09** (ainda adiado — só o desenho
+fechou, nada foi implementado):
+- uma tela só, a **Fila**, morando no módulo **Financeiro**, filtrável por
+  projeto e por conta, agrupada por projeto com as contas abrindo ao
+  selecionar, no design que hoje é usado na tela do ciclo.
+- a tela de provisões DO CICLO permanece — mas apontando para o MESMO
+  endpoint, a MESMA consulta e o MESMO box de veredito. Um componente, dois
+  pontos de montagem. O risco não é ter duas telas, é ter duas
+  implementações: foi assim que nasceram os **ACHADOS 32, 33, 39 e 41**,
+  quatro vezes no mesmo mês.
+- o contador ("N provisões em aberto") sai da MESMA consulta da lista,
+  escopos diferentes só pelo filtro — número divergente entre as duas
+  telas é defeito por construção.
+- o veredito deixa de ser texto e vira botão **"Resolver"**, que NÃO
+  navega: abre o box na própria linha, valha ela no ciclo ou na Fila.
+- as opções do box vêm do SERVIDOR (`vereditos_validos_para_saldo`), nunca
+  fixas na tela — fixar quatro opções reintroduz o ACHADO-41 com roupa
+  nova.
+- **"Vai Chegar" NÃO é veredito, é ADIAMENTO** (decidido com o Marcelo):
+  Absorver, Receber e Encerrar fecham a conta; Adiar mantém a linha viva,
+  com data prevista, marcada como aguardando na fila.
+- o valor da despesa vem PRÉ-PREENCHIDO com o saldo disponível da provisão
+  e continua editável — mesma regra da LP-15, "sugere, não manda".
+(Marcelo, 05/09, percurso do `v2026.09.05-beta1`.)
+
 
 **LP-14 · Evento de término por etapa, com oferta de transferência.**
 Pedido do Marcelo (02/09): *toda etapa precisa ter um evento que caracterize
@@ -267,9 +292,22 @@ lado, no mesmo dia.
   associam aos AMBIENTES do projeto, não à etapa como um todo (achado do Marcelo, 04/09,
   percurso do `v2026.09.04-beta1` — mesmo dia do ACHADO-49/50/51, classificado por ele mesmo
   como LP, não achado de bloco fiscal)
+- a carga das NF-e da fábrica deve ocorrer na subfase de RECEBIMENTO — confirmado pelo Marcelo
+  no percurso de 05/09 (`v2026.09.05-beta1`); é literalmente o item 2 de
+  `TAREFA_FASES_E_RECEBIMENTO.md` ("item 2, recebimento — cria o dado que o item 3 consome"),
+  não um ponto novo — registrado aqui pra não depender de só estar na TAREFA
 
 **Consequência imediata na fila ativa:** o item 5 do bloco fiscal (NF-e H/P) fica **suspenso**
 até esta frente ter decisão — `ROTEIRO.md`, F2-21.
+
+**LP-19 · Valor estourando a coluna na tabela de decisão (família do C6).**
+Achado do percurso do Marcelo em Homologação (05/09): "R$ -64.043,46" quebra
+em duas linhas na coluna de valor da tabela de decisão (mesma classe do C6 —
+`docs/db/TAREFA_PERCURSO_0209.md`, o modal de comparação de CFO/venda que
+tinha o mesmo problema nas caixas de KPI: coluna estreita pro tamanho da
+fonte com um valor negativo/longo). Ergonomia pura, mesma família da LP-10
+(botões desalinhados na mesma tela).
+*Adiado:* não muda número nem trava fluxo. (Marcelo, 05/09.)
 
 ---
 

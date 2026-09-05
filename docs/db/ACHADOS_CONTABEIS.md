@@ -4214,6 +4214,106 @@ falha. Restaurados, os 5 voltam a passar.
 
 ---
 
+## ACHADO-55 — a decisão do PE é reversível na TELA e irreversível no LIVRO · RESOLVIDO 05/09/2026
+
+Relato do Marcelo (05/09, Homologação, `v2026.09.05-beta1`): escolheu
+"manter", depois "estornar" — o estorno foi lançado; voltou pra
+"manter" e o lançamento **não foi corrigido**.
+
+**Medido, com linha citada** (`main.py`, rota `POST /pe/conciliacao/
+<pool_ambiente_id>`): ao redecidir o mesmo `pool_ambiente_id`, o
+REGISTRO (`ConciliacaoPeFase`) é corrigido — `db.delete(existente)` e
+insere o novo. O LIVRO era de mão única:
+`if montada["tipo_decisao"] == "estornar": _mc.registrar_credito_
+cliente(..., ref="est:%s:%d" % (nome, pool_ambiente_id))`. Não existia
+contrapartida nenhuma quando a decisão deixava de ser "estornar" — o
+crédito ao cliente ficava. Resultado: `ConciliacaoPeFase` diz "manter" e
+o razão diz "estornado". Mesma família do ACHADO-16 e do ACHADO-34:
+veredito × livro discordando.
+
+**Medido antes de codar, três coisas:**
+
+**(a) decidir "estornar" duas vezes duplica o crédito?** Não. `ref`
+fixo (`est:<projeto>:<pool>`) + `registrar_evento` já checa
+`lancamento_por_ref` antes de lançar — idempotente por construção,
+mesmo sem eu ter escrito nada pra isso. Não é um segundo defeito de
+dinheiro escondido na mesma rota — mas é PARTE do problema: o mesmo
+`ref` fixo que evita duplicar também impede reativar o crédito depois
+de uma reversão (ver conserto abaixo).
+
+**(b) onde vive "cliente assinou a aprovação do PE"?** Consultável —
+`CicloEtapa(etapa_codigo="11e").status in mod_ciclo.STATUS_CONCLUSIVOS`
+(11e = `PE_APROVACAO_CLIENTE`, subfase existente, tratada como qualquer
+outra em `CicloEtapa`). Nada novo precisou nascer.
+
+**(c) quantas decisões revertidas existem hoje, e quantas deixaram
+crédito órfão** (mesma medição de base real das travas 44/45/48— script
+pontual sobre `log_acoes_gerenciais` e `lancamento`, três ambientes):
+
+| ambiente | decisões `pe_conciliacao_*` logadas | pares (projeto, ambiente) com mais de uma decisão | crédito órfão |
+|---|---|---|---|
+| Integração | 0 | — | — |
+| Homologação | 17 | **1** — `Teste_4`/pool 16, sequência `manter → estornar → manter → manter` | **1** — R$ 64.043,46, decisão atual "manter", crédito ainda vivo no razão |
+| Produção | não medido — fora do escopo, instrução explícita | — | — |
+
+O caso real de Homologação é EXATAMENTE o relato do Marcelo, com o
+mesmo valor da tabela de decisão que estourou a coluna (LP-19) — mesmo
+projeto, mesmo ambiente.
+
+Nenhuma das três medições revelou motivo pra parar — seguido para o
+conserto na ordem original.
+
+### Conserto (05/09)
+
+**Desenho, por instrução explícita: correção por LANÇAMENTO, nunca por
+apagamento** — mesma decisão já tomada pelo ACHADO-16/30/34. Duas peças
+novas em `mod_contabil.py`:
+
+- **`registrar_credito_cliente_pe`** — emite o crédito numerado por
+  TENTATIVA dentro do par (projeto, ambiente): `ref =
+  "est:<projeto>:<pool>:<N>"`, `N` = 1 + quantos créditos (não-reversão)
+  já existem pra este par. Nunca reaproveita um `ref` já usado, mesmo
+  revertido depois — reaproveitar faria a idempotência de
+  `registrar_evento` devolver o lançamento ANTIGO (já revertido) no
+  lugar do crédito novo que a decisão atual pede, e o livro ficaria
+  mudo pra decisão de verdade.
+- **`reverter_credito_cliente_pe`** — reverte o crédito ATIVO mais
+  recente do par: lançamento invertido (débito/crédito trocados),
+  `ref = '<original>:estorno'`, mesmo desenho do `estornar_rateio` já
+  existente no arquivo. Idempotente (se o mais recente já tem sua
+  reversão, devolve ela); `None` se não houver crédito nenhum a
+  reverter.
+
+`main.py`, mesma rota: guarda `decisao_anterior` ANTES de deletar o
+registro antigo. Depois de persistir a nova decisão — entra em
+"estornar" vindo de outra coisa → `registrar_credito_cliente_pe` (novo
+crédito); sai de "estornar" pra outra coisa → `reverter_credito_
+cliente_pe` (reversão); fica em "estornar" ou fica fora dele → nenhuma
+ação no livro (nada mudou ali).
+
+**Janela do (b), com dois lados** — hoje a rota deletava e reinseria
+sem perguntar nada, e isso também era defeito: dentro da janela
+("11e" ainda não concluída), redecidir é livre e o livro acompanha; **fora
+dela, redecidir é RECUSADO** (409, mensagem nomeando a aprovação do
+cliente como o motivo) — só quando já existe uma decisão sendo MUDADA;
+a primeira decisão pra um ambiente nunca visto não é "redecidir" e
+continua livre mesmo com a 11e concluída.
+
+**Aceite:** `tests/test_achado55_conciliacao_pe_redecisao.py` (4
+testes) — sequência manter→estornar→manter termina com o registro
+dizendo "manter" e o livro coerente (saldo do crédito zerado, dois
+lançamentos vivos — original + reversão, nunca um DELETE); reestornar
+depois de reverter emite um crédito NOVO (`ref` `:2`, não reaproveita o
+`:1` já revertido); redecidir depois da assinatura da 11e é recusado
+(409); controle-irmão — a primeira decisão continua livre mesmo com a
+11e concluída. Dois controles negativos, um por peça do conserto:
+reversão desativada, os dois primeiros testes falham (crédito órfão
+volta a existir); janela desativada, só o teste de recusa falha.
+Restaurados, os 4 (mais os 24 pré-existentes de
+`test_conciliacao_pe_e2e.py`) voltam a passar.
+
+---
+
 ## ACHADO-56 — a Revisão de PE fica VERDE antes do veredito de absorver/cobrar · ABERTO 05/09/2026
 
 Achado do percurso do Marcelo em Homologação (05/09), no candidato

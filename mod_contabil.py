@@ -2680,6 +2680,48 @@ def registrar_credito_cliente(db, owner_tipo, owner_id, projeto_id, valor, ref, 
                             projeto_id=projeto_id, data=data, ref=ref, historico=historico)
 
 
+def _ref_credito_pe(projeto_id, pool_ambiente_id, n):
+    return "est:%s:%d:%d" % (projeto_id, pool_ambiente_id, n)
+
+
+def registrar_credito_cliente_pe(db, owner_tipo, owner_id, projeto_id, pool_ambiente_id, valor, data=None):
+    """ACHADO-55 (05/09): crédito ao cliente da decisão "estornar" do PE, numerado por TENTATIVA
+    dentro do par (projeto, ambiente) — nunca reaproveita um `ref` já usado, mesmo que aquele
+    crédito já tenha sido revertido depois (ver `reverter_credito_cliente_pe`). Reaproveitar o
+    ref faria a idempotência de `registrar_evento` devolver o lançamento ANTIGO (já revertido)
+    em vez de criar o crédito novo que a decisão atual exige — o livro ficaria mudo pra decisão
+    de verdade. Mesma numeração por tentativa do ACHADO-54 (ref de NF-e)."""
+    prefixo = _ref_credito_pe(projeto_id, pool_ambiente_id, 0).rsplit(":", 1)[0] + ":"
+    n = 1 + (db.query(Lancamento)
+               .filter(Lancamento.ref.like(prefixo + "%"))
+               .filter(~Lancamento.ref.like("%:estorno"))
+               .count())
+    ref = _ref_credito_pe(projeto_id, pool_ambiente_id, n)
+    return registrar_credito_cliente(db, owner_tipo, owner_id, projeto_id, valor, ref=ref, data=data)
+
+
+def reverter_credito_cliente_pe(db, owner_tipo, owner_id, projeto_id, pool_ambiente_id, data=None):
+    """ACHADO-55 (05/09): reverte o crédito ATIVO mais recente deste par (projeto, ambiente) —
+    lançamento invertido com `ref '<original>:estorno'` (mesmo desenho do `estornar_rateio`),
+    NUNCA um DELETE do crédito original. Idempotente: se o crédito mais recente já tem sua
+    reversão, no-op (devolve ela). None se não houver crédito nenhum a reverter (redecidir de
+    "manter" pra "absorver", por exemplo, nunca teve crédito — nada a fazer)."""
+    prefixo = _ref_credito_pe(projeto_id, pool_ambiente_id, 0).rsplit(":", 1)[0] + ":"
+    ultimo = (db.query(Lancamento)
+                .filter(Lancamento.ref.like(prefixo + "%"))
+                .filter(~Lancamento.ref.like("%:estorno"))
+                .order_by(Lancamento.id.desc()).first())
+    if ultimo is None:
+        return None
+    ref_estorno = ultimo.ref + ":estorno"
+    ja = lancamento_por_ref(db, owner_tipo, owner_id, ref_estorno)
+    if ja is not None:
+        return ja
+    return lancar(db, owner_tipo, owner_id, ultimo.conta_credito_id, ultimo.conta_debito_id,
+                 ultimo.valor, data=data, projeto_id=projeto_id, origem="estorno_credito_cliente",
+                 historico="Estorno — decisão do PE revertida", ref=ref_estorno)
+
+
 def saldo_credito_cliente(db, owner_tipo, owner_id, projeto_id):
     """Saldo em aberto de Créditos a Clientes (2.1.11) do projeto — nunca abaixo de 0. Fora do
     grupo Provisões (2.1.04) de propósito: `conciliar_final` (etapa 21) não varre esta conta, o

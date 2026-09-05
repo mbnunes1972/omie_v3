@@ -8001,6 +8001,20 @@ class Handler(BaseHTTPRequestHandler):
                 parcela_id = pa_ambiente.parcela_id if pa_ambiente else None
                 existente = db.query(ConciliacaoPeFase).filter_by(
                     projeto_nome=nome, pool_ambiente_id=pool_ambiente_id).first()
+                decisao_anterior = existente.tipo_decisao if existente else None
+                # ACHADO-55 (05/09): redecidir é livre ATÉ a aprovação do PE pelo cliente
+                # (assinatura, subfase 11e) — depois dela, o livro já pode ter sido lido/fechado
+                # rio abaixo, e reabrir a decisão sem controle é o mesmo risco que o ACHADO-30 já
+                # nomeou pra documento. Só se aplica quando já existe decisão a MUDAR — a
+                # primeira decisão nunca é "redecidir".
+                if existente is not None and existente.tipo_decisao != montada["tipo_decisao"]:
+                    et_11e = db.query(CicloEtapa).filter_by(
+                        projeto_nome=nome, etapa_codigo="11e").first()
+                    if et_11e is not None and et_11e.status in mod_ciclo.STATUS_CONCLUSIVOS:
+                        self.send_json({"ok": False, "erro":
+                            "Esta decisão não pode mais ser alterada — o cliente já aprovou "
+                            "(assinou) o Projeto Executivo. A janela para ajustar a conciliação "
+                            "de Custo de Fábrica fecha junto com essa aprovação."}, code=409); return
                 if existente:
                     db.delete(existente); db.flush()
                 db.add(ConciliacaoPeFase(
@@ -8008,11 +8022,19 @@ class Handler(BaseHTTPRequestHandler):
                     tipo_decisao=montada["tipo_decisao"], diferenca_cfo=montada["diferenca_cfo"],
                     diferenca_valor_contrato=montada["diferenca_valor_contrato"],
                     valor_aprovado=montada["valor_aprovado"], aprovador_id=aprovador.id))
-                if montada["tipo_decisao"] == "estornar":
-                    ot, oid = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
-                    _mc.registrar_credito_cliente(
-                        db, ot, oid, projeto_id=nome, valor=montada["valor_aprovado"],
-                        ref="est:%s:%d" % (nome, pool_ambiente_id))
+                # ACHADO-55 (05/09): o livro corrige por LANÇAMENTO, nunca por apagamento — sair
+                # de "estornar" gera uma REVERSÃO com rastro (`reverter_credito_cliente_pe`), não
+                # desfaz o crédito original; entrar em "estornar" emite um crédito NOVO, numerado
+                # por tentativa (nunca reaproveita um ref já revertido, ou a idempotência por ref
+                # devolveria o lançamento antigo em vez de criar o que a decisão atual pede).
+                ot, oid = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                if montada["tipo_decisao"] == "estornar" and decisao_anterior != "estornar":
+                    _mc.registrar_credito_cliente_pe(
+                        db, ot, oid, projeto_id=nome, pool_ambiente_id=pool_ambiente_id,
+                        valor=montada["valor_aprovado"])
+                elif montada["tipo_decisao"] != "estornar" and decisao_anterior == "estornar":
+                    _mc.reverter_credito_cliente_pe(
+                        db, ot, oid, projeto_id=nome, pool_ambiente_id=pool_ambiente_id)
                 db.add(LogAcaoGerencial(solicitante_id=aprovador.id, autorizador_id=aprovador.id,
                         acao="pe_conciliacao_" + montada["tipo_decisao"], projeto_nome=nome,
                         etapa_alvo="11d",

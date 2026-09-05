@@ -180,11 +180,25 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
         "ACHADO-33: efetivar-provisao nunca teve guarda de veredito — Efetivar continua "
         "liberado em rubrica de veredito nomeado, só o Resolver genérico sai")
     assert btn_efetivar_comissao.is_enabled()
-    assert linha_comissao.locator('button:has-text("Resolver")').count() == 0, (
-        "veredito nomeado não pode oferecer Resolver genérico — o servidor recusa com 409")
+    # F2-25 Passo 4 (05/09, DECIDIDO): o link que navegava pra Fila virou botão "Resolver" que
+    # abre o box NA PRÓPRIA LINHA (nunca o Resolver GENÉRICO — aquele continua recusado aqui, o
+    # servidor ainda devolveria 409 se chamado; este é outro botão, outro endpoint, o box de
+    # veredito nomeado). Sem asserção de count()==0 pro texto "Resolver": ambos os casos usam o
+    # mesmo rótulo agora, o que distingue é o comportamento (abre box vs. chama resolver-saldo).
     link_fila = linha_comissao.locator('a:has-text("Dar veredito na Fila de Provisões")')
-    assert link_fila.count() == 1
-    assert "resolver" in (link_fila.get_attribute("title") or "").lower()
+    assert link_fila.count() == 0, "o link que navegava pra Fila não existe mais — virou botão inline"
+    btn_resolver_comissao = linha_comissao.locator('button:has-text("Resolver")')
+    assert btn_resolver_comissao.count() == 1
+    box_comissao = page.locator('[data-prov-box="2.1.04.10"]')
+    assert box_comissao.count() == 1 and box_comissao.is_hidden(), "o box começa escondido"
+    urlAntes = page.url
+    btn_resolver_comissao.click()
+    assert box_comissao.is_visible(), "'Resolver' tem que abrir o box na própria linha"
+    assert page.url == urlAntes, "não pode navegar — era um link <a> antes, agora é botão inline"
+    assert box_comissao.locator("button").count() >= 1, (
+        "o box lista as opções que vieram do servidor (vereditos_validos), nunca fixas na tela")
+    btn_resolver_comissao.click()
+    assert box_comissao.is_hidden(), "clicar 'Resolver' de novo tem que fechar o box (alterna)"
     # inner_text() reflete o text-transform:uppercase do CSS do selo (não o texto cru do DOM).
     assert "PARCIALMENTE EFETIVADA" in linha_comissao.inner_text().upper(), (
         "selo tem que refletir o dinheiro (efetivado=2000 < provisionado=5000), não a rota — "
@@ -199,8 +213,9 @@ def test_tabela_de_provisoes_respeita_os_tres_estados_do_backend(page, servidor_
         "Montagem não tem módulo alimentador — sem Efetivar aqui, o custo da fábrica só entra "
         "no encerramento (veredito), capado ao saldo aberto e datado no dia errado")
     assert btn_efetivar_montagem.is_enabled(), "Montagem não é Assistência/Garantia — não trava"
-    assert linha_montagem.locator('button:has-text("Resolver")').count() == 0
-    assert linha_montagem.locator('a:has-text("Dar veredito na Fila de Provisões")').count() == 1
+    # F2-25 Passo 4: mesmo conserto da Comissão acima — o link virou botão "Resolver" inline.
+    assert linha_montagem.locator('button:has-text("Resolver")').count() == 1
+    assert linha_montagem.locator('a:has-text("Dar veredito na Fila de Provisões")').count() == 0
 
     # Linha "2.1.04.13" (rota genérica, Impostos): Efetivar/Resolver presentes, com tooltip de
     # destino de variância — não o nome do botão.

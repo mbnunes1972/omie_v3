@@ -140,10 +140,14 @@ def test_itens_provisao_mapeia_rubricas():
     assert set(itens.keys()) == {"frete_fab","com_adm","com_venda","com_med",
         "com_proj_exec","frete_loc","assist","ins_loc","prov_imp","out_forn","prov_mont","prov_gar",
         # F0: + custos adicionais + custo financeiro (viram linha; chave ausente no d antigo → 0)
-        "com_arq","pro_fid","cust_via","brinde","cust_esp","custo_financeiro"}
+        "com_arq","pro_fid","cust_via","brinde","cust_esp","custo_financeiro",
+        # F2-25 Passo 2 (05/09, DECIDIDO): + Custo de Fábrica, mesma família (linha no painel,
+        # nunca soma no Cust_Var — ver test_provisao_registro.py/test_cust_var_marg_cont)
+        "custo_fabrica"}
     assert itens["frete_fab"] == 100.0 and itens["out_forn"] == 300.0 and itens["frete_loc"] == 50.0
     assert itens["com_arq"] == 0.0 and itens["custo_financeiro"] == 0.0   # d antigo sem as chaves → 0
     assert itens["prov_mont"] == 0.0 and itens["prov_gar"] == 0.0   # chave ausente no d antigo → 0
+    assert itens["custo_fabrica"] == 0.0   # chave ausente no d antigo → 0
 
 
 def test_custos_adicionais_e_cust_fin_aparecem_sem_dobrar_no_cust_var():

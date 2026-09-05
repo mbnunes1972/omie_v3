@@ -184,10 +184,14 @@ def test_fluxo_completo_fila_ate_conclusao_com_custo_em_5101(app_db, seed, http_
                        "veredito": "encerrada_valor_menor", "valor_efetivado": 1000.0})
     assert st == 200 and body.get("ok"), body
 
-    # a fila não lista mais a rubrica — foi resolvida.
+    # F2-25 Passo 3 (05/09, DECIDIDO): a rubrica resolvida NÃO some da fila — migra pro grupo
+    # "fechada_zerada" (visível, sem ação), pra distinguir de uma que nunca abriu.
     st, body = c.get("/api/financeiro/fila-provisoes")
     assert st == 200 and body["ok"], body
-    assert not any(r["projeto_id"] == nome and r["codigo"] == "2.1.04.06" for r in body["fila"]), body["fila"]
+    linha = next((r for r in body["fila"] if r["projeto_id"] == nome and r["codigo"] == "2.1.04.06"), None)
+    assert linha is not None, body["fila"]
+    assert linha["grupo"] == "fechada_zerada", linha
+    assert abs(linha["saldo_aberto"]) < 0.005, linha
 
     # a Conciliação Final conclui com o corpo vazio de sempre — nada mudou na tela.
     st, body = c.post("/api/projetos/%s/ciclo/21/conciliar" % nome, {})

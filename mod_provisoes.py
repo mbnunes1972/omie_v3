@@ -218,14 +218,23 @@ _RUBRICAS_CUST_AD = {
 }
 # Custo financeiro — base Val_Cont; LEITURA no painel (ajuste pelo box do ramo, não digitável).
 _RUBRICA_CUST_FIN = {"custo_financeiro": "Cust_Fin"}
+# ACHADO-59/F2-25 Passo 2 (05/09, DECIDIDO pelo Marcelo): o CFO vira LINHA no painel da AF (editável
+# na AF1 e na AF2), mas continua sendo a BASE de `cust_var_marg_cont` — por isso mora aqui, igual
+# Cust_Ad/Cust_Fin, e NÃO em `_RUBRICAS` (que ENTRA na soma). Se entrasse na soma E continuasse
+# sendo a base, o custo DOBRARIA — exatamente o bug ① que o comentário de `_RUBRICAS_CUST_AD` já
+# documentava; medido antes de mexer (`cust_var = cfo + Σ(_RUBRICAS)`, CFO nunca é chave de
+# `_RUBRICAS`) e confirmado que este desenho evita a duplicação, não a introduz.
+_RUBRICA_CUST_FAB = {"custo_fabrica": "CFO"}
 
 
 def itens_provisao(siglas):
     """Rubricas de provisão do breakdown do motor (dict {rubrica: R$}): as 12 de Cust_Var + os 4 custos
-    adicionais (Cust_Ad) + o custo financeiro. Os 5 últimos aparecem como LINHA no painel mas NÃO somam
-    no Cust_Var (ver cust_var_marg_cont) — são Cust_Ad/Cust_Fin, já fora do Val_Liq."""
+    adicionais (Cust_Ad) + o custo financeiro + o Custo de Fábrica (linha, não soma — ver
+    `_RUBRICA_CUST_FAB`). Os últimos aparecem como LINHA no painel mas NÃO somam no Cust_Var (ver
+    cust_var_marg_cont) — são Cust_Ad/Cust_Fin/Cust_Fab, já fora (ou já dentro por outra via) do
+    cálculo de Cust_Var."""
     s = siglas or {}
-    todas = {**_RUBRICAS, **_RUBRICAS_CUST_AD, **_RUBRICA_CUST_FIN}
+    todas = {**_RUBRICAS, **_RUBRICAS_CUST_AD, **_RUBRICA_CUST_FIN, **_RUBRICA_CUST_FAB}
     return {k: round(_f(s.get(v)), 2) for k, v in todas.items()}
 
 

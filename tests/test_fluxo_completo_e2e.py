@@ -126,7 +126,9 @@ def test_fluxo_completo_inicio_ao_fim(app_db, seed, projetos_dir, http_client_fa
         "frete_fab", "com_adm", "com_venda", "com_med", "com_proj_exec",
         "frete_loc", "assist", "ins_loc", "prov_imp", "out_forn", "prov_mont", "prov_gar",
         # F0 (bug ①): custos adicionais + custo financeiro agora entram como linha
-        "com_arq", "pro_fid", "cust_via", "brinde", "cust_esp", "custo_financeiro"}
+        "com_arq", "pro_fid", "cust_via", "brinde", "cust_esp", "custo_financeiro",
+        # F2-25 Passo 2 (05/09, DECIDIDO): + Custo de Fábrica, mesma família (linha no painel)
+        "custo_fabrica"}
     assert itens_venda["out_forn"] == 1500           # Out_Forn entrou na Venda
     assert itens_venda["frete_fab"] > 0              # taxa de frete fábrica da loja aplicada
 

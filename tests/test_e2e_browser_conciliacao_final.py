@@ -348,7 +348,10 @@ def test_fluxo_terminal_conciliacao_final_pela_fila(page, servidor_e2e):
     # ── 10. Fila de Provisões — dar o veredito PELA TELA (não pela API) ─────────────────
     page.click('text=Financeiro')
     page.click('text=Fila de Provisões')
-    linha = page.locator("tr", has_text=nome_projeto)
+    # F2-25 Passo 3 (05/09, DECIDIDO): a Fila agora lista TODAS as rubricas do projeto, não só a
+    # em aberto — "Custo de Fábrica" (o veredito real desta rodada) tem que ser identificada por
+    # nome, não mais a única linha do projeto na tabela.
+    linha = page.locator("tr", has_text=nome_projeto).filter(has_text="Custo de Fábrica")
     linha.wait_for()
     linha.get_by_role("button", name="Encerrada · valor menor").click()
     page.fill("#_filaprov-valor", "100000")

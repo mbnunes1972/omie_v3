@@ -37,6 +37,28 @@ def test_reconciliacao_expoe_exige_veredito_derivado_da_constante(app_db, seed):
         db.close()
 
 
+def test_reconciliacao_expoe_vereditos_validos_so_quando_exige_veredito(app_db, seed):
+    """F2-25 Passo 4 (05/09): a Lista de Provisões ganha o mesmo box de veredito da Fila (botão
+    "Resolver" inline) — as opções vêm de `vereditos_validos_para_saldo`, a MESMA função que a
+    Fila já usa (ACHADO-41), nunca uma lista fixa na tela. Rubrica de rota própria
+    (exige_veredito=False) não ganha opção nenhuma — o Resolver dela nem é esse box."""
+    db = app_db.get_session()
+    try:
+        ot, oid = mc.resolver_owner(db, {"loja_id": seed["loja1_id"], "rede_id": None})
+        rec = mc.reconciliacao(db, ot, oid)
+        por_codigo = {p["codigo"]: p for p in rec["provisoes"]}
+
+        comissao = por_codigo["2.1.04.10"]   # veredito nomeado, saldo 0 (nunca movimentada)
+        assert comissao["exige_veredito"] is True
+        assert comissao["vereditos_validos"] == mc.vereditos_validos_para_saldo(0.0)
+
+        impostos = por_codigo["2.1.04.13"]   # rota própria — não usa este box
+        assert impostos["exige_veredito"] is False
+        assert impostos["vereditos_validos"] == []
+    finally:
+        db.close()
+
+
 def test_controle_negativo_exige_veredito_segue_a_constante_nao_um_valor_fixo(app_db, seed, monkeypatch):
     """Controle negativo explícito do TAREFA_CONCILIACAO_UI.md: move "2.1.04.10" pra dentro de
     _PROV_FORA_DO_VEREDITO — se a flag fosse hardcoded (na tela OU no teste), nada mudaria aqui.

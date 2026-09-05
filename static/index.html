@@ -14772,7 +14772,11 @@ function _reconProvTabelaHtml(provisoes, opts){
   // sem `cor` explícita, cai no branco neutro — só Saldo/Resolvido usam o sinal (verde/vermelho/
   // branco no zero); Provisionado/Efetivado ficam sempre no texto normal (pedido do usuário
   // 2026-08-07: são valores de referência, não "resultado" — a cor é reservada pro que sobrou).
-  const cel=(v,cor)=>'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);'+_reconColBorda+';color:'+(cor||'var(--text)')+'">'+_fBRL(v)+'</td>';
+  // F2-25 Passo 4 (05/09): "as colunas do canto direito saíram do formato" — família do C6/LP-19
+  // (docs/db/LISTA_PARALELA.md), coluna estreita pro tamanho da fonte com um valor negativo/longo
+  // ("R$ -64.043,46" quebrando em duas linhas). Mesmo conserto do C6: white-space:nowrap — símbolo
+  // e número são uma coisa só, nunca duas linhas, por construção, não por acaso de largura.
+  const cel=(v,cor)=>'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);white-space:nowrap;'+_reconColBorda+';color:'+(cor||'var(--text)')+'">'+_fBRL(v)+'</td>';
   // ACHADO-32 (docs/db/TAREFA_CONCILIACAO_UI.md, itens 1/2/3) — selo + ação por linha, 3 estados,
   // e quem decide o estado é o BACKEND (p.exige_veredito, derivado de mod_contabil.
   // _PROV_FORA_DO_VEREDITO — a MESMA constante que /api/financeiro/resolver-saldo-provisao usa
@@ -14845,17 +14849,31 @@ function _reconProvTabelaHtml(provisoes, opts){
           : _EFETIVAR_TOOLTIP;
         const efetivarHtml = '<input type="number" step="0.01" id="'+prefixo+p.codigo+'" placeholder="R$ real"'+disEf+' style="width:90px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text);font-size:11px'+corInput+'">'
           +' <button class="btn btn-sm"'+disEf+' title="'+esc(tituloAssist)+'" onclick="reconProvEfetivar(\''+p.codigo+'\',\''+prefixo+'\',this)" style="font-size:11px'+corBtnEf+'">Efetivar</button>';
+        // F2-25 Passo 4 (05/09, DECIDIDO): o veredito deixa de ser texto (link que navegava pra
+        // Fila) e vira botão "Resolver", que abre o box NA PRÓPRIA LINHA — antecipa a LP-13 sem
+        // o resto dela (sem mudar de módulo, sem filtro, sem agrupamento por projeto).
         const resolverOuFila = p.exige_veredito
-          ? ' <a href="#" onclick="finIrSecao(\'filaprov\');return false;" '
-            +'title="Esta rubrica exige veredito nomeado — Resolver genérico não vale aqui (Efetivar continua liberado; o saldo final se fecha na Fila)." '
-            +'style="font-size:11px">Dar veredito na Fila de Provisões</a>'
+          ? ' <button class="btn btn-sm" title="'+esc(_resolverTooltip(p))+'" '
+            +'onclick="_reconProvToggleBox(\''+p.codigo+'\',\''+prefixo+'\')" style="font-size:11px">Resolver</button>'
           : ' <button class="btn btn-sm" title="'+esc(_resolverTooltip(p))+'" onclick="reconProvResolver(\''+p.codigo+'\')" style="font-size:11px">Resolver</button>';
         acao='<td style="text-align:right;padding:10px 16px;white-space:nowrap;'+_reconColBorda+'">'
           +efetivarHtml+resolverOuFila+'</td>';
       }
     }
+    // Box de veredito (Passo 4): as opções vêm de `p.vereditos_validos` — o MESMO campo, a MESMA
+    // função (`vereditos_validos_para_saldo`) que a Fila já usa (ACHADO-41) — nunca fixas na
+    // tela. Some por padrão (display:none); "Resolver" só alterna a visibilidade, nunca navega.
+    const boxVeredito = (editavel && p.exige_veredito)
+      ? '<tr id="reconprov-box-'+prefixo+esc(p.codigo)+'" data-prov-box="'+esc(p.codigo)+'" style="display:none;background:var(--surface)">'
+        +'<td colspan="7" style="padding:10px 16px">'
+        +(p.vereditos_validos||[]).map(v => _FILAPROV_BOTOES.find(b=>b.v===v)).filter(Boolean).map(b =>
+          '<button class="btn btn-sm" style="font-size:11px;margin-right:6px" title="'+esc(b.title)+'" '
+          +'onclick=\''+'_reconProvResolverNomeado('+JSON.stringify(p.codigo)+','+JSON.stringify(b.v)+')'+'\'>'
+          +esc(b.label)+'</button>').join('')
+        +'</td></tr>'
+      : '';
     // "Saldo" exibido = saldo_aberto (líquido, o que falta resolver); bruto vai no tooltip p/ auditoria.
-    const celSaldo='<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:10px 16px;font-family:var(--font-mono);'+_reconColBorda+';color:'+_reconSaldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
+    const celSaldo='<td title="Bruto '+_fBRL(p.saldo)+'" style="text-align:right;padding:10px 16px;font-family:var(--font-mono);white-space:nowrap;'+_reconColBorda+';color:'+_reconSaldoCor(p.saldo_aberto)+'">'+_fBRL(p.saldo_aberto)+'</td>';
     // Data prevista de efetivação (2026-08-07, pedido do usuário — mesma ideia dos recebíveis):
     // metadado só (não lança nada). Vencida (passou a data, ainda tem saldo aberto) → âmbar
     // (var(--warn) — mesmo token do "duvidoso" dos Recebíveis, mas aqui significa "atrasada",
@@ -14877,7 +14895,8 @@ function _reconProvTabelaHtml(provisoes, opts){
     // novo após o innerHTML inteiro ser trocado.
     return '<tr data-prov-codigo="'+esc(p.codigo)+'" style="border-top:1px solid var(--border);font-size:12px">'
       +'<td style="padding:10px 16px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(p.nome)+'">'+esc(p.nome)+seloHtml+'</td>'
-      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido_liquido,_reconSaldoCor(p.resolvido_liquido))+celData+acao+'</tr>';
+      +cel(p.provisionado)+cel(p.efetivado)+celSaldo+cel(p.resolvido_liquido,_reconSaldoCor(p.resolvido_liquido))+celData+acao+'</tr>'
+      +boxVeredito;
   };
   // table-layout:fixed + larguras explícitas (2026-08-06, pedido do usuário) SÓ na leitura: cada
   // seção (A/B/C/D/O) é uma <table> SEPARADA — sem isso, cada uma auto-dimensiona as colunas pelo
@@ -15056,6 +15075,24 @@ function _filaProvDiasAberta(constituidaEm){
   const dias = Math.floor((Date.now() - new Date(constituidaEm).getTime()) / 86400000);
   return dias <= 0 ? 'hoje' : (dias + (dias===1?' dia':' dias'));
 }
+// B6 (docs/db/TAREFA_PERCURSO_0109.md): tooltip com o efeito no livro, texto verbatim da
+// tarefa — decisão de 31/08 do Marcelo, mas quem usa a tela todo dia é a assistente
+// administrativa, não quem desenhou a regra.
+// ACHADO-41: a tela só desenha o botão se `vereditos_validos` (vindo do BACKEND, derivado de
+// onde `resolver_veredito_provisao` recusa) incluir o veredito — nunca os quatro sempre, com
+// dois recusando na cara do operador conforme o sinal do saldo.
+// F2-25 Passo 4 (05/09): hoisted pra módulo — a Lista de Provisões (`_reconProvTabelaHtml`)
+// reusa o MESMO array, nunca uma cópia (um componente, dois pontos de montagem).
+const _FILAPROV_BOTOES = [
+  {v:'efetivada', label:'Efetivada',
+   title:'Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado.'},
+  {v:'encerrada_valor_menor', label:'Encerrada · valor menor',
+   title:'Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína.'},
+  {v:'nao_se_aplica', label:'Não se aplica',
+   title:'A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro.'},
+  {v:'ainda_vai_chegar', label:'Ainda vai chegar',
+   title:'A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado.'},
+];
 async function filaProvisoesCarregar(){
   const box = document.getElementById('filaprov-box');
   if(!box) return;
@@ -15067,28 +15104,23 @@ async function filaProvisoesCarregar(){
     box.innerHTML = '<div style="font-size:.85rem;color:var(--muted)">Nenhuma provisão em aberto — a fila está vazia.</div>';
     return;
   }
-  // B6 (docs/db/TAREFA_PERCURSO_0109.md): tooltip com o efeito no livro, texto verbatim da
-  // tarefa — decisão de 31/08 do Marcelo, mas quem usa a tela todo dia é a assistente
-  // administrativa, não quem desenhou a regra.
-  // ACHADO-41: a tela só desenha o botão se `r.vereditos_validos` (vindo do BACKEND, derivado de
-  // onde `resolver_veredito_provisao` recusa) incluir o veredito — nunca os quatro sempre,
-  // com dois recusando na cara do operador conforme o sinal do saldo.
-  const _FILAPROV_BOTOES = [
-    {v:'efetivada', label:'Efetivada',
-     title:'Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado.'},
-    {v:'encerrada_valor_menor', label:'Encerrada · valor menor',
-     title:'Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína.'},
-    {v:'nao_se_aplica', label:'Não se aplica',
-     title:'A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro.'},
-    {v:'ainda_vai_chegar', label:'Ainda vai chegar',
-     title:'A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado.'},
-  ];
-  const linha = r => {
+  // F2-25 Passo 3 (05/09, DECIDIDO): "as provisões devem aparecer sempre todas juntas" — a
+  // rubrica resolvida/zerada não some da fila, migra pro grupo FECHADAS/ZERADAS (visível, sem
+  // ação); mostrar as zeradas prova que TODAS estão sendo monitoradas, não só as em aberto.
+  // `grupo` ausente (mocks antigos, sempre em aberto) cai em 'em_aberto' por padrão.
+  const emAberto = fila.filter(r => (r.grupo || 'em_aberto') === 'em_aberto');
+  const fechadas = fila.filter(r => r.grupo === 'fechada_zerada');
+  const contagens = d.contagens || {em_aberto: emAberto.length, fechadas_zeradas: fechadas.length};
+  const linha = (r, comAcao) => {
     const validos = r.vereditos_validos || [];
-    const botoes = _FILAPROV_BOTOES.filter(b => validos.includes(b.v)).map(b =>
-      '<button class="btn btn-sm" style="font-size:11px" title="'+esc(b.title)+'" '
-      +'onclick=\''+'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+','+JSON.stringify(b.v)+')'+'\'>'
-      +esc(b.label)+'</button>').join(' ');
+    const ultima = comAcao
+      ? '<td style="padding:10px 16px;white-space:nowrap">'
+        +_FILAPROV_BOTOES.filter(b => validos.includes(b.v)).map(b =>
+          '<button class="btn btn-sm" style="font-size:11px" title="'+esc(b.title)+'" '
+          +'onclick=\''+'_filaProvAcao('+JSON.stringify(r.projeto_id)+','+JSON.stringify(r.codigo)+','+JSON.stringify(b.v)+')'+'\'>'
+          +esc(b.label)+'</button>').join(' ')
+        +'</td>'
+      : '<td style="padding:10px 16px;color:var(--muted);font-size:11px">— resolvida —</td>';
     return '<tr style="border-top:1px solid var(--border);font-size:12px">'
     +'<td style="padding:10px 16px">'+esc(r.projeto_id)+'</td>'
     +'<td style="padding:10px 16px" title="'+esc(r.codigo)+'">'+esc(r.nome)+'</td>'
@@ -15096,35 +15128,45 @@ async function filaProvisoesCarregar(){
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono)">'+_fBRL(r.efetivado)+'</td>'
     +'<td style="text-align:right;padding:10px 16px;font-family:var(--font-mono);color:'+_reconSaldoCor(r.saldo_aberto)+'">'+_fBRL(r.saldo_aberto)+'</td>'
     +'<td style="padding:10px 16px;color:var(--muted);white-space:nowrap">'+_filaProvDiasAberta(r.constituida_em)+'</td>'
-    +'<td style="padding:10px 16px;white-space:nowrap">'+botoes+'</td></tr>';
+    +ultima+'</tr>';
   };
-  box.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:10px">'
-    +fila.length+' provisão(ões) em aberto — dê o veredito de cada uma antes que o projeto chegue na Conciliação Final.</div>'
-    +'<div style="overflow-x:auto"><table style="width:100%;min-width:900px;border-collapse:collapse">'
-    +'<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
+  const cabecalho = '<tr style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'
     +'<th style="text-align:left;padding:10px 16px">Projeto</th><th style="text-align:left;padding:10px 16px">Rubrica</th>'
     +'<th style="text-align:right;padding:10px 16px">Provisionado</th><th style="text-align:right;padding:10px 16px">Efetivado</th>'
     +'<th style="text-align:right;padding:10px 16px">Saldo</th><th style="text-align:left;padding:10px 16px">Aberta há</th>'
-    +'<th style="text-align:left;padding:10px 16px">Veredito</th></tr>'
-    +fila.map(linha).join('')+'</table></div>';
+    +'<th style="text-align:left;padding:10px 16px">Veredito</th></tr>';
+  const grupo = (titulo, contagem, linhas, comAcao) => !linhas.length ? '' :
+    '<div style="font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px">'
+    +esc(titulo)+' ('+contagem+')</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;min-width:900px;border-collapse:collapse">'
+    +cabecalho+linhas.map(r => linha(r, comAcao)).join('')+'</table></div>';
+  box.innerHTML = '<div style="font-size:.82rem;color:var(--muted);margin-bottom:4px">'
+    +'Dê o veredito de cada provisão EM ABERTO antes que o projeto chegue na Conciliação Final. '
+    +'As FECHADAS/ZERADAS ficam visíveis — provam que estão sendo acompanhadas, não que ninguém olhou.</div>'
+    +grupo('Em aberto', contagens.em_aberto, emAberto, true)
+    +grupo('Fechadas / zeradas', contagens.fechadas_zeradas, fechadas, false);
 }
-async function _filaProvAcao(projeto, conta, veredito){
+// F2-25 Passo 4 (05/09, DECIDIDO): o mesmo box de veredito passa a valer tanto na Fila quanto
+// na Lista de Provisões (antecipa a LP-13 — "um componente, dois pontos de montagem", nunca duas
+// implementações — família dos ACHADOS 32/33/39/41). O núcleo (prompt + POST) mora aqui,
+// isolado de QUEM chama e do que cada tela faz depois de um sucesso.
+async function _resolverVereditoAcao(projeto, conta, veredito){
   let extra = {};
   if(veredito === 'encerrada_valor_menor'){
     const valor = await _filaProvPromptValor(
       'Encerrada com valor menor', 'Valor REAL efetivado (o que sobrar do provisionado vira reversão automática):');
-    if(valor === null) return;   // cancelou
+    if(valor === null) return false;   // cancelou
     extra = {valor_efetivado: valor};
   } else if(veredito === 'nao_se_aplica'){
     const motivo = await _filaProvPromptTexto(
       'Não se aplica', 'Motivo (obrigatório) — por que esta rubrica nunca incidiu neste projeto:');
-    if(motivo === null) return;
-    if(!motivo.trim()){ await avisoPopup('Motivo é obrigatório para "Não se aplica".', {titulo:'Fila de Provisões'}); return; }
+    if(motivo === null) return false;
+    if(!motivo.trim()){ await avisoPopup('Motivo é obrigatório para "Não se aplica".', {titulo:'Fila de Provisões'}); return false; }
     extra = {motivo: motivo.trim()};
   } else {
     const rotulo = veredito === 'ainda_vai_chegar' ? 'marcar como "ainda vai chegar" (o projeto continua sem poder concluir)'
                                                     : 'marcar como "efetivada" (só vale quando o efetivado já superou o provisionado)';
-    if(!(await confirmarPopup('Confirma ' + rotulo + '?', {titulo:'Fila de Provisões'}))) return;
+    if(!(await confirmarPopup('Confirma ' + rotulo + '?', {titulo:'Fila de Provisões'}))) return false;
   }
   try {
     const r = await fetch('/api/financeiro/fila-provisoes/veredito', {
@@ -15132,10 +15174,14 @@ async function _filaProvAcao(projeto, conta, veredito){
       body: JSON.stringify({projeto, conta, veredito, ...extra}),
     });
     const d = await r.json();
-    if(!d.ok){ await avisoPopup(d.erro || 'Falha ao dar o veredito.', {titulo:'Fila de Provisões'}); return; }
-    showToast('Veredito registrado.');
-    filaProvisoesCarregar();
-  } catch(e){ avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Financeiro'}); }
+    if(!d.ok){ await avisoPopup(d.erro || 'Falha ao dar o veredito.', {titulo:'Fila de Provisões'}); return false; }
+    return true;
+  } catch(e){ avisoPopup('Erro de rede: ' + _detalheErroRede(e), {titulo:'Financeiro'}); return false; }
+}
+async function _filaProvAcao(projeto, conta, veredito){
+  if(!(await _resolverVereditoAcao(projeto, conta, veredito))) return;
+  showToast('Veredito registrado.');
+  filaProvisoesCarregar();
 }
 function _filaProvPromptValor(titulo, label){
   return new Promise((resolve) => {
@@ -15248,6 +15294,21 @@ async function reconProvResolver(conta){
   // o toast tem que distinguir "aconteceu algo" de "não tinha o que fazer".
   showToast(d.lancamento ? ('Resolvido '+_fBRL(d.lancamento.valor)+'.')
                         : 'Nada a resolver — saldo já estava zerado.');
+  await _reconRealcarLinha(conta);
+}
+// F2-25 Passo 4 (05/09, DECIDIDO): abre/fecha o box de veredito NA PRÓPRIA LINHA — nunca navega
+// pra Fila. Reusa o mesmo box (mesma constante `_FILAPROV_BOTOES`, mesmo endpoint) da Fila —
+// "um componente, dois pontos de montagem", não duas implementações (família dos ACHADOS
+// 32/33/39/41, que a LP-13 nomeou como risco real).
+function _reconProvToggleBox(conta, prefixo){
+  const tr = document.getElementById('reconprov-box-'+prefixo+conta);
+  if(!tr) return;
+  tr.style.display = tr.style.display === 'none' ? '' : 'none';
+}
+async function _reconProvResolverNomeado(conta, veredito){
+  if(!_reconProvProj) return;
+  if(!(await _resolverVereditoAcao(_reconProvProj, conta, veredito))) return;
+  showToast('Veredito registrado.');
   await _reconRealcarLinha(conta);
 }
 async function reconProvSalvarData(conta, prefixo){
@@ -21162,6 +21223,13 @@ const _PROV_RUBRICAS = [
   { key: 'brinde',         label: 'Brinde' },
   { key: 'cust_esp',      label: 'Custo Especial' },
   { key: 'custo_financeiro', label: 'Custo Financeiro', readonly: true },
+  // F2-25 Passo 2 (05/09, DECIDIDO): CFO vira LINHA editável na AF — reduzir migra o resíduo
+  // pra Outros Fornecedores (mesmo motor da Conferência da etapa 12, main.py). Continua sendo
+  // a BASE de Cust_Var no motor (mod_provisoes.cust_var_marg_cont) — só ganhou exibição/edição.
+  // Rótulo distinto da linha "Custo de Fábrica (CFO)" já existente (cfoRow, abaixo) — aquela é
+  // o valor CONGELADO do motor (base da fórmula, nunca muda por edição aqui); esta é o saldo
+  // ATUAL da provisão no razão, editável, que a Conferência (etapa 12) também mexe.
+  { key: 'custo_fabrica', label: 'Custo de Fábrica (provisão)' },
 ];
 
 function _fmtR(v) {

@@ -4511,3 +4511,225 @@ das funções, não da tela).
 
 ---
 
+## ACHADO-59 — o Outros Fornecedores da AF1 não era gravado · RESOLVIDO 05/09/2026
+
+Saído do Teste 5 do Marcelo em Homologação (05/09): digitou um valor em
+"Outros Fornecedores" no painel da Aprovação Financeira I, a tela
+aceitou — e nada foi provisionado. No mesmo painel, editar Impostos
+funcionou e ajustou o valor pra menor (ele considerou correto). A
+rubrica existe, o painel salva outras, e essa some.
+
+**Medido (Passo 0c), a cadeia completa:** o frontend (`_PROV_RUBRICAS`,
+`static/index.html`) desenha um campo editável pra `out_forn` e ENVIA
+normalmente — a requisição chega. `POST /api/orcamentos/<id>/provisoes/
+<rev1|rev2>` persiste o valor digitado em `ProvisaoRegistro.itens_json`
+sem discriminar rubrica nenhuma (confirmado por teste pré-existente,
+`test_rev1_revisa_grava_editado`). O elo que faltava:
+`mod_contabil.disparar_deltas_af` — quem transforma o `itens` aprovado
+em LANÇAMENTO de verdade — nunca tocava `out_forn`: `_AF_ITEM_RUBRICA`
+excluía a chave de propósito, com um comentário explícito ("só nasce
+por reclassificação, conferencia_pedido, etapa 12, sem evento de
+fechamento próprio"). A pressuposição de desenho original — Outros
+Fornecedores só existiria via a Conferência da etapa 12 — ficou
+desatualizada assim que o painel de AF passou a mostrar um campo
+editável pra ela sem avisar que ele não fazia nada.
+
+Mesma família dos silêncios desta semana (ACHADO-53/54/58): a tela
+aceita, o usuário acredita, e nada acontece.
+
+### Conserto (05/09)
+
+O par ativo×provisão (`1.1.06.14`/`2.1.04.14`, "Outros Fornecedores a
+Apropriar") já existia pronto — usado pelo reconhecimento de despesa
+(`reconhecimento_despesa_outros_fornecedores`). Faltava só uma entrada
+de CONSTITUIÇÃO em `_PROV_FECHAMENTO`
+(`fechamento_venda_outros_forn`, mesmo par de contas) pra
+`ajustar_provisao_delta` (via `disparar_deltas_af`) achar a rubrica —
+ela nunca dispara pelo FECHAMENTO em si (nenhum chamador passa
+`outros_forn` em `valores` ali), só pela AF, agora. `_AF_ITEM_RUBRICA`
+ganhou `"out_forn": "outros_forn"`.
+
+Convive sem conflito com a reclassificação da Conferência (Passo 2,
+abaixo) — refs em namespaces diferentes (`af:<projeto>:<versao>:<seq>:
+outros_forn` × `conf:<projeto>:outros`), cada mecanismo contribuindo
+independentemente pro mesmo saldo da conta.
+
+**Aceite:** `tests/test_achado59_outros_forn_af1.py` (2 testes) —
+`out_forn` editado na AF1 gera lançamento real (saldo da provisão
+2.1.04.14 reflete o valor digitado, não só o `itens_json`);
+controle-irmão — Impostos (que já funcionava) continua funcionando,
+o conserto não mexeu no caminho das outras rubricas. Controle
+negativo: a entrada em `_AF_ITEM_RUBRICA` desativada, o primeiro teste
+falha (saldo continua zero apesar do valor digitado); restaurada, os 2
+voltam a passar.
+
+### Passo 2 — Custo de Fábrica vira linha provisionável (DECIDIDO, 05/09)
+
+Decisão do Marcelo, textual: "a diferença do CFO na aprovação do
+Projeto Executivo é um evento que visa facilitar os lançamentos para
+conciliação, por isso o resíduo da previsão de fábrica deve ir para
+Outros Fornecedores. Na AF2 pode ocorrer fato semelhante." O CFO deixa
+de ser só a BASE muda de `cust_var_marg_cont` (`cust_var = cfo + soma
+das rubricas`) e passa a aparecer também como LINHA editável no painel
+da AF1 e da AF2.
+
+**Medido antes (o gate explícito do pedido):** uma rubrica que entra na
+SOMA de `cust_var_marg_cont` e continua sendo a BASE dobra o custo —
+exatamente o bug ① que os comentários de `_RUBRICAS_CUST_AD` já
+documentavam. `custo_fabrica` mora em `_RUBRICA_CUST_FAB` (dict novo,
+mesma família de `Cust_Ad`/`Cust_Fin`), NUNCA em `_RUBRICAS` — só esta
+última entra no `for` que soma. `itens_provisao` mescla os quatro
+dicts só pra exibição. Confirmado por teste
+(`test_cust_var_nao_dobra_com_cfo_virando_linha`): `cust_var_marg_cont`
+com e sem `custo_fabrica` em `itens` dá o MESMO resultado — o valor
+NÃO dobra. Gate passou; sem necessidade de PARAR.
+
+**Conserto — reuso do motor existente, sem mecanismo novo:** a operação
+"reduz Custo Fábrica, migra o resíduo pra Outros Fornecedores, dois
+lançamentos auditáveis (ativo × provisão, nunca DRE)" já existia —
+`mod_contabil.conferencia_pedido`, a mesma função usada por `POST
+/api/projetos/<nome>/conferencia` (etapa 12, `#13`). A rota de AF
+(`POST /api/orcamentos/<id>/provisoes/<rev1|rev2>`, `main.py`) passou a
+chamá-la quando `custo_fabrica` está entre os itens editados,
+calculando o resíduo (`atual − novo`, nunca negativo) e delegando os
+dois lançamentos pra ela. A etapa 12 e sua rota ficam INTOCADAS — só
+ganharam um segundo chamador.
+
+**Achado no meio do caminho:** `conferencia_pedido` faz DOIS ajustes
+que SOMAM — (a) `ajustar_provisao_delta` leva o CFO de `atual` até
+`custo_fabrica_novo`, e (b), SEPARADAMENTE, `reclassificar_provisao`
+debita MAIS `valor_outros_forn` do CFO pra creditar Outros
+Fornecedores. Passar o valor novo (3000, vindo de 4000) como
+`custo_fabrica_novo` E o resíduo (1000) como `valor_outros_forn` ao
+mesmo tempo debitava o CFO DUAS vezes: primeiro teste deu 2000, não
+3000. Correção: numa REDUÇÃO cujo resíduo INTEIRO migra pra Outros (o
+caso da AF), o passo (a) tem que ser NO-OP — o alvo passado pra ele é
+`max(custo_fabrica_novo, atual)`, que dá `atual` (não mexe) quando
+reduz, porque o passo (b) sozinho já leva o CFO ao valor novo; e dá
+`custo_fabrica_novo` quando aumenta, caso em que não há resíduo (o
+cálculo do resíduo já zera nesse caso). Isto não é duplicação de custo
+no motor contábil — era uma composição errada dos DOIS parâmetros da
+MINHA chamada nova; `conferencia_pedido` em si, e a etapa 12, não
+mudaram.
+
+**Aceite:** `tests/test_achado59_cfo_vira_rubrica_af.py` (3 testes) —
+o não-dobro do `cust_var` (acima); `custo_fabrica` aparece no
+breakdown do painel (`itens_provisao`); e a migração via AF1 produz os
+mesmos dois lançamentos da Conferência (CFO cai pro valor novo, Outros
+Fornecedores recebe o resíduo, mesma origem/estrutura da etapa 12).
+Regressão: `tests/test_conferencia.py` e
+`tests/test_contabil_ajustes_excepcionais.py` (19 testes) seguem
+verdes sem alteração — confirma que a etapa 12 ficou intocada.
+Controle negativo: revertido o `max(custo_fabrica_novo, atual)` pro
+valor novo direto, o teste de migração volta a falhar com o mesmo
+2000×3000; restaurado, os 3 voltam a passar.
+
+### Passo 3 — a Fila mostra TODAS as provisões, agrupadas (DECIDIDO, 05/09)
+
+"As provisões devem aparecer sempre todas juntas" (Marcelo). Antes,
+`provisoes_em_aberto` descartava qualquer rubrica com
+`abs(saldo_aberto) < 0.005` — uma provisão resolvida (zerada) sumia da
+fila exatamente como uma que nunca teve movimento nenhum. A razão dada
+é boa: mostrar as zeradas prova que TODAS estão sendo monitoradas —
+hoje uma provisão que nunca abriu era indistinguível de uma que
+ninguém olhou.
+
+**Conserto:** `reconciliacao()` já devolvia as 17 rubricas elegíveis
+pra fila (21 contas 2.1.04.% no plano, menos as 2 de
+`_PROV_PAINEL_EXCLUI` sem mecanismo ativo, menos as 2 de
+`_PROV_FORA_DO_VEREDITO`, Impostos/Cust_Fin, rota própria do
+ACHADO-01) SEMPRE — zeradas ou não, já que soma `total_lancado`, que
+dá 0 quando não há lançamento nenhum. O filtro que jogava fora as
+zeradas foi removido; cada linha ganhou `grupo`
+("em_aberto"/"fechada_zerada"), derivado do mesmo sinal de saldo que já
+decidia se a linha entraria ou não — sem estado próprio, recalculado a
+cada leitura, migra de grupo sozinho conforme o saldo muda. A rota
+(`GET /api/financeiro/fila-provisoes`) ganhou `contagens` (`em_aberto`,
+`fechadas_zeradas`) — a contagem rotulada que o Passo 0(b) pediu:
+número sem dizer do que é a contagem é o próprio defeito. O front
+(`filaProvisoesCarregar`) desenha dois grupos com título e contagem
+próprios; só o grupo Em aberto ganha os botões de veredito — o grupo
+Fechadas/zeradas mostra a linha (rastro de que foi olhada), sem ação.
+
+**Aceite:** `tests/test_achado59_fila_todas_agrupadas.py` (2 testes,
+backend) — um projeto com só uma rubrica tocada lista as 17 elegíveis
+mesmo assim (16 nunca tocadas aparecem zeradas, `constituida_em=None`,
+sem sumir); e a rubrica migra de `em_aberto` pra `fechada_zerada` ao
+receber veredito, sem desaparecer da fila. `tests/
+test_aceite_fila_provisoes.py::test_fluxo_completo_fila_ate_conclusao_com_custo_em_5101`
+atualizado — a asserção antiga ("não lista mais") virou "lista, agora
+em fechada_zerada" (mudança de comportamento DECIDIDA, não regressão).
+`tests/test_aceite_b6_fila_tooltips.py` ganhou 1 teste E2E (Playwright)
+— a tela mostra "Em aberto (1)"/"Fechadas / zeradas (1)" e só a linha
+em aberto tem botão. Controle negativo, backend: filtro antigo
+restaurado, os 2 testes novos e o fluxo completo voltam a falhar (3
+FALHA); restaurado, os 11 relevantes voltam a passar. Controle
+negativo, front: a linha fechada/zerada temporariamente ganhando os
+mesmos botões da em aberto, o teste E2E falha (2 botões "Ainda vai
+chegar" em vez de 1); restaurado, os 3 do arquivo voltam a passar.
+
+### Passo 4 — a Lista de Provisões: visual e o botão Resolver (05/09)
+
+Dois consertos na mesma tela (`_reconProvTabelaHtml`, static/index.html
+— usada nas três montagens: Financeiro/leitura, modal do projeto,
+Etapa 21):
+
+**4a. Colunas do canto direito saíram do formato** (relato do Marcelo)
+— família do C6 (docs/db/TAREFA_PERCURSO_0209.md) e da LP-19 (docs/db/
+LISTA_PARALELA.md): coluna estreita pro tamanho da fonte com um valor
+negativo/longo ("R$ -64.043,46") quebrando em duas linhas. As células
+de Provisionado/Efetivado/Saldo (`cel`/`celSaldo`) não tinham
+`white-space:nowrap` — mesmo conserto do C6, aplicado aqui. Aceite:
+`tests/test_achado59_lista_provisoes_visual_resolver.py` (Playwright,
+prova por captura + `getComputedStyle`). Controle negativo: removido o
+`nowrap` de `celSaldo`, o teste falha (`'normal' == 'nowrap'`);
+restaurado, volta a passar.
+
+**4b. O veredito era TEXTO — vira botão "Resolver" inline.** O link
+`<a>` "Dar veredito na Fila de Provisões" navegava pra outra tela.
+Antecipa (só isto) a LP-13, cujo desenho já está FECHADO desde 05/09
+(registrado no F2-24, Passo 0): botão "Resolver" que abre o box NA
+PRÓPRIA LINHA, nunca navega; as opções vêm do SERVIDOR
+(`vereditos_validos_para_saldo`, ACHADO-41) — nunca fixas na tela,
+senão reintroduz o achado com roupa nova. `reconciliacao()` ganhou o
+campo `vereditos_validos` por linha (vazio quando `exige_veredito` é
+False — rota própria, este box não vale ali). O núcleo do fluxo
+(prompt de valor/motivo + POST em `/fila-provisoes/veredito`) foi
+extraído de `_filaProvAcao` pra `_resolverVereditoAcao`, reusado pelos
+dois pontos de montagem — "um componente, dois pontos de montagem",
+nunca duas implementações (a mesma lição dos ACHADOS 32/33/39/41 que a
+LP-13 nomeou como risco).
+
+*Fora deste passo, DELIBERADAMENTE:* os rótulos dos vereditos
+continuam Efetivada/Encerrada · valor menor/Não se aplica/Ainda vai
+chegar — NÃO viraram Absorver/Receber/Encerrar/Adiar como o pedido
+original nomeou. Ao esclarecer o mapeamento com o Marcelo, ele levantou
+que "Receber" (a sobra de uma provisão feita a maior) devia ser
+lançada como RECEITA — e que o evento de verdade ocorre no "momento
+fiscal" (emissão da NF-e), com a antecipação simulando o fato no
+contrato e o resto ficando entre ativo/passivo sem tocar a DRE; ele
+próprio levantou um problema em aberto (o fechamento da DRE na emissão
+da NF-e pode encontrar provisões ainda não fechadas). Isso é desenho
+NOVO de mecanismo contábil (não relabeling de botão) e está fora do
+escopo deste passo ("só o botão e o box") e do "NÃO AUTORIZA" original
+(resto da LP-13). PARADO aqui — a decisão volta pro Marcelo antes de
+qualquer rótulo novo ou lançamento de receita ser implementado.
+
+**Aceite (4b):** `tests/test_aceite_conciliacao_ui_item1.py` ganhou 1
+teste — `vereditos_validos` bate com `vereditos_validos_para_saldo`
+quando `exige_veredito`, vazio quando não. `tests/
+test_achado59_lista_provisoes_visual_resolver.py` ganhou 1 teste E2E —
+"Resolver" abre o box com só as opções do servidor, não navega
+(`page.url` inalterado), alterna ao clicar de novo. `tests/
+test_e2e_browser_conciliacao_ui.py` e `test_e2e_browser_conciliacao_final.py`
+atualizados — as duas asserções que esperavam o link antigo agora
+esperam o botão inline (mudança de comportamento DECIDIDA); o segundo
+arquivo também precisou localizar a linha por rubrica ("Custo de
+Fábrica"), não mais só pelo nome do projeto, porque o Passo 3 fez a
+Fila listar as 17 linhas do projeto, não 1. Controle negativo: link
+antigo restaurado, o teste E2E de timeout (nenhum botão "Resolver"
+aparece); restaurado, volta a passar. Regressão completa (E2E + fase D
++ fila + conciliação): 60 passaram.
+
+---
+

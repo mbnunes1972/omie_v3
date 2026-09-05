@@ -2490,7 +2490,13 @@ class Handler(BaseHTTPRequestHandler):
                 fila = mod_contabil.provisoes_em_aberto(db, ot, oid)
                 for r in fila:
                     r["constituida_em"] = r["constituida_em"].isoformat() if r["constituida_em"] else None
-                self.send_json({"ok": True, "fila": fila})
+                # F2-25 Passo 3 (05/09, DECIDIDO): cada contagem na tela diz de qual grupo fala —
+                # número sem rótulo é o próprio defeito que o Marcelo apontou no Passo 0(b).
+                contagens = {
+                    "em_aberto": sum(1 for r in fila if r["grupo"] == "em_aberto"),
+                    "fechadas_zeradas": sum(1 for r in fila if r["grupo"] == "fechada_zerada"),
+                }
+                self.send_json({"ok": True, "fila": fila, "contagens": contagens})
             finally:
                 db.close()
             return
@@ -11622,8 +11628,36 @@ class Handler(BaseHTTPRequestHandler):
                 import mod_contabil as _mc
                 ot_af, own_af = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 _seq = int(getattr(orc, "ramo_financeiro_seq", 0) or 0) + 1
-                _mc.disparar_deltas_af(db, ot_af, own_af, orc.projeto_id, itens,
-                                       ref_base="af:%s:%s:%d" % (orc.projeto_id, versao, _seq))
+                _ref_af = "af:%s:%s:%d" % (orc.projeto_id, versao, _seq)
+                # F2-25 Passo 2 (05/09, DECIDIDO): Custo de Fábrica editável na AF1/AF2 REUSA a
+                # Conferência contábil (#13, mod_contabil.conferencia_pedido — a MESMA rota da
+                # etapa 12, POST /conferencia) em vez de um ajuste independente — "reduz Custo
+                # Fábrica, migra o RESÍDUO da redução para Outros Fornecedores", dois lançamentos
+                # auditáveis. `out_forn` sai do lote genérico QUANDO custo_fabrica também está
+                # sendo editado nesta chamada — senão o ajuste independente do out_forn (Achado
+                # 59) reverteria a migração que a conferência acabou de fazer (mesmo saldo, dois
+                # caminhos competindo). Fora desse caso, out_forn continua livre e independente.
+                _itens_af = dict(itens)
+                if "custo_fabrica" in itens:
+                    _itens_af.pop("custo_fabrica", None)
+                    _itens_af.pop("out_forn", None)
+                    _atual_cfo = round(_mc._mov(db, ot_af, own_af, "2.1.04.06", "credor", None, None,
+                                                projeto_id=orc.projeto_id), 2)
+                    _novo_cfo = round(float(itens.get("custo_fabrica") or 0), 2)
+                    _residuo = max(0.0, round(_atual_cfo - _novo_cfo, 2))
+                    # conferencia_pedido faz DOIS ajustes que SOMAM: (a) leva o CFO de `atual` até
+                    # `custo_fabrica_novo` (ajustar_provisao_delta) e, SEPARADAMENTE, (b) debita MAIS
+                    # `valor_outros_forn` do CFO pra creditar Outros Fornecedores (reclassificar_provisao).
+                    # Numa REDUÇÃO cujo resíduo INTEIRO migra pra Outros (o caso da AF, por decisão do
+                    # Marcelo), o (a) tem que ser NO-OP — senão o resíduo é debitado do CFO DUAS vezes
+                    # (achado: 4000→3000 dava 2000, não 3000). Por isso o alvo passado pro (a) é
+                    # `max(_novo_cfo, _atual_cfo)`: igual a `_atual_cfo` (não mexe) quando reduz — porque
+                    # o (b) sozinho já leva o CFO ao valor novo — e igual a `_novo_cfo` quando aumenta,
+                    # onde não há resíduo (`_residuo`, calculado acima, já é 0 nesse caso).
+                    _mc.conferencia_pedido(db, ot_af, own_af, orc.projeto_id,
+                                           max(_novo_cfo, _atual_cfo), _residuo,
+                                           ref_base=_ref_af + ":cfo")
+                _mc.disparar_deltas_af(db, ot_af, own_af, orc.projeto_id, _itens_af, ref_base=_ref_af)
                 orc.ramo_financeiro_seq = _seq
                 db.commit()
                 self.send_json({"ok": True, "travada": True})

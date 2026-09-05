@@ -1359,6 +1359,12 @@ EVENTOS = {
     "fechamento_venda_com_proj_exec":       ("1.1.06.11", "2.1.04.11", "Constituição — Provisão de Comissão de Projeto/Executivo (ativo diferido)"),
     "fechamento_venda_retencao_com_vendas": ("1.1.06.12", "2.1.04.12", "Constituição — Provisão de Retenção de Comissão de Vendas (ativo diferido)"),
     "fechamento_venda_custo_fabrica":       ("1.1.06.06", "2.1.04.06", "Constituição — Provisão de Custo de Fábrica (ativo diferido)"),
+    # ACHADO-59 (05/09): "Outros Fornecedores" nunca nasce no FECHAMENTO (sem valor em `valores`
+    # ali) — só via reclassificação (conferencia_pedido, etapa 12) ou, desde este achado, edição
+    # direta na AF. O par ativo×provisão (1.1.06.14/2.1.04.14, "Outros Fornecedores a Apropriar")
+    # já existia pronto pro reconhecimento de despesa; faltava só esta entrada pra
+    # `ajustar_provisao_delta` (via `disparar_deltas_af`) saber ajustar a rubrica direto na AF.
+    "fechamento_venda_outros_forn":         ("1.1.06.14", "2.1.04.14", "Constituição — Provisão de Outros Fornecedores (ativo diferido)"),
     # FASE A (resultado da venda): custos adicionais constituídos como ativo diferido × provisão, sem tocar a DRE
     "fechamento_venda_com_arq":  ("1.1.06.15", "2.1.04.15", "Constituição — Provisão de Comissão de Arquiteto (ativo diferido)"),
     "fechamento_venda_pro_fid":  ("1.1.06.16", "2.1.04.16", "Constituição — Provisão de Programa de Fidelidade (ativo diferido)"),
@@ -1619,6 +1625,11 @@ _PROV_FECHAMENTO = {
     "com_proj_exec":       "fechamento_venda_com_proj_exec",
     "retencao_com_vendas": "fechamento_venda_retencao_com_vendas",
     "custo_fabrica":       "fechamento_venda_custo_fabrica",   # FASE D2: 10ª rubrica (era só no faturamento)
+    # ACHADO-59 (05/09): NÃO entra em `constituir_provisoes_fechamento` (nenhum chamador passa
+    # "outros_forn" em `valores` no fechamento — a rubrica nasce vazia e só cresce depois, por
+    # reclassificação ou pela AF). Presente aqui só pra `ajustar_provisao_delta` achar o par
+    # ativo×provisão (1.1.06.14/2.1.04.14) — ver `_AF_ITEM_RUBRICA`.
+    "outros_forn":         "fechamento_venda_outros_forn",
     "impostos":            "fechamento_venda_impostos",
     # FASE A (resultado da venda): os 4 custos adicionais
     "com_arq":             "fechamento_venda_com_arq",
@@ -1714,8 +1725,14 @@ _AF_ITEM_RUBRICA = {
     "com_arq": "com_arq", "pro_fid": "pro_fid", "cust_via": "cust_via", "brinde": "brinde",
     # com_adm (2026-08-12): mesma família dos custos adicionais — ajustável na AF.
     "com_adm": "com_adm",
-    # out_forn (Outros Fornecedores) NÃO entra: só nasce por reclassificação (conferencia_pedido,
-    # etapa 12), sem evento de fechamento próprio.
+    # ACHADO-59 (05/09): out_forn (Outros Fornecedores) ENTRA — a exclusão original presumia que
+    # a rubrica só nasceria por reclassificação (conferencia_pedido, etapa 12), mas a AF já
+    # mostrava um campo editável pra ela sem gravar nada (a tela aceitava, o usuário acreditava,
+    # e nada era provisionado — mesma família dos silêncios desta semana). Rubrica própria em
+    # `_PROV_FECHAMENTO` (fechamento_venda_outros_forn) só pro par ativo×provisão; convive sem
+    # conflito com a reclassificação da conferência — refs em namespaces diferentes
+    # (`af:...:outros_forn` × `conf:...:outros`).
+    "out_forn":  "outros_forn",
     # custo_financeiro NÃO entra: é LEITURA no painel (ajuste pelo box do ramo, rota própria).
 }
 
@@ -2360,7 +2377,11 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
                       "saldo": saldo, "resolvido": resolvido, "resolvido_liquido": resolvido_liquido,
                       "saldo_aberto": saldo_aberto, "exige_veredito": exige_veredito,
                       "resolucao_tipo": resolucao_tipo,
-                      "resolucao_destino_nome": resolucao_destino_nome})
+                      "resolucao_destino_nome": resolucao_destino_nome,
+                      # F2-25 Passo 4 (05/09): a Lista de Provisões ganha o MESMO box de veredito
+                      # da Fila (botão "Resolver" inline, nunca navega) — as opções vêm daqui,
+                      # nunca fixas na tela (ACHADO-41), mesma função que a Fila já usa.
+                      "vereditos_validos": vereditos_validos_para_saldo(saldo_aberto) if exige_veredito else []})
     t = lambda k: round(sum(p[k] for p in provs), 2)
     return {"projeto_id": projeto_id, "provisoes": provs,
             "totais": {"provisionado": t("provisionado"), "efetivado": t("efetivado"),
@@ -2370,16 +2391,25 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
 
 def provisoes_em_aberto(db, owner_tipo, owner_id):
     """Fila de provisões (F2-3, docs/db/TAREFA_FILA_PROVISOES.md) — a PORTA DA FRENTE do
-    veredito: toda provisão em aberto, por projeto, fora da Conciliação Final. Dona: a
-    assistente administrativa da loja (decisão do Marcelo, 31/08) — quem tem o pedido e a nota
-    da fábrica na mão pra responder "ainda há despesa a realizar?".
+    veredito: toda provisão de todo projeto que já teve alguma movimentação de provisão, fora
+    da Conciliação Final. Dona: a assistente administrativa da loja (decisão do Marcelo, 31/08)
+    — quem tem o pedido e a nota da fábrica na mão pra responder "ainda há despesa a realizar?".
+
+    F2-25 Passo 3 (05/09, DECIDIDO): "as provisões devem aparecer sempre todas juntas" — cada
+    linha ganha `grupo` ("em_aberto" ou "fechada_zerada"); NENHUMA rubrica some da fila por ter
+    saldo zerado (ou por nunca ter tido saldo) — hoje uma provisão que nunca abriu ficava
+    indistinguível de uma que ninguém olhou. `reconciliacao()` já devolve as rubricas SEMPRE,
+    zeradas ou não (só soma total_lancado, que dá 0 quando não há lançamento) — o filtro que
+    jogava fora `abs(saldo_aberto) < 0.005` foi removido; migra de grupo sozinho conforme o
+    saldo muda (não há estado próprio, é recalculado a cada leitura).
 
     Mesma exclusão de `conciliar_final`: `_PROV_PAINEL_EXCLUI` (sem mecanismo ativo) e
     `_PROV_FORA_DO_VEREDITO` (Impostos/Custo Financeiro, rota própria, ACHADO-01) nunca entram
     na fila — dar veredito nelas é recusado por `resolver_veredito_provisao`.
 
-    `constituida_em` = data do lançamento mais antigo que tocou a rubrica NESTE projeto — só
-    para "há quanto tempo está aberta" na tela; não entra em nenhum cálculo de saldo."""
+    `constituida_em` = data do lançamento mais antigo que tocou a rubrica NESTE projeto (None se
+    nunca tocou) — só para "há quanto tempo está aberta" na tela; não entra em nenhum cálculo de
+    saldo."""
     seed_plano(db, owner_tipo, owner_id)
     excluir = _PROV_PAINEL_EXCLUI | _PROV_FORA_DO_VEREDITO
     contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
@@ -2409,19 +2439,20 @@ def provisoes_em_aberto(db, owner_tipo, owner_id):
     for projeto_id in projetos:
         rec = reconciliacao(db, owner_tipo, owner_id, projeto_id=projeto_id)
         for p in rec["provisoes"]:
-            if p["codigo"] in excluir or abs(p["saldo_aberto"]) < 0.005:
+            if p["codigo"] in excluir:
                 continue
             cid = next((k for k, c in conta_ids.items() if c.codigo == p["codigo"]), None)
             fila.append({
                 "projeto_id": projeto_id, "codigo": p["codigo"], "nome": p["nome"],
                 "provisionado": p["provisionado"], "efetivado": p["efetivado"],
                 "saldo_aberto": p["saldo_aberto"],
+                "grupo": "em_aberto" if abs(p["saldo_aberto"]) >= 0.005 else "fechada_zerada",
                 # ACHADO-41: derivado, não uma cópia — mesma função que resolver_veredito_provisao
                 # chama pra recusar.
                 "vereditos_validos": vereditos_validos_para_saldo(p["saldo_aberto"]),
                 "constituida_em": constituida_em.get((projeto_id, cid)),
             })
-    fila.sort(key=lambda r: (r["constituida_em"] is None, r["constituida_em"]))
+    fila.sort(key=lambda r: (r["grupo"] != "em_aberto", r["constituida_em"] is None, r["constituida_em"]))
     return fila
 
 

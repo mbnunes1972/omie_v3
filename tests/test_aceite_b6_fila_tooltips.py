@@ -125,6 +125,53 @@ _MOCK_FILA_SOBRA = """{"ok": true, "fila": [
 ]}"""
 
 
+# ── F2-25 Passo 3 (05/09, DECIDIDO): a fila agrupa EM ABERTO × FECHADAS/ZERADAS, com contagem
+# rotulada de cada grupo — a resolvida não some, some só o botão de ação. ──────────────────────
+
+_MOCK_FILA_AGRUPADA = """{"ok": true, "contagens": {"em_aberto": 1, "fechadas_zeradas": 1}, "fila": [
+  {"projeto_id": "Projeto Mock", "codigo": "2.1.04.06", "nome": "Custo de Fábrica",
+   "provisionado": 1000.0, "efetivado": 0.0, "saldo_aberto": 1000.0, "constituida_em": "2026-08-01T00:00:00",
+   "grupo": "em_aberto",
+   "vereditos_validos": ["encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"]},
+  {"projeto_id": "Projeto Mock", "codigo": "2.1.04.02", "nome": "Montagem",
+   "provisionado": 0.0, "efetivado": 0.0, "saldo_aberto": 0.0, "constituida_em": null,
+   "grupo": "fechada_zerada", "vereditos_validos": ["ainda_vai_chegar", "efetivada", "encerrada_valor_menor", "nao_se_aplica"]}
+]}"""
+
+
+def test_fila_agrupa_em_aberto_e_fechadas_com_contagem_rotulada(page, servidor_e2e):
+    base = servidor_e2e
+    page.goto(base + "/static/login.html")
+    page.fill("#email", "e2e_master")
+    page.fill("#senha", "senha123")
+    page.click("#loginBtn")
+    page.wait_for_url(base + "/")
+
+    page.evaluate("""(mockJson) => {
+      const box = document.createElement('div');
+      box.id = 'filaprov-box';
+      box.style.cssText = 'position:fixed;top:0;left:0;z-index:999999;background:#111';
+      document.body.appendChild(box);
+      const fetchOriginal = window.fetch;
+      window.fetch = (url, opts) => {
+        if (String(url).includes('/api/financeiro/fila-provisoes') && !String(url).includes('/veredito')) {
+          return Promise.resolve({json: () => Promise.resolve(JSON.parse(mockJson))});
+        }
+        return fetchOriginal(url, opts);
+      };
+    }""", _MOCK_FILA_AGRUPADA)
+    page.evaluate("() => { filaProvisoesCarregar(); }")
+    page.wait_for_selector("#filaprov-box table", state="attached")
+
+    texto = page.locator("#filaprov-box").first.inner_text()
+    assert "Em aberto (1)" in texto, texto
+    assert "Fechadas / zeradas (1)" in texto, texto
+
+    # a linha em aberto oferece botão de veredito; a fechada/zerada só mostra o rótulo, sem ação.
+    assert page.locator("#filaprov-box button", has_text="Ainda vai chegar").count() == 1
+    assert page.locator("#filaprov-box", has_text="— resolvida —").count() >= 1
+
+
 def test_linha_em_sobra_nao_desenha_botao_efetivada(page, servidor_e2e):
     base = servidor_e2e
     page.goto(base + "/static/login.html")

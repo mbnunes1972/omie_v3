@@ -2573,6 +2573,62 @@ esperando um popup que não aparece); restaurada, os três voltam a passar.
 para o grupo 1, porque a mensagem não vista é o que produz o lançamento
 errado.
 
+### Extensão (04/09, F2-23) — faixa do ciclo
+
+Reclamação do percurso do Marcelo: "muitas mensagens de erro continuam em
+letras pequenas no canto inferior direito; deveriam ser popup no centro."
+Instrução explícita: não varrer os 164 que sobraram do B2 — varrer só o
+caminho que o percurso atravessa (ciclo + fiscal), contar o que sobrou e
+atualizar aqui.
+
+**Fiscal:** zero. As rotas de emissão/consulta de NF-e/NFS-e já não usam
+mais `showToast(..., true)` — convertidas nas rodadas do F2-20/F2-23
+(ACHADOS 49/50/54) para `avisoPopup`/mensagem dedicada por status.
+
+**Ciclo:** medidos **31** `showToast(..., true)`, em 15 funções, cobrindo o
+que o percurso realmente atravessa — abrir um projeto, transferir
+responsabilidade de etapa, PE e Medição (incluindo os três ClickSign de
+cada uma: enviar, verificar, reenviar convite):
+
+| função | ocorrências |
+|---|---|
+| `abrirProjeto` | 3 |
+| `_cicloTransferConfirmar` | 2 |
+| `_cicloTransferResponder` | 1 |
+| `toggleSalvarEtapa` | 2 |
+| `reabrirEtapaCascata` | 2 |
+| `_confirmarEnvioClickSignPE` | 3 |
+| `enviarAprovacaoPEParaClickSign` | 2 |
+| `verificarClickSignPEAgora` | 2 |
+| `reenviarConviteClickSignPE` | 2 |
+| `peConciliacaoReprovar` | 1 |
+| `_confirmarEnvioClickSignMedicao` | 3 |
+| `gerarSolicitacaoMedicao` | 2 |
+| `enviarSolicitacaoMedicaoParaClickSign` | 2 |
+| `verificarClickSignMedicaoAgora` | 2 |
+| `reenviarConviteClickSignMedicao` | 2 |
+
+Todas convertidas para `avisoPopup(msg, {titulo:'X'})` — `'Projeto'`,
+`'Ciclo'`, `'Projeto Executivo'` ou `'Medição'` conforme a função, mesmo
+padrão do B2. Fora de escopo, propositalmente NÃO tocado: Contrato
+(assinatura de contrato em si — `_confirmarEnvioClickSign`,
+`_confirmarAssinaturaUnificada`, `enviarContratoParaClickSign` e afins —
+é recurso separado de `CicloEtapa`, não "ciclo" no sentido em que o
+código usa a palavra) e upload de XML de ambiente (`uploadXmls`,
+`atualizarXml`, `removerAmbiente` — fase de orçamento, não ciclo).
+
+Total do sistema: **133** seguem fora (higiene, fica pra depois — o
+número mudou de 164 pra 133 só por causa desta extensão).
+
+**Prova:** `tests/test_aceite_achado36.py` — contagem total atualizada
+(133), checagem estrutural das 6 faixas de linha que cobrem as 15
+funções (zero `showToast(..., true)` restando) e aceite de navegador
+(`_cicloTransferConfirmar` sem destino mostra o `avisoPopup` do design
+system, título "Ciclo", nunca o `#erro-modal-overlay`). Controle
+negativo: uma conversão revertida, os três testes relacionados falham
+(contagem, estrutural, e o E2E trava esperando um popup que não aparece);
+restaurada, os 5 do arquivo voltam a passar.
+
 ---
 
 ## ACHADO-37 — a Fila de Provisões empilha todos os projetos para sempre
@@ -3919,6 +3975,58 @@ exceção do cancelamento desativada — só o teste do cancelamento falha,
 os outros dois continuam passando. Restaurado, os 6 testes do arquivo
 irmão + este voltam a passar juntos.
 
+### Terceira condição (05/09, F2-23) — NF-e cancelada libera a chave
+
+**Decidido pelo Marcelo:** "assim como um projeto cancelado, uma NF-e
+cancelada deve liberar a NF-e de fábrica de origem — pode haver erro na
+emissão e a NF-e da fábrica será a mesma." A trava passa de "chave viva
+em projeto ativo" para "chave viva, em projeto ativo, **com emissão não
+cancelada**" — terceira condição, mesmo desenho das duas primeiras
+(documento removido / projeto cancelado).
+
+`main.py`, mesma rota: pra cada documento vivo com a chave batendo, além
+do `_projeto_cancelado` já existente, agora também consulta o
+`DocumentoFiscal` mais recente daquele `fabrica_doc_id` — se o status é
+`"cancelado"`, pula (`continue`), liberando a chave. Só `"cancelado"`
+libera; `"erro"` (rejeição) **não** — a nota pode não ter chegado a ser
+processada de verdade ainda, e "cancelada" é um estado que só existe
+depois de uma emissão que autorizou (ou ao menos foi registrada) e
+alguém decidiu desfazer.
+
+**Aceite:** `tests/test_achado51_nfe_cancelada_libera_chave.py` (2
+testes) — emissão cancelada libera a mesma NF-e da fábrica pra um novo
+upload; controle-irmão: emissão em `erro` (não cancelada) continua
+bloqueando. Controle negativo: a checagem de cancelamento desativada, o
+primeiro teste falha; restaurada, os 2 voltam a passar.
+
+### As recusas precisam se explicar sozinhas (05/09, F2-23)
+
+As travas acima estavam corretas e o Marcelo não entendeu por que a
+ação falhou — a mensagem não dizia o suficiente. Regra: toda recusa diz,
+em uma frase, **o que bloqueou, por quê, e qual é a saída**. A recusa
+"outro projeto" já fazia isso (nomeia o projeto, explica que uma nota
+não cobre dois projetos, e diz o que fazer) — mantida como está, virou o
+padrão pras outras duas:
+
+- **"mesma etapa":** de *"Esta NF-e já foi carregada nesta etapa (X).
+  Remova o documento anterior..."* para *"Upload recusado — esta NF-e já
+  foi carregada nesta etapa (X); a mesma nota não pode ser carregada
+  duas vezes. Remova o documento anterior..."* — acrescenta o "por quê"
+  explícito.
+- **"selo do destinatário"** (`fiscal/mod_fiscal.prontidao_destinatario`):
+  de *"Configure o endereço do cliente (destinatário da nota): X"* para
+  *"A NF-e não pode ser emitida — falta o endereço do destinatário
+  (cliente) que a SEFAZ exige: X. Complete o cadastro do cliente antes
+  de emitir."* — acrescenta o "o que bloqueou" (a emissão) e o "onde" (o
+  cadastro do cliente).
+
+**Prova:** assertions acrescentadas aos testes existentes de cada
+mensagem (`test_achado51_nfe_fabrica_duplicata.py`,
+`test_mod_fiscal.py`) — checam as frases novas ("não pode ser carregada
+duas vezes", "não pode ser emitida", "Complete o cadastro do cliente").
+Controle negativo: as duas mensagens revertidas para o texto antigo, os
+dois testes falham; restauradas, voltam a passar.
+
 ---
 
 ## ACHADO-52 — a remoção nas subfases do PE é mais FROUXA que a porta que subiu o documento · RESOLVIDO 04/09/2026
@@ -3969,4 +4077,138 @@ documento normal de subfase (porta de execução) continua exigindo
 revisão. Controle negativo: ramo novo desativado, o teste do Operador
 falha (a remoção que deveria ser recusada passa); restaurado, os 3
 voltam a passar.
+
+---
+
+## ACHADO-53 — abrir os parâmetros de projeto assinado dispara 403 · RESOLVIDO 05/09/2026
+
+Achado do percurso do Marcelo em Homologação (04/09): abrir os
+parâmetros de negociação de um projeto com contrato assinado gerava um
+`POST /parametros` recusado (403, "Contrato assinado — alterações não
+permitidas"). O bloqueio está certo — o problema é que ninguém pediu
+aquela ação, só abriu a tela.
+
+O auto-save do modal (`agendarSalvarParametros`, debounce de 500ms →
+`salvarParametrosAuto`) é o único caminho que faz esse POST. `abrirModalParams`
+popula os campos do modal (`.checked`/`.value` em cada input, mais os
+toggles `mpToggleArq`/`mpToggleFid`/etc chamados diretamente) — o modo
+leitura já existia (`_aplicarModoLeituraParams`), mas nada impedia o
+agendamento de disparar durante ou depois desse preenchimento.
+
+### Conserto (05/09)
+
+Dois portões novos em `static/index.html`, no PONTO DE CONSEQUÊNCIA
+(`agendarSalvarParametros`), não em cada gatilho possível — mais robusto
+contra qualquer caminho futuro que também popule o modal:
+
+- **`_mpPopulando`** — `true` durante todo o corpo de `abrirModalParams`
+  (do início até depois de `_aplicarModoLeituraParams`/`_renderImpostosLock`),
+  `false` no final. Populate nunca agenda salvamento.
+- **`_mpModoLeitura`** — espelha o `ro` de `_aplicarModoLeituraParams`
+  (contrato assinado = true). Em modo leitura, nada agenda salvamento.
+
+`agendarSalvarParametros` passou a checar os dois e sair sem fazer nada
+se qualquer um estiver ligado. O gate do SERVIDOR (`_contrato_assinado`
+em `POST /parametros`) não foi tocado — continua certo, e continua
+sendo a autoridade real; o conserto só evita pedir o que não precisava
+ser pedido.
+
+**Aceite:** dois arquivos.
+`tests/test_achado53_autosave_ao_abrir.py` (backend, 2 testes) — projeto
+sem contrato assinado aceita a alteração (200); com contrato assinado,
+recusa (403, "Contrato assinado") — prova que o servidor nunca deixou de
+recusar quando pedido de propósito ("alterar continua recusando").
+`tests/test_achado53_autosave_ao_abrir_e2e.py` (navegador, 4 testes) —
+`_mpPopulando` bloqueia o agendamento; `_mpModoLeitura` bloqueia o
+agendamento; sem nenhum dos dois, o agendamento funciona normalmente
+(controle: o conserto não emudeceu o auto-save real); `abrirModalParams`
+de verdade, num projeto com contrato assinado, termina com
+`_mpPopulando=false` e `_mpModoLeitura=true`. Controle negativo: os dois
+portões desativados, os dois testes que provam bloqueio falham;
+restaurados, os 6 (2 backend + 4 navegador) voltam a passar.
+
+---
+
+## ACHADO-54 — a NF-e de produto rejeitada era um beco sem saída · RESOLVIDO 05/09/2026
+
+Achado do percurso do Marcelo em Homologação (04/09, projeto "Teste 2",
+dois XML da fábrica): a tela mostrou, para série 001, números 19 e 20,
+emitente 19.152.134/0001-56:
+
+    Rejeição: Duplicidade de NF-e com diferença na Chave de Acesso
+    [chNFe:35141219152134000156550010000000201000000201][nRec:351000086365534]
+
+Dois becos empilhados — numeração e tela.
+
+### Causa 1 — numeração
+
+`ref` da NF-e de produto era **constante** por documento da fábrica
+(`"NFE-" + projeto + "-" + doc.id`, `main.py`, rota `emitir-nfe`) — uma
+retentativa depois de rejeição chegava à Focus com o MESMO `ref`, que a
+Focus trata como a MESMA tentativa (dedup por `ref`, `integracoes/
+focus_client.py`), pedindo à SEFAZ o MESMO número de novo. Um retry com
+payload levemente diferente (data/hora de emissão nova, ver ACHADO-48)
+produz uma chave diferente pro mesmo número — e a SEFAZ recusa por
+duplicidade, exatamente o print do Marcelo.
+
+O precedente do conserto já existia no próprio arquivo, pra NFS-e (rota
+`emitir-nfse`, comentário: "um RPS rejeitado é morto, então re-emitir usa
+um ref novo... corrige o beco-sem-saída da auditoria A4"). A NF-e de
+produto nunca recebeu o mesmo tratamento.
+
+**Medido antes de codar:** a numeração (`numero`/`serie`) não é enviada
+por nós — a Focus assina e devolve o número que a SEFAZ atribuiu,
+associado ao `ref` da chamada. É o `ref` constante que é o problema; o
+conserto é lá, não em inventar numeração própria.
+
+**Conserto:** `main.py`, rota `emitir-nfe` — mesma regra da NFS-e. Antes
+de emitir, conta as tentativas já feitas para este `fabrica_doc_id`
+(`DocumentoFiscal.filter_by(fabrica_doc_id=doc.id)`); se a última está
+`autorizado` ou `processando`, é idempotente (devolve a mesma, sem
+emitir de novo); só `erro` (rejeitada) ou `cancelado` libera uma
+tentativa nova, com `ref = "NFE-<projeto>-<doc.id>-<tentativa>"` — um
+`ref` novo por tentativa, forçando a Focus a pedir um número novo à
+SEFAZ. Cada tentativa vira sua própria linha em `DocumentoFiscal` —
+histórico, não sobrescrita.
+
+**Achado ao consertar:** `GET .../ciclo/15/nfe` montava o mapa
+`fabrica_doc_id → emissão` sem `ORDER BY` — com mais de uma tentativa
+por documento (agora possível), o dict ficava com uma tentativa
+QUALQUER, não a última, dependendo da ordem que o banco devolvesse as
+linhas. Corrigido: `ORDER BY DocumentoFiscal.id` antes de montar o dict,
+garantindo que a última (maior id) sobrevive.
+
+### Causa 2 — tela
+
+`_renderCardEmissaoNfe` (`static/index.html`) trocava a linha do XML
+pelo bloco de emissão assim que existia QUALQUER `emissao`, mesmo em
+`erro` — só "Consultar" (e "Cancelar" se autorizado), nunca uma saída.
+Foi isso — não o 409 de etapa conclusiva — que o Marcelo viveu como "o
+botão remover não funcionou" (a etapa estava "Em andamento" no print).
+
+Regra do Marcelo, textual: "caso a nota não seja carregada ela precisa
+sair da tela, não precisa ficar nenhum registro de um documento que não
+foi processado."
+
+**Conserto:** a linha só "trava" (só Consultar/Cancelar) quando a
+emissão está `autorizado` ou `processando` — mesmo corte que a NFS-e já
+usava na seção ao lado. Em `erro` ou `cancelado`, a linha volta a
+oferecer nova tentativa (com numeração nova, causa 1) e Remover, com um
+aviso mostrando a tentativa anterior e o motivo (mesmo padrão que a
+seção de NFS-e já usava).
+
+**Aceite:** dois arquivos.
+`tests/test_achado54_nfe_beco_sem_saida.py` (backend, 2 testes) —
+retentativa depois de rejeição usa `ref` novo (prova que a Focus recebeu
+refs diferentes nas duas chamadas, não só que o JSON de resposta
+mudou); o `GET` reflete a ÚLTIMA tentativa; cada tentativa é uma linha
+própria em `DocumentoFiscal`; controle-irmão: emissão autorizada
+continua idempotente (não afrouxa o caso já resolvido).
+`tests/test_achado54_tela_erro_oferece_saida_e2e.py` (navegador, 3
+testes) — emissão em `erro` mostra "Emitir NF-e da Loja" e "Remover" (e
+o motivo da tentativa anterior); emissão `autorizado` continua travada;
+emissão `processando` continua travada. Dois controles negativos (um
+por causa): `ref` voltando a ser constante, o teste de retentativa
+falha; a condição de trava da tela voltando a `!!e`, o teste de erro
+falha. Restaurados, os 5 voltam a passar.
 

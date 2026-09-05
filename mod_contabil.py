@@ -108,6 +108,14 @@ PLANO_PADRAO = [
     # variância entre a retenção esperada (2.1.04.19, ramo financeira) e a real, MESMA conta nos dois
     # sentidos (sobra credita, falta debita) — mesma regra e mesma justificativa dos impostos (4.3.01):
     # mandar sobra pra uma conta e falta pra outra infla receita em vez de corrigir.
+    ("4.5", "Conciliação"),
+    # F2-27 (docs/db/MODELO_CONTABIL.md): a SOBRA apurada na conciliação das 17 rubricas de
+    # despesa em tempo real (o resíduo entre o que foi PROVISIONADO/reconhecido na emissão e o
+    # que de fato foi pago) — DECIDIDO 05/09, veredito "Receber". Grupo PRÓPRIO, separado de
+    # "4.4 Outras Receitas" de propósito: fica DEPOIS do resultado operacional na DRE, nunca
+    # junto da receita de venda (base de comissão/meta) nem misturado num balde genérico —
+    # ver MODELO_CONTABIL.md, "As contas de Conciliação".
+    ("4.5.01", "Receita de Conciliação"),
     ("5", "DESPESAS / CUSTOS"),
     # Formalismo pleno (decisão do usuário, 2026-07-22, Sessão 109): a despesa de cada rubrica
     # tem UMA conta, e ela mora no grupo contábil FORMAL — frete sobre compra integra o custo
@@ -168,6 +176,13 @@ PLANO_PADRAO = [
     # renomeada na migration 0004; a semente estava desatualizada (owner novo nasceria com o nome
     # velho). O grupo "5.6" acima NÃO foi tocado (segue "Ajustes de Provisões" no banco também).
     ("5.6.10", "Ajustes de Reconciliação"),   # FASE D: destino da FALTA (efetivado > provisionado)
+    ("5.7", "Conciliação"),
+    # F2-27 (docs/db/MODELO_CONTABIL.md): a FALTA apurada na conciliação das 17 rubricas de
+    # despesa em tempo real — DECIDIDO 05/09, veredito "Absorver". Espelho de "4.5.01 Receita
+    # de Conciliação" — mesmo grupo próprio, mesma razão de ficar fora de "5.6 Ajustes de
+    # Provisões" (que é o destino antigo, pré-F2-27, da mesma família de resíduo — ver
+    # `resolver_saldo_provisao`, razão nova ao lado da antiga).
+    ("5.7.01", "Despesa de Conciliação"),
 ]
 
 # ── Formalismo pleno (Sessão 109) — migração das bases existentes ────────────────────────────
@@ -935,7 +950,8 @@ def classificar_contas_lote(db, owner_tipo, owner_id, itens):
     return {"classificadas": len(resolvidos)}
 
 
-# código da conta -> (código do centro de custo, slug de natureza) — as 59 contas do grupo 5,
+# código da conta -> (código do centro de custo, slug de natureza) — as 60 contas do grupo 5
+# (59 + "5.7.01 Despesa de Conciliação", F2-27, docs/db/MODELO_CONTABIL.md),
 # proposta aprovada por Marcelo e Juliana (Artifact de 2026-08-08, ver DEV_LOG Sessão 177).
 # Frente 1 (spec 2026-08-25, DECIDIDO): mapa atualizado com os valores FINAIS, incorporando as
 # correções que as migrações migrar_classificacao_grupo5_v2/v3 faziam por VALOR (não por origem).
@@ -969,6 +985,7 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.4.18": ("4.5", "fixo"),     "5.4.19": ("4.2", "fixo"),     "5.4.20": ("4.5", "fixo"),
     "5.5.01": ("4.3", "fixo"),     "5.5.02": ("4.3", "fixo"),     "5.5.03": ("4.3", "variavel"),
     "5.5.04": ("4.3", "variavel"), "5.5.05": ("4.3", "variavel"), "5.6.10": ("4.5", "variavel"),
+    "5.7.01": ("4.5", "variavel"),   # F2-27: mesmo centro de custo de 5.6.10, mesma família de ajuste
 }
 
 # T4 (27/08/2026, revisão do banco): códigos de Centro de Custo que a automação resolve por
@@ -1385,10 +1402,15 @@ EVENTOS = {
     "receber_parcela_direto":        ("1.1.01", "1.1.07", "Financiamento direto — recebimento de parcela (baixa do recebível de juros)"),
     "apropriar_receita_financeira":  ("2.1.07", "4.4.03", "Financiamento direto — apropriação da receita financeira (competência)"),
     "reverter_juros_direto":         ("2.1.07", "1.1.07", "Estorno de juros a apropriar (troca de ramo do custo financeiro na AF)"),
-    # FASE D2: matching pleno na NF-e — reconhece a DESPESA de cada rubrica (5.6.0X, ou 5.1.01 p/ a fábrica)
-    # × baixa do ativo diferido (1.1.06.0X). A Provisão (2.1.04.0X) SOBREVIVE — é paga/reconciliada depois.
-    # Formalismo (Sessão 109): o reconhecimento debita a conta FORMAL da rubrica —
-    # Custo de Serviço (5.2.x), CMV (frete de fábrica) ou Despesas Comerciais (comissões).
+    # F2-27 (docs/db/MODELO_CONTABIL.md; ACHADO-22 fechado) — de volta a ser verdade: reconhece a
+    # DESPESA de cada rubrica (5.6.0X, ou 5.1.01 p/ a fábrica) × baixa do ativo diferido
+    # (1.1.06.0X), NA EMISSÃO da NF-e, pelo PROVISIONADO INTEGRAL — disparado por
+    # `reconhecer_provisoes_segmento` (segmentado mercadoria/serviço), não mais por
+    # `efetivar_provisao` (07/08 a 05/09/2026, extinto — o custo caía na competência do
+    # pagamento, não da entrega). A Provisão (2.1.04.0X) SOBREVIVE — é paga/reconciliada depois,
+    # e o resíduo entre o reconhecido e o pago vira Receita/Despesa de Conciliação. Formalismo
+    # (Sessão 109): o reconhecimento debita a conta FORMAL da rubrica — Custo de Serviço (5.2.x),
+    # CMV (frete de fábrica) ou Despesas Comerciais (comissões).
     "reconhecimento_despesa_montagem":            ("5.2.01", "1.1.06.02", "Reconhecimento de despesa na NF-e — Montagem"),
     "reconhecimento_despesa_garantia":            ("5.2.12", "1.1.06.03", "Reconhecimento de despesa na NF-e — Garantia"),
     "reconhecimento_despesa_assistencia":         ("5.2.13", "1.1.06.05", "Reconhecimento de despesa na NF-e — Assistência Técnica"),
@@ -1409,7 +1431,7 @@ EVENTOS = {
     "reconhecimento_despesa_cust_via": ("5.3.14", "1.1.06.17", "Reconhecimento de despesa na NF-e — Custo de Viagem"),
     "reconhecimento_despesa_brinde":   ("5.3.12", "1.1.06.18", "Reconhecimento de despesa na NF-e — Brinde"),
     "reconhecimento_despesa_cust_esp": ("5.3.17", "1.1.06.20", "Reconhecimento de despesa na NF-e — Custo Especial"),
-    "reconhecimento_despesa_com_adm":  ("5.3.03", "1.1.06.21", "Reconhecimento de despesa — Comissão Administrativa (efetivação)"),
+    "reconhecimento_despesa_com_adm":  ("5.3.03", "1.1.06.21", "Reconhecimento de despesa na NF-e — Comissão Administrativa"),
     # Impostos = PROVISÃO (Tipo D). CONTRATO: passivo nasce SEM tocar a DRE — ativo diferido (1.1.05) ×
     # Provisão de Impostos (2.1.04.13). EMISSÃO (proporcional Merc/Serv): a dedução entra na DRE
     # (4.3.01 × baixa do ativo 1.1.05) e a obrigação fiscal real crystalliza (2.1.04.13 × 2.1.03).
@@ -2033,9 +2055,11 @@ _ORIGEM_RECLASS     = "reclassificacao_provisao"
 # uma vez na NF-e (extinto o antigo "matching pleno", reconhecer_despesas_nfe/_MATCHING_NFE — as
 # despesas de projeto de móveis planejados ocorrem espalhadas ao longo do ciclo, muitas depois da
 # própria NF-e, que só sai no fim, na entrega). Ativo diferido (crédito) -> despesa formal (débito),
-# derivado de EVENTOS — cobre as 15 rubricas do antigo matching pleno + Outros Fornecedores
-# automaticamente. Custo Financeiro fica de fora (rota própria: reconhecer_custo_financeiro, atrelada
-# a um evento real de antecipação bancária, não à efetivação manual/automática de provisão).
+# derivado de EVENTOS — cobre as 17 rubricas de despesa em tempo real do modelo F2-27 (medido
+# em 05/09; a contagem de "15" que circulava antes estava desatualizada — não incluía Comissão
+# Administrativa nem Outros Fornecedores, adicionadas depois). Custo Financeiro fica de fora
+# (rota própria: reconhecer_custo_financeiro, atrelada a um evento real de antecipação bancária,
+# não ao reconhecimento na emissão).
 _PROV_DESPESA_POR_ATIVO = {cred: deb for ev, (deb, cred, _h) in EVENTOS.items()
                           if ev.startswith("reconhecimento_despesa_") and ev != "reconhecimento_despesa_custo_financeiro"}
 
@@ -2071,14 +2095,23 @@ _PROV_DESTINO_VARIANCIA = {
 _PROV_FORA_DO_VEREDITO = {"2.1.04.13", "2.1.04.19"}
 
 
+_ORIGEM_RECONHECIMENTO_DESPESA = "efetivacao_provisao_despesa"
+
+
 def reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None):
-    """Perna de despesa de uma efetivação de provisão: débito na despesa FORMAL da rubrica (5.x) ×
-    crédito no ativo diferido espelho (1.1.06.0X) — reconhece o custo na competência REAL, em vez de
-    estimado de uma vez na NF-e. Usada tanto por `efetivar_provisao` (efetivação manual, Reconciliação)
-    quanto pela execução automática de casos de Assistência/Garantia
-    (mod_assistencias.realizar_caso) — mesma perna de despesa, qualquer que seja o lado do passivo
-    (Fornecedores a Pagar ou Caixa direto). Sem rota (impostos, custo financeiro, ou qualquer código
-    fora do mapa) → None, sem lançar nada. Idempotente por ref."""
+    """Perna de COMPETÊNCIA de uma provisão: débito na despesa FORMAL da rubrica (5.x) × crédito no
+    ativo diferido espelho (1.1.06.0X) — reconhece o custo na competência REAL do FATO GERADOR.
+
+    F2-27 (docs/db/MODELO_CONTABIL.md): até 07/08/2026 disparava na EFETIVAÇÃO (pagamento real) —
+    o custo caía na competência do pagamento, a receita na da NF-e, descasamento estrutural numa
+    operação em que o contrato antecede a entrega em meses. RAZÃO NOVA (05/09): dispara na EMISSÃO
+    (`reconhecer_provisoes_segmento`, chamada por `_fin_faturamento_segmentado_seguro`), pelo
+    PROVISIONADO INTEGRAL das 17 rubricas de despesa em tempo real — a receita e o custo passam a
+    casar na MESMA competência. `efetivar_provisao` (o pagamento) NÃO chama mais esta função — só
+    move Provisão × Caixa/Fornecedores, na data real do desembolso. Continua reusável (mesma
+    assinatura, mesmo idempotente-por-ref) — quem mudou foi o CHAMADOR, não o lançamento em si.
+    Sem rota (impostos, custo financeiro, ou qualquer código fora do mapa) → None, sem lançar
+    nada. Idempotente por ref."""
     ativo_cod = _ativo_diferido_de(codigo_provisao)
     despesa_cod = _PROV_DESPESA_POR_ATIVO.get(ativo_cod)
     if not despesa_cod or not _conta_existe(db, owner_tipo, owner_id, ativo_cod):
@@ -2093,8 +2126,49 @@ def reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_p
     cd = _conta_por_codigo(db, owner_tipo, owner_id, despesa_cod)
     cc = _conta_por_codigo(db, owner_tipo, owner_id, ativo_cod)
     return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data, projeto_id=projeto_id,
-                  origem="efetivacao_provisao_despesa",
-                  historico="Reconhecimento de despesa na efetivação (competência real)", ref=ref)
+                  origem=_ORIGEM_RECONHECIMENTO_DESPESA,
+                  historico="Reconhecimento de despesa na emissão (competência real)", ref=ref)
+
+
+def reconhecer_provisoes_segmento(db, owner_tipo, owner_id, projeto_id, segmento, pct_mercadoria,
+                                  ref_base, data=None):
+    """F2-27 (docs/db/MODELO_CONTABIL.md, Passo 3) — O ATO DE RECONHECIMENTO na emissão: reconhece
+    o PROVISIONADO INTEGRAL das 17 rubricas de despesa em tempo real (`_PROV_DESPESA_POR_ATIVO`),
+    SEGMENTADO proporcionalmente entre mercadoria/serviço — mesma convenção de
+    `efetivar_impostos_segmento` (cada segmento reconhece só a SUA fatia; a soma das duas fecha o
+    provisionado total quando os dois documentos fiscais tiverem emitido, em qualquer ordem, com
+    qualquer intervalo entre eles). Reusa `reconhecer_despesa_efetivacao` — nenhum mecanismo novo,
+    só um NOVO GATILHO.
+
+    O que conta como "provisionado" é o saldo em ABERTO do ATIVO diferido (débito−crédito,
+    mesma leitura que `ajustar_provisao_delta` usa pra capar uma redução), EXCLUINDO só os
+    créditos que já vieram de reconhecimento anterior (`_ORIGEM_RECONHECIMENTO_DESPESA`) — assim
+    o valor-alvo fica ESTÁVEL entre a emissão de mercadoria e a de serviço, não importa qual vem
+    primeiro nem o quanto já foi PAGO (pagamento nunca toca o ativo, só a provisão/passivo — é
+    exatamente o que o exemplo de seis contas do documento prova: reconhece os R$60.000 cheios
+    mesmo com R$55.000 já pagos antes). Ajustes de AF (`_ORIGEM_AJUSTE_AF`) e reclassificações
+    (`_ORIGEM_RECLASS`) SÃO refletidos no alvo (mudam o que a rubrica representa de verdade);
+    pagamento não é.
+
+    Idempotente por ref (um ref por rubrica por documento fiscal — `ref_base + ':' + provisao_cod`).
+    Retorna {provisao_cod: lançamento} só das rubricas que de fato reconheceram algo."""
+    from mod_orcamento_params import segmentar as _segmentar
+    out = {}
+    for ativo_cod in _PROV_DESPESA_POR_ATIVO:
+        provisao_cod = "2.1.04." + ativo_cod.rsplit(".", 1)[-1]
+        total_hoje = round(
+            total_lancado(db, owner_tipo, owner_id, ativo_cod, "debito", projeto_id)
+            - total_lancado(db, owner_tipo, owner_id, ativo_cod, "credito", projeto_id,
+                            excluir_origens={_ORIGEM_RECONHECIMENTO_DESPESA}), 2)
+        if total_hoje <= 0:
+            continue
+        merc, serv = _segmentar(total_hoje, pct_mercadoria)
+        fatia = merc if segmento == "mercadoria" else serv
+        lan = reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, provisao_cod, fatia,
+                                            ref=ref_base + ":" + provisao_cod, data=data)
+        if lan is not None:
+            out[provisao_cod] = lan
+    return out
 
 
 def reclassificar_provisao(db, owner_tipo, owner_id, projeto_id, cod_de, cod_para, valor, ref, data=None):
@@ -2136,20 +2210,25 @@ def reclassificar_provisao(db, owner_tipo, owner_id, projeto_id, cod_de, cod_par
 
 def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor, ref, data=None,
                       forma_pagamento="a_prazo", origem="efetivacao_provisao", motivo=None):
-    """Efetiva (reconhece) o custo REAL de uma provisão: dois lançamentos no mesmo evento —
-    (1) `reconhecer_despesa_efetivacao` (ref+':d'): débito na despesa formal da rubrica × crédito no
-    ativo diferido, reconhecendo o custo NA COMPETÊNCIA REAL (2026-08-07, achado do usuário — antes só
-    isto aqui movia passivo, e a despesa nascia estimada de uma vez na NF-e); e (2, ref bruto, mantido
-    p/ compat) Provisão (2.1.04.x) × Fornecedores a Pagar (2.1.01) se `forma_pagamento='a_prazo'`
-    (padrão — faturado por terceiro, não baixa em caixa; o pagamento é o evento
-    `pagamento_fornecedor`), ou × Caixa/Bancos (1.1.01) se `forma_pagamento='direto'` (pago na hora —
-    usado pelo módulo Assistências quando a loja executa e paga sozinha, 2026-08-07). `origem`
-    parametrizável (default `efetivacao_provisao`) pra quem chama precisar de uma tag própria (ex.:
-    `mod_assistencias` usa `execucao_assistencia`/`execucao_reparo_garantia`, preservando o filtro do
-    relatório "a cobrar da fábrica"); `motivo` só é relevante nesse caso (carimba o reparo em
-    garantia). Cobre QUALQUER provisão do grupo — Impostos e Custo Financeiro não ganham a perna de
-    despesa aqui (rota própria, sem entrada em `_PROV_DESPESA_POR_ATIVO`). Idempotente por ref (cada
-    perna por si)."""
+    """Efetiva (paga) uma provisão: a perna de CAIXA — débito na Provisão (2.1.04.x) × crédito em
+    Fornecedores a Pagar (2.1.01) se `forma_pagamento='a_prazo'` (padrão — faturado por terceiro,
+    não baixa em caixa; o pagamento é o evento `pagamento_fornecedor`), ou × Caixa/Bancos (1.1.01)
+    se `forma_pagamento='direto'` (pago na hora — usado pelo módulo Assistências quando a loja
+    executa e paga sozinha, 2026-08-07). `origem` parametrizável (default `efetivacao_provisao`)
+    pra quem chama precisar de uma tag própria (ex.: `mod_assistencias` usa
+    `execucao_assistencia`/`execucao_reparo_garantia`, preservando o filtro do relatório "a
+    cobrar da fábrica"); `motivo` só é relevante nesse caso (carimba o reparo em garantia).
+
+    F2-27 (docs/db/MODELO_CONTABIL.md) — RAZÃO NOVA, ao lado da antiga: até 07/08/2026 esta
+    função também lançava a perna de COMPETÊNCIA (`reconhecer_despesa_efetivacao`), soldada na
+    mesma chamada — por isso o custo caía na competência do PAGAMENTO, nunca da entrega, e
+    numa venda cujo contrato antecede a entrega em meses isso é descasamento estrutural, não
+    eventual. A partir de 05/09/2026 a perna de competência dispara na EMISSÃO da NF-e
+    (`reconhecer_provisoes_segmento`), pelo provisionado INTEGRAL — não mais aqui. Esta função
+    FICA SÓ com a perna de caixa, na data REAL do desembolso, qualquer que seja ela (antes ou
+    depois da emissão — o exemplo de seis contas do documento mostra pagamento em fevereiro,
+    reconhecimento em maio, e fecha do mesmo jeito). Cobre QUALQUER provisão do grupo. Idempotente
+    por ref."""
     if forma_pagamento not in ("a_prazo", "direto"):
         raise ValueError("efetivar_provisao: forma_pagamento inválida: %s" % forma_pagamento)
     if not (codigo_provisao or "").startswith(GRUPO_PROVISOES + "."):
@@ -2161,8 +2240,6 @@ def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, val
     if valor <= 0:
         return None
     seed_plano(db, owner_tipo, owner_id)
-    reconhecer_despesa_efetivacao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor,
-                                  ref=ref + ":d", data=data)
     cd = _conta_por_codigo(db, owner_tipo, owner_id, codigo_provisao)
     cc_cod = "1.1.01" if forma_pagamento == "direto" else "2.1.01"
     cc = _conta_por_codigo(db, owner_tipo, owner_id, cc_cod)
@@ -2244,6 +2321,10 @@ def reclassificar_recebivel_duvidoso(db, owner_tipo, owner_id, projeto_id, valor
                             projeto_id=projeto_id, data=data, ref=ref)
 
 
+_CONCILIACAO_RECEITA = "4.5.01"   # Receita de Conciliação — SOBRA (veredito "Receber")
+_CONCILIACAO_DESPESA = "5.7.01"   # Despesa de Conciliação — FALTA (veredito "Absorver")
+
+
 def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, ref, data=None):
     """Fecha o saldo em aberto da provisão (de um projeto).
 
@@ -2252,13 +2333,28 @@ def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisa
     não são set-aside de custo — ver comentário de `_PROV_PAINEL_EXCLUI`). Qualquer outro
     código é recusado com erro explícito, antes de tocar em qualquer lançamento.
 
-    Pras rubricas com despesa em TEMPO REAL (`_PROV_DESPESA_POR_ATIVO` — as 15 do antigo
-    matching pleno — e `_PROV_TEMPO_REAL_ROTA_PROPRIA`, item 2: Custo Financeiro, cuja despesa
-    real já é reconhecida por `reconhecer_custo_financeiro`): CANCELA contra o ativo diferido
-    espelho (1.1.06.0X / 1.1.05), SEM TOCAR A DRE em nenhuma direção (2026-08-07, achado do
-    usuário) — SOBRA (provisionado > efetivado) é dinheiro nunca gasto, não vira "receita";
-    FALTA (efetivado > provisionado) já teve a despesa real reconhecida a cada efetivação —
-    só o residual mecânico entre ativo e provisão é zerado.
+    Pras rubricas com despesa em TEMPO REAL (`_PROV_DESPESA_POR_ATIVO` — as 17 do modelo F2-27,
+    medido — e `_PROV_TEMPO_REAL_ROTA_PROPRIA`, hoje vazio): o resíduo vai para as CONTAS DE
+    CONCILIAÇÃO — SOBRA (Receber) credita `4.5.01 Receita de Conciliação`; FALTA (Absorver)
+    debita `5.7.01 Despesa de Conciliação`.
+
+    RAZÃO NOVA (F2-27, docs/db/MODELO_CONTABIL.md), AO LADO DA ANTIGA — mesmo padrão do
+    ACHADO-31/ACHADO-45, nunca por cima: até 07/08/2026 este resíduo cancelava contra o ativo
+    diferido espelho, SEM TOCAR A DRE — SOBRA (nunca efetivado) não virava "receita"; FALTA já
+    tinha a despesa real reconhecida a cada efetivação, só o residual mecânico zerava. Essa
+    doutrina fazia sentido enquanto o reconhecimento de despesa disparava na EFETIVAÇÃO (o
+    ativo só baixava quando alguém pagava) — o resíduo era, de fato, dinheiro nunca gasto ou já
+    contabilizado, sem nada novo a dizer ao resultado.
+
+    A partir de 05/09/2026 o reconhecimento passou a disparar na EMISSÃO, pelo PROVISIONADO
+    INTEGRAL (`reconhecer_provisoes_segmento`) — o ativo já se desfez de propósito na emissão
+    (vai a zero), MUITO ANTES desta função rodar (conciliação/veredito, bem mais tarde no
+    ciclo). Não há mais "ativo aberto" contra o quê cancelar — só a diferença entre o que foi
+    RECONHECIDO (estimativa, na emissão) e o que foi de fato PAGO (efetivar_provisao, perna de
+    caixa). Isso é mudança de ESTIMATIVA, tratada prospectivamente: SOBRA vira Receita de
+    Conciliação, FALTA vira Despesa de Conciliação — as duas em bloco próprio, DEPOIS do
+    resultado operacional na DRE (nunca junto da receita de venda, que é base de comissão/meta
+    — ver `dre()` e MODELO_CONTABIL.md, "As contas de Conciliação").
 
     Pras demais, com destino EXPLÍCITO em `_PROV_DESTINO_VARIANCIA` (item 3: Impostos → 4.3.01):
     SOBRA e FALTA vão pra MESMA conta, sinais opostos — nunca a variância inteira numa direção
@@ -2289,15 +2385,16 @@ def resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisa
         (_PROV_DESPESA_POR_ATIVO.get(ativo_cod) is not None or codigo_provisao in _PROV_TEMPO_REAL_ROTA_PROPRIA)
         and _conta_existe(db, owner_tipo, owner_id, ativo_cod))
     if despesa_em_tempo_real:
-        ativo = _conta_por_codigo(db, owner_tipo, owner_id, ativo_cod)
-        if saldo > 0:   # sobra: nunca efetivado — cancela sem DRE (débito provisão × crédito ativo)
-            return lancar(db, owner_tipo, owner_id, prov.id, ativo.id, saldo, data=data, projeto_id=projeto_id,
+        if saldo > 0:   # sobra ("Receber"): D Provisão × C Receita de Conciliação
+            destino = _conta_por_codigo(db, owner_tipo, owner_id, _CONCILIACAO_RECEITA)
+            return lancar(db, owner_tipo, owner_id, prov.id, destino.id, saldo, data=data, projeto_id=projeto_id,
                           origem=_ORIGEM_RESOL_SOBRA,
-                          historico="Cancelamento de provisão não efetivada (nunca gasto — sem impacto no resultado)",
+                          historico="Conciliação — sobra do provisionado vira Receita de Conciliação",
                           ref=ref)
-        return lancar(db, owner_tipo, owner_id, ativo.id, prov.id, -saldo, data=data, projeto_id=projeto_id,
+        destino = _conta_por_codigo(db, owner_tipo, owner_id, _CONCILIACAO_DESPESA)   # falta ("Absorver")
+        return lancar(db, owner_tipo, owner_id, destino.id, prov.id, -saldo, data=data, projeto_id=projeto_id,
                       origem=_ORIGEM_RESOL_FALTA,
-                      historico="Cancelamento de excedente já reconhecido na efetivação (sem novo impacto no resultado)",
+                      historico="Conciliação — falta do provisionado vira Despesa de Conciliação",
                       ref=ref)
 
     destino_cod = _PROV_DESTINO_VARIANCIA.get(codigo_provisao)
@@ -2456,52 +2553,60 @@ def provisoes_em_aberto(db, owner_tipo, owner_id):
     return fila
 
 
-_VEREDITOS_VALIDOS = {"efetivada", "encerrada_valor_menor", "nao_se_aplica", "ainda_vai_chegar"}
+_VEREDITOS_VALIDOS = {"absorver", "receber", "encerrar", "adiar"}
 
 
 def vereditos_validos_para_saldo(saldo):
     """ACHADO-41 (docs/db/ACHADOS_CONTABEIS.md) — os MESMOS limites que `resolver_veredito_
     provisao` usa pra recusar, chamados por ela abaixo (não uma cópia paralela que possa
     divergir). A Fila de Provisões usa isto pra desenhar só os botões que o backend aceitaria —
-    nunca os quatro sempre, com dois recusando na cara do operador conforme o sinal do saldo.
+    nunca os quatro sempre, com os que não valem pro sinal do saldo recusando na cara do operador.
 
     `saldo` = provisionado − efetivado, líquido de resoluções anteriores (mesma convenção de
     `reconciliacao()['provisoes'][i]['saldo_aberto']` — testado idêntico a `_mov(...,'credor',...)`
-    pro mesmo projeto/conta). 'ainda_vai_chegar' nunca é recusado. saldo ≤ 0,005 (FALTA ou zero):
-    'efetivada'. saldo ≥ −0,005 (SOBRA ou zero): 'encerrada_valor_menor'/'nao_se_aplica'."""
+    pro mesmo projeto/conta). 'adiar' nunca é recusado (F2-27: renomeado de 'ainda_vai_chegar',
+    mesmo comportamento — não resolve nada, só registra a decisão de esperar). saldo ≈ 0:
+    'encerrar' (bateu exato, nada a levar pro resultado). saldo < 0 (FALTA): 'absorver'. saldo > 0
+    (SOBRA): 'receber'."""
     saldo = round(float(saldo or 0), 2)
-    validos = ["ainda_vai_chegar"]
-    if saldo <= 0.005:
-        validos.append("efetivada")
-    if saldo >= -0.005:
-        validos.append("encerrada_valor_menor")
-        validos.append("nao_se_aplica")
+    validos = ["adiar"]
+    if abs(saldo) <= 0.005:
+        validos.append("encerrar")
+    elif saldo < 0:
+        validos.append("absorver")
+    else:
+        validos.append("receber")
     return validos
 
 
 def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, veredito, ref,
-                               valor_efetivado=None, motivo=None, decidido_por_id=None, data=None,
-                               forma_pagamento="a_prazo"):
+                               motivo=None, decidido_por_id=None, data=None):
     """Resolve o saldo aberto de uma provisão por um VEREDITO NOMEADO (ACHADO-16, docs/db/
     TAREFA_ACHADO16.md, passo 8) — nunca mais o cancelamento silencioso que `resolver_saldo_
     provisao` fazia sozinho quando chamado direto pela Conciliação Final. Registra o veredito em
-    `VeredictoProvisao` (quem decidiu, quando, com qual motivo) e aplica o efeito certo no livro:
+    `VeredictoProvisao` (quem decidiu, quando, com qual motivo) e aplica o efeito certo no livro.
 
-    - **"efetivada"** — só para FALTA (saldo < 0, efetivado > provisionado): a despesa real já
-      foi reconhecida A CADA EFETIVAÇÃO ao longo do projeto; só falta o residual MECÂNICO entre
-      ativo e provisão, que `resolver_saldo_provisao` já cancela sem tocar a DRE (essa metade do
-      desenho original continua certa — o achado era só a SOBRA nunca efetivada).
-    - **"encerrada_valor_menor"** — só para SOBRA (saldo > 0): DUAS pernas, nesta ordem —
-      (1) `efetivar_provisao(valor_efetivado)` reconhece o custo REAL (5.x × ativo diferido, e
-      debita a própria provisão); (2) só então, se sobrar resíduo, `resolver_saldo_provisao`
-      reverte o QUE FALTOU (a sobra genuína, sem tocar a DRE de novo). Reverter sem efetivar
-      primeiro reproduziria o ACHADO-16 com outro nome.
-    - **"nao_se_aplica"** — só para SOBRA: reverte o saldo INTEIRO como sobra (nenhuma despesa
-      reconhecida — a rubrica nunca incidiu neste projeto). Exige `motivo` escrito; recusa sem
-      ele.
-    - **"ainda_vai_chegar"** — não resolve nada no livro. Ainda assim fica registrado (quem disse
-      "ainda vai chegar" e quando) — é decisão, não silêncio. Quem chama (`conciliar_final`) é
-      quem decide que isto barra o fechamento do projeto.
+    F2-27 (docs/db/MODELO_CONTABIL.md, pendência 3, LP-20) — os QUATRO nomes mudaram, e um par
+    colapsou em um só, porque o que cada um tinha que decidir mudou: até 07/08/2026 a despesa só
+    nascia na EFETIVAÇÃO, então a Conciliação Final também precisava decidir SE/QUANTO reconhecer
+    (daí 'encerrada_valor_menor' pedir um `valor_efetivado` digitado). Desde 05/09/2026 a despesa
+    já nasceu INTEIRA na emissão (`reconhecer_provisoes_segmento`) — a esta altura do ciclo não
+    sobra nada a reconhecer, só a decisão de PRA ONDE vai o resíduo entre o que foi provisionado e
+    o que foi de fato pago:
+
+    - **"absorver"** — só para FALTA (saldo < 0, efetivado > provisionado): a empresa absorve o
+      que faltou. `resolver_saldo_provisao` debita `5.7.01 Despesa de Conciliação` (renomeado de
+      'efetivada' — mesmo sinal, destino novo).
+    - **"receber"** — só para SOBRA (saldo > 0): o que sobrou vira `4.5.01 Receita de
+      Conciliação`, sempre o saldo INTEIRO (colapso de 'encerrada_valor_menor' + 'nao_se_aplica'
+      — as duas reduziam ao mesmo lançamento agora que não há mais nada a "efetivar" aqui; a
+      distinção entre "custou menos" e "nunca incidiu" perdeu significado contábil). `motivo`
+      continua aceito (rastro), mas deixou de ser exigido.
+    - **"encerrar"** — só quando saldo ≈ 0 (bateu exato): registra a decisão, sem lançamento —
+      não há resíduo a levar a lugar nenhum.
+    - **"adiar"** — não resolve nada no livro (renomeado de 'ainda_vai_chegar'). Ainda assim fica
+      registrado (quem disse "ainda vai chegar" e quando) — é decisão, não silêncio. Quem chama
+      (`conciliar_final`) é quem decide que isto barra o fechamento do projeto.
 
     Custo Financeiro (2.1.04.19) e Impostos (2.1.04.13) são RECUSADOS aqui — não seguem a regra
     de reversão (ACHADO-01: o deságio já foi retido na origem, não há despesa futura; aplicar a
@@ -2523,50 +2628,23 @@ def resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_prov
     seed_plano(db, owner_tipo, owner_id)
     saldo = round(_mov(db, owner_tipo, owner_id, codigo_provisao, "credor", None, None, projeto_id=projeto_id), 2)
 
-    valor_ef, valor_rev = None, None
-    if veredito == "ainda_vai_chegar":
-        pass   # não toca o livro — quem chama decide que isto barra o fechamento
-    elif veredito == "efetivada":
-        if veredito not in vereditos_validos_para_saldo(saldo):
-            raise ValueError(
-                "%s tem SOBRA de %.2f (não FALTA) — 'efetivada' só vale quando o efetivado já "
-                "supera o provisionado; escolha 'encerrada_valor_menor' ou 'nao_se_aplica'."
-                % (codigo_provisao, saldo))
+    if veredito != "adiar" and veredito not in vereditos_validos_para_saldo(saldo):
+        raise ValueError(
+            "%s tem saldo de %.2f — '%s' não vale pra esse sinal (válidos aqui: %s)."
+            % (codigo_provisao, saldo, veredito, vereditos_validos_para_saldo(saldo)))
+
+    valor_rev = None
+    if veredito == "adiar" or veredito == "encerrar":
+        pass   # nenhum dos dois toca o livro — 'encerrar' porque não há resíduo, 'adiar' porque
+               # quem chama (conciliar_final) decide que isto barra o fechamento
+    else:   # "absorver" (FALTA) ou "receber" (SOBRA) — os dois zeram o saldo inteiro
         resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
                                ref=ref + ":residual", data=data)
-    elif veredito in ("encerrada_valor_menor", "nao_se_aplica"):
-        if veredito not in vereditos_validos_para_saldo(saldo):
-            raise ValueError(
-                "%s está em FALTA (%.2f) — '%s' só vale para SOBRA (provisionado > efetivado); "
-                "o veredito certo aqui é 'efetivada'." % (codigo_provisao, saldo, veredito))
-        if veredito == "nao_se_aplica":
-            if not (motivo or "").strip():
-                raise ValueError("veredito 'nao_se_aplica' exige motivo escrito.")
-            resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
-                                   ref=ref + ":reverte", data=data)
-            valor_ef, valor_rev = 0.0, saldo
-        else:
-            # valor_efetivado == 0 é válido: cobre a rubrica que já foi efetivada mais cedo NO
-            # PROJETO (fora desta chamada) e chega aqui só com o resíduo a reverter — não exige
-            # reinventar um valor novo pra "confirmar" o que o livro já tem. `efetivar_provisao`
-            # já no-opa sozinho pra valor<=0 (idempotência dela mesma), então não precisa de
-            # guarda extra aqui além do teto do saldo aberto.
-            valor_efetivado = round(float(valor_efetivado or 0), 2)
-            if valor_efetivado < 0 or valor_efetivado > saldo + 0.005:
-                raise ValueError(
-                    "valor_efetivado precisa ser >= 0 e <= saldo aberto (%.2f) — recebido %r"
-                    % (saldo, valor_efetivado))
-            efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, valor_efetivado,
-                              ref=ref + ":efetiva", data=data, forma_pagamento=forma_pagamento)
-            residual = round(saldo - valor_efetivado, 2)
-            if residual > 0.005:
-                resolver_saldo_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
-                                       ref=ref + ":reverte", data=data)
-            valor_ef, valor_rev = valor_efetivado, (residual if residual > 0.005 else 0.0)
+        valor_rev = abs(saldo)
 
     v = VeredictoProvisao(owner_tipo=owner_tipo, owner_id=owner_id, projeto_nome=projeto_id,
                          codigo_provisao=codigo_provisao, veredito=veredito,
-                         valor_provisionado=saldo, valor_efetivado=valor_ef,
+                         valor_provisionado=saldo, valor_efetivado=None,
                          valor_revertido=valor_rev, motivo=motivo,
                          decidido_por_id=decidido_por_id, ref=ref)
     if data is not None:
@@ -2600,37 +2678,32 @@ def resolver_por_ato_nomeado(db, owner_tipo, owner_id, projeto_id, codigo_provis
 
     **O veredito sai do SINAL do saldo, derivado de `vereditos_validos_para_saldo`** — a mesma
     função que `resolver_veredito_provisao` usa pra recusar (ACHADO-41: nunca uma segunda cópia dos
-    limites, que divergiria sozinha depois). FALTA ou zero → 'efetivada' (a despesa real já foi
-    reconhecida na efetivação que precede esta chamada; sobra o residual mecânico). SOBRA →
-    'encerrada_valor_menor' com `valor_efetivado=0`, que é o caso que o próprio
-    `resolver_veredito_provisao` documenta: a rubrica já foi efetivada mais cedo NO PROJETO, fora
-    desta chamada, e chega aqui só com o resíduo a reverter.
+    limites, que divergiria sozinha depois): `["adiar", <o que vale pro sinal>]`, sempre nessa
+    ordem — pega o segundo. FALTA → 'absorver' (F2-27: a diferença vira Despesa de Conciliação).
+    SOBRA → 'receber' (vira Receita de Conciliação). Zero → 'encerrar' (nada a lançar).
 
     `origem` descreve o ato que decidiu ("folha:123 competência 2026-07") e vai para o `motivo` do
     veredito — `VeredictoProvisao` não tem coluna `origem`, e criar uma custaria migration para
     guardar o que o campo escrito já guarda. Idempotente por `ref`, como toda a família."""
     saldo = round(_mov(db, owner_tipo, owner_id, codigo_provisao, "credor", None, None,
                        projeto_id=projeto_id), 2)
-    if "efetivada" in vereditos_validos_para_saldo(saldo):
-        veredito, valor_efetivado = "efetivada", None
-    else:
-        veredito, valor_efetivado = "encerrada_valor_menor", 0.0
+    veredito = vereditos_validos_para_saldo(saldo)[1]
     return resolver_veredito_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao,
-                                      veredito, ref, valor_efetivado=valor_efetivado,
-                                      motivo=origem, decidido_por_id=decidido_por_id, data=data)
+                                      veredito, ref, motivo=origem, decidido_por_id=decidido_por_id,
+                                      data=data)
 
 
 def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, decidido_por_id=None, data=None):
     """FASE D2 — Conciliação Final (etapa 21). ACHADO-16 (docs/db/TAREFA_ACHADO16.md, passo 8):
     não fecha mais o projeto com provisão em aberto sem decisão — cada rubrica de custo do
-    projeto (as 15 de matching pleno; Impostos e Custo Financeiro ficam de fora, rota própria)
-    que tiver saldo aberto exige um veredito em `vereditos` ({codigo: {"veredito":,
-    "valor_efetivado":, "motivo":, "forma_pagamento":}}).
+    projeto (as 17 de despesa em tempo real, F2-27; Impostos e Custo Financeiro ficam de fora,
+    rota própria) que tiver saldo aberto exige um veredito em `vereditos` ({codigo: {"veredito":,
+    "motivo":}}).
 
     RECUSA (`ValueError`, tudo ou nada — nada é commitado, quem chama já faz rollback no
     `except`) em dois casos, ANTES de tocar qualquer lançamento:
     - falta veredito para alguma rubrica aberta;
-    - alguma rubrica recebeu 'ainda_vai_chegar' — o projeto continua honestamente aberto.
+    - alguma rubrica recebeu 'adiar' — o projeto continua honestamente aberto.
 
     Idempotente por ref (`ref_base:<codigo>`). Retorna {codigo: {"veredito":, "valor_efetivado":,
     "valor_revertido":}} — descreve O QUE aconteceu, não só o saldo residual (a API não
@@ -2657,20 +2730,18 @@ def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, d
             "Conciliação Final recusada: falta veredito para %s — toda provisão em aberto "
             "precisa de um veredito nomeado antes do projeto fechar. Resolva na Fila de "
             "Provisões (Financeiro → Fila de Provisões) e tente novamente." % ", ".join(faltando))
-    ainda_vai_chegar = sorted(cod for cod in abertas if vereditos[cod].get("veredito") == "ainda_vai_chegar")
-    if ainda_vai_chegar:
+    adiadas = sorted(cod for cod in abertas if vereditos[cod].get("veredito") == "adiar")
+    if adiadas:
         raise ValueError(
             "Conciliação Final recusada: %s ainda vai chegar — o projeto continua aberto até a "
-            "despesa real ser lançada." % ", ".join(ainda_vai_chegar))
+            "despesa real ser lançada." % ", ".join(adiadas))
 
     out = {}
     for cod in abertas:
         info = vereditos[cod]
         v = resolver_veredito_provisao(
             db, owner_tipo, owner_id, projeto_id, cod, info["veredito"], ref=ref_base + ":" + cod,
-            valor_efetivado=info.get("valor_efetivado"), motivo=info.get("motivo"),
-            decidido_por_id=decidido_por_id, data=data,
-            forma_pagamento=info.get("forma_pagamento") or "a_prazo")
+            motivo=info.get("motivo"), decidido_por_id=decidido_por_id, data=data)
         out[cod] = {"veredito": v.veredito, "valor_efetivado": v.valor_efetivado,
                    "valor_revertido": v.valor_revertido}
     return out
@@ -2679,11 +2750,12 @@ def conciliar_final(db, owner_tipo, owner_id, projeto_id, ref_base, vereditos, d
 def relatorio_projetos_encerrados_por_reversao(db, owner_tipo, owner_id):
     """Controle contra o veredito virar formalidade (ACHADO-16, docs/db/TAREFA_ACHADO16.md, passo
     8): reversão de resíduo MELHORA a margem — um projeto que fecha com reversão grande é
-    exatamente o que se quer olhar. Lista, por projeto, o total revertido ('encerrada_valor_menor'
-    + 'nao_se_aplica') e os motivos ao lado, ordenado do MAIOR valor revertido pro menor."""
+    exatamente o que se quer olhar. Lista, por projeto, o total revertido ('receber' — F2-27:
+    colapso de 'encerrada_valor_menor' + 'nao_se_aplica', mesmo lançamento contábil agora) e os
+    motivos ao lado, ordenado do MAIOR valor revertido pro menor."""
     linhas = (db.query(VeredictoProvisao)
                 .filter_by(owner_tipo=owner_tipo, owner_id=owner_id)
-                .filter(VeredictoProvisao.veredito.in_(("encerrada_valor_menor", "nao_se_aplica")))
+                .filter(VeredictoProvisao.veredito == "receber")
                 .order_by(VeredictoProvisao.projeto_nome, VeredictoProvisao.id).all())
     por_projeto = {}
     for v in linhas:
@@ -3254,7 +3326,17 @@ def dre(db, owner_tipo, owner_id, ini=None, fim=None):
     # FASE D: Outras Receitas (4.4) — inclui a Reversão de Provisões (4.4.02, sobra da reconciliação).
     # Sem isto a sobra ficava órfã da DRE (a falta, 5.6.10, já entra em constituicao_provisoes).
     outras_receitas = round(m("4.4", "credor"), 2)
-    resultado_antes_impostos = round(ebit + resultado_financeiro + outras_receitas, 2)
+    # F2-27 (docs/db/MODELO_CONTABIL.md, "As contas de Conciliação"): o resíduo das 17 rubricas
+    # de despesa em tempo real (Absorver → 5.7.01 Despesa de Conciliação; Receber → 4.5.01
+    # Receita de Conciliação), SEMPRE em bloco PRÓPRIO — nunca junto de "outras_receitas" (4.4,
+    # que é genérico) nem da receita de venda (4.1/4.2, base de comissão/meta). Fica DEPOIS do
+    # resultado operacional (ebit), como o documento manda — mudança de estimativa, tratada
+    # prospectivamente, nunca reabrindo a competência da venda original.
+    receita_conciliacao = round(m("4.5", "credor"), 2)
+    despesa_conciliacao = round(m("5.7", "devedor"), 2)
+    resultado_conciliacao = round(receita_conciliacao - despesa_conciliacao, 2)
+    resultado_antes_impostos = round(
+        ebit + resultado_financeiro + outras_receitas + resultado_conciliacao, 2)
     impostos = 0.0                                     # Simples/DAS já em Deduções (4.3)
     lucro_liquido = round(resultado_antes_impostos - impostos, 2)
     return {
@@ -3265,6 +3347,8 @@ def dre(db, owner_tipo, owner_id, ini=None, fim=None):
         "constituicao_provisoes": const_prov, "ebitda": ebitda,
         "depreciacao": depreciacao, "ebit": ebit,
         "resultado_financeiro": resultado_financeiro, "outras_receitas": outras_receitas,
+        "receita_conciliacao": receita_conciliacao, "despesa_conciliacao": despesa_conciliacao,
+        "resultado_conciliacao": resultado_conciliacao,
         "resultado_antes_impostos": resultado_antes_impostos,
         "impostos": impostos, "lucro_liquido": lucro_liquido,
         "obs": "Depreciação e Impostos = 0 (sem conta dedicada no seed; Simples/DAS já em Deduções). Refinar com contador.",
@@ -3277,6 +3361,8 @@ def dre(db, owner_tipo, owner_id, ini=None, fim=None):
             "constituicao_provisoes": det("5.6", "devedor"),
             "resultado_financeiro": det("5.5", "devedor"),
             "outras_receitas": det("4.4", "credor"),
+            "receita_conciliacao": det("4.5", "credor"),
+            "despesa_conciliacao": det("5.7", "devedor"),
         },
     }
 

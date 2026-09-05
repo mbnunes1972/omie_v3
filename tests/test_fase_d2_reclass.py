@@ -55,18 +55,21 @@ def test_reclassificar_depois_da_efetivacao_nao_espelha_ativo_baixado(app_db):
     db.close()
 
 
-def test_sobra_custo_fabrica_cancela_sem_dre(app_db):
-    """Sobra/falta vale p/ as rubricas com despesa em tempo real (Custo de Fábrica incluso, 2026-08-07):
-    custo real < planejado → cancela ativo × provisão SEM virar receita — a despesa real (900) já foi
-    reconhecida na própria efetivação; os 100 nunca gastos não geram ganho nenhum a "reverter"."""
+def test_sobra_custo_fabrica_vira_receita_de_conciliacao(app_db):
+    """F2-27 (docs/db/MODELO_CONTABIL.md), RAZÃO NOVA: a despesa nasce na EMISSÃO
+    (`reconhecer_provisoes_segmento`), pelo provisionado INTEGRAL — pagar menos do que foi
+    reconhecido não cancela mais contra o ativo (já zerou na emissão); o resíduo vira Receita de
+    Conciliação (4.5.01), nunca 4.4.02 (destino antigo, aposentado)."""
     db = app_db.get_session(); ot, oid = "loja", 733; mc.seed_plano(db, ot, oid)
     _constitui_fabrica(db, ot, oid, "P", 1000.0)
-    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.06", 900.0, ref="ef:P")   # custo real 900 < 1000
+    mc.reconhecer_provisoes_segmento(db, ot, oid, "P", "mercadoria", 100.0, ref_base="rec:doc1")
+    mc.efetivar_provisao(db, ot, oid, "P", "2.1.04.06", 900.0, ref="ef:P")   # pagou 900, reconhecido foi 1000
     mc.resolver_saldo_provisao(db, ot, oid, "P", "2.1.04.06", ref="rs:P")
     assert _s(db, ot, oid, "2.1.04.06") == 0.0        # provisão zerada
-    assert _s(db, ot, oid, "1.1.06.06") == 0.0        # ativo diferido zerado junto (cancelamento)
-    assert _s(db, ot, oid, "4.4.02") == 0.0           # SEM virar receita — nada a reverter
-    assert _s(db, ot, oid, "5.1.01") == 900.0         # a despesa REAL (900) já estava lá, intocada
+    assert _s(db, ot, oid, "1.1.06.06") == 0.0        # ativo já tinha zerado na emissão
+    assert _s(db, ot, oid, "4.4.02") == 0.0           # destino ANTIGO — aposentado, nunca mais tocado
+    assert _s(db, ot, oid, "4.5.01") == 100.0         # Receita de Conciliação — o resíduo (1000−900)
+    assert _s(db, ot, oid, "5.1.01") == 1000.0        # despesa real = o PROVISIONADO INTEGRAL
     db.close()
 
 

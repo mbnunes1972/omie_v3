@@ -1244,13 +1244,14 @@ class VeredictoProvisao(Base):
     """Veredito NOMEADO sobre o saldo aberto de uma provisão na Conciliação Final (ACHADO-16,
     docs/db/TAREFA_ACHADO16.md, passo 8) — substitui o cancelamento silencioso que
     `resolver_saldo_provisao` fazia sozinho. Toda rubrica que chega à Conciliação Final com
-    saldo aberto exige um destes quatro, escolhido por uma pessoa: 'efetivada' (FALTA — a
-    despesa real já foi reconhecida a cada efetivação, só falta o residual mecânico),
-    'encerrada_valor_menor' (SOBRA — efetiva pelo valor real e reverte o resíduo, DUAS pernas),
-    'nao_se_aplica' (SOBRA — reverte o saldo inteiro; exige `motivo`) ou 'ainda_vai_chegar' (não
+    saldo aberto exige um destes quatro, escolhido por uma pessoa (F2-27, docs/db/
+    MODELO_CONTABIL.md — renomeados de 'efetivada'/'encerrada_valor_menor'/'nao_se_aplica'/
+    'ainda_vai_chegar'; os dois do meio colapsaram em um só, ver `resolver_veredito_provisao`):
+    'absorver' (FALTA — vira Despesa de Conciliação), 'receber' (SOBRA — vira Receita de
+    Conciliação; `motivo` opcional), 'encerrar' (saldo já ≈ 0 — nada a lançar) ou 'adiar' (não
     resolve nada — o projeto não fecha). Fica registrado quem decidiu e quando: é o rastro que
     sustenta o relatório de "projetos encerrados por reversão" (o contra-controle de que
-    `nao_se_aplica`/`encerrada_valor_menor` não viram só um jeito de encerrar sem olhar)."""
+    'receber' não vira só um jeito de encerrar sem olhar)."""
     __tablename__ = "veredictos_provisao"
 
     id                 = Column(Integer,  primary_key=True, autoincrement=True)

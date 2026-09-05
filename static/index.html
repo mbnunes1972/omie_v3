@@ -15083,14 +15083,18 @@ function _filaProvDiasAberta(constituidaEm){
 // dois recusando na cara do operador conforme o sinal do saldo.
 // F2-25 Passo 4 (05/09): hoisted pra módulo — a Lista de Provisões (`_reconProvTabelaHtml`)
 // reusa o MESMO array, nunca uma cópia (um componente, dois pontos de montagem).
+// F2-27 (docs/db/MODELO_CONTABIL.md, pendência 3/LP-20): renomeados — a despesa já nasce
+// INTEIRA na emissão da NF-e (reconhecer_provisoes_segmento), não mais aqui; o que sobra aqui é
+// só a diferença entre o que foi reconhecido e o que foi de fato pago, e essa diferença vira
+// resultado (Conciliação), nunca mais cancelamento silencioso contra o ativo.
 const _FILAPROV_BOTOES = [
-  {v:'efetivada', label:'Efetivada',
-   title:'Só quando o efetivado já passou do provisionado. A despesa real já foi reconhecida ao longo do projeto; cancela só o resíduo mecânico, sem tocar o resultado.'},
-  {v:'encerrada_valor_menor', label:'Encerrada · valor menor',
-   title:'Aconteceu, custou menos que o previsto. Reconhece o custo real e depois reverte a sobra genuína.'},
-  {v:'nao_se_aplica', label:'Não se aplica',
-   title:'A rubrica NUNCA incidiu neste projeto. Reverte o saldo inteiro, sem reconhecer custo nenhum. Exige motivo escrito — é o veredito que mais melhora a margem, e por isso o que mais precisa de rastro.'},
-  {v:'ainda_vai_chegar', label:'Ainda vai chegar',
+  {v:'absorver', label:'Absorver',
+   title:'Gastou mais do que foi provisionado. A diferença vira Despesa de Conciliação — a empresa absorve o que faltou.'},
+  {v:'receber', label:'Receber',
+   title:'Gastou menos do que foi provisionado. A diferença vira Receita de Conciliação — o que sobrou volta pro resultado, num bloco próprio (nunca junto da receita de venda).'},
+  {v:'encerrar', label:'Encerrar',
+   title:'Bateu exato — o que foi provisionado é o que foi gasto. Fecha sem nenhum lançamento no resultado.'},
+  {v:'adiar', label:'Adiar',
    title:'A despesa existe e ainda não chegou. Não é resolver depois — IMPEDE a Conciliação Final. O projeto continua honestamente aberto até o custo real ser lançado.'},
 ];
 async function filaProvisoesCarregar(){
@@ -15152,21 +15156,21 @@ async function filaProvisoesCarregar(){
 // isolado de QUEM chama e do que cada tela faz depois de um sucesso.
 async function _resolverVereditoAcao(projeto, conta, veredito){
   let extra = {};
-  if(veredito === 'encerrada_valor_menor'){
-    const valor = await _filaProvPromptValor(
-      'Encerrada com valor menor', 'Valor REAL efetivado (o que sobrar do provisionado vira reversão automática):');
-    if(valor === null) return false;   // cancelou
-    extra = {valor_efetivado: valor};
-  } else if(veredito === 'nao_se_aplica'){
+  if(veredito === 'receber'){
+    // F2-27: motivo é OPCIONAL agora (a distinção "custou menos" × "nunca incidiu" perdeu
+    // significado contábil — os dois viram o mesmo lançamento, Receita de Conciliação) — mas
+    // continua aceito, pra quem quiser deixar rastro do porquê.
     const motivo = await _filaProvPromptTexto(
-      'Não se aplica', 'Motivo (obrigatório) — por que esta rubrica nunca incidiu neste projeto:');
-    if(motivo === null) return false;
-    if(!motivo.trim()){ await avisoPopup('Motivo é obrigatório para "Não se aplica".', {titulo:'Fila de Provisões'}); return false; }
-    extra = {motivo: motivo.trim()};
+      'Receber', 'Motivo (opcional) — por que sobrou provisionado nesta rubrica:');
+    if(motivo === null) return false;   // cancelou
+    extra = motivo.trim() ? {motivo: motivo.trim()} : {};
   } else {
-    const rotulo = veredito === 'ainda_vai_chegar' ? 'marcar como "ainda vai chegar" (o projeto continua sem poder concluir)'
-                                                    : 'marcar como "efetivada" (só vale quando o efetivado já superou o provisionado)';
-    if(!(await confirmarPopup('Confirma ' + rotulo + '?', {titulo:'Fila de Provisões'}))) return false;
+    const rotulos = {
+      absorver: 'marcar como "Absorver" (a diferença vira Despesa de Conciliação)',
+      encerrar: 'marcar como "Encerrar" (bateu exato, sem lançamento nenhum)',
+      adiar: 'marcar como "Adiar" (o projeto continua sem poder concluir)',
+    };
+    if(!(await confirmarPopup('Confirma ' + (rotulos[veredito] || veredito) + '?', {titulo:'Fila de Provisões'}))) return false;
   }
   try {
     const r = await fetch('/api/financeiro/fila-provisoes/veredito', {
@@ -15182,24 +15186,6 @@ async function _filaProvAcao(projeto, conta, veredito){
   if(!(await _resolverVereditoAcao(projeto, conta, veredito))) return;
   showToast('Veredito registrado.');
   filaProvisoesCarregar();
-}
-function _filaProvPromptValor(titulo, label){
-  return new Promise((resolve) => {
-    const ov = _popupOverlay(
-      '<h4 style="margin:0 0 10px;color:var(--accent);font-size:1rem">'+esc(titulo)+'</h4>'
-      +'<label style="font-size:.85rem;color:var(--muted);display:block;margin-bottom:6px">'+esc(label)+'</label>'
-      +'<input id="_filaprov-valor" type="number" step="0.01" min="0" placeholder="0,00" '
-      +'style="width:100%;box-sizing:border-box;background:var(--input);border:1px solid var(--border);color:var(--fg);padding:8px;border-radius:4px;font-size:.9rem;margin-bottom:14px">'
-      +'<div style="display:flex;gap:8px;justify-content:flex-end">'
-      +'<button data-act="cancel" style="background:none;border:1px solid var(--muted);color:var(--muted);border-radius:5px;padding:6px 16px;cursor:pointer;font-size:.85rem">Cancelar</button>'
-      +'<button data-act="ok" style="background:var(--btn-primary-bg);color:var(--btn-primary-text);border:var(--btn-primary-border);border-radius:5px;padding:7px 18px;font-size:.88rem;font-weight:700;cursor:pointer">Confirmar</button>'
-      +'</div>');
-    const fin = (v) => { ov.remove(); resolve(v); };
-    ov.querySelector('[data-act="ok"]').onclick = () => fin(parseMoeda(document.getElementById('_filaprov-valor').value) || 0);
-    ov.querySelector('[data-act="cancel"]').onclick = () => fin(null);
-    ov.addEventListener('click', (e) => { if (e.target === ov) fin(null); });
-    setTimeout(() => document.getElementById('_filaprov-valor')?.focus(), 60);
-  });
 }
 function _filaProvPromptTexto(titulo, label){
   return new Promise((resolve) => {

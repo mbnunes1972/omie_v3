@@ -1415,7 +1415,7 @@ auditoria que tira dinheiro a mais de quem comprou.
 
 ---
 
-## ACHADO-22 — docstring promete um mecanismo que VOCÊ MESMO mandou extinguir · GRUPO 5
+## ACHADO-22 — docstring promete um mecanismo que VOCÊ MESMO mandou extinguir · GRUPO 5 · RESOLVIDO 05/09/2026 (F2-27)
 
 **Esta entrada foi reescrita em 29/08.** A primeira versão afirmava que o
 reconhecimento do CMV na emissão "nunca foi implementado" e levantava a
@@ -1474,6 +1474,28 @@ valor menor"* tem **duas** pernas — efetivar a provisão pelo valor real (é
 isso que reconhece o custo, via `reconhecer_despesa_efetivacao`) e só então
 reverter o resíduo. Reverter sem efetivar reproduz o ACHADO-16 com outro
 nome.
+
+### Fechamento (05/09/2026, F2-27)
+
+A promessa do docstring **volta a ser verdade** — não apagada, RESTAURADA,
+mas por um caminho diferente do original. `docs/db/MODELO_CONTABIL.md`
+(fechado com o Marcelo em 05/09) decidiu voltar a reconhecer o CMV — e as
+outras 16 rubricas de despesa em tempo real — na emissão da NF-e, pelo
+PROVISIONADO INTEGRAL, via `mod_contabil.reconhecer_provisoes_segmento`
+(segmentado mercadoria/serviço, chamada por
+`_fin_faturamento_segmentado_seguro`, main.py). `efetivar_provisao` deixou
+de chamar `reconhecer_despesa_efetivacao` — virou só a perna de CAIXA, na
+data real do pagamento. O "veredito de duas pernas" que o parágrafo acima
+descrevia (`efetivar_provisao(valor_efetivado)` reconhecendo o custo, só
+então revertendo o resíduo) **não existe mais** — a despesa já nasceu
+inteira na emissão; o veredito ('absorver'/'receber', renomeados de
+'efetivada'/'encerrada_valor_menor'+'nao_se_aplica') só decide pra onde vai
+o resíduo entre o reconhecido e o pago (Despesa/Receita de Conciliação,
+nunca mais um "reconhece de novo"). Os 17 rótulos `reconhecimento_despesa_*`
+voltaram a descrever comportamento real — inclusive `com_adm`, que dizia
+"(efetivação)" e foi corrigido pro mesmo padrão dos outros 16. Detalhe
+completo e os testes rederivados: `docs/db/MODELO_CONTABIL.md`, ROTEIRO.md
+F2-27.
 
 ---
 

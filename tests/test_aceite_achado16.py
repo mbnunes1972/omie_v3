@@ -8,11 +8,13 @@ concluir o projeto nesse estado, em silêncio.
 
 Teste 1: aceite — a conclusão SEM veredito é recusada (o `xfail(strict=True)` do passo 1 sai
 neste commit: a conclusão passou a ser recusada de verdade, não é mais um bug pendente).
-Teste 2 (reescrito): a Conciliação Final não decide mais sozinha qual é o caso — com o veredito
-'encerrada_valor_menor' e um valor_efetivado real, ela reconhece o custo de verdade em 5.1.01 (a
-"despesa que ocorreu e ninguém tinha lançado", o próprio exemplo do achado) e só reverte o que
-sobra depois disso. O mecanismo antigo (zerar a provisão sem tocar 5.1.01 quando o efetivado é
-menor que o saldo) não existe mais incondicionalmente — só quando é isso que o veredito diz."""
+Teste 2 (reescrito 05/09, F2-27): a Conciliação Final não decide mais sozinha qual é o caso —
+mas o que ela decide MUDOU de novo, com o modelo contábil. Até 05/09/2026 (F2-27), sem a
+despesa ter nascido em lugar nenhum, o veredito precisava RECONHECER o custo real antes de
+reverter o resíduo. Desde então a emissão da NF-e já reconhece o PROVISIONADO INTEGRAL antes da
+Conciliação Final rodar — o veredito 'receber' só decide pra onde vai o resíduo entre o
+reconhecido e o pago (Receita de Conciliação, nunca mais "reconhece de novo" um valor
+diferente)."""
 import pytest
 
 
@@ -64,37 +66,46 @@ def test_conciliacao_final_recusa_com_provisao_nunca_efetivada(app_db, seed, htt
         "aberto — resposta: st=%r body=%r" % (st, body))
 
 
-def test_veredito_encerrada_valor_menor_reconhece_custo_real_antes_de_reverter(app_db, seed, http_client_factory):
-    """Reescrita de test_mecanismo_hoje_cancela_saldo_sem_tocar_5101 (passo 1): aquele teste
-    media o mecanismo antigo — provisão 100%% em aberto, nunca efetivada, cancelada sem tocar
-    5.1.01. Esse mecanismo não existe mais incondicionalmente: sem veredito a conclusão é
-    recusada (teste acima). Este teste prova o mecanismo NOVO no mesmo cenário motivador do
-    achado — "foi gasto e ninguém lançou": a fábrica entregou por 700 de uma provisão de 1000, e
-    é isso que o veredito 'encerrada_valor_menor' revela. As duas pernas são verificadas
-    SEPARADAMENTE (não só o saldo final, que não distingue uma perna de duas)."""
+def test_veredito_receber_reverte_a_sobra_apos_a_emissao_ja_ter_reconhecido_o_integral(
+        app_db, seed, http_client_factory):
+    """F2-27 (docs/db/MODELO_CONTABIL.md) reescreveu o mecanismo que este teste prova: até
+    05/09/2026, sem a despesa ter nascido em lugar nenhum, o veredito 'encerrada_valor_menor'
+    tinha que RECONHECER o custo real (`valor_efetivado`) antes de reverter o resíduo — havia
+    algo ainda por lançar. Agora não há mais: a emissão da NF-e já reconheceu o PROVISIONADO
+    INTEGRAL (1000) em 5.1.01, antes mesmo da Conciliação Final rodar. O que resta pra decidir é
+    só pra onde vai o resíduo entre o reconhecido (1000) e o que a fábrica de fato cobrou (700,
+    pago via Efetivar) — 'receber' manda a sobra (300) pra Receita de Conciliação, nunca mais
+    "reconhece de novo" um valor diferente do que a emissão já fixou."""
     import mod_contabil as mc
-    nome = "ACHADO16_encerrada_valor_menor"
+    nome = "ACHADO16_receber"
     _projeto_pronto_para_etapa_21(app_db, seed, nome)
     ot, oid = _constituir_custo_fabrica_nunca_efetivado(app_db, seed, nome, valor=1000.0)
+    db = app_db.get_session()
+    mc.reconhecer_provisoes_segmento(db, ot, oid, nome, "mercadoria", 100.0, ref_base="rec:doc1")
+    db.commit()
+    mc.efetivar_provisao(db, ot, oid, nome, "2.1.04.06", 700.0, ref="ef:fabrica")   # a fábrica cobrou 700
+    db.commit(); db.close()
 
     ger = _login(http_client_factory, "dir_l1")
     st, body = ger.post("/api/projetos/%s/ciclo/21/conciliar" % nome, {
-        "vereditos": {"2.1.04.06": {"veredito": "encerrada_valor_menor", "valor_efetivado": 700.0}},
+        "vereditos": {"2.1.04.06": {"veredito": "receber"}},
     })
     assert st == 200 and body.get("ok"), body
-    assert body["vereditos"]["2.1.04.06"]["veredito"] == "encerrada_valor_menor"
-    assert body["vereditos"]["2.1.04.06"]["valor_efetivado"] == 700.0
+    assert body["vereditos"]["2.1.04.06"]["veredito"] == "receber"
     assert body["vereditos"]["2.1.04.06"]["valor_revertido"] == 300.0
 
     db = app_db.get_session()
     saldo_provisao = mc._mov(db, ot, oid, "2.1.04.06", "credor", None, None, projeto_id=nome)
     debito_5101 = mc._mov(db, ot, oid, "5.1.01", "devedor", None, None, projeto_id=nome)
+    receita_conciliacao = mc._mov(db, ot, oid, "4.5.01", "credor", None, None, projeto_id=nome)
     db.close()
 
-    # perna 1 — o custo real (o que a fábrica de fato entregou) chega na DRE
-    assert abs(debito_5101 - 700.0) < 0.005, (
-        "5.1.01 deveria ter o custo real reconhecido (700) — %r" % debito_5101)
-    # perna 2 — só o resíduo genuíno (300, superprovisionado) reverte, e só depois da perna 1
+    # a despesa é o PROVISIONADO INTEGRAL (1000), fixado na emissão — o veredito não mexe nele
+    assert abs(debito_5101 - 1000.0) < 0.005, (
+        "5.1.01 deveria ter o provisionado integral (1000), reconhecido na emissão — %r" % debito_5101)
+    # a sobra (300) vira Receita de Conciliação — em bloco próprio, nunca reabrindo 5.1.01
+    assert abs(receita_conciliacao - 300.0) < 0.005, (
+        "4.5.01 deveria ter a sobra (300) — %r" % receita_conciliacao)
     assert abs(saldo_provisao) < 0.005, (
-        "provisão (deste projeto) deveria estar zerada após efetivar 700 e reverter o resíduo "
+        "provisão (deste projeto) deveria estar zerada após pagar 700 e reverter o resíduo "
         "de 300 — %r" % saldo_provisao)

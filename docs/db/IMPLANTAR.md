@@ -543,6 +543,47 @@ v2026.09.05-beta2` → `systemctl start` → `confirmar.sh` 15/0 → smoke
 --tags` confirmado exato nos dois. **Produção NÃO tocada** —
 tratamento próprio, ver `### Produção — diagnóstico de 04/09` acima.
 
+### Décimo primeiro deploy por tag — v2026.09.05-beta3 — 05/09/2026
+
+**Sem migration nova** — `git diff --stat` de `migrations/` entre
+`v2026.09.05-beta2` e este candidato vazio.
+
+F2-25, saído do Teste 5 do Marcelo em Homologação (05/09). Quatro
+frentes: ACHADO-59a (defeito) — `out_forn` digitado na AF1 era aceito
+e persistido, mas nunca gerava lançamento (`_AF_ITEM_RUBRICA` excluía
+a chave com um comentário desatualizado); conserto de 3 linhas
+(EVENTOS + `_PROV_FECHAMENTO`/`_AF_ITEM_RUBRICA`). ACHADO-59b
+(DECIDIDO) — Custo de Fábrica vira linha editável na AF1/AF2,
+reusando a Conferência contábil da etapa 12 sem mecanismo novo; gate
+de duplicação de custo medido e negativo antes de mexer; achado no
+meio do caminho — a composição dos dois lançamentos da Conferência
+debitava o CFO duas vezes quando a nova chamada passava o valor novo E
+o resíduo ao mesmo tempo, corrigido (`max(novo, atual)` no primeiro
+lançamento); a etapa 12 em si não mudou (regressão de 19 testes
+confirmando). Fila de Provisões (DECIDIDO) — passa a listar as 17
+rubricas elegíveis SEMPRE (não só as em aberto), agrupadas EM
+ABERTO/FECHADAS-ZERADAS com contagem rotulada por grupo; uma rubrica
+resolvida não some mais. Lista de Provisões — `white-space:nowrap`
+nas colunas numéricas (família do C6/LP-19); o link que navegava pra
+Fila virou botão "Resolver" que abre o box na própria linha, opções
+vindas do servidor (antecipa só esta parte da LP-13, já com desenho
+fechado). O relabeling de veredito (Absorver/Receber/Encerrar/Adiar)
+pedido no percurso original ficou PARADO — registrado como LP-20:
+"Receber" revelou depender de lançar receita de verdade no momento
+fiscal (NF-e), pergunta em aberto que volta pro Marcelo antes de
+qualquer rótulo novo. `pytest -q` completo: **2650 passed, 4 xfailed,
+0 failed**.
+
+Tag `v2026.09.05-beta3` (`2efff6e`) — nome pela data do corte,
+`-beta1`/`-beta2` já ocupadas. Nos dois servidores, nessa ordem
+(Integração, depois Homologação): `systemctl stop` → `git fetch
+--tags && git checkout v2026.09.05-beta3` → `systemctl start` →
+`confirmar.sh` 15/0 → smoke (401 login inválido via
+`/api/auth/login`, 200 `login.html`, 302 `index.html` sem sessão) →
+`git describe --tags` confirmado exato nos dois. **Produção NÃO
+tocada** — tratamento próprio, ver `### Produção — diagnóstico de
+04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

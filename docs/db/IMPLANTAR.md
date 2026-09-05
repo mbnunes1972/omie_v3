@@ -584,6 +584,52 @@ Tag `v2026.09.05-beta3` (`2efff6e`) — nome pela data do corte,
 tocada** — tratamento próprio, ver `### Produção — diagnóstico de
 04/09` acima.
 
+### Décimo segundo deploy por tag — v2026.09.05-beta4 — 05/09/2026
+
+**Migration nova**: `a1f2e3c4d5b6` (Contas de Conciliação, 4.5.01/5.7.01
++ sintéticas 4.5/5.7) — dois passos (backfill via `aplicar_gabarito_
+completo` pras lojas/redes reais; INSERT literal pros 3 owners históricos
+congelados que `test_gabarito_migration_x_seed.py` depende).
+
+F2-27 — a mudança do modelo contábil decidida no F2-26: reconhecimento
+de despesa volta a acontecer na EMISSÃO da NF-e (`reconhecer_provisoes_
+segmento`), pelo PROVISIONADO INTEGRAL das 17 rubricas de despesa em
+tempo real, segmentado Merc/Serv — não mais na efetivação/pagamento.
+`efetivar_provisao` ficou perna ÚNICA (provisão×caixa/fornecedores); o
+ativo diferido (1.1.06.xx) só se move por constituição/AF/reclassificação/
+reconhecimento, nunca por pagamento. Contas de Conciliação novas (4.5.01
+Receita/5.7.01 Despesa), bloco próprio na DRE depois do EBIT; vereditos
+renomeados/colapsados (Absorver/Receber/Encerrar/Adiar), ACHADO-22
+fechado (rótulos "NA NF-E" corrigidos).
+
+Candidato interrompido no meio da verificação (suíte em segundo plano
+morta aos 35min sem resultado parcial) — protegido em branch `f2-27-wip`
+antes de qualquer coisa, depois verificado em CAMADAS ascendentes em vez
+da suíte inteira de uma vez (novos arquivos → 8 modificados → subconjunto
+contábil → suíte sem E2E → E2E um por vez). A camada do subconjunto
+contábil revelou 49 failed/60 errors — causa raiz: mocks E2E de F2-25 com
+strings de veredito antigas, cascateando em timeouts que pareciam falha
+de infraestrutura em arquivos não relacionados; rederivados. Achado no
+caminho, **ACHADO-60**: `margem_projetada`/`dre_simulada` liam o eixo do
+PASSIVO (saldo de provisão não pago) pra medir "o que falta reconhecer"
+— correto enquanto reconhecimento e pagamento andavam juntos, virou
+duplo-conto quando o F2-27 os separou; corrigido lendo o ATIVO. A camada
+seguinte (suíte completa sem E2E) revelou mais 29 falhas, todas a mesma
+causa (testes que nunca simulavam a emissão) — rederivadas, incluindo os
+21 cenários de `test_bateria_ciclo.py` num único ponto do helper
+compartilhado. `pytest -q` completo (com E2E): **2661 passed, 4 xfailed,
+0 failed**, 467s, sem travar nenhum E2E.
+
+Tag `v2026.09.05-beta4` (`0fa1653`, merge `1a31fa6`). Nos dois
+servidores, nessa ordem (Integração, depois Homologação): `systemctl
+stop` → `git fetch --tags && git checkout v2026.09.05-beta4` → `set -a;
+. ./.env; set +a && alembic upgrade head` (confirma `a1f2e3c4d5b6 (head)`
+nos dois) → `systemctl start` → `confirmar.sh` 15/0 → smoke (401 login
+inválido via `/api/auth/login`, 200 `login.html`, 302 `index.html` sem
+sessão) → `git describe --tags` confirmado exato nos dois. **Produção
+NÃO tocada** — tratamento próprio, ver `### Produção — diagnóstico de
+04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

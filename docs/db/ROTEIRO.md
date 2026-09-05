@@ -13,6 +13,7 @@ cima para baixo.
 | `DESENVOLVIMENTOS.md` | **o que não existe** — ausências, separadas dos defeitos |
 | `ACEITE.md` | **como saber que consertou** — teste por achado |
 | `TAREFA_*.md` | **como consertar** — um por frente, escrito na hora de fazer |
+| `MODELO_CONTABIL.md` | **como o dinheiro vira resultado** — o fato, o reconhecimento e as duas visões (05/09) |
 | `PLANO_AJUSTES.md` | **por quê e em que ordem** — regras, decisões, agrupamento |
 | este arquivo | **o que fazer agora** |
 

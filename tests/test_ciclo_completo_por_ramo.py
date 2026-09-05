@@ -60,8 +60,11 @@ def test_ciclo_completo_ramo_loja(app_db):
     # NF-e (main.py:_fin_faturamento_segmentado_seguro — valor do segmento vem do VAVO, ACHADO-02)
     mc.faturar_segmento(db, ot, oid, P, "mercadoria", vavo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, 400.0, ref_base="imp:" + P)
+    # F2-27 (docs/db/MODELO_CONTABIL.md): a emissão volta a reconhecer despesa — provisionado
+    # INTEGRAL das 17 rubricas de despesa em tempo real (só 'mercadoria' aqui, pct_mercadoria=100).
+    mc.reconhecer_provisoes_segmento(db, ot, oid, P, "mercadoria", 100.0, ref_base="rec:" + P)
 
-    # fechamento/execução real das provisões operacionais (despesa nasce aqui, não na NF-e)
+    # fechamento/pagamento real das provisões operacionais (perna de caixa — a despesa já nasceu na emissão)
     mc.efetivar_provisao(db, ot, oid, P, "2.1.04.02", 500.0, ref="ex:" + P + ":m", forma_pagamento="a_prazo")
     mc.efetivar_provisao(db, ot, oid, P, "2.1.04.03", 300.0, ref="ex:" + P + ":g", forma_pagamento="a_prazo")
     mc.efetivar_provisao(db, ot, oid, P, "2.1.04.05", 200.0, ref="ex:" + P + ":a", forma_pagamento="a_prazo")
@@ -165,6 +168,8 @@ def test_ciclo_completo_ramo_financeira_com_conferencia_fecha(app_db):
 
     mc.faturar_segmento(db, ot, oid, P, "mercadoria", vavo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, 400.0, ref_base="imp:" + P)
+    # F2-27: a emissão reconhece o provisionado integral (só 'mercadoria' aqui).
+    mc.reconhecer_provisoes_segmento(db, ot, oid, P, "mercadoria", 100.0, ref_base="rec:" + P)
     mc.efetivar_provisao(db, ot, oid, P, "2.1.04.02", 500.0, ref="ex:" + P + ":m", forma_pagamento="a_prazo")
     mc.registrar_recebimento_venda(db, ot, oid, P, vavo, ref="rec:" + P)
     mc.conferir_retencao_financeira(db, ot, oid, P, cust_fin, ref_base="conf:" + P)
@@ -194,6 +199,8 @@ def test_ciclo_completo_ramo_loja_antecipacao(app_db):
 
     mc.faturar_segmento(db, ot, oid, P, "mercadoria", vavo, ref_base="fat:" + P)
     mc.efetivar_impostos_segmento(db, ot, oid, P, 400.0, ref_base="imp:" + P)
+    # F2-27: a emissão reconhece o provisionado integral (só 'mercadoria' aqui).
+    mc.reconhecer_provisoes_segmento(db, ot, oid, P, "mercadoria", 100.0, ref_base="rec:" + P)
     mc.efetivar_provisao(db, ot, oid, P, "2.1.04.02", 500.0, ref="ex:" + P + ":m", forma_pagamento="a_prazo")
 
     mc.registrar_recebimento_venda(db, ot, oid, P, vavo, ref="rec:" + P)

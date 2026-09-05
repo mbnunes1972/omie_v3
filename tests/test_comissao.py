@@ -312,7 +312,15 @@ def test_pagar_sem_ajuste_nao_gera_lancamento_de_resolucao(seed, app_db):
     db.close()
 
 
-def test_pagar_ajuste_pra_cima_reconhece_despesa_extra(seed, app_db):
+def test_pagar_ajuste_pra_cima_manda_o_excedente_pra_conciliacao(seed, app_db):
+    """F2-27 (docs/db/MODELO_CONTABIL.md): até 07/08 esta ajuste-pra-cima virava despesa FORMAL
+    (5.3.01) pelo valor pago — `mod_folha.pagar` não reconhece mais despesa nenhuma (só a perna de
+    caixa); a comissão (2.1.04.12→5.3.01) é uma das 17 rubricas de despesa em tempo real, e sua
+    despesa só nasce na EMISSÃO (`reconhecer_provisoes_segmento`), nunca simulada aqui — este teste
+    não emite NF-e, de propósito (é sobre a mecânica da FOLHA, não da emissão). Sem reconhecimento,
+    5.3.01 fica em 0; o excedente pago sobre o provisionado (500 pago − 300 provisionado = 200)
+    vira FALTA na provisão e `resolver_por_ato_nomeado` reverte pra Despesa de Conciliação
+    (5.7.01, 'absorver'), nunca mais pra 5.3.01."""
     import mod_folha, mod_provisoes, mod_contabil, mod_comissao
     db = app_db.get_session()
     loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagCima", 300.0, valor_liquido=10000.0,
@@ -329,7 +337,9 @@ def test_pagar_ajuste_pra_cima_reconhece_despesa_extra(seed, app_db):
     assert ok2, err2
     db.commit()
     desp = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagCima")
-    assert desp == 500.0   # despesa formal pelo valor AJUSTADO, escopada a este projeto
+    assert desp == 0.0   # nada reconhecido — sem emissão de NF-e neste fluxo
+    conciliacao = mod_contabil._mov(db, ot, oid, "5.7.01", "devedor", None, None, projeto_id="PPagCima")
+    assert conciliacao == 200.0   # excedente (500 pago - 300 provisionado) vira Despesa de Conciliação
     assert mod_folha.saldo_provisao_venda(db, ot, oid, "PPagCima") == 0.0   # provisão fechou, sem sobra
     db.close()
 
@@ -360,6 +370,9 @@ def test_pagar_ajuste_pra_baixo_ate_zero_cancela_sem_dre(seed, app_db):
 
 
 def test_pagar_ajustado_idempotente(seed, app_db):
+    """F2-27: idempotência agora observada em 5.7.01 (Despesa de Conciliação, onde o excedente
+    pago vai parar — ver test_pagar_ajuste_pra_cima_manda_o_excedente_pra_conciliacao), não mais
+    em 5.3.01 (que `mod_folha.pagar` não toca mais)."""
     import mod_folha, mod_provisoes, mod_contabil, mod_comissao
     db = app_db.get_session()
     loja, f, ot, oid = _cria_venda_com_provisao(db, app_db, "PPagIdemp", 300.0, valor_liquido=10000.0,
@@ -371,10 +384,10 @@ def test_pagar_ajustado_idempotente(seed, app_db):
     reg = db.query(app_db.FolhaPagamento).filter_by(funcionario_id=f.id, competencia="2026-07").first()
     mod_folha.aprovar(db, reg); db.commit()
     mod_folha.pagar(db, ot, oid, reg); db.commit()
-    saldo1 = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagIdemp")
+    saldo1 = mod_contabil._mov(db, ot, oid, "5.7.01", "devedor", None, None, projeto_id="PPagIdemp")
     mod_folha.pagar(db, ot, oid, reg); db.commit()   # 2ª chamada — reg.status já é 'paga', early return
-    saldo2 = mod_contabil._mov(db, ot, oid, "5.3.01", "devedor", None, None, projeto_id="PPagIdemp")
-    assert saldo1 == saldo2 == 500.0
+    saldo2 = mod_contabil._mov(db, ot, oid, "5.7.01", "devedor", None, None, projeto_id="PPagIdemp")
+    assert saldo1 == saldo2 == 200.0
     db.close()
 
 

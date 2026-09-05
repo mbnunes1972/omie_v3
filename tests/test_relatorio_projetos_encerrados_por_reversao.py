@@ -46,7 +46,7 @@ def test_relatorio_ordena_por_valor_revertido_desc_e_traz_motivo(app_db):
     assert rub_a["motivo"] == "obra não usou Custo Especial"
     assert rub_a["veredito"] == "receber"
     rub_b = rel[0]["rubricas"][0]
-    assert rub_b["veredito"] == "receber" and rub_b["valor_revertido"] == 100.0
+    assert rub_b["veredito"] == "receber" and rub_b["valor_revertido"] == 900.0
     db.close()
 
 

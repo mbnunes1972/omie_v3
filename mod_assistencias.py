@@ -138,8 +138,11 @@ def realizar_caso(db, owner_tipo, owner_id, caso, valor=None, quando=None):
       - Paga (cliente): sempre venda ao cliente (`venda_assistencia`), nunca toca provisão.
       - Loja/Fábrica COM projeto: `mod_contabil.efetivar_provisao` (o MESMO motor da Reconciliação
         manual — antes o único caminho, achado da Vera: os dois duplicavam o mesmo evento real sem
-        se falar) reconhece a despesa formal na competência real e baixa o passivo conforme
-        `caso.forma_pagamento` ('direto'=Caixa, na hora; 'a_prazo'=Fornecedores a Pagar, faturado).
+        se falar) baixa o passivo conforme `caso.forma_pagamento` ('direto'=Caixa, na hora;
+        'a_prazo'=Fornecedores a Pagar, faturado). F2-27 (docs/db/MODELO_CONTABIL.md): não
+        reconhece mais despesa formal aqui (RAZÃO VELHA, até 07/08) — isso já aconteceu na EMISSÃO
+        da NF-e do projeto (`reconhecer_provisoes_segmento`), pelo provisionado integral, decoupled
+        do valor real deste caso.
       - Loja/Fábrica AVULSO (sem projeto): `despesa_avulsa` lança direto, SEM provisão nenhuma —
         'garantia' (`classificacao_avulsa`, dentro da cobertura) usa a mesma conta formal de sempre
         (5.2.12/5.2.13); 'concessao' (fora da cobertura, cortesia) usa Concessão a Cliente (5.3.21)."""

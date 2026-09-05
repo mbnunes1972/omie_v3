@@ -269,7 +269,8 @@ def test_emitir_etapa15_autoriza_conclui(http_client_factory, seed, app_db, proj
     doc_id = up["documento_id"]
     st, b = _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe", {"fabrica_doc_id": doc_id, "markup_pct": 30})
     assert st == 200 and b["status"] == "autorizado" and b["chave"] == "CH-15", b
-    assert b["ref"] == f"NFE-{proj}-{doc_id}" and b["xml_doc_id"]
+    # ACHADO-54 (04/09): ref por TENTATIVA, não mais constante por doc_id — "-1" é a primeira.
+    assert b["ref"] == f"NFE-{proj}-{doc_id}-1" and b["xml_doc_id"]
     db = app_db.get_session()
     et = db.query(app_db.CicloEtapa).filter_by(projeto_nome=proj, etapa_codigo="15").first()
     assert et.status == "emitida"
@@ -302,8 +303,8 @@ def test_consultar_e_cancelar_etapa15(http_client_factory, seed, app_db, projeto
     _reset15(app_db, proj); _perfil(app_db, seed["loja2_id"])
     c = _login(http_client_factory, "dir_l2")
     _, up = _upload_xml(c, proj, _fixture_xml())
-    _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe", {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
-    ref = f"NFE-{proj}-{up['documento_id']}"
+    _, b_em = _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe", {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
+    ref = b_em["ref"]   # ACHADO-54 (04/09): ref por tentativa — lê da resposta, não reconstrói
     st, b = _post(c, f"/api/projetos/{proj}/ciclo/15/nfe/consultar", {"ref": ref})
     assert st == 200 and b["status"] == "autorizado"
     st2, b2 = _post(c, f"/api/projetos/{proj}/ciclo/15/nfe/cancelar", {"ref": ref, "justificativa": "cancelamento teste homologacao"})
@@ -663,7 +664,8 @@ def test_wiring_faturamento_lancado_apos_nfe_produto(http_client_factory, seed, 
     lans = d["lancamentos"]
     # FASE D2: a venda cheia foi registrada em Receita a Realizar (2.1.06) no contrato, então a NF-e baixa
     # desse pool (adiantado) — a parcela Mercadoria (65% × Val_Cont) não gera "a receber".
-    ref_merc = f"fat:NFE-{proj}-{up['documento_id']}:adiantado"
+    # ACHADO-54 (04/09): ref por tentativa — lê da resposta, não reconstrói.
+    ref_merc = f"fat:{b['ref']}:adiantado"
     merc = [l for l in lans if l["ref"] == ref_merc]
     assert len(merc) == 1 and merc[0]["origem"] == "faturamento_mercadoria_adiantado"
     assert merc[0]["valor"] == 65000.0
@@ -726,7 +728,7 @@ def test_cancelar_nfe_estorna_faturamento(http_client_factory, seed, app_db, pro
     st, b = _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe",
                   {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
     assert st == 200 and b["status"] == "autorizado", b
-    ref = f"NFE-{proj}-{up['documento_id']}"
+    ref = b["ref"]   # ACHADO-54 (04/09): ref por tentativa — lê da resposta, não reconstrói
 
     saldo_antes = _saldo_4101()
     assert saldo_antes - saldo_pre_emissao == 65000.0   # receita (crédito) da parcela Mercadoria

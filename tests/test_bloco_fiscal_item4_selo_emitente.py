@@ -186,7 +186,9 @@ def test_emitir_nfe_barra_com_destinatario_incompleto(http_client_factory, seed,
     st, b = _post(c, f"/api/projetos/{proj}/ciclo/15/emitir-nfe",
                   {"fabrica_doc_id": up["documento_id"], "markup_pct": 30})
     assert st == 400, b
-    assert "endereço do cliente" in b["erro"] and "logradouro" in b["erro"]
+    # F2-23 (04/09): mensagem reescrita pra se explicar sozinha (ACHADO-51, "recusas precisam se
+    # explicar sozinhas") — "endereço do destinatário", não mais "endereço do cliente".
+    assert "endereço do destinatário" in b["erro"] and "logradouro" in b["erro"]
 
 
 def test_emitir_nfe_passa_com_tudo_completo(http_client_factory, seed, app_db, projetos_dir, monkeypatch):

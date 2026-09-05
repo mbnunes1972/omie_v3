@@ -4335,3 +4335,112 @@ ambiente.
 
 ---
 
+## ACHADO-58 — o aceite do Remover prova a ROTA, não a TELA (verde falso) · RESOLVIDO 05/09/2026
+
+O Marcelo percorreu o `v2026.09.05-beta1` e os DOIS botões Remover
+continuavam sem funcionar: o da etapa 12 (conserto do F2-20,
+ACHADO-49) e o do XML na emissão da NF-e (conserto do F2-23,
+ACHADO-54). Os dois tinham teste verde e controle negativo. Isso não
+era "consertar de novo" — era descobrir por que o teste não viu.
+
+**Pista medida, confirmada:** `tests/test_achado49_remover_silencioso_e2e.py`
+e `tests/test_achado54_tela_erro_oferece_saida_e2e.py` sobem navegador de
+verdade (Playwright), mas nenhum dos dois clica no botão real. O
+primeiro chama `removerDocCiclo(...)` DIRETO via `page.evaluate` —
+prova a função, nunca o atributo `onclick` que o botão de verdade usa.
+O segundo chama `_renderCardEmissaoNfe(...)` e confere a STRING de HTML
+devolvida — nunca insere no DOM, nunca clica em nada. Os dois provam a
+ROTA (ou a função de render isolada), não a TELA.
+
+**Medido, nesta ordem (a → c), como pedido:**
+
+**(a) o que cada teste exercita?** Confirmado acima — nenhum dos dois
+toca um elemento real do DOM nem dispara um evento de clique.
+
+**(b) no navegador, o botão está no DOM? O clique dispara o handler? Há
+erro de JS no console?** Construído `tests/test_e2e_browser_remover_ciclo.py`
+— projeto criado e contrato assinado PELA TELA (única parte
+dinheiro/decisão, mesmo critério de `test_e2e_browser_conciliacao_final.py`),
+etapas anteriores marcadas concluídas direto no banco, documento de
+cada caso semeado direto no banco, e SÓ ENTÃO o botão Remover
+localizado no DOM real e CLICADO de verdade, com `page.on("pageerror")`
+capturando qualquer erro de JS. Resultado na primeira rodada: **`Unexpected
+end of input`** — um `SyntaxError` de verdade, disparado no exato
+momento do clique, com um nome de arquivo TRIVIAL ("pedido.xml", sem
+nenhum caractere especial). Não era intermitente nem dependia do dado —
+sempre acontecia.
+
+**(c) a requisição chega ao servidor?** Não chega nenhuma — o erro de
+sintaxe mata o handler antes da primeira linha (nem o `confirmarPopup`
+inicial aparece). Confirma exatamente o sintoma do Marcelo: "clico e
+não acontece nada."
+
+**Causa raiz:** as três chamadas de `removerDocCiclo(...)` (e uma
+quarta, não relacionada — `cliAbrirBriefing`, tela de Clientes)
+interpolavam `JSON.stringify(nome_original)` DIRETO dentro de um
+atributo `onclick="..."` também delimitado por aspas DUPLAS. `JSON.
+stringify("pedido.xml")` devolve a string `"pedido.xml"` — COM as
+aspas duplas dentro. O HTML resultante ficava:
+
+    onclick="removerDocCiclo('12', 1, "pedido.xml")"
+
+O parser de HTML fecha o atributo na PRIMEIRA aspa dupla que encontra
+— o `onclick` real vira só `removerDocCiclo('12', 1, `, e o resto
+(`pedido.xml")`) sobra como lixo fora do atributo. Ao clicar, o
+navegador tenta executar `removerDocCiclo('12', 1, ` — uma expressão
+JS incompleta, e é exatamente isso que produz `Unexpected end of
+input`. Não dependia do nome do arquivo ter caractere especial nenhum:
+**qualquer clique nesses botões estava quebrado**, sempre — o "clico e
+não acontece nada" era 100% reprodutível, não uma coincidência de dado.
+
+Isso não é um defeito recente: nenhum teste `test_e2e_browser_*`
+jamais tinha clicado num botão dentro do fichário de etapas (12-21) —
+toda a família de testes de navegador desta suíte para no Ciclo
+overlay, na Negociação ou na Conciliação, nunca dentro de uma aba do
+fichário. O bug podia estar ali desde que esse padrão de `onclick` foi
+escrito, sem que nenhum teste jamais o alcançasse.
+
+### Conserto (05/09)
+
+`esc()` (já existente, `String(...).replace(/"/g,'&quot;')...`) em volta de cada
+`JSON.stringify(...)` interpolado num atributo `onclick="..."` — a
+entidade HTML `&quot;` é decodificada de volta pro caractere `"` só
+DEPOIS que o parser já delimitou o atributo corretamente, então o JS
+extraído do `onclick` fica íntegro. Corrigidos os **quatro** lugares
+que tinham o padrão, não só os dois relatados — regra dos irmãos
+(ACHADO-26): deixar dois consertados e dois quebrados no mesmo padrão
+seria certeza de reabrir este achado no próximo percurso.
+
+| local | onde |
+|---|---|
+| `removerDocCiclo` — subfases do PE (11a/11b/11c/11e) | `static/index.html:21735` |
+| `removerDocCiclo` — etapa 12 (ACHADO-49) | `static/index.html:23094` |
+| `removerDocCiclo` — etapa 15, NF-e da fábrica (ACHADO-54) | `static/index.html:23296` |
+| `cliAbrirBriefing` — tela de Clientes, botão "Briefing" | `static/index.html:25188` |
+
+**A classe do achado, não só os dois botões:** um aceite que chama a
+função de negócio direto (`page.evaluate(() => minhaFuncao(...))`) ou
+que confere a STRING de HTML de uma função de render prova que aquele
+CÓDIGO está certo isoladamente — nunca prova que o CAMINHO que o
+usuário percorre (atributo HTML gerado → parser do navegador → evento
+de clique → handler) chega lá inteiro. Um erro de JavaScript em
+qualquer parte da página mata o handler em silêncio, e essa classe de
+teste nunca vê isso — só um clique de verdade, num DOM de verdade, vê.
+
+**Aceite:** `tests/test_e2e_browser_remover_ciclo.py` (2 testes, família
+`test_e2e_browser_*` de verdade) — etapa 12: projeto/contrato pela
+tela, documento semeado, botão Remover real localizado e CLICADO,
+popup de confirmação aparece, remoção completa (`removido_em`
+preenchido no banco), zero `pageerror`. Etapa 15 (NF-e da fábrica em
+`erro`): mesmo roteiro, mais a confirmação de que o aviso "Tentativa
+anterior" (ACHADO-54) aparece junto do botão. Controle negativo: os
+dois `esc(...)` revertidos, os dois testes falham reproduzindo o
+`Unexpected end of input`; restaurados, os 2 voltam a passar — e os
+testes antigos (`test_achado49_remover_silencioso_e2e.py`,
+`test_achado54_tela_erro_oferece_saida_e2e.py`) continuam passando,
+sem terem detectado o defeito nem antes nem depois (confirma que eles
+não são substituto deste aceite — ficam como prova da lógica interna
+das funções, não da tela).
+
+---
+

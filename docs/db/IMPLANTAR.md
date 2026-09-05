@@ -497,6 +497,52 @@ stop` → `git fetch --tags && git checkout v2026.09.05-beta1` →
 exato nos dois. **Produção NÃO tocada** — tratamento próprio, ver
 `### Produção — diagnóstico de 04/09` acima.
 
+### Décimo deploy por tag — v2026.09.05-beta2 — 05/09/2026
+
+**Sem migration nova** — `git diff --stat` de `migrations/` entre
+`v2026.09.05-beta1` e este candidato vazio.
+
+F2-24, saído do percurso do Marcelo em Homologação (05/09, confirmado
+na tag NOVA). Três frentes de código, em ordem: ACHADO-55 (a ÚNICA que
+mexe em dinheiro) — a decisão do PE (manter/absorver/cobrar/estornar)
+corrigia o registro (`ConciliacaoPeFase`) a cada redecisão, mas o
+crédito ao cliente só sabia criar, nunca reverter; sair de "estornar"
+deixava o crédito órfão no razão. Medido em Homologação: 1 caso real
+(`Teste_4`/pool 16, R$ 64.043,46 órfão). Conserto por lançamento, nunca
+apagamento (`registrar_credito_cliente_pe`/`reverter_credito_cliente_pe`,
+mesmo desenho do `estornar_rateio`); janela nova — redecidir depois da
+aprovação do PE pelo cliente (11e concluída) é recusado. ACHADO-58 —
+os dois botões Remover (etapa 12 e NF-e da fábrica) continuavam sem
+funcionar apesar de teste verde: os testes E2E antigos chamavam a
+função JS direto ou conferiam a STRING de HTML de um render isolado,
+nunca clicavam no botão real. Construído
+`tests/test_e2e_browser_remover_ciclo.py` (clique real no DOM real) e
+achado o bug de verdade — `JSON.stringify(nome_original)` interpolado
+sem escape dentro de um `onclick="..."` delimitado por aspas duplas,
+produzindo `Unexpected end of input` em TODO clique, sempre. Corrigido
+com `esc(JSON.stringify(...))` nos quatro lugares com o padrão (regra
+dos irmãos), não só os dois relatados. ACHADO-57 — a etapa Montagem se
+dava por concluída sozinha, logo após assinar o contrato: a leniência
+"toggleável sem linha nenhuma = satisfeita" (pra subfase opcional sem
+pendência não travar o grupo) se aplicava também ao código-mãe da
+etapa — um projeto novo, sem nenhuma linha de Montagem ainda,
+"satisfazia" as duas por omissão. Medido ao vivo em Homologação
+(`Projeto_3`/`Teste_2`, condição exata hoje). Também registrado, sem
+implementar (PASSO 0): ACHADO-56 (Revisão de PE fecha verde antes do
+veredito — família do ACHADO-39), LP-19 (valor estourando coluna,
+família do C6), LP-18 ganha confirmação (carga de NF-e na subfase de
+recebimento), LP-13 recebe o desenho fechado (Fila no Financeiro, um
+componente com dois pontos de montagem). `pytest -q` completo: **2639
+passed, 0 failed, 4 xfailed**.
+
+Tag `v2026.09.05-beta2` (`2d762b2`) — nome pela data do corte, `-beta1`
+já ocupada. Nos dois servidores, nessa ordem (Integração, depois
+Homologação): `systemctl stop` → `git fetch --tags && git checkout
+v2026.09.05-beta2` → `systemctl start` → `confirmar.sh` 15/0 → smoke
+(401 login inválido, 200 `index.html`/`login.html`) → `git describe
+--tags` confirmado exato nos dois. **Produção NÃO tocada** —
+tratamento próprio, ver `### Produção — diagnóstico de 04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

@@ -130,6 +130,9 @@ def test_prontidao_destinatario_ok():
 def test_prontidao_destinatario_endereco_incompleto_nomeia_campo_a_campo():
     e = mf.prontidao_destinatario(_cliente_pronto(logradouro=None, estado="", cep=None))
     assert e and "logradouro" in e and "estado" in e and "CEP" in e
+    # F2-23 (04/09): a recusa se explica sozinha — o que bloqueou, por quê, qual é a saída.
+    assert "não pode ser emitida" in e
+    assert "Complete o cadastro do cliente" in e
 
 
 def test_prontidao_destinatario_nao_confere_uf_generico_de_instalacao():

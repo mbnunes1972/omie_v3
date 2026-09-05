@@ -15032,20 +15032,27 @@ class Handler(BaseHTTPRequestHandler):
                                         "XML da NF-e da fábrica recusado: " + "; ".join(_probs_xml)},
                                        code=400); return
                     # ACHADO-51 (04/09, DECIDIDO: bloquear — estendido no mesmo dia pra ENTRE
-                    # projetos, ver ACHADOS_CONTABEIS.md): dedup pela CHAVE lida do XML, nunca
-                    # pelo nome do arquivo — a mesma nota chega com nomes diferentes. Só contra
-                    # documentos VIVOS (_docs_vivos, não a tabela crua) — um documento REMOVIDO
-                    # (ACHADO-30) não pode bloquear um novo upload da mesma nota, senão remover
-                    # vira porta sem volta. A trava não é "esta chave já existe", é "esta chave
-                    # está VIVA em projeto ATIVO" — um projeto CANCELADO (`_projeto_cancelado`)
-                    # libera a chave pra outro projeto, porque a nota que ele recebeu pode
-                    # voltar a ser processada em outro lugar.
+                    # projetos e pra NF-e CANCELADA, ver ACHADOS_CONTABEIS.md): dedup pela CHAVE
+                    # lida do XML, nunca pelo nome do arquivo — a mesma nota chega com nomes
+                    # diferentes. Só contra documentos VIVOS (_docs_vivos, não a tabela crua) —
+                    # um documento REMOVIDO (ACHADO-30) não pode bloquear um novo upload da mesma
+                    # nota, senão remover vira porta sem volta. A trava não é "esta chave já
+                    # existe", é "esta chave está VIVA, em projeto ATIVO, com emissão NÃO
+                    # cancelada" — três condições, mesmo desenho: projeto CANCELADO
+                    # (`_projeto_cancelado`) libera a chave pra outro projeto; NF-e CANCELADA
+                    # (`DocumentoFiscal.status == "cancelado"`) libera a MESMA nota da fábrica —
+                    # pode ter havido erro na emissão, e a NF-e da fábrica de origem será a mesma.
                     _chave_nova = _mod_nfe_upload.parse_nfe(data)["cabecalho"].get("chave")
                     if _chave_nova:
                         for _doc_vivo in _docs_vivos(db, etapa_codigo="15",
                                                      tipo="nfe_fabrica_xml").all():
                             if (_doc_vivo.projeto_nome != nome_safe
                                     and _projeto_cancelado(_doc_vivo.projeto_nome, db)):
+                                continue
+                            _emissao_doc = (db.query(DocumentoFiscal)
+                                              .filter_by(fabrica_doc_id=_doc_vivo.id)
+                                              .order_by(DocumentoFiscal.id.desc()).first())
+                            if _emissao_doc and _emissao_doc.status == "cancelado":
                                 continue
                             try:
                                 _bytes_existente = storage_ler_binario(
@@ -15055,9 +15062,14 @@ class Handler(BaseHTTPRequestHandler):
                                 continue
                             if _chave_existente and _chave_existente == _chave_nova:
                                 if _doc_vivo.projeto_nome == nome_safe:
+                                    # F2-23 (04/09): o que bloqueou (upload recusado), por quê (a
+                                    # mesma nota não pode ser carregada duas vezes nesta etapa) e
+                                    # qual é a saída (remover o documento anterior primeiro).
                                     self.send_json({"ok": False, "erro":
-                                        "Esta NF-e já foi carregada nesta etapa (%s). Remova o "
-                                        "documento anterior antes de carregar de novo, se for o caso."
+                                        "Upload recusado — esta NF-e já foi carregada nesta etapa "
+                                        "(%s); a mesma nota não pode ser carregada duas vezes. "
+                                        "Remova o documento anterior antes de carregar de novo, "
+                                        "se for o caso."
                                         % _doc_vivo.nome_original}, code=400); return
                                 else:
                                     self.send_json({"ok": False, "erro":

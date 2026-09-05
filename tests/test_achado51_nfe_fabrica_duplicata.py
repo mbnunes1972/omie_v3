@@ -68,6 +68,9 @@ def test_segundo_upload_da_mesma_chave_e_recusado(http_client_factory, seed, app
     st2, r2 = _upload(c, proj, _fixture("nfe_basica.xml"), filename="fabrica_v2_recebida_de_novo.xml")
     assert st2 == 400, r2
     assert "fabrica_v1.xml" in r2["erro"], r2
+    # F2-23 (04/09): a recusa se explica sozinha — o que bloqueou, por quê, qual é a saída.
+    assert "não pode ser carregada duas vezes" in r2["erro"], r2
+    assert "Remova o documento anterior" in r2["erro"], r2
 
 
 def test_chave_diferente_nao_e_bloqueada(http_client_factory, seed, app_db, projetos_dir):

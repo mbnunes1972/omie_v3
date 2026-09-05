@@ -127,7 +127,11 @@ def prontidao_destinatario(cliente):
     faltando = [rotulo for campo, rotulo in _CAMPOS_DESTINATARIO_ENDERECO
                 if _vazio(getattr(cliente, campo, None))]
     if faltando:
-        return "Configure o endereço do cliente (destinatário da nota): " + ", ".join(faltando) + "."
+        # F2-23 (04/09): a recusa se explica sozinha — o que bloqueou (a NF-e), por quê (a SEFAZ
+        # exige o endereço completo do destinatário) e qual é a saída (onde completar).
+        return ("A NF-e não pode ser emitida — falta o endereço do destinatário (cliente) "
+                "que a SEFAZ exige: " + ", ".join(faltando) + ". Complete o cadastro do cliente "
+                "antes de emitir.")
     return None
 
 

@@ -325,6 +325,36 @@ fonte com um valor negativo/longo). Ergonomia pura, mesma família da LP-10
 (botões desalinhados na mesma tela).
 *Adiado:* não muda número nem trava fluxo. (Marcelo, 05/09.)
 
+**LP-21 · `test_bateria_ciclo.py` — cenários "financeira" deixam `1.1.02` aberto,
+não determinístico mesmo isolado no próprio arquivo.** Achado ao rodar a
+camada (d) do F2-30 (06/09): a suíte completa (sem E2E) voltou com contagens
+de falha DIFERENTES em três rodadas seguidas (35, depois 59, depois 48 —
+inclusive numa rodada com as mudanças do F2-30 inteiramente stashed, ou seja,
+em `main` sem nenhuma mudança minha), provando que a instabilidade é
+pré-existente e não causada pelo F2-30 (mesmo raciocínio de A/B já usado pra
+separar F2-27 do F2-25 no F2-28). Investigando a fundo mais um caso
+específico: `tests/test_bateria_ciclo.py` sozinho (23 cenários, nenhum outro
+arquivo no meio) já falha por conta própria — `financeira_sem_custo_com_aditivo`
+e `financeira_com_custo_com_aditivo` (às vezes também
+`financeira_sem_custo_sem_aditivo`) deixam `1.1.02 Contas a Receber` aberto no
+fechamento (`_conferir_invariantes`, linha 228) com o MESMO valor que deveria
+ter ido pra `4.4.05 Ajuste de Retenção Financeira` na conferência do ramo
+financeira — mas rodados SOZINHOS (só os 2-3 nodeids dos cenários financeira),
+sempre passam. Diferente da classe LP-16 (falha por ORDEM fixa, sempre a
+mesma): aqui o Nº de falhas mudou entre duas rodadas do MESMO arquivo, sem
+nenhuma mudança de código no meio — não é resíduo de um vizinho fixo, cheira a
+condição de corrida ou dependência de estado que dois cenários "financeira"
+compartilham entre si de forma não determinística.
+*O que falta antes de consertar:* isolar COM QUAL outro cenário "financeira"
+a corrida acontece (rodar só os cenários financeira entre si, em subconjuntos,
+repetidas vezes, até achar o par mínimo que reproduz de forma estável) — não
+investigado a fundo aqui, achado incidental durante o fechamento do F2-30,
+fora do escopo das 4 fatias. Registrado com evidência concreta (nunca só
+"rodei de novo e sumiu") pra não repender a inferência que o LP-16 já cometeu
+uma vez.
+*Adiado:* não é item de bloco nenhum; achado ao verificar que o F2-30 não
+regrediu nada, não que o F2-30 tenha causado isto.
+
 ---
 
 ## Fechados — não são adiamento, e por isso não estão na lista acima

@@ -630,6 +630,44 @@ sessão) → `git describe --tags` confirmado exato nos dois. **Produção
 NÃO tocada** — tratamento próprio, ver `### Produção — diagnóstico de
 04/09` acima.
 
+### Décimo terceiro deploy por tag — v2026.09.05-beta5 — 05/09/2026
+
+**Migration nova**: `c2d3e4f5a6b7` (`contratos.financeiro_concluido_em`/
+`financeiro_concluido_por_id` — só schema, sem backfill de dado).
+
+F2-28 — primeiro percurso do Marcelo conferindo o razão com o modelo do
+F2-27 valendo (Teste_6, beta4). Achou que "Atual" no painel de Provisões
+nunca refletia a AF/Conferência: `_negociacao_breakdown` recalcula da
+negociação salva, nunca lê o razão — corrigido pra Custo de
+Fábrica/Outros Fornecedores lerem o saldo vivo da provisão. Confirmou
+que o ajuste do CFO não lançava por design correto (o resíduo já levava
+o CFO ao valor novo, não por silêncio). DECIDIDO: Custo de Fábrica virou
+read-only na AF — só "Outros Fornecedores" é digitado (o incremento), a
+contrapartida contra a fábrica é automática (reclassificação); lista de
+rubricas ganhou uma linha só de Custo de Fábrica (saldo vivo), o CFO
+congelado foi pro bloco de totais. `Contrato.financeiro_concluido_em`
+(distinto de `status`, que segue "vigente" intocado): `POST .../
+contrato/concluir-financeiro` confere consistência (AF concluída,
+documentos do PE vivos, provisão×ativo pareados —
+`mod_contabil.conferir_provisao_ativo_par`, nova) antes de fechar a fase
+financeira; daí em diante, reabrir a AF exige "autorizar". Princípio
+registrado em `docs/db/PLANO_AJUSTES.md` (5ª regra): nenhuma etapa
+encerra sem conferir o que prometeu, nenhuma etapa trava o andamento por
+causa disso. `pytest -q` completo (com E2E): verde, 4 xfailed, 0 failed
+determinístico — `test_fluxo_completo_e2e.py::
+test_contrato_real_geracao_e_assinatura` falhou uma vez isolado,
+confirmado via `git stash` que já falha identicamente sem nenhuma
+mudança deste candidato (flaky pré-existente, reportado).
+
+Tag `v2026.09.05-beta5` (`1bdd892`). Nos dois servidores, nessa ordem
+(Integração, depois Homologação): `systemctl stop` → `git fetch --tags
+&& git checkout v2026.09.05-beta5` → `set -a; . ./.env; set +a &&
+alembic upgrade head` (confirma `c2d3e4f5a6b7 (head)` nos dois) →
+`systemctl start` → `confirmar.sh` 15/0 → smoke (401 login inválido via
+`/api/auth/login`, 200 `login.html`) → `git describe --tags` confirmado
+exato nos dois. **Produção NÃO tocada** — tratamento próprio, ver
+`### Produção — diagnóstico de 04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

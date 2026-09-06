@@ -11648,18 +11648,23 @@ class Handler(BaseHTTPRequestHandler):
                 # (mesmo princípio do ACHADO-16/55: o documento da decisão tem que fechar sozinho).
                 # Calcula a migração ANTES de montar `itens`/o registro, e sobrescreve
                 # `custo_fabrica` pelo valor que o razão vai ter DEPOIS desta submissão — nunca o
-                # que a tela mandou.
+                # que a tela mandou. Só na revisão de verdade: "concorda" copia o registro
+                # ANTERIOR tal como ele já ficou gravado (já coerente por construção, inclusive
+                # antes de qualquer fechamento real ter postado no razão — `test_rev1_concorda_
+                # copia_venda` cobre exatamente esse caso, sem lançamento ainda) — reler o razão
+                # aqui reintroduziria a mesma inconsistência ao contrário.
                 import mod_contabil as _mc
                 ot_af, own_af = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
-                _atual_cfo = round(_mc._mov(db, ot_af, own_af, "2.1.04.06", "credor", None, None,
-                                            projeto_id=orc.projeto_id), 2)
                 _migracao = 0.0
-                if "out_forn" in itens:
-                    _atual_out_forn = round(_mc._mov(db, ot_af, own_af, "2.1.04.14", "credor", None, None,
-                                                     projeto_id=orc.projeto_id), 2)
-                    _novo_out_forn = round(float(itens.get("out_forn") or 0), 2)
-                    _migracao = max(0.0, round(_novo_out_forn - _atual_out_forn, 2))
-                itens["custo_fabrica"] = round(_atual_cfo - _migracao, 2)
+                if decisao == "revisa":
+                    _atual_cfo = round(_mc._mov(db, ot_af, own_af, "2.1.04.06", "credor", None, None,
+                                                projeto_id=orc.projeto_id), 2)
+                    if "out_forn" in itens:
+                        _atual_out_forn = round(_mc._mov(db, ot_af, own_af, "2.1.04.14", "credor", None, None,
+                                                         projeto_id=orc.projeto_id), 2)
+                        _novo_out_forn = round(float(itens.get("out_forn") or 0), 2)
+                        _migracao = max(0.0, round(_novo_out_forn - _atual_out_forn, 2))
+                    itens["custo_fabrica"] = round(_atual_cfo - _migracao, 2)
                 cust_var, marg = _mprov.cust_var_marg_cont(cfo, vl, itens)
                 existente = db.query(ProvisaoRegistro).filter_by(orcamento_id=oid, versao=versao).first()
                 pode_autorizar = perfis.pode(aprovador.nivel, "autorizar")   # capacidade de step-up (Diretor)

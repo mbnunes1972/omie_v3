@@ -238,6 +238,57 @@ junto da receita de venda, que costuma ser base de comissão, meta e indicador.
 Se possível, o bloco **abre por safra**: isso transforma o que seria ruído em
 medida da qualidade do provisionamento.
 
+## Os três destinos de um gasto de projeto
+
+`[DECIDIDO 06/09, F2-30 Fatia 3]` Uma compra complementar do fornecedor,
+descoberta na entrega — algo que faltou, que o cliente pediu a mais, que a
+fábrica cobrou além do previsto — tem **três destinos possíveis, e só três**:
+
+1. **Consome a provisão da rubrica**, quando ela existe e tem saldo — é
+   efetivação normal, a margem **não muda** (era previsto, o gasto real ficou
+   dentro do que já se esperava para aquela rubrica).
+2. **Excede a provisão da rubrica** — é falta: antes da emissão, aumenta a
+   própria provisão (a estimativa estava baixa, corrige-se prospectivamente);
+   depois da emissão, é o veredito **Absorver** → **Despesa de Conciliação**
+   (`5.7.01`, ver seção acima — resíduo de uma provisão que existiu).
+3. **Não corresponde a nenhuma rubrica** — a compra não é Montagem, não é
+   Garantia, não é nenhuma das ~17 famílias de despesa em tempo real; é
+   **despesa avulsa**, na competência em que ocorre, na conta própria
+   `5.3.22 Despesa Avulsa de Projeto` (`mod_contabil.despesa_avulsa`, com
+   `projeto_id` — F2-30 Fatia 2).
+
+**A porta é DERIVADA, nunca digitada.** O operador escolhe **o que foi
+comprado** — nunca **onde lançar**. Se a rubrica escolhida tem provisão com
+saldo, o sistema oferece consumir; se não tem (ou não existe rubrica
+correspondente), oferece avulsa. O mesmo princípio de
+`vereditos_validos_para_saldo`/ACHADO-41: a tela nunca oferece o que o modelo
+não aceitaria — quem decide QUAL dos três destinos é o estado da provisão, não
+o dedo de quem está lançando.
+
+**NÃO CONFUNDIR avulsa com variância.** Despesa avulsa nunca teve provisão —
+por definição, ninguém estimou aquele gasto antes. Conciliação (`4.5.01`/
+`5.7.01`) é o resíduo de uma provisão que **existiu e fechou** com sobra ou
+falta. Misturar as duas contaminaria o bloco de Conciliação, que existe
+especificamente para medir a **qualidade do provisionamento** — um gasto que
+nunca foi provisionado não é ruído de estimativa, é outra categoria de evento
+inteira. `despesa_avulsa` recusa em código as duas contas de Conciliação como
+`codigo_despesa` (ValueError), pelo mesmo motivo que a porta é derivada: não
+dar a opção errada é melhor que confiar em ninguém escolher errado.
+
+**Consequência esperada, a registrar:** como a despesa avulsa é por definição
+**imprevista**, ela nunca aparece em `_PROV_DESPESA_POR_ATIVO` (a família de
+17 rubricas que `margem_projetada` lê no ativo para estimar o "pior caso" —
+ver "O indicador de desbalanceamento", acima). Isso significa que
+`margem_projetada`, calculada ANTES da compra complementar ser descoberta,
+nunca a antecipava — não havia como. Depois que a despesa avulsa é lançada,
+`margem_realizada` (`margem_contribuicao`) cai imediatamente (ela entra pelo
+grupo `5.3`, dentro de `comissao`), e como `margem_projetada` é derivada dela
+(`margem_contribuicao − não_reconhecido`), a queda se propaga junto — sem
+duplicar e sem sumir. A divergência real está no **histórico do projeto**: a
+projeção que existia ANTES da descoberta e a realizada de DEPOIS diferem
+exatamente por esse valor. É o retrato correto de uma surpresa genuína — não
+um defeito do cálculo.
+
 ## As duas visões
 
 `[DECIDIDO 05/09]`

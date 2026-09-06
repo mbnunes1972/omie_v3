@@ -709,6 +709,52 @@ Tag `v2026.09.06-beta1` (`2421a8f`). Nos dois servidores, nessa ordem
 **Produção NÃO tocada** — tratamento próprio, ver `### Produção —
 diagnóstico de 04/09` acima.
 
+### Décimo quinto deploy por tag — v2026.09.06-beta2 — 06/09/2026
+
+**1 migration nova** — `655716ac5fd8` (conta `5.3.22 Despesa Avulsa de
+Projeto`, backfill nos owners já existentes; mesmo padrão de
+`a1f2e3c4d5b6`).
+
+F2-30 — em fatias (ordem 1→2→3→4), retomando o percurso do beta5
+(Teste_6). **Fatia 1** (rescaldo do F2-28): duas revisões sucessivas da
+AF1 deixavam o snapshot da revisão com Custo de Fábrica desatualizado
+(a contrapartida da migração ANTERIOR, não da desta submissão) — a tela
+só manda o prefill de quando o box abriu, nunca o resultado da migração
+DESTA submissão. Corrigido calculando a migração ANTES de montar o
+registro; restrito à branch "revisa" (achado ao rodar
+`test_rev1_concorda_copia_venda`: o primeiro conserto recomputava até em
+"concorda", zerando o valor antes de qualquer fechamento real ter
+postado no razão). **Fatia 2** (DECIDIDO 06/09): compra complementar
+descoberta na entrega, sem provisão que sirva, não é operação de AF —
+`despesa_avulsa` ganhou `projeto_id` opcional e a conta nova `5.3.22`
+(grupo 5.3, de propósito — `margem_projeto` só desconta 3 contas
+nomeadas do 5.2, mas o 5.3 inteiro via `comissao`); recusa as contas de
+Conciliação (4.5.01/5.7.01) explicitamente. **Fatia 3** (só
+documentação): registrado no MODELO_CONTABIL.md os três destinos de um
+gasto de projeto (consome/excede/avulsa) e a regra da porta DERIVADA
+(mesmo princípio do ACHADO-41). **Fatia 4**: LP-16 reexaminado com a
+lente do F2-29 Fatia D — achado estrutural que o descarta da classe
+"resíduo de vizinho" (é o primeiro teste do próprio arquivo, sem vizinho
+de módulo possível); bisect real com `pytest-randomly` não reproduziu
+(não é prova de aleatoriedade, registrado honestamente em aberto).
+**Achado incidental, fora das 4 fatias** (LP-21): `test_bateria_ciclo.py`
+mostra o MESMO padrão de instabilidade não determinística do LP-16, numa
+área de código sem relação — confirmado pré-existente via A/B com o
+F2-30 inteiramente stashed (a suíte completa já falhava, com contagens
+diferentes a cada rodada, em `main` sem nenhuma mudança deste candidato).
+Verificação em camadas: (a)/(b)/(c) verdes (549 testes no subconjunto
+contábil/AF/contrato/perfil/dre/conciliação); (d) suíte completa sem E2E
+instável (LP-21, pré-existente, não atribuível ao F2-30); (e) os 6 E2E
+de navegador, um por vez, nenhum travou.
+
+Tag `v2026.09.06-beta2` (`4f63666`). Nos dois servidores, nessa ordem
+(Integração, depois Homologação): `systemctl stop` → `git fetch --tags
+&& git checkout v2026.09.06-beta2` → `alembic upgrade head` (roda
+`655716ac5fd8`) → `systemctl start` → `confirmar.sh` 15/0 → smoke (401
+login inválido via `/api/auth/login`, 200 `login.html`) → `git describe
+--tags` confirmado exato nos dois. **Produção NÃO tocada** — tratamento
+próprio, ver `### Produção — diagnóstico de 04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

@@ -668,6 +668,47 @@ alembic upgrade head` (confirma `c2d3e4f5a6b7 (head)` nos dois) →
 exato nos dois. **Produção NÃO tocada** — tratamento próprio, ver
 `### Produção — diagnóstico de 04/09` acima.
 
+### Décimo quarto deploy por tag — v2026.09.06-beta1 — 06/09/2026
+
+**Sem migration nova** — F2-29 mexeu só em código/frontend/testes.
+
+F2-29 — montado em FATIAS a pedido do Marcelo (percorrido uma vez só,
+depois de as quatro fecharem), retomando o percurso do beta5 (Teste_6).
+**Fatia B** (AF1 não reabria): medido `Contrato.financeiro_concluido_em`
+NULL (o gate do F2-28 não disparou) e `reabertura_bloqueada_por_contrato`
+também não bloqueia reabrir a etapa 8 — nenhum gate encontrado deveria
+ter travado; o Marcelo confirmou que era navegação (achou o botão),
+não defeito — nenhuma mudança de código. **Fatia A**: o F2-28 cobriu só
+`custo_fabrica`/`out_forn` na coluna "Atual" do painel de Provisões —
+as outras 17 rubricas continuavam lendo a negociação salva, nunca o
+razão (regra dos irmãos, ACHADO-26); corrigido com um mapa novo
+(`mod_contabil._PAINEL_ITEM_RUBRICA_TODAS`) lendo o saldo vivo de cada
+uma. F2-28 marcado PARCIAL no seu próprio registro. **Fatia C**: dos 8
+painéis abertos de dentro do ciclo, 4 não identificavam o projeto
+(Provisões só com "Orçamento #N"; Mapa de Atribuições/Retenção/Grupo de
+Acompanhamento sem nome nenhum) — corrigidos com o mesmo padrão "Projeto
+&lt;nome&gt;" dos outros 4. **Fatia D** (isolamento de testes instáveis):
+a varredura mais ampla da LP-17 (pedida no F2-19, nunca feita) saiu
+limpa — 0 riscos novos. `test_contrato_real_geracao_e_assinatura`
+(reportado como flaky no F2-28) na verdade NUNCA foi aleatório: checava
+uma provisão de "venda" ANTES da própria 2ª assinatura (que é quando ela
+nasce de verdade) — só "passava" quando um teste vizinho no MESMO
+arquivo, com o mesmo orçamento do seed compartilhado, rodava antes e
+deixava resíduo; determinístico, corrigido movendo a checagem pro lugar
+certo. LP-16 (`test_aceite_achado12.py`) segue aberta — só higiene
+aplicada (sessões vazadas fechadas), causa raiz não confirmada, precisa
+de bisect real. `pytest -q` completo (com E2E): verde, 4 xfailed, 0
+failed.
+
+Tag `v2026.09.06-beta1` (`2421a8f`). Nos dois servidores, nessa ordem
+(Integração, depois Homologação): `systemctl stop` → `git fetch --tags
+&& git checkout v2026.09.06-beta1` → `alembic upgrade head` (confirma
+`c2d3e4f5a6b7 (head)`, sem migration nova) → `systemctl start` →
+`confirmar.sh` 15/0 → smoke (401 login inválido via `/api/auth/login`,
+200 `login.html`) → `git describe --tags` confirmado exato nos dois.
+**Produção NÃO tocada** — tratamento próprio, ver `### Produção —
+diagnóstico de 04/09` acima.
+
 ## Conferir o que esta rodando
 
 Nao entrar no servidor pra olhar `git log` — perguntar direto:

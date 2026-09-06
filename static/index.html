@@ -1502,6 +1502,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
           <div style="font-family:var(--font-display);font-weight:900;font-size:16px"><i class="ti ti-users-group"></i> Grupo de Acompanhamento</div>
           <button class="btn btn-ghost btn-sm" onclick="contatosConfFechar()">Fechar</button>
         </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Projeto <strong id="contatos-conf-proj-nome" style="color:var(--text)"></strong></div>
         <div id="contatos-conf-sub" style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.4"></div>
         <div id="contatos-conf-lista" style="margin-bottom:6px"></div>
         <div style="font-size:11px;color:var(--muted);border-top:1px dashed var(--border);padding-top:8px;margin-top:6px">
@@ -3582,6 +3583,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Mapa de Atribuições</div>
         <span onclick="mapaFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Projeto <strong id="mapa-proj-nome" style="color:var(--text)"></strong></div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:720px">Quem executa cada papel operacional (PE / Medição / Montagem), por ambiente. Só aparecem profissionais com a <strong style="color:var(--text)">função compatível</strong>. Uma pessoa por papel/ambiente (Montagem aceita vários). A atribuição concede visibilidade escopada ao profissional. Assistência tem agendamento próprio — aba Operacional › Assistências.</div>
       <div id="mapa-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
@@ -3594,6 +3596,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="font-family:var(--font-display);font-weight:900;font-size:16px">Retenção</div>
         <span onclick="retidoFechar()" style="cursor:pointer;color:var(--muted);font-size:20px;line-height:1">&#x2715;</span>
       </div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Projeto <strong id="retido-proj-nome" style="color:var(--text)"></strong></div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:640px">Ambientes podem ser retidos <strong style="color:var(--text)">a qualquer momento</strong> (da Solicitação de Medição à Montagem) e <strong style="color:var(--text)">mais de uma vez</strong> — obra, aprovações, financeiro, fábrica etc. Cada retenção registra quando foi, em qual etapa do ciclo, os ambientes, o motivo e a <strong style="color:var(--text)">previsão de liberação</strong>. O Medidor pode sinalizar; a Gerência efetiva a retenção e depois libera — o retido retoma de onde parou.</div>
       <div id="retido-body"><em style="color:var(--muted);font-size:12px">Carregando…</em></div>
     </div>
@@ -19338,6 +19341,7 @@ async function abrirModalContatosConf(onDone){
   _contatosConfOnDone = onDone || null;
   const ehGate = !!onDone;
   const box = document.getElementById('contatos-conf-lista');
+  document.getElementById('contatos-conf-proj-nome').textContent = projetoAtivo.nome_safe;
   document.getElementById('contatos-conf-sub').innerHTML = ehGate
     ? 'Antes de gerar o contrato, confira quem receberá a comunicação do projeto e confirme o canal.'
     : 'Participantes externos que acompanham este projeto e recebem sua comunicação.';
@@ -20625,6 +20629,7 @@ let _mapaFocusAmb = null;
 async function mapaAbrir(nomeSafe, focusAmbId){
   _mapaNome = nomeSafe;
   _mapaFocusAmb = focusAmbId || null;
+  document.getElementById('mapa-proj-nome').textContent = nomeSafe;
   document.getElementById('mapa-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('modal-mapa').style.display = 'flex';
   await mapaProfissionaisGarantir();
@@ -20775,6 +20780,7 @@ async function retidoAbrir(nomeSafe, etapaCtx){
   _retidoNome = nomeSafe;
   _retidoEtapaCtx = etapaCtx || (typeof _cicloEtapaAtiva !== 'undefined' && _cicloEtapaAtiva
                                  ? _fichaMaeRetencao(_cicloEtapaAtiva) : null);
+  document.getElementById('retido-proj-nome').textContent = nomeSafe;
   document.getElementById('retido-body').innerHTML = '<em style="color:var(--muted);font-size:12px">Carregando…</em>';
   document.getElementById('modal-retido').style.display = 'flex';
   await retidoRecarregar();
@@ -21371,7 +21377,7 @@ async function abrirProvisoes(oid, afCodigo) {
   // Build the full modal HTML
   const html =
     '<h4 style="margin:0 0 4px;color:var(--ok);font-size:1rem">&#x1F4CA; Provisões</h4>' +
-    `<p style="margin:0 0 14px;color:var(--muted);font-size:.78rem">Orçamento #${esc(String(oid))}</p>` +
+    `<p style="margin:0 0 14px;color:var(--muted);font-size:.78rem">Projeto <strong>${esc((projetoAtivo && projetoAtivo.nome_safe) || '')}</strong> · Orçamento #${esc(String(oid))}</p>` +
     desatualizadoBanner +
     (cols.length === 0 ? '<p style="color:var(--muted);font-size:.85rem">Nenhuma provisão registrada ainda.</p>' :
       `<div style="overflow-x:auto;max-height:55vh;overflow-y:auto">

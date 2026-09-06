@@ -4316,19 +4316,29 @@ class Handler(BaseHTTPRequestHandler):
                     venda = _reg("venda")
                     d = _negociacao_breakdown(orc, db)
                     atual_itens = _mprov.itens_provisao(d)
-                    # F2-28 Passo 1a (medido, 05/09): `_negociacao_breakdown` recalcula da NEGOCIAÇÃO
-                    # salva (parametros_json/desconto) — nunca lê o razão, então "Atual" repetia
-                    # "Venda" sempre que a AF/Conferência mexesse no razão sem reabrir a negociação
-                    # (achado do Marcelo, print do Teste_6). As duas contas que a reclassificação
-                    # da AF (Passo 2) efetivamente move — Custo de Fábrica e Outros Fornecedores —
-                    # passam a ler o SALDO VIVO da provisão, não o motor de negociação.
+                    # F2-28 Passo 1a (medido, 05/09), estendido no F2-29 Fatia A (06/09 — o
+                    # conserto do F2-28 cobriu SÓ custo_fabrica/out_forn, as duas que o percurso
+                    # exercitou; medido que as outras 17 rubricas do painel continuavam com o
+                    # mesmo defeito, regra dos irmãos): `_negociacao_breakdown` recalcula da
+                    # NEGOCIAÇÃO salva (parametros_json/desconto) — nunca lê o razão, então
+                    # "Atual" repetia "Venda" sempre que a AF/Conferência/efetivação/veredito
+                    # mexesse no razão sem reabrir a negociação. TODA rubrica com par
+                    # ativo×provisão (`_PAINEL_ITEM_RUBRICA_TODAS`, mod_contabil.py) passa a ler
+                    # o SALDO VIVO da provisão, não o motor de negociação. Fora do alcance, de
+                    # propósito: `custo_financeiro` (rota do ramo financeiro, sem conta de
+                    # provisão própria nesta família — ajuste pelo box do ramo, UI própria).
                     ot_prov, own_prov = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                     atual_itens["custo_fabrica"] = round(_mc._mov(
                         db, ot_prov, own_prov, "2.1.04.06", "credor", None, None,
                         projeto_id=orc.projeto_id), 2)
-                    atual_itens["out_forn"] = round(_mc._mov(
-                        db, ot_prov, own_prov, "2.1.04.14", "credor", None, None,
-                        projeto_id=orc.projeto_id), 2)
+                    for _chave, _rubrica in _mc._PAINEL_ITEM_RUBRICA_TODAS.items():
+                        _evento = _mc._PROV_FECHAMENTO.get(_rubrica)
+                        if not _evento:
+                            continue
+                        _prov_cod = _mc.EVENTOS[_evento][1]
+                        atual_itens[_chave] = round(_mc._mov(
+                            db, ot_prov, own_prov, _prov_cod, "credor", None, None,
+                            projeto_id=orc.projeto_id), 2)
                     atual = {"itens": atual_itens,
                              "cfo": float(d.get("CFO") or 0),
                              "val_liq": float(d.get("Val_Liq") or 0),
@@ -4341,11 +4351,14 @@ class Handler(BaseHTTPRequestHandler):
                     # Compara só as rubricas que o snapshot conhece: um snapshot pré-fold (10 chaves)
                     # não deve acusar "desatualizado" apenas porque 'atual' ganhou prov_mont/prov_gar
                     # (FASE 2). Snapshot novo (12 chaves) → comparação íntegra, inclui o drift das 2.
-                    # F2-28 Passo 1a: custo_fabrica/out_forn saem desta comparação — são leitura do
-                    # SALDO VIVO agora (não do motor de negociação), então uma migração da AF (Passo
-                    # 2), sozinha, sempre os move — isso é o esperado, não "negociação desatualizada".
+                    # F2-28 Passo 1a / F2-29 Fatia A: toda chave que "Atual" lê do SALDO VIVO
+                    # (custo_fabrica + `_PAINEL_ITEM_RUBRICA_TODAS`) sai desta comparação — uma
+                    # efetivação/AF/veredito/conciliação sozinha sempre as move, e isso é o
+                    # esperado, não "negociação desatualizada" (só `custo_financeiro`, que
+                    # continua vindo do motor, ainda entra na checagem).
+                    _chaves_vivas = set(_mc._PAINEL_ITEM_RUBRICA_TODAS) | {"custo_fabrica"}
                     _chaves_negociacao = [k for k in (venda["itens"] if venda else {})
-                                         if k not in ("custo_fabrica", "out_forn")]
+                                         if k not in _chaves_vivas]
                     desatualizado = bool(venda and any(
                         venda["itens"].get(k) != atual["itens"].get(k) for k in _chaves_negociacao))
                     # custos adicionais (arq/fidelidade/viagem/brinde/custo especial): já descontados do

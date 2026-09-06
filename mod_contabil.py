@@ -1758,6 +1758,15 @@ _AF_ITEM_RUBRICA = {
     # custo_financeiro NÃO entra: é LEITURA no painel (ajuste pelo box do ramo, rota própria).
 }
 
+# F2-29 Fatia A (06/09) — quem quer o SALDO VIVO de toda rubrica do painel (não só as
+# editáveis na AF) precisa de mais uma chave que `_AF_ITEM_RUBRICA` não cobre por desenho:
+# `cust_esp` (Custo Especial) tem par ativo×provisão de sempre (`_PROV_FECHAMENTO["cust_esp"]`
+# → 2.1.04.20) mas nunca foi AF-editável — não é "esquecimento", é escopo (`_AF_ITEM_RUBRICA`
+# documenta cada exclusão com motivo). `custo_financeiro` fica de fora dos dois mapas — não tem
+# conta de provisão própria nesta família (rota do ramo financeiro, UI própria, `ramoFinanceiroRender`).
+_PAINEL_ITEM_RUBRICA_TODAS = dict(_AF_ITEM_RUBRICA)
+_PAINEL_ITEM_RUBRICA_TODAS["cust_esp"] = "cust_esp"
+
 
 def disparar_deltas_af(db, owner_tipo, owner_id, projeto_id, itens_alvo, ref_base, data=None):
     """#10/#11 — ao confirmar uma Aprovação Financeira, ajusta cada rubrica do **saldo ATUAL da provisão**

@@ -11637,6 +11637,29 @@ class Handler(BaseHTTPRequestHandler):
                     cfo, vl = anterior.cfo, anterior.val_liq   # base congelada (versão anterior: venda p/ rev1, rev1 p/ rev2)
                 else:
                     self.send_json({"ok": False, "erro": "decisao deve ser concorda|revisa"}, code=400); return
+                # F2-30 Fatia 1 (06/09, medido no percurso do Teste_6, beta5): Custo de Fábrica
+                # é DERIVADO desde o F2-28 Passo 2 (read-only, contrapartida automática da
+                # migração de Outros Fornecedores) — mas o valor que a TELA envia em `itens.
+                # custo_fabrica` é só o que estava na tela no momento em que o box abriu (prefill
+                # da revisão/saldo anterior), não o resultado da migração DESTA submissão. Achado:
+                # duas revisões sucessivas (3.000, depois 4.000) gravavam Rev1=98.446,51 (a
+                # contrapartida da migração ANTERIOR) enquanto "Atual" (que lê o razão de verdade)
+                # já mostrava 97.446,51 — o snapshot da revisão parava de bater consigo mesma
+                # (mesmo princípio do ACHADO-16/55: o documento da decisão tem que fechar sozinho).
+                # Calcula a migração ANTES de montar `itens`/o registro, e sobrescreve
+                # `custo_fabrica` pelo valor que o razão vai ter DEPOIS desta submissão — nunca o
+                # que a tela mandou.
+                import mod_contabil as _mc
+                ot_af, own_af = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                _atual_cfo = round(_mc._mov(db, ot_af, own_af, "2.1.04.06", "credor", None, None,
+                                            projeto_id=orc.projeto_id), 2)
+                _migracao = 0.0
+                if "out_forn" in itens:
+                    _atual_out_forn = round(_mc._mov(db, ot_af, own_af, "2.1.04.14", "credor", None, None,
+                                                     projeto_id=orc.projeto_id), 2)
+                    _novo_out_forn = round(float(itens.get("out_forn") or 0), 2)
+                    _migracao = max(0.0, round(_novo_out_forn - _atual_out_forn, 2))
+                itens["custo_fabrica"] = round(_atual_cfo - _migracao, 2)
                 cust_var, marg = _mprov.cust_var_marg_cont(cfo, vl, itens)
                 existente = db.query(ProvisaoRegistro).filter_by(orcamento_id=oid, versao=versao).first()
                 pode_autorizar = perfis.pode(aprovador.nivel, "autorizar")   # capacidade de step-up (Diretor)
@@ -11673,8 +11696,6 @@ class Handler(BaseHTTPRequestHandler):
                     decisao=decisao, por_id=aprovador.id, travada_em=datetime.utcnow()))
                 db.flush()
                 # Fatia C (#11): ajusta o razão (ativo × provisão, nunca DRE) p/ os valores aprovados
-                import mod_contabil as _mc
-                ot_af, own_af = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 _seq = int(getattr(orc, "ramo_financeiro_seq", 0) or 0) + 1
                 _ref_af = "af:%s:%s:%d" % (orc.projeto_id, versao, _seq)
                 # F2-28 Passo 2 (05/09, DECIDIDO): Custo de Fábrica virou READ-ONLY na AF — o
@@ -11689,19 +11710,16 @@ class Handler(BaseHTTPRequestHandler):
                 # 2.1.04.06→2.1.04.14, pelo INCREMENTO sobre o saldo atual de Outros Fornecedores
                 # (nunca reduz — mesma direção única de antes, `max(0, ...)`). `custo_fabrica` não
                 # tem entrada em `_AF_ITEM_RUBRICA` (nunca teve) — mesmo que o campo desabilitado
-                # ainda submeta o valor prefill, o lote genérico o ignora sozinho.
+                # ainda submeta o valor prefill, o lote genérico o ignora sozinho. `_migracao` já
+                # foi calculada ANTES (F2-30 Fatia 1, pra poder sobrescrever `itens["custo_fabrica"]`
+                # antes do registro nascer) — reusada aqui, não recalculada.
                 _itens_af = dict(itens)
                 _itens_af.pop("custo_fabrica", None)
-                if "out_forn" in itens:
-                    _itens_af.pop("out_forn", None)
-                    _atual_out_forn = round(_mc._mov(db, ot_af, own_af, "2.1.04.14", "credor", None, None,
-                                                     projeto_id=orc.projeto_id), 2)
-                    _novo_out_forn = round(float(itens.get("out_forn") or 0), 2)
-                    _migracao = max(0.0, round(_novo_out_forn - _atual_out_forn, 2))
-                    if _migracao > 0:
-                        _mc.reclassificar_provisao(db, ot_af, own_af, orc.projeto_id,
-                                                   "2.1.04.06", "2.1.04.14", _migracao,
-                                                   ref=_ref_af + ":outros")
+                _itens_af.pop("out_forn", None)
+                if _migracao > 0:
+                    _mc.reclassificar_provisao(db, ot_af, own_af, orc.projeto_id,
+                                               "2.1.04.06", "2.1.04.14", _migracao,
+                                               ref=_ref_af + ":outros")
                 _mc.disparar_deltas_af(db, ot_af, own_af, orc.projeto_id, _itens_af, ref_base=_ref_af)
                 orc.ramo_financeiro_seq = _seq
                 db.commit()

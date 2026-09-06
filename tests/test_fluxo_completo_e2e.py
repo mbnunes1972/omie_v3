@@ -249,9 +249,16 @@ def test_contrato_real_geracao_e_assinatura(app_db, seed, projetos_dir, contrato
     assert b["contrato"]["tem_pdf"] is True
     assert b["contrato"]["arquivo_tipo"] == "pdf"
 
-    # 3) O hook REAL de geração registrou a "Venda" das provisões
-    st, b = c.get("/api/orcamentos/%d/provisoes" % oid)
-    assert b["provisoes"]["venda"] is not None
+    # F2-29 Fatia D (medido, LP-16-like): "venda" nasce na 2ª ASSINATURA completa
+    # (_registrar_assinatura_contrato, main.py ~linha 1070 — "só aqui, NUNCA na geração do
+    # contrato", decisão de 2026-08-12), não na geração. Esta checagem só passava por acaso
+    # quando `test_fluxo_completo_inicio_ao_fim` (mesmo arquivo, MESMO orcamento_l1_id do seed
+    # module-scoped) rodava antes e deixava uma "venda" residual pra trás — estado
+    # compartilhado ENTRE testes, não comportamento deste teste. Isolado (`pytest -k` que
+    # selecione só este teste, sem o irmão) ou com `-k` filtrando por palavra-chave que
+    # inclua um mas não o outro (ex. "contrato", usado no F2-27/28/29 pra rodar a camada
+    # contábil), a checagem falhava com "venda" None. Movida pra DEPOIS da 2ª assinatura
+    # (abaixo) — onde "venda" de fato nasce, pela ação DESTE teste, sem depender do vizinho.
 
     # 4) Arquivo do contrato é servível
     st, _ = c.get("/api/projetos/%s/contrato/pdf" % nome)
@@ -280,6 +287,11 @@ def test_contrato_real_geracao_e_assinatura(app_db, seed, projetos_dir, contrato
     assert b["contrato"]["status"] == "assinado"
     assert {a["parte"] for a in b["contrato"]["assinaturas"]} == {"loja", "cliente"}
 
-    # 8) Etapa 7 (Contrato) concluída no ciclo
+    # 8) O hook REAL da 2ª assinatura registrou a "Venda" das provisões (main.py
+    # _registrar_assinatura_contrato — não na geração, ver nota acima).
+    st, b = c.get("/api/orcamentos/%d/provisoes" % oid)
+    assert b["provisoes"]["venda"] is not None
+
+    # 9) Etapa 7 (Contrato) concluída no ciclo
     st, b = c.get("/api/projetos/%s/ciclo" % nome)
     assert st == 200

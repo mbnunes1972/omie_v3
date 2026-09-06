@@ -50,22 +50,27 @@ def test_projeto_com_aditivo_termina_com_2106_zerado(app_db, seed, http_client_f
     db.close()
     assert abs(v_contratado_medido - valor_contratado) < 0.05, v_contratado_medido
 
-    saldo_2106_antes_nfe = mc.saldo_adiantamento_projeto(app_db.get_session(), ot, owner_id, nome)
+    # F2-29 Fatia D (medido, LP-16): as três leituras abaixo criavam uma sessão por chamada
+    # (`app_db.get_session()` inline, nunca fechada) — vazamento de conexão que sobrevive até o
+    # `engine.dispose()` do teardown do MÓDULO (tests/conftest.py `app_db`), não do teste. Uma
+    # sessão só, fechada no fim, pra este arquivo não contribuir pro vazamento.
+    db = app_db.get_session()
+    saldo_2106_antes_nfe = mc.saldo_adiantamento_projeto(db, ot, owner_id, nome)
     assert abs(saldo_2106_antes_nfe - valor_contratado) < 0.05, (
         "2.1.06 deveria ter contrato + aditivo constituídos antes da NF-e — %r" % saldo_2106_antes_nfe)
 
     # a NF-e agora fatura valor_contratado_do_projeto (contrato + aditivo), não só o contrato.
     main._fin_faturamento_segmentado_seguro(loja_id, nome, "mercadoria", "NFE-aceite-achado12")
 
-    faturado = mc.total_lancado(app_db.get_session(), ot, owner_id, "4.1.01", "credito",
-                                projeto_id=nome)
+    faturado = mc.total_lancado(db, ot, owner_id, "4.1.01", "credito", projeto_id=nome)
     assert abs(faturado - valor_contratado) < 0.05, (
         "4.1.01 deveria fechar em %.2f (contrato + aditivo) — %r" % (valor_contratado, faturado))
 
-    saldo_2106_depois = mc.saldo_adiantamento_projeto(app_db.get_session(), ot, owner_id, nome)
+    saldo_2106_depois = mc.saldo_adiantamento_projeto(db, ot, owner_id, nome)
     assert abs(saldo_2106_depois) < 0.005, (
         "ACHADO-12: projeto com aditivo tem que terminar com 2.1.06 ZERADO — sobrou %r"
         % saldo_2106_depois)
+    db.close()
 
 
 def test_selecao_do_orcamento_no_post_aditivo_e_explicita(app_db, seed, http_client_factory):

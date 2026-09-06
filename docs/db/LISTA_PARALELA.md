@@ -233,6 +233,17 @@ instrumentar o que exatamente o teste lê que poderia vir sujo (a conta 2.1.06, 
 *Adiado:* não é item de bloco nenhum, achado incidental durante o fechamento de outra frente —
 registrado aqui pra não se perder, não investigado a fundo ainda.
 
+**Atualização (F2-29 Fatia D, 06/09):** fechadas 3 sessões vazadas neste teste (`app_db.
+get_session()` inline, nunca fechadas — só sobrevivem até o `engine.dispose()` do teardown do
+MÓDULO, `tests/conftest.py`, não até o fim do teste) — higiene, feita por segurança, mas NÃO
+confirmada como a causa raiz do flake. Descartadas duas hipóteses concretas: (a) vazamento de
+conexão acumulando entre módulos — não acontece, `app_db` dropa/recria o schema E dispõe a
+engine por módulo (roda sequencial, sem xdist, nas invocações desta sessão); (b) cache de
+`auth/perfis.py` (`_REG_BY_SLUG`) ficando stale entre módulos — não acontece pra quem usa a
+fixture `seed` (chama `perfis.recarregar()` no próprio setup), e este teste usa `seed`. Ainda
+falta o que o próprio achado original pedia: bisect real (`pytest-randomly` ou instrumentar
+exatamente o que a conta 2.1.06 lê que poderia vir sujo) — não feito, seguem em aberto.
+
 **LP-17 · Dois testes que ainda comparavam `datetime.utcnow()` com competência já migrada pro
 ACHADO-48 · RESOLVIDO 04/09, `b7bb834`.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h
 Brasília — a própria janela do ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_
@@ -258,9 +269,14 @@ a janela real já tinha fechado no momento do conserto, a reprodução foi forç
 truque do ACHADO-48 (fuso extremo, `Pacific/Pago_Pago`, UTC−11, na loja do teste) — revertida a
 fonte pra `datetime.utcnow()`, os dois falham de forma determinística, independente da hora real.
 
-*Não mexido:* LP-16 (`test_aceite_achado12`, dependente de ordem) é outra classe de problema,
-fora deste conserto. A varredura mais ampla por outros "irmãos" do ACHADO-48 em `tests/*.py`
-não foi feita — só os dois nomeados aqui.
+*Não mexido (na época):* LP-16 (`test_aceite_achado12`, dependente de ordem) é outra classe de
+problema, fora deste conserto. A varredura mais ampla por outros "irmãos" do ACHADO-48 em
+`tests/*.py` não foi feita — só os dois nomeados aqui.
+
+**Varredura ampla feita (F2-29 Fatia D, 06/09):** dos ~40 usos de `datetime.utcnow()` em
+`tests/*.py` (19 arquivos), 0 compartilham o padrão desta LP — todos usam margens de DIAS (não
+horas, imunes a um desvio de fuso de 3h) ou comparam `utcnow()` contra `utcnow()` do próprio
+código de produção sendo testado (sem relógio duplo pra discordar). Fechado — nada a consertar.
 
 ---
 

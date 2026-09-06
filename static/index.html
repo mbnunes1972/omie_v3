@@ -1213,9 +1213,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
                    title="Clique para editar"
                    onclick="negTotalIniciarEdicao(this)"
                    onblur="negTotalConfirmar(this.value)"
-                   onkeydown="if(event.key==='Enter')this.blur()">
+                   onkeydown="if(event.key==='Enter'){this.blur();}else if(event.key==='Escape'){this._esc=true;this.blur();}">
           </div>
           <div id="neg-hero-cond" class="neg-hero-cond" style="display:none"></div>
+          <!-- ACHADO-63 (06/09), F2-32 Fatia 2: o desconto que fecha `Bruto × (1−efetivo) = à
+               vista` — lido de Desc_Efetivo (motor), NUNCA recalculado aqui. Igual ao desconto
+               digitado quando não há desconto por ambiente; maior quando há (é o médio ponderado
+               pelo VBNA de cada ambiente). Diferente de `_maior_desconto_efetivo_pct` (main.py,
+               ACHADO-42) — aquele é o PIOR ambiente e decide a trava de autorização; este é o
+               que o cliente confere na mesa. Números diferentes, propósitos diferentes. -->
+          <div id="neg-desc-efetivo" class="neg-hero-cond" style="display:none"
+               title="Percentual que fecha Bruto × (1 − efetivo) = à vista — diferente do desconto do pior ambiente que decide autorização"></div>
         </div>
         <!-- Bloco 4: class neg-hdr-actions grudada no rodapé do card (margin-top:auto) —
              sem o margin-top:10px fixo de antes, que não acompanhava a altura do irmão. -->
@@ -1523,21 +1531,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
       </div>
     </div>
 
-    <!-- #neg-parcelado-sep/#neg-parcelado-cell/#neg-parcelado (bloco 2 do brief): saíram da faixa
-         visível — eram o card duplicado do Total do Contrato. Ficam vivos e ocultos (o wrapper
-         com display:none esconde tudo, mesmo quando negMostrarParcelado() reseta o display dos
-         filhos) só pra não quebrar negMostrarParcelado()/negValorTotalIniciarEdicao()/
-         negValorTotalConfirmar(), que continuam escrevendo neles sem guarda. -->
-    <div style="display:none">
-      <div id="neg-parcelado-sep">&#x2192;</div>
-      <div id="neg-parcelado-cell">
-        <input id="neg-parcelado" type="text" value="R$ 0,00" readonly
-               title="Clique para editar — recalcula o desconto pelo valor"
-               onclick="negValorTotalIniciarEdicao(this)"
-               onblur="negValorTotalConfirmar(this.value)"
-               onkeydown="if(event.key==='Enter'){this.blur();}else if(event.key==='Escape'){this._esc=true;this.blur();}">
-      </div>
-    </div>
+    <!-- ACHADO-64 (06/09), F2-32 Fatia 4: #neg-parcelado-sep/#neg-parcelado-cell/#neg-parcelado
+         (o gêmeo morto do Total do Contrato) e negValorTotalIniciarEdicao/negValorTotalConfirmar
+         foram apagados — a lógica migrou para negTotalIniciarEdicao/negTotalConfirmar, no campo
+         VISÍVEL #neg-total-final. negMostrarParcelado (chamado por outros lugares) já tinha
+         guarda própria (`if (!cell || !sep || !val) return;`) — vira no-op seguro, sem quebrar
+         nenhum chamador (o campo já era invisível, display:none no wrapper). -->
     <span id="neg-desc-pct-lbl" style="display:none">0</span>
 
     <!-- Tabela de ambientes -->
@@ -3965,9 +3964,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
         <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px"><span style="color:var(--muted)">Valor à vista</span><span id="mp-a-avista" style="font-family:var(--font-mono)">—</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">− Comissão arquiteto</span><span id="mp-a-arq" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">− Programa de fidelidade</span><span id="mp-a-fid" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
+        <!-- ACHADO-63 (06/09), F2-32 Fatia 3: "custa" (valor digitado, linha de sempre) × "cliente
+             paga" (Cust_Via_Recup/Bri_Recup/Cust_Esp_Recup, SÓ do motor — nunca recalculado aqui;
+             com desconto por ambiente o recuperado é soma de fatores, não digitado×desconto
+             global). "cedida" é a diferença das duas, calculada aqui (mesmos dois números já
+             vindos do motor, não é conta nova). -->
         <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">− Custo de viagem</span><span id="mp-a-viagem" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--text-3);margin:-2px 0 4px"><span>cliente paga <span id="mp-a-viagem-recup" style="font-family:var(--font-mono)">—</span></span><span id="mp-a-viagem-cedida"></span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">− Brinde</span><span id="mp-a-brinde" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
-        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px"><span style="color:var(--muted)">− Custo Especial</span><span id="mp-a-cesp" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:var(--fs-xs);color:var(--text-3);margin:-2px 0 4px"><span>cliente paga <span id="mp-a-brinde-recup" style="font-family:var(--font-mono)">—</span></span><span id="mp-a-brinde-cedida"></span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">− Custo Especial</span><span id="mp-a-cesp" style="font-family:var(--font-mono);color:var(--warn)">—</span></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:6px;font-size:var(--fs-xs);color:var(--text-3);margin-top:-2px"><span>cliente paga <span id="mp-a-cesp-recup" style="font-family:var(--font-mono)">—</span></span><span id="mp-a-cesp-cedida"></span></div>
         <div style="display:flex;justify-content:space-between"><span style="font-weight:700">Valor líquido final</span><span id="mp-a-liq" style="font-family:var(--font-mono);font-weight:700;color:var(--ok)">—</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--muted)">Desconto Total</span><span id="mp-a-margem" style="font-family:var(--font-mono);color:var(--warn);font-weight:700">—</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:2px"><span style="color:var(--text-3);font-size:var(--fs-xs)">Custos adicionais / À vista</span><span id="mp-a-pct-ca" style="font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--text-2)">—</span></div>
@@ -9170,22 +9177,6 @@ function negMostrarParcelado(valor){
 }
 function negOcultarParcelado(){ negMostrarParcelado(null); }
 
-// Campo "Valor Total do Contrato" editável → recalcula o desconto pelo valor.
-function negValorTotalIniciarEdicao(el){
-  // Travado após a assinatura/aprovação (mesma regra do Total do Contrato).
-  if (typeof _orcamentoAprovado === 'function' && _orcamentoAprovado()) return;
-  el._editando = true; el._esc = false;
-  el.removeAttribute('readonly');
-  el.style.background = 'var(--surface)';
-  el.style.border = '1px solid var(--accent)';
-  el.style.padding = '2px 8px';
-  el.style.cursor = 'text';
-  const v = parseFloat((el.value || '').replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,'')) || 0;
-  el._prevVal = v;   // p/ reexibir o valor anterior formatado ao cancelar/reverter
-  el.value = v > 0 ? v.toFixed(2).replace('.',',') : '';
-  el.select();
-}
-
 // Valor Bruto atual de forma robusta: motor (EP-07) → texto exibido → estrutural (legado).
 // (_negBaseValues fica vazio no EP-07 — a base tem de vir do motor/tela.)
 function negValorBrutoAtual(){
@@ -9198,88 +9189,6 @@ function negValorBrutoAtual(){
   return (_negBaseValues||[])
     .filter(b => _negSelLocal[b.arquivo] !== false)
     .reduce((s,b) => s + (b.estrutural||0), 0);
-}
-
-async function negValorTotalConfirmar(valStr){
-  const el = document.getElementById('neg-parcelado');
-  if (!el) return;
-  const restaurar = () => {
-    el._editando = false;
-    el.setAttribute('readonly','');
-    el.style.background = 'transparent';
-    el.style.border = 'none';
-    el.style.padding = '0';
-    el.style.cursor = 'pointer';
-  };
-  const reverter = () => {   // não aplica; reexibe o valor anterior formatado
-    if (el._prevVal > 0) negMostrarParcelado(el._prevVal);
-    renderTabelaNeg(_orcAmbientesAtivos);
-  };
-  restaurar();
-  if (el._esc) { el._esc = false; reverter(); return; }
-  // O valor digitado é o VALOR DE CONTRATO (inclui o custo financeiro da modalidade).
-  const valorContrato = parseFloat((valStr||'').trim()
-    .replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
-  const bruto = negValorBrutoAtual();
-  if (valorContrato <= 0 || bruto <= 0) { reverter(); return; }
-  // 1) remove o custo financeiro pela taxa de retenção que a modalidade ATIVA já calculou
-  //    (propriedade do plano de parcelas/entrada, independente do desconto; À-Vista/VP/TF = 0).
-  //    A ENTRADA é componente à vista, SEM custo financeiro — a retenção incide só no financiado
-  //    (valorContrato − entrada). Inverte o backend: total = entrada + (avista − entrada)/(1 − ret).
-  const taxaRet = Number(_negTaxaRetencaoPct) || 0;
-  const entrada = Number(_negEntradaValor) || 0;
-  const financiado = Math.max(0, valorContrato - entrada);   // clamp: contrato < entrada → 0
-  const valorAvista = entrada + financiado * (1 - taxaRet/100);
-  // 2) desconto global equivalente: valor à vista = valor bruto × (1 - desc%)
-  const discPct = Math.max(0, parseFloat(((1 - valorAvista/bruto) * 100).toFixed(4)));
-  const max = cfgGetDescontoMax();
-
-  const aplicar = async () => {
-    (_negBaseValues||[]).forEach(({arquivo}) => { _descIndividual[arquivo] = 0; });
-    const discEl = document.getElementById('neg-desconto');
-    if (discEl) { discEl.value = discPct; discEl._prev = discPct;
-                  if (typeof negValidarLimiteDesconto === 'function') negValidarLimiteDesconto(discPct); }
-    if (_orcAmbientesAtivos !== null) {
-      // EP-07: zera descontos individuais (mesma regra do Total do Contrato editável)
-      // para o desconto global reproduzir exatamente o valor digitado.
-      let tinhaInd = false;
-      (_orcAmbientesAtivos||[]).forEach(pa => {
-        const k = 'ep07_' + pa.id;
-        if ((parseFloat(_descIndividual[k])||0) || (parseFloat(pa.desconto_individual_pct)||0)) tinhaInd = true;
-        _descIndividual[k] = 0;
-      });
-      if (tinhaInd) await _persistirDescontosOrc();
-      // motor lê insumos SALVOS: salva o desconto PRIMEIRO (a resposta já aplica o
-      // breakdown na tela), só então re-renderiza — o preview agendado sai fresco.
-      await salvarDescontoAutomatico();
-      renderTabelaNeg(_orcAmbientesAtivos);
-      // à vista: reexibe a faixa já com o novo valor (modalidades financiadas são
-      // reexibidas pelos painéis via _atualizarPaineisAbertos/negMostrarParcelado)
-      if (typeof _tipoAtivo !== 'undefined' && _tipoAtivo === 'avista') {
-        const p = document.getElementById('painel-avista');
-        if (p && p.style.display !== 'none') avistaRecalcular();
-        else negMostrarParcelado(valorContrato);   // à-vista: retenção 0 → contrato = à-vista
-      }
-    } else {
-      // legado: recalcula direto de _negBaseValues e reexibe a faixa superior
-      renderTabelaNeg();
-      negAtualizarDescontoEfetivo();
-      if (typeof agendarSalvarDesconto === 'function') agendarSalvarDesconto();
-    }
-  };
-
-  if (discPct > max) {
-    const ok = await confirmarPopup(
-      'Desconto excede o limite do perfil de usuário, deseja realizar autorização gerencial?',
-      {titulo:'Autorização de desconto', okLabel:'Autorizar', cancelLabel:'Cancelar', perigo:true});
-    if (!ok) { reverter(); return; }   // não aplica; mantém o atual
-    const auth = await abrirModalAutorizacaoSidebar(discPct, max);
-    if (!auth) { reverter(); return; } // autorização cancelada/negada
-    _limiteAutorizado = discPct;   // o desconto autorizado passa a ser o limite vigente
-    await aplicar();
-  } else {
-    await aplicar();
-  }
 }
 
 async function onPagamentoChange(){
@@ -10611,10 +10520,12 @@ function negToggleAll(checked){
   agendarCalculo();
 }
 function negTotalIniciarEdicao(el){
-  // Após aprovação a negociação está travada — não permite editar o total.
+  // Após aprovação a negociação está travada — não permite editar o total (mesma regra de
+  // negValorTotalIniciarEdicao, o gêmeo vivo que ACHADO-64/F2-32 Fatia 4 aposentou — a lógica
+  // migrou pra cá; `neg-locked` é o mecanismo geral de trava pós-fluxo, próprio deste campo).
   if ((typeof _orcamentoAprovado === 'function' && _orcamentoAprovado()) ||
       el.classList.contains('neg-locked')) return;
-  el._editando = true;
+  el._editando = true; el._esc = false;
   el.removeAttribute('readonly');
   el.style.background   = 'var(--surface)';
   el.style.border       = '1px solid var(--accent)';
@@ -10622,75 +10533,104 @@ function negTotalIniciarEdicao(el){
   el.style.padding      = '4px 10px';
   el.style.cursor       = 'text';
   // Exibe valor numérico limpo para edição
-  const v = parseFloat(el.value.replace(/\./g,'').replace(',','.')) || 0;
+  const v = parseFloat((el.value || '').replace(/\./g,'').replace(',','.').replace(/[^0-9.]/g,'')) || 0;
+  el._prevVal = v;   // p/ reexibir o valor anterior formatado ao cancelar (Esc)
   el.value = v > 0 ? v.toFixed(2).replace('.',',') : '';
   el.select();
 }
-function negTotalConfirmar(valStr){
+// ACHADO-64 (06/09), F2-32 Fatia 4: a lógica que ENTENDE o motor (negValorBrutoAtual→VBNO,
+// entrada/taxa de retenção) morava em negValorTotalConfirmar, atrelada ao campo #neg-parcelado
+// (escondido, display:none) — o campo VISÍVEL (#neg-total-final) usava _negBaseValues, que
+// nasce vazio no EP-07 (ver negValorBrutoAtual), e por isso NUNCA FAZIA NADA: digitar o valor e
+// nada acontecer era exatamente esse defeito. A implementação viva migrou pra cá; o gêmeo morto
+// (#neg-parcelado* e as duas funções negValorTotal*) foi apagado — ver ACHADOS_CONTABEIS.md.
+async function negTotalConfirmar(valStr){
   const el = document.getElementById('neg-total-final');
-  el._editando = false;
-  el.setAttribute('readonly','');
-  // Bloco 2 do brief (Proposta B): #neg-total-final saiu de .total-line pro .neg-hero — os
-  // valores fixos que negTotalIniciarEdicao usa pra "acender" o modo edição (borda, fundo,
-  // padding) agora precisam ser REMOVIDOS (não reescritos com outro valor fixo) pra devolver o
-  // controle ao CSS de .neg-hero input (border-bottom tracejado, padding 0 0 2px) — um valor
-  // fixo tipo `border:'none'` sobrescreveria o border-bottom tracejado do herói pra sempre
-  // depois do primeiro clique de edição.
-  el.style.removeProperty('background');
-  el.style.removeProperty('border');
-  el.style.removeProperty('border-radius');
-  el.style.removeProperty('padding');
-  el.style.removeProperty('cursor');
-  el.style.color        = '';   // cor governada por .neg-hero input (--text), sem verde residual
+  const restaurar = () => {
+    el._editando = false;
+    el.setAttribute('readonly','');
+    // Bloco 2 do brief (Proposta B): #neg-total-final saiu de .total-line pro .neg-hero — os
+    // valores fixos que negTotalIniciarEdicao usa pra "acender" o modo edição (borda, fundo,
+    // padding) agora precisam ser REMOVIDOS (não reescritos com outro valor fixo) pra devolver o
+    // controle ao CSS de .neg-hero input (border-bottom tracejado, padding 0 0 2px) — um valor
+    // fixo tipo `border:'none'` sobrescreveria o border-bottom tracejado do herói pra sempre
+    // depois do primeiro clique de edição.
+    el.style.removeProperty('background');
+    el.style.removeProperty('border');
+    el.style.removeProperty('border-radius');
+    el.style.removeProperty('padding');
+    el.style.removeProperty('cursor');
+    el.style.color = '';   // cor governada por .neg-hero input (--text), sem verde residual
+  };
+  const reverter = () => {   // não aplica; reexibe o valor anterior formatado
+    if (el._prevVal > 0) el.value = fmt(el._prevVal);
+    renderTabelaNeg(_orcAmbientesAtivos);
+  };
+  restaurar();
+  if (el._esc) { el._esc = false; reverter(); return; }
+  // O valor digitado é o VALOR DE CONTRATO (inclui o custo financeiro da modalidade).
+  const valorContrato = parseFloat((valStr||'').trim()
+    .replace(/[^0-9.,]/g,'').replace(/\./g,'').replace(',','.')) || 0;
+  const bruto = negValorBrutoAtual();   // motor (EP-07) → texto exibido → estrutural (legado)
+  if (valorContrato <= 0 || bruto <= 0) { reverter(); return; }
+  // 1) remove o custo financeiro pela taxa de retenção que a modalidade ATIVA já calculou
+  //    (propriedade do plano de parcelas/entrada, independente do desconto; À-Vista/VP/TF = 0).
+  //    A ENTRADA é componente à vista, SEM custo financeiro — a retenção incide só no financiado
+  //    (valorContrato − entrada). Inverte o backend: total = entrada + (avista − entrada)/(1 − ret).
+  const taxaRet = Number(_negTaxaRetencaoPct) || 0;
+  const entrada = Number(_negEntradaValor) || 0;
+  const financiado = Math.max(0, valorContrato - entrada);   // clamp: contrato < entrada → 0
+  const valorAvista = entrada + financiado * (1 - taxaRet/100);
+  // 2) desconto global equivalente: valor à vista = valor bruto × (1 - desc%). ACHADO-63: só é
+  //    correta DEPOIS da Fatia 1 — é ela que restabelece à vista = Bruto × (1 − d).
+  const discPct = Math.max(0, parseFloat(((1 - valorAvista/bruto) * 100).toFixed(4)));
+  const max = cfgGetDescontoMax();
 
-  // Parse: aceita tanto ponto quanto vírgula como decimal
-  // Remove pontos de milhar e troca vírgula por ponto
-  const valLimpo = (valStr||'').trim()
-    .replace(/[^0-9.,]/g,'')   // remove letras e símbolos
-    .replace(/\./g,'')         // remove pontos de milhar
-    .replace(',','.');          // vírgula → ponto decimal
-  const total = parseFloat(valLimpo) || 0;
-  if(total <= 0){ renderTabelaNeg(); return; }
+  const aplicar = async () => {
+    (_negBaseValues||[]).forEach(({arquivo}) => { _descIndividual[arquivo] = 0; });
+    const discEl = document.getElementById('neg-desconto');
+    if (discEl) { discEl.value = discPct; discEl._prev = discPct;
+                  if (typeof negValidarLimiteDesconto === 'function') negValidarLimiteDesconto(discPct); }
+    if (_orcAmbientesAtivos !== null) {
+      // EP-07: zera descontos individuais (mesma regra do Total do Contrato editável)
+      // para o desconto global reproduzir exatamente o valor digitado.
+      let tinhaInd = false;
+      (_orcAmbientesAtivos||[]).forEach(pa => {
+        const k = 'ep07_' + pa.id;
+        if ((parseFloat(_descIndividual[k])||0) || (parseFloat(pa.desconto_individual_pct)||0)) tinhaInd = true;
+        _descIndividual[k] = 0;
+      });
+      if (tinhaInd) await _persistirDescontosOrc();
+      // motor lê insumos SALVOS: salva o desconto PRIMEIRO (a resposta já aplica o
+      // breakdown na tela), só então re-renderiza — o preview agendado sai fresco.
+      await salvarDescontoAutomatico();
+      renderTabelaNeg(_orcAmbientesAtivos);
+      // à vista: reexibe a faixa já com o novo valor (modalidades financiadas são
+      // reexibidas pelos painéis via _atualizarPaineisAbertos/negMostrarParcelado)
+      if (typeof _tipoAtivo !== 'undefined' && _tipoAtivo === 'avista') {
+        const p = document.getElementById('painel-avista');
+        if (p && p.style.display !== 'none') avistaRecalcular();
+        else negMostrarParcelado(valorContrato);   // à-vista: retenção 0 → contrato = à-vista
+      }
+    } else {
+      // legado: recalcula direto de _negBaseValues e reexibe a faixa superior
+      renderTabelaNeg();
+      negAtualizarDescontoEfetivo();
+      if (typeof agendarSalvarDesconto === 'function') agendarSalvarDesconto();
+    }
+  };
 
-  // Base de referência: soma estrutural dos ambientes selecionados
-  // estrutural já inclui arq/fid/viagem/brinde — sem desconto e sem financeiro
-  const negSel = _negBaseValues.filter(b => _negSelLocal[b.arquivo] !== false);
-  const mg = lerMargensNegociacao();
-  const custoFin = mg.custo_financeiro_pct;
-  const divisorFin = custoFin < 100 ? (1 - custoFin / 100) : 1;
-  const estTotal = negSel.reduce((s,b) => s + (b.estrutural||0), 0);
-
-  if(estTotal <= 0){ renderTabelaNeg(); return; }
-
-  // Verificar se o valor digitado é possível
-  // Valor máximo possível = estTotal / divisorFin (sem nenhum desconto)
-  const maxPossivel = estTotal / divisorFin;
-  if(total > maxPossivel){
-    el.style.color = 'var(--err)';
-    el.value = fmt(total) + ' maior que base';
-    setTimeout(() => { el.style.color='var(--ok)'; renderTabelaNeg(); }, 2500);
-    return;
-  }
-
-  // Zerar todos os descontos individuais
-  _negBaseValues.forEach(({arquivo}) => { _descIndividual[arquivo] = 0; });
-
-  // Fórmula exata sem arredondamento intermediário:
-  // total_digitado = estTotal × (1 - disc%) / divisorFin
-  // (1 - disc%) = total_digitado × divisorFin / estTotal
-  // disc% = (1 - total × divisorFin / estTotal) × 100
-  const fator = total * divisorFin / estTotal;
-  const discPct = Math.max(0, parseFloat(((1 - fator) * 100).toFixed(4)));
-  const discEl  = document.getElementById('neg-desconto');
-  if(discEl){
-    discEl.value = discPct;
-    // Forçar renderização imediata com o valor exato
-    // (sem agendar para evitar drift de arredondamento)
-    renderTabelaNeg();
-    // Verificar se o total calculado bate com o digitado
-    const elTot = document.getElementById('neg-total-final');
-    if(elTot) elTot.value = fmt(total);  // garantir valor exato
-    agendarSalvarDesconto();
+  if (discPct > max) {
+    const ok = await confirmarPopup(
+      'Desconto excede o limite do perfil de usuário, deseja realizar autorização gerencial?',
+      {titulo:'Autorização de desconto', okLabel:'Autorizar', cancelLabel:'Cancelar', perigo:true});
+    if (!ok) { reverter(); return; }   // não aplica; mantém o atual
+    const auth = await abrirModalAutorizacaoSidebar(discPct, max);
+    if (!auth) { reverter(); return; } // autorização cancelada/negada
+    _limiteAutorizado = discPct;   // o desconto autorizado passa a ser o limite vigente
+    await aplicar();
+  } else {
+    await aplicar();
   }
 }
 let _salvarSelTimer = null;
@@ -10715,6 +10655,7 @@ function renderTabelaNeg(ambientes = null){
       tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:28px 14px">Nenhum ambiente neste orçamento. Adicione pelo painel Ambientes.</td></tr>';
       ['neg-total','neg-subtotal','neg-avista','neg-desc-val'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='R$ 0,00';});
       const elF=document.getElementById('neg-total-final'); if(elF&&!elF._editando) elF.value='0,00';
+      const elDE=document.getElementById('neg-desc-efetivo'); if(elDE) elDE.style.display='none';
       const cbAll=document.getElementById('neg-sel-all'); if(cbAll) cbAll.checked=false;
       return;
     }
@@ -11203,30 +11144,6 @@ function mpToggleIncluirCustos(){
   agendarParametros();
 }
 
-function calcularValorBrutoCliente(mg){
-  // Calcula o valor bruto que o cliente vê, com ou sem custos adicionais
-  // Retorna um map arquivo -> valor_bruto_cliente
-  const ambs = (projetoAtivo && projetoAtivo.ambientes) || [];
-  const resultado = {};
-  ambs.forEach(amb => {
-    let bruto = amb.total || 0;
-    if(mg.incluir_custos){
-      // Gross-up: acrescenta custos ao valor bruto
-      if(mg.comissao_arq_ativa && mg.comissao_arq_pct > 0)
-        bruto = bruto / (1 - mg.comissao_arq_pct / 100);
-      if(mg.fidelidade_ativa && mg.fidelidade_pct > 0)
-        bruto = bruto / (1 - mg.fidelidade_pct / 100);
-      const n_ambs = ambs.length || 1;
-      if(mg.fora_da_sede && mg.custo_viagem > 0)
-        bruto = bruto + (mg.custo_viagem / n_ambs);
-      if(mg.brinde_ativo && mg.brinde > 0)
-        bruto = bruto + (mg.brinde / n_ambs);
-    }
-    resultado[amb.arquivo] = Math.round(bruto * 100) / 100;
-  });
-  return resultado;
-}
-
 function mpDescontoValidar(el){
   const val  = parseFloat(el.value) || 0;
   const max  = cfgGetDescontoMax(); // retorna _limiteAutorizado se existir, senão limite do perfil
@@ -11271,27 +11188,13 @@ function mpToggleCustoEspecial(){
   inp.disabled=!cb.checked; inp.style.opacity=cb.checked?'1':'0.35';
 }
 
-// Recalcula estrutural em _negBaseValues com base no estado atual dos toggles do modal
+// Recalcula estrutural em _negBaseValues com base no estado atual dos toggles do modal.
+// ACHADO-64 (06/09), F2-32 Fatia 4: o corpo que montava `mg` e recalculava `_negBaseValues` via
+// `calcularValorBrutoCliente` (apagada — 0 chamador fora daqui, confirmado antes de apagar) NUNCA
+// executava — `_negBaseValues` fica vazio no EP-07, e a guarda abaixo sempre retorna primeiro.
+// Mantida como no-op explícito (não apagada: mpToggleArq/Fid/Viagem ainda chamam esta função).
 function mpRecalcularEstruturalModal(){
   if(!projetoAtivo || !_negBaseValues || !_negBaseValues.length) return;
-  const id = s => document.getElementById(s);
-  const mg = {
-    incluir_custos:     id('mp-incluir-custos')?.checked || false,
-    comissao_arq_ativa: id('mp-arq-ativa')?.checked || false,
-    comissao_arq_pct:   parseFloat(id('mp-arq-pct')?.value) || 0,
-    fidelidade_ativa:   id('mp-fid-ativa')?.checked || false,
-    fidelidade_pct:     parseFloat(id('mp-fid-pct')?.value) || 0,
-    fora_da_sede:       id('mp-fora-sede')?.checked || false,
-    custo_viagem:       parseFloat(id('mp-viagem')?.value) || 0,
-    brinde_ativo:       id('mp-brinde-ativo')?.checked || false,
-    brinde:             parseFloat(id('mp-brinde')?.value) || 0,
-  };
-  const ambs = projetoAtivo.ambientes || [];
-  const brutosCliente = calcularValorBrutoCliente(mg);
-  _negBaseValues = _negBaseValues.map(b => {
-    const amb = ambs.find(a => a.arquivo === b.arquivo);
-    return { ...b, estrutural: brutosCliente[b.arquivo] || (amb?.total || b.estrutural) };
-  });
   mpAtualizarApoio();
 }
 // Handler dos inputs de parâmetro do modal: atualiza o apoio e dispara o auto-save (fonte única).
@@ -11669,6 +11572,24 @@ function _aplicarPreviewNaTela(s) {
   setR('mp-a-viagem', via, via > 0 ? '− ' : '');     // viagem total do motor (Cust_Via)
   setR('mp-a-brinde', bri, bri > 0 ? '− ' : '');     // brinde total do motor (Bri)
   setR('mp-a-cesp', cesp, cesp > 0 ? '− ' : '');      // custo especial do motor (não rateado)
+  // ACHADO-63 (06/09), F2-32 Fatia 3: "cliente paga" — SÓ do motor (Cust_Via_Recup/Bri_Recup/
+  // Cust_Esp_Recup), nunca recalculado aqui (com desconto por ambiente o recuperado é soma de
+  // fatores por ambiente, não o total vezes o desconto global). "Cedida" é a diferença entre os
+  // dois números que JÁ vieram do motor (via/bri/cesp acima e os *_Recup abaixo) — não é conta
+  // nova, é subtração dos mesmos dois valores exibidos.
+  const viaRecup = Number(s.Cust_Via_Recup) || 0, briRecup = Number(s.Bri_Recup) || 0,
+        cespRecup = Number(s.Cust_Esp_Recup) || 0;
+  const setCedida = (elId, custo, recup) => {
+    const e = id(elId); if (!e) return;
+    const cedida = Math.round((custo - recup) * 100) / 100;
+    e.textContent = cedida > 0.005 ? ('cedida R$ ' + fmt(cedida)) : '';
+  };
+  setR('mp-a-viagem-recup', viaRecup);
+  setCedida('mp-a-viagem-cedida', via, viaRecup);
+  setR('mp-a-brinde-recup', briRecup);
+  setCedida('mp-a-brinde-cedida', bri, briRecup);
+  setR('mp-a-cesp-recup', cespRecup);
+  setCedida('mp-a-cesp-cedida', cesp, cespRecup);
   setR('mp-a-liq', s.Val_Liq);
   // Correção Fatia 3: % único dos custos adicionais sobre o à vista (p = Cust_Ad/VAVO) —
   // informação read-only; é o mesmo p do fator 1/(1−p) usado no Complemento de Projeto.
@@ -11694,6 +11615,20 @@ function _aplicarPreviewNaTela(s) {
   setR('neg-subtotal', vbno);                       // Valor Bruto
   setR('neg-desc-val', desc, '− ');                 // Desconto
   setR('neg-avista',   vavo);                        // Valor à Vista (alimenta o pagamento)
+  // ACHADO-63 (06/09), F2-32 Fatia 2: desconto efetivo (1−VAVO/VBNO, do motor) no quadro do
+  // Valor de Contrato — o que fecha `Bruto × (1−efetivo) = à vista`. NUNCA `_maior_desconto_
+  // efetivo_pct` (main.py) — aquele é o pior ambiente, decide autorização, não é este.
+  const elDescEf = id('neg-desc-efetivo');
+  if (elDescEf) {
+    if (vbno > 0) {
+      const descEfPct = (Number(s.Desc_Efetivo) || 0) * 100;
+      elDescEf.textContent = 'Desconto efetivo: ' +
+        descEfPct.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + '%';
+      elDescEf.style.display = '';
+    } else {
+      elDescEf.style.display = 'none';
+    }
+  }
   setR('neg-total',    s.Val_Cont);                  // Total (à vista sem financiamento na prévia)
   const elTF = id('neg-total-final');                // input editável do total de contrato
   if (elTF && !elTF._editando) elTF.value = fmt(Number(s.Val_Cont) || 0);

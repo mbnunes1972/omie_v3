@@ -14,6 +14,11 @@ def test_preview_devolve_valores_do_motor(http_client_factory, seed):
     # chaves da cadeia completa presentes
     for k in ("VBVO", "VAVO", "Val_Liq", "Markup", "Desc_Tot", "Com_Arq", "Pro_Fid", "Cust_Ad", "Val_Cont"):
         assert k in s
+    # ACHADO-63/F2-32 (06/09): Fatias 2/3 da tela consomem estas quatro direto do motor, nunca
+    # recalculadas em JS — a rota tem que entregá-las no sombra (_negociacao_breakdown devolve o
+    # dict do motor inteiro, sem filtro de chaves).
+    for k in ("Desc_Efetivo", "Cust_Via_Recup", "Bri_Recup", "Cust_Esp_Recup"):
+        assert k in s
     assert "ambientes" in body
 
 def test_preview_fora_do_escopo_404(http_client_factory, seed):

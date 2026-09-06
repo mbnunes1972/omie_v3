@@ -11,43 +11,63 @@ AMBS = [{"VBVA": 22830.99, "CFA": 22830.99, "desc_amb_pct": 0.0},
 def _ap(a, b, tol=0.02): assert abs(a - b) <= tol, f"{a} != {b}"
 
 def test_leleu_ancora():
-    # comissão em cadeia (arq não ganha sobre fid; ambos excluem viagem/brinde)
+    # comissão em cadeia (arq não ganha sobre fid; ambos excluem viagem/brinde) — Com_Arq/Pro_Fid/
+    # Cust_Ad NÃO mudam com o ACHADO-63 (06/09): a base de comissão (num_via+num_bri)*fator_desc
+    # sempre rastreou exatamente o que fica embutido em VAVA/VAVO pra essas duas rubricas (antes
+    # E depois da correção — a álgebra cancela: delta_vava do termo via/bri == delta_base_custos),
+    # então Com_Arq/Pro_Fid ficam idênticos ao valor de ANTES da correção (2265.02/462.25).
+    # O que muda: viagem+brinde não inflam mais o Bruto nem são blindados do desconto — a loja
+    # recupera só (1-d_orc) do custo. total_via=2000,00 (custo_viagem cheio, rateado e somado de
+    # volta) + total_bri=500,00 (brinde cheio) = 2500,00; perda = 2500,00 × 20% = 500,00:
+    #   VBNO cai (2500 × (1-0,80)/0,80) = 625,00 → 32015,58 - 625,00 = 31390,58
+    #   VAVO/Val_Liq caem 2500 × 0,20 = 500,00 → 25612,46-500=25112,46 / 20385,19-500=19885,19
     r = mn.calcular_orcamento(AMBS, PARAMS, 20.0, cust_fin=1413.44)
     _ap(r["VBVO"], 25481.49); _ap(r["CFO"], 23784.39)
-    _ap(r["VBNO"], 32015.58); _ap(r["VAVO"], 25612.46)
+    _ap(r["VBNO"], 31390.58); _ap(r["VAVO"], 25112.46)
     _ap(r["Com_Arq"], 2265.02); _ap(r["Pro_Fid"], 462.25)
-    _ap(r["Cust_Ad"], 5227.27); _ap(r["Val_Liq"], 20385.19)
-    _ap(r["Desc_Tot"] * 100, 20.00, tol=0.02); _ap(r["Markup"], 0.857, tol=0.002)
+    _ap(r["Cust_Ad"], 5227.27); _ap(r["Val_Liq"], 19885.19)
+    # Desc_Tot = (VBVO-Val_Liq)/VBVO = (25481.49-19885.19)/25481.49 = 21.96% (não mais 20,00% —
+    # a "proteção total" da viagem/brinde acabou de propósito, ACHADO-63)
+    _ap(r["Desc_Tot"] * 100, 21.96, tol=0.02); _ap(r["Markup"], 0.836, tol=0.002)
     _ap(r["Val_Cont"], r["VAVO"] + 1413.44); _ap(r["Prov_Imp"], 0.08 * r["Val_Cont"], tol=0.05)
     ag = r["ambientes"][0]
-    _ap(ag["VBNA"], 28437.93); _ap(ag["VAVA"], 22750.35)
+    # amb1: num_via1 = 2000*(22830.99/25481.49) = 1791,96664; num_bri1 = 500/2 = 250,00
+    # sum1 = 2041,96664; delta_VBNA1 = -sum1*(0,20/0,80) = -510,49166 → 28437,93-510,49=27927,44
+    # delta_VAVA1 = -sum1*0,20 = -408,39333 → 22750,35-408,39=22341,96
+    _ap(ag["VBNA"], 27927.44); _ap(ag["VAVA"], 22341.96)
 
-def test_protecao_total_com_cadeia():
-    # com a comissão em cadeia, todos os custos repassados são recuperados 100%:
-    # o líquido COM custos (Tog_Cadi true) = líquido SEM custo nenhum, e Desc_Tot == Desc_Orc.
+def test_perda_de_viagem_bri_e_exatamente_d_orc_vezes_custo():
+    # ACHADO-63 (06/09): a "proteção total" de viagem/brinde ACABOU de propósito — o preço de
+    # tabela não pode variar com o desconto, e a contrapartida (a loja recupera só (1-d) do
+    # custo) é aceita e previsível. A perda tem que ser EXATAMENTE d_orc × (custo_viagem+brinde):
+    # 20% × (2000,00+500,00) = 500,00 — nem mais, nem menos (senão sobra/falta base de comissão).
     r = mn.calcular_orcamento(AMBS, PARAMS, 20.0)
-    _ap(r["Val_Liq"], r["VBVO"] * 0.80)            # 20385.19 — proteção total
-    _ap(r["Desc_Tot"] * 100, 20.00, tol=0.02)      # desconto total == desconto do orçamento
+    _ap(r["Val_Liq"], r["VBVO"] * 0.80 - 500.0)
+    _ap(r["Desc_Tot"] * 100, 21.96, tol=0.02)      # não mais == Desc_Orc (era a "proteção total")
 
 def test_comissao_exclui_custos_no_absorve():
-    # absorve (Tog_Cadi false): a comissão NÃO incide sobre viagem/brinde — a base é
-    # VAVA − viagem − brinde mesmo a loja absorvendo os custos (fórmula sem condição de toggle).
+    # absorve (Tog_Cadi false): a comissão NÃO incide sobre viagem/brinde — a base exclui esses
+    # custos SEMPRE, mesmo absorvendo (`base_custos` roda incondicional, fora do if/else do
+    # Tog_Cadi). ACHADO-63 (06/09): `base_custos` agora é (num_via+num_bri)*fator_desc, não mais
+    # o valor cheio — em absorve, fator_desc=0,80 constante (d_amb=0 nos 2 ambientes), então
+    # base_custos total = (2000+500)*0,80 = 2000,00 (não mais 2500,00).
     p = {"incluir_custos": False, "fidelidade_pct": 2.0, "fidelidade_ativa": True,
          "fora_da_sede": True, "custo_viagem": 2000.0, "brinde": 500.0, "brinde_ativo": True,
          "comissao_arq_ativa": False}
     r = mn.calcular_orcamento(AMBS, p, 20.0)
-    vavo = r["VBVO"] * 0.80                          # 20385.19 (absorve, só desconto)
-    pro_esperado = 0.02 * (vavo - 2000 - 500)        # 357.70 — exclui viagem+brinde
+    vavo = r["VBVO"] * 0.80                            # 20385.19 (absorve, só desconto — inalterado)
+    pro_esperado = 0.02 * (vavo - (2000.0 + 500.0) * 0.80)   # 367.70384 — base agora é 2000,00 (era 2500,00)
     _ap(r["Pro_Fid"], pro_esperado)
-    _ap(r["Val_Liq"], vavo - (pro_esperado + 2000 + 500))   # 17527.49
+    _ap(r["Val_Liq"], vavo - (pro_esperado + 2000 + 500))   # 17517.49 (cust_ad continua com o custo CHEIO)
 
-def test_brinde_blindado_do_desconto():
-    # brinde repassado (Tog_Cadi) deve ser recuperado 100% mesmo com desconto:
-    # o líquido com só brinde deve igualar o líquido sem custo nenhum.
+def test_brinde_recupera_so_fator_desc_nao_mais_blindado():
+    # ACHADO-63 (06/09): brinde repassado NÃO é mais blindado do desconto — a loja recupera só
+    # (1-d_orc) do custo. vbna=vbva+brinde=1000+100=1100,00 (sem gross-up); vava=1100×0,80=880,00;
+    # cust_ad=100,00 (custo cheio, sempre); Val_Liq=880,00-100,00=780,00 (perda de 20,00 = 100×20%).
     ambs = [{"VBVA": 1000.0, "CFA": 400.0, "desc_amb_pct": 0.0}]
     so_brinde = {"incluir_custos": True, "brinde": 100.0, "brinde_ativo": True}
     r = mn.calcular_orcamento(ambs, so_brinde, 20.0)
-    _ap(r["Val_Liq"], 800.0)            # 1000*(1-0.20) — brinde totalmente recuperado
+    _ap(r["Val_Liq"], 780.0)
 
 def test_tog_cadi_off_absorve():
     # sem gross-up: VBNA = VBVA; custos ainda abatem o líquido
@@ -163,14 +183,19 @@ def test_custo_especial_sobrevive_remocao_de_ambientes():
     _ap(d["Cust_Esp"], 1000.0)      # NÃO proporcional (≠ viagem/brinde)
     _ap(d["Val_Cont"], 51000.0)
 
-def test_custo_especial_blindado_do_desconto():
-    # repassado, o cliente paga o custo especial INTEGRAL mesmo com desconto; proteção total mantida
+def test_custo_especial_sofre_desconto_do_orcamento():
+    # ACHADO-63 (06/09): custo especial sofre o desconto DO ORÇAMENTO em VAVO (não sofre
+    # desconto de ambiente — não é rateado). VBNO continua com o valor CHEIO (preço de tabela
+    # não varia); antes VAVO também recebia o valor cheio, quebrando a identidade VAVO==VBNO×(1-d)
+    # em exatamente cust_esp×d_orc = 100×20% = 20,00 — corrigido.
+    # VAVO = 1000×0,80 + 100×0,80 = 800+80 = 880,00; Val_Liq = 880,00-100,00(cust_ad cheio) = 780,00
+    # Desc_Tot deixa de ser 20,00% "puro": (1000-780)/1000 = 22,00%
     ambs = [{"VBVA": 1000.0, "CFA": 400.0, "desc_amb_pct": 0}]
     p = {"incluir_custos": True, "custo_especial": 100.0, "custo_especial_ativo": True}
     d = mn.calcular_orcamento(ambs, p, 20.0)
-    _ap(d["VAVO"], 900.0)            # 1000×0,80 + 100
-    _ap(d["Val_Liq"], 800.0)         # líquido igual ao cenário sem custo nenhum
-    _ap(d["Desc_Tot"] * 100, 20.00)  # desconto total não contamina
+    _ap(d["VAVO"], 880.0)
+    _ap(d["Val_Liq"], 780.0)
+    _ap(d["Desc_Tot"] * 100, 22.00)
 
 def test_custo_especial_absorvido():
     ambs = [{"VBVA": 1000.0, "CFA": 400.0, "desc_amb_pct": 0}]

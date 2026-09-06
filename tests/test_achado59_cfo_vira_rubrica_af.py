@@ -13,7 +13,15 @@ lançamentos auditáveis (ativo × provisão, nunca DRE). A etapa 12 continua in
 MEDIDO antes de codar: `_RUBRICAS_CUST_AD`/`_RUBRICA_CUST_FIN` já documentam o bug ① — uma
 rubrica que entra na SOMA de `cust_var_marg_cont` E continua sendo a BASE dobra o custo. CFO
 mora em `_RUBRICA_CUST_FAB` (dict novo, mesma família de Cust_Ad/Cust_Fin) — NUNCA em
-`_RUBRICAS` (a que `cust_var_marg_cont` soma) — por isso vira linha sem dobrar nada."""
+`_RUBRICAS` (a que `cust_var_marg_cont` soma) — por isso vira linha sem dobrar nada.
+
+F2-28 Passo 2 (05/09, DECIDIDO — substitui o mecanismo do F2-25 Passo 2 acima): Custo de Fábrica
+NÃO é mais editável na AF — "não vejo necessidade de ter dois... podemos tornar a provisão de
+custo fábrica não editável, de forma que o lançamento em Outros Fornecedores seja
+automaticamente lançado em contrapartida ao custo fábrica" (Marcelo). O gerente digita só
+`out_forn` (o INCREMENTO, não mais o alvo do CFO); a contrapartida contra a fábrica é automática.
+`test_f2_28_af_e_contrato.py` cobre o mecanismo novo em detalhe — este teste é rederivado só pra
+provar que os DOIS lançamentos ainda saem (reclassificação, mesmo motor de sempre)."""
 from tests.test_provisao_registro import _setup_venda
 
 
@@ -33,10 +41,12 @@ def test_migracao_af1_produz_os_dois_lancamentos_da_conferencia(http_client_fact
     db.close()
     assert cfo_atual == 4000.0   # CFO constituído, confirmado antes de editar
 
-    cfo_novo = 3000.0   # reduziu 1000 — o resíduo tem que migrar pra Outros Fornecedores
+    # F2-28: digita-se o INCREMENTO de Outros Fornecedores (1000), não mais o alvo de Custo de
+    # Fábrica — a contrapartida (CFO cai 1000, pra 3000) é automática. `custo_fabrica` no painel
+    # é read-only agora (mesmo se algo vier no `itens`, é ignorado — ver teste dedicado).
     itens = {"frete_fab": 0.0, "com_adm": 0.0, "com_venda": 0.0, "com_med": 0.0,
              "com_proj_exec": 0.0, "frete_loc": 0.0, "assist": 0.0, "ins_loc": 0.0,
-             "prov_imp": 0.0, "out_forn": 0.0, "custo_fabrica": cfo_novo}
+             "prov_imp": 0.0, "out_forn": 1000.0}
     st, body = c.post("/api/orcamentos/%d/provisoes/rev1" % seed["orcamento_l1_id"],
                       {"decisao": "revisa", "itens": itens, "login": "dir_l1", "senha": "senha123"})
     assert st == 200 and body["ok"] is True, body
@@ -45,15 +55,15 @@ def test_migracao_af1_produz_os_dois_lancamentos_da_conferencia(http_client_fact
     try:
         saldo_cfo = mc._mov(db, ot, oid, "2.1.04.06", "credor", None, None, projeto_id=seed["projeto_l1"])
         saldo_outros = mc._mov(db, ot, oid, "2.1.04.14", "credor", None, None, projeto_id=seed["projeto_l1"])
-        assert saldo_cfo == 3000.0, "lançamento 1 — CFO ajustado pro valor novo"
-        assert saldo_outros == 1000.0, "lançamento 2 — o resíduo da redução migrou pra Outros Fornecedores"
+        assert saldo_cfo == 3000.0, "lançamento 1 — CFO debitado automaticamente (contrapartida)"
+        assert saldo_outros == 1000.0, "lançamento 2 — o incremento de Outros Fornecedores"
 
         # Os DOIS lançamentos têm que ser estruturalmente iguais aos que a Conferência (etapa 12,
-        # POST /ciclo/12/conferencia) produziria pro mesmo par de valores — mesma origem.
+        # POST /ciclo/12/conferencia) produziria — mesma origem (reclassificação).
         origens = {l.origem for l in db.query(mc.Lancamento).filter(
             mc.Lancamento.projeto_id == seed["projeto_l1"],
-            mc.Lancamento.ref.like("af:%:rev1:%:cfo%")).all()}
-        assert mc._ORIGEM_AJUSTE_AF in origens or "reclassificacao_provisao" in str(origens), origens
+            mc.Lancamento.ref.like("af:%:rev1:%:outros%")).all()}
+        assert mc._ORIGEM_RECLASS in origens, origens
     finally:
         db.query(app_db.ProvisaoRegistro).filter_by(orcamento_id=seed["orcamento_l1_id"]).delete()
         db.commit(); db.close()

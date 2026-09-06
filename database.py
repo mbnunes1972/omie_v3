@@ -1323,6 +1323,14 @@ class Contrato(Base):
     cliente_nome_confirmado       = Column(Text,     nullable=True)
     cliente_cpf_confirmado        = Column(Text,     nullable=True)
 
+    # F2-28 Passo 4 (05/09, DECIDIDO): a fase FINANCEIRA do contrato — distinta de `status`
+    # (que fica em "vigente" e continua governando o avanço do ciclo, intocado). Enquanto NULL,
+    # a Aprovação Financeira (AF1/AF2) é revisável livremente; setado por "Concluir Contrato"
+    # (só depois de conferir consistência — princípio #5, docs/db/PLANO_AJUSTES.md), a partir
+    # daí reabrir a AF exige Diretor (mesma trava de step-up de sempre, mod_parcelas).
+    financeiro_concluido_em       = Column(DateTime, nullable=True)
+    financeiro_concluido_por_id   = Column(Integer,  ForeignKey("usuarios.id"), nullable=True)
+
     gerado_por   = relationship("Usuario",  foreign_keys=[gerado_por_id])
     orcamento    = relationship("Orcamento", foreign_keys=[orcamento_id])
     assinaturas  = relationship("ContratoAssinatura", back_populates="contrato",

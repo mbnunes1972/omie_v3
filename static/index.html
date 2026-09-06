@@ -21208,14 +21208,18 @@ const _PROV_RUBRICAS = [
   { key: 'cust_via',       label: 'Custo de Viagem' },
   { key: 'brinde',         label: 'Brinde' },
   { key: 'cust_esp',      label: 'Custo Especial' },
-  { key: 'custo_financeiro', label: 'Custo Financeiro', readonly: true },
-  // F2-25 Passo 2 (05/09, DECIDIDO): CFO vira LINHA editável na AF — reduzir migra o resíduo
-  // pra Outros Fornecedores (mesmo motor da Conferência da etapa 12, main.py). Continua sendo
-  // a BASE de Cust_Var no motor (mod_provisoes.cust_var_marg_cont) — só ganhou exibição/edição.
-  // Rótulo distinto da linha "Custo de Fábrica (CFO)" já existente (cfoRow, abaixo) — aquela é
-  // o valor CONGELADO do motor (base da fórmula, nunca muda por edição aqui); esta é o saldo
-  // ATUAL da provisão no razão, editável, que a Conferência (etapa 12) também mexe.
-  { key: 'custo_fabrica', label: 'Custo de Fábrica (provisão)' },
+  { key: 'custo_financeiro', label: 'Custo Financeiro', readonly: true,
+    readonlyTitle: 'Custo financeiro — ajuste pelo box do ramo' },
+  // F2-28 Passo 2 (05/09, DECIDIDO — substitui o F2-25 Passo 2): "não vejo necessidade de ter
+  // dois... podemos tornar a provisão de custo fábrica não editável, de forma que o lançamento em
+  // Outros Fornecedores seja automaticamente lançado em contrapartida ao custo fábrica" (Marcelo).
+  // Read-only: o gerente só digita 'Outros Fornecedores' (a migração); a contrapartida contra a
+  // fábrica é automática (main.py, POST /provisoes/<rev>). Continua sendo a BASE de Cust_Var no
+  // motor (mod_provisoes.cust_var_marg_cont) — só a EDIÇÃO saiu, a exibição fica. Rótulo distinto
+  // da linha "Custo de Fábrica (CFO)" do bloco de totais (Passo 3, abaixo) — aquela é o valor
+  // CONGELADO do motor (base da fórmula, nunca muda); esta é o SALDO VIVO da provisão no razão.
+  { key: 'custo_fabrica', label: 'Custo de Fábrica (provisão)', readonly: true,
+    readonlyTitle: 'Não editável — migre em Outros Fornecedores, a contrapartida é automática' },
 ];
 
 function _fmtR(v) {
@@ -21278,7 +21282,12 @@ async function abrirProvisoes(oid, afCodigo) {
     `<td style="padding:4px 10px;font-size:.82rem;font-weight:600">Val. Líquido</td>` +
     cols.map(c => `<td style="text-align:right;padding:4px 10px;font-family:var(--font-mono);font-size:.82rem">${_fmtR(c.ver ? c.ver.val_liq : null)}</td>`).join('') +
     '</tr>';
-  // CFO (custo de fábrica) — primeiro item da lista de provisões
+  // F2-28 Passo 3 (05/09, DECIDIDO): o CFO CONGELADO (base da fórmula do motor, nunca muda por
+  // edição) sai da lista de rubricas (que agora tem só a linha do saldo VIVO, custo_fabrica,
+  // read-only) e vem pro bloco de totais, junto de Val_Líquido/Custo Variável/Margem Contribuição
+  // — dois rótulos quase idênticos e distantes 18 linhas foram lidos como duplicação (o Marcelo
+  // perdeu a confiança no número); aqui, junto do que de fato o usa, fica claro que são coisas
+  // diferentes.
   let cfoRow = '<tr style="border-bottom:1px solid var(--border)">' +
     `<td style="padding:4px 10px;font-size:.82rem;font-weight:600">Custo de Fábrica (CFO)</td>` +
     cols.map(c => `<td style="text-align:right;padding:4px 10px;font-family:var(--font-mono);font-size:.82rem">${_fmtR(c.ver ? c.ver.cfo : null)}</td>`).join('') +
@@ -21291,8 +21300,12 @@ async function abrirProvisoes(oid, afCodigo) {
     const revLabel = pendingRev === 'rev1' ? 'Rev 1' : 'Rev 2';
     // Editable rubrica inputs for Revisa
     const revisaInputs = _PROV_RUBRICAS.map(rb => {
-      const prev = prevItens[rb.key] != null ? Number(prevItens[rb.key]).toFixed(2) : '';
-      const ro = rb.readonly ? 'disabled title="Custo financeiro — ajuste pelo box do ramo"' : '';
+      // custo_fabrica é read-only (Passo 2): mostra o SALDO VIVO (atual), não o prefill congelado
+      // da revisão anterior — os outros campos (editáveis) continuam prefill da revisão anterior.
+      const base = (rb.key === 'custo_fabrica' && atual && atual.itens && atual.itens.custo_fabrica != null)
+        ? atual.itens.custo_fabrica : prevItens[rb.key];
+      const prev = base != null ? Number(base).toFixed(2) : '';
+      const ro = rb.readonly ? 'disabled title="' + esc(rb.readonlyTitle || '') + '"' : '';
       return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <label style="font-size:var(--fs-sm);color:var(--muted);flex:1">${esc(rb.label)}</label>
         <input type="number" step="0.01" id="_prov-inp-${rb.key}" value="${esc(prev)}" ${ro}
@@ -21364,7 +21377,7 @@ async function abrirProvisoes(oid, afCodigo) {
       `<div style="overflow-x:auto;max-height:55vh;overflow-y:auto">
         <table style="width:100%;border-collapse:collapse;font-size:.83rem">
           ${thead}
-          <tbody>${cfoRow}${trows}${valLiqRow}${custVarRow}${margContRow}</tbody>
+          <tbody>${trows}${valLiqRow}${cfoRow}${custVarRow}${margContRow}</tbody>
         </table>
       </div>`) +
     revisaSection +
@@ -24200,7 +24213,59 @@ function renderContratoUI(contrato) {
       ? `<p style="color:var(--ok);margin:0">&#x2713; Contrato assinado — ambas as partes confirmaram.</p>`
       : temArquivo ? _renderSecaoAssinaturaContrato(contrato, jaAssinou, pdfUrl) : ''
     }
+
+    ${status === 'vigente' ? _renderFaseFinanceiraContrato(contrato) : ''}
   `;
+}
+
+// F2-28 Passo 4 (05/09, DECIDIDO): "Concluir Contrato" fecha a fase FINANCEIRA — distinta de
+// `status` (que já é "vigente" desde a 2ª assinatura). Até fechar, a Aprovação Financeira
+// (AF1/AF2) é revisável livremente; depois, reabrir exige Diretor (main.py, POST
+// /provisoes/<rev>). Confere consistência ANTES de fechar (docs/db/PLANO_AJUSTES.md, princípio
+// #5) — nunca trava o andamento do ciclo, só ESTE fechamento.
+function _renderFaseFinanceiraContrato(contrato) {
+  if (contrato.financeiro_concluido_em) {
+    return `<div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px">
+      <p style="color:var(--ok);margin:0;font-size:.85rem">
+        &#x2713; Contrato concluído financeiramente em ${_fmtDataBR(contrato.financeiro_concluido_em)}
+        — revisar a Aprovação Financeira agora exige Diretor.
+      </p>
+    </div>`;
+  }
+  return `<div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px">
+    <div style="font-size:var(--fs-xs);color:var(--text-3);margin-bottom:8px">
+      Enquanto a fase financeira não fechar, a Aprovação Financeira (I e II) continua revisável
+      livremente. "Concluir Contrato" confere consistência (dados fiscais/financeiros, documentos
+      obrigatórios, provisão × a apropriar) antes de fechar — depois disso, reabrir a AF exige Diretor.
+    </div>
+    <div id="ct-concluir-erro" style="color:var(--err);font-size:.78rem;min-height:14px;margin-bottom:6px"></div>
+    <button class="btn-ciclo" onclick="_concluirContratoFinanceiro()" style="font-weight:700">
+      <i class="ti ti-checkbox"></i> Concluir Contrato
+    </button>
+  </div>`;
+}
+
+async function _concluirContratoFinanceiro() {
+  if (!projetoAtivo) return;
+  const cred = await pedirCredenciaisGerente({capacidade: 'aprovar_financeiro',
+    titulo: 'Concluir Contrato',
+    mensagem: 'Fecha a fase financeira do contrato. Login e senha do Gerente Adm/Financeiro ou Diretor.'});
+  if (!cred) return;
+  const erroEl = document.getElementById('ct-concluir-erro');
+  if (erroEl) erroEl.textContent = '';
+  try {
+    const r = await fetch('/api/projetos/' + encodeURIComponent(projetoAtivo.nome_safe) + '/contrato/concluir-financeiro', {
+      method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({login: cred.login, senha: cred.senha})});
+    const d = await r.json();
+    if (!d.ok) {
+      const msg = (d.faltas && d.faltas.length) ? (d.erro + '\n— ' + d.faltas.join('\n— ')) : (d.erro || 'Falha ao concluir.');
+      if (erroEl) erroEl.textContent = msg; else await avisoPopup(msg, {titulo: 'Concluir Contrato'});
+      return;
+    }
+    showToast('Contrato concluído financeiramente.', false);
+    carregarDadosContrato();
+  } catch(e) { if (erroEl) erroEl.textContent = 'Erro de rede: ' + _detalheErroRede(e); }
 }
 
 // C3 (docs/db/TAREFA_PERCURSO_0209.md, 02/09): Aprovação Financeira I (etapa "8") e Solicitação

@@ -13,7 +13,7 @@ limpos e implantados. Todo conserto aqui custa código, não migração de dado
 
 ---
 
-## As quatro regras que organizam quase tudo
+## As cinco regras que organizam quase tudo
 
 **1. Quem fica com o deságio decide se ele é receita ou custo.**
 Terceiro financiou (banco, financeira, cartão): o deságio saiu da loja, é
@@ -58,6 +58,25 @@ Cinco achados desta auditoria são a mesma doença: conta ou mecanismo cujo
 nome promete o que o código não faz (Total Flex, Retenção de Comissão,
 DRE "Real", 5.3.01, 2.1.05). Renomear sem medir só troca a confusão de
 lugar.
+
+**5. Nenhuma etapa encerra sem conferir o que ela prometeu; nenhuma etapa
+trava o andamento por causa disso.**
+Acrescentada em 05/09 (F2-28), terceira ocorrência do mesmo padrão em dois
+dias: a NF-e de serviço não bloqueia o andamento do ciclo, só impede a
+Conciliação Final de encerrar sem ela; o item 5 do bloco fiscal (F2-21)
+tentou a mesma ideia e errou a mão — travou o ANDAMENTO (a etapa 15 inteira)
+em vez de só o encerramento, e ficou suspenso até a frente nova (LP-18)
+decidir o desenho certo; a Aprovação Financeira (F2-28) é a terceira: hoje
+"AF já concluída" trava a REVISÃO (força step-up de Diretor pra reabrir),
+quando o que devia travar é só o FECHAMENTO da fase financeira do contrato
+— revisão livre até lá, um "Concluir Contrato" que confere consistência
+(dados fiscais/financeiros coerentes, documentos obrigatórios presentes e
+não removidos — `_docs_vivos`, ACHADO-30 —, par provisão × a apropriar
+batendo por rubrica) ANTES de fechar, nunca depois. As duas metades do
+princípio são inseparáveis: travar o andamento por uma conferência pendente
+vira o erro do F2-21; nunca conferir nada vira o silêncio que os ACHADOS
+16/32/33/38/39/41/58 já documentaram. As DUAS têm que valer juntas, sempre
+que uma etapa promete alguma coisa pro futuro.
 
 ---
 

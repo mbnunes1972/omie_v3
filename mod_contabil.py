@@ -2486,6 +2486,34 @@ def reconciliacao(db, owner_tipo, owner_id, projeto_id=None, ini=None, fim=None)
                        "resolvido_liquido": t("resolvido_liquido"), "saldo_aberto": t("saldo_aberto")}}
 
 
+def conferir_provisao_ativo_par(db, owner_tipo, owner_id, projeto_id):
+    """F2-28 Passo 4 (05/09) — um dos três checks do "Concluir Contrato": nesta altura do ciclo
+    (logo após a AF, ANTES da Produção/emissão) toda provisão com ativo diferido (`_ativo_diferido_
+    de`) tem que estar em PARIDADE com o ativo — reclassificação/ajuste sempre movem os dois
+    lados juntos (ACHADO-05), então uma divergência aqui é sinal de que algum lançamento foi
+    parcial ou pulou uma perna, não uma variação esperada (o desemparelhamento intencional —
+    ativo zera, provisão sobrevive — só nasce na emissão, F2-27, que ainda não aconteceu neste
+    ponto do ciclo). Retorna {codigo_provisao: {provisao, ativo, diferenca}} só das que divergem
+    (>= 0.005) — vazio = tudo pareado."""
+    contas = (db.query(Conta).filter_by(owner_tipo=owner_tipo, owner_id=owner_id, tipo="analitica")
+              .filter(Conta.codigo.like(GRUPO_PROVISOES + ".%")).order_by(Conta.codigo).all())
+    divergentes = {}
+    for c in contas:
+        if c.codigo in _PROV_PAINEL_EXCLUI:
+            continue
+        ativo_cod = _ativo_diferido_de(c.codigo)
+        if not _conta_existe(db, owner_tipo, owner_id, ativo_cod):
+            continue
+        saldo_prov = round(_mov(db, owner_tipo, owner_id, c.codigo, "credor", None, None,
+                               projeto_id=projeto_id), 2)
+        saldo_ativo = round(_mov(db, owner_tipo, owner_id, ativo_cod, "devedor", None, None,
+                                 projeto_id=projeto_id), 2)
+        if abs(saldo_prov - saldo_ativo) >= 0.005:
+            divergentes[c.codigo] = {"provisao": saldo_prov, "ativo": saldo_ativo,
+                                     "diferenca": round(saldo_prov - saldo_ativo, 2)}
+    return divergentes
+
+
 def provisoes_em_aberto(db, owner_tipo, owner_id):
     """Fila de provisões (F2-3, docs/db/TAREFA_FILA_PROVISOES.md) — a PORTA DA FRENTE do
     veredito: toda provisão de todo projeto que já teve alguma movimentação de provisão, fora

@@ -4286,6 +4286,7 @@ class Handler(BaseHTTPRequestHandler):
                 # NOTE: bare `mod_provisoes` vira local no do_GET (import local num elif adiante);
                 # usar alias evita UnboundLocalError.
                 import mod_provisoes as _mprov
+                import mod_contabil as _mc
                 usuario = get_usuario_sessao(self)
                 if not usuario or not perfis.pode(usuario.get("nivel"), "aprovar_financeiro"):
                     self.send_json({"ok": False, "erro": "Acesso negado"}, code=403)
@@ -4314,7 +4315,21 @@ class Handler(BaseHTTPRequestHandler):
 
                     venda = _reg("venda")
                     d = _negociacao_breakdown(orc, db)
-                    atual = {"itens": _mprov.itens_provisao(d),
+                    atual_itens = _mprov.itens_provisao(d)
+                    # F2-28 Passo 1a (medido, 05/09): `_negociacao_breakdown` recalcula da NEGOCIAÇÃO
+                    # salva (parametros_json/desconto) — nunca lê o razão, então "Atual" repetia
+                    # "Venda" sempre que a AF/Conferência mexesse no razão sem reabrir a negociação
+                    # (achado do Marcelo, print do Teste_6). As duas contas que a reclassificação
+                    # da AF (Passo 2) efetivamente move — Custo de Fábrica e Outros Fornecedores —
+                    # passam a ler o SALDO VIVO da provisão, não o motor de negociação.
+                    ot_prov, own_prov = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                    atual_itens["custo_fabrica"] = round(_mc._mov(
+                        db, ot_prov, own_prov, "2.1.04.06", "credor", None, None,
+                        projeto_id=orc.projeto_id), 2)
+                    atual_itens["out_forn"] = round(_mc._mov(
+                        db, ot_prov, own_prov, "2.1.04.14", "credor", None, None,
+                        projeto_id=orc.projeto_id), 2)
+                    atual = {"itens": atual_itens,
                              "cfo": float(d.get("CFO") or 0),
                              "val_liq": float(d.get("Val_Liq") or 0),
                              "cust_var": float(d.get("Cust_Var") or 0),
@@ -4326,8 +4341,13 @@ class Handler(BaseHTTPRequestHandler):
                     # Compara só as rubricas que o snapshot conhece: um snapshot pré-fold (10 chaves)
                     # não deve acusar "desatualizado" apenas porque 'atual' ganhou prov_mont/prov_gar
                     # (FASE 2). Snapshot novo (12 chaves) → comparação íntegra, inclui o drift das 2.
+                    # F2-28 Passo 1a: custo_fabrica/out_forn saem desta comparação — são leitura do
+                    # SALDO VIVO agora (não do motor de negociação), então uma migração da AF (Passo
+                    # 2), sozinha, sempre os move — isso é o esperado, não "negociação desatualizada".
+                    _chaves_negociacao = [k for k in (venda["itens"] if venda else {})
+                                         if k not in ("custo_fabrica", "out_forn")]
                     desatualizado = bool(venda and any(
-                        venda["itens"].get(k) != atual["itens"].get(k) for k in venda["itens"]))
+                        venda["itens"].get(k) != atual["itens"].get(k) for k in _chaves_negociacao))
                     # custos adicionais (arq/fidelidade/viagem/brinde/custo especial): já descontados do
                     # Val. Líquido pelo motor — exibidos à parte, não somam no Cust_Var.
                     custos_adicionais = {
@@ -5982,6 +6002,10 @@ class Handler(BaseHTTPRequestHandler):
                         "clicksign_enviado_em": contrato.clicksign_enviado_em.isoformat() if contrato.clicksign_enviado_em else None,
                         "clicksign_defaults":   _clicksign_defaults,
                         "assinatura_defaults":  _assinatura_defaults,
+                        # F2-28 Passo 4: fase FINANCEIRA do contrato, distinta de `status` — ver
+                        # docs/db/PLANO_AJUSTES.md, princípio #5.
+                        "financeiro_concluido_em": (contrato.financeiro_concluido_em.isoformat()
+                                                    if contrato.financeiro_concluido_em else None),
                     }})
                 except Exception as e:
                     self.send_json({"ok": False, "erro": str(e)}, code=500)
@@ -11603,15 +11627,19 @@ class Handler(BaseHTTPRequestHandler):
                 cust_var, marg = _mprov.cust_var_marg_cont(cfo, vl, itens)
                 existente = db.query(ProvisaoRegistro).filter_by(orcamento_id=oid, versao=versao).first()
                 pode_autorizar = perfis.pode(aprovador.nivel, "autorizar")   # capacidade de step-up (Diretor)
-                # Fatia C: a revisão é REEDITÁVEL pelo aprovador financeiro ATÉ a ETAPA de AF ser aprovada
-                # (rev1↔etapa 8, rev2↔etapa 11d). Depois de aprovada, reabrir exige Diretor (step-up).
-                import mod_ciclo as _mcic
-                _etapa_af = {"rev1": "8", "rev2": "11d"}.get(versao)
-                _etc = (db.query(CicloEtapa).filter_by(projeto_nome=orc.projeto_id, etapa_codigo=_etapa_af).first()
-                        if _etapa_af else None)
-                if _etc is not None and _etc.status in _mcic.STATUS_CONCLUSIVOS and not pode_autorizar:
+                # F2-28 Passo 4 (05/09, DECIDIDO — substitui a Fatia C original): a revisão é
+                # REEDITÁVEL pelo aprovador financeiro livremente enquanto a fase FINANCEIRA do
+                # contrato não fechar (`Contrato.financeiro_concluido_em`, setado só por
+                # POST .../contrato/concluir-financeiro, que confere consistência antes) — não
+                # mais a etapa de AF em si (rev1↔8, rev2↔11d) aprovada isoladamente. Depois de
+                # concluído, reabrir QUALQUER revisão exige Diretor (step-up). Princípio #5
+                # (docs/db/PLANO_AJUSTES.md): revisão livre até lá, nunca trava o andamento.
+                _contrato_af = (db.query(Contrato).filter_by(projeto_nome=orc.projeto_id)
+                               .order_by(Contrato.id.desc()).first())
+                if (_contrato_af is not None and _contrato_af.financeiro_concluido_em is not None
+                        and not pode_autorizar):
                     self.send_json({"ok": False,
-                        "erro": "Etapa de AF já aprovada — reabrir a revisão exige Diretor."}, code=403); return
+                        "erro": "Contrato já concluído financeiramente — reabrir a revisão exige Diretor."}, code=403); return
                 # Fatia C (#10): aumento de custo acima do limite (config) exige step-up do Diretor
                 import mod_parcelas as _mpar
                 _loja = db.get(Loja, loja_id) if loja_id else None
@@ -11636,34 +11664,31 @@ class Handler(BaseHTTPRequestHandler):
                 ot_af, own_af = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
                 _seq = int(getattr(orc, "ramo_financeiro_seq", 0) or 0) + 1
                 _ref_af = "af:%s:%s:%d" % (orc.projeto_id, versao, _seq)
-                # F2-25 Passo 2 (05/09, DECIDIDO): Custo de Fábrica editável na AF1/AF2 REUSA a
-                # Conferência contábil (#13, mod_contabil.conferencia_pedido — a MESMA rota da
-                # etapa 12, POST /conferencia) em vez de um ajuste independente — "reduz Custo
-                # Fábrica, migra o RESÍDUO da redução para Outros Fornecedores", dois lançamentos
-                # auditáveis. `out_forn` sai do lote genérico QUANDO custo_fabrica também está
-                # sendo editado nesta chamada — senão o ajuste independente do out_forn (Achado
-                # 59) reverteria a migração que a conferência acabou de fazer (mesmo saldo, dois
-                # caminhos competindo). Fora desse caso, out_forn continua livre e independente.
+                # F2-28 Passo 2 (05/09, DECIDIDO): Custo de Fábrica virou READ-ONLY na AF — o
+                # gerente só digita "Outros Fornecedores" (o quanto migra), e o sistema lança a
+                # contrapartida contra a fábrica sozinho ("não vejo necessidade de ter dois...
+                # isso facilita o trabalho do gerente financeiro e reduz o risco de erro", Marcelo
+                # 05/09). Substitui o F2-25 Passo 2 (que ainda deixava Custo de Fábrica editável e
+                # calculava o resíduo por SUBTRAÇÃO entre os dois campos digitados — a origem da
+                # confusão do percurso do Teste_6: dois campos alimentando o mesmo cálculo por
+                # caminhos que podiam divergir). `out_forn` sai do lote genérico sempre — nunca
+                # mais um ajuste independente (Achado-59): a MIGRAÇÃO é sempre reclassificação
+                # 2.1.04.06→2.1.04.14, pelo INCREMENTO sobre o saldo atual de Outros Fornecedores
+                # (nunca reduz — mesma direção única de antes, `max(0, ...)`). `custo_fabrica` não
+                # tem entrada em `_AF_ITEM_RUBRICA` (nunca teve) — mesmo que o campo desabilitado
+                # ainda submeta o valor prefill, o lote genérico o ignora sozinho.
                 _itens_af = dict(itens)
-                if "custo_fabrica" in itens:
-                    _itens_af.pop("custo_fabrica", None)
+                _itens_af.pop("custo_fabrica", None)
+                if "out_forn" in itens:
                     _itens_af.pop("out_forn", None)
-                    _atual_cfo = round(_mc._mov(db, ot_af, own_af, "2.1.04.06", "credor", None, None,
-                                                projeto_id=orc.projeto_id), 2)
-                    _novo_cfo = round(float(itens.get("custo_fabrica") or 0), 2)
-                    _residuo = max(0.0, round(_atual_cfo - _novo_cfo, 2))
-                    # conferencia_pedido faz DOIS ajustes que SOMAM: (a) leva o CFO de `atual` até
-                    # `custo_fabrica_novo` (ajustar_provisao_delta) e, SEPARADAMENTE, (b) debita MAIS
-                    # `valor_outros_forn` do CFO pra creditar Outros Fornecedores (reclassificar_provisao).
-                    # Numa REDUÇÃO cujo resíduo INTEIRO migra pra Outros (o caso da AF, por decisão do
-                    # Marcelo), o (a) tem que ser NO-OP — senão o resíduo é debitado do CFO DUAS vezes
-                    # (achado: 4000→3000 dava 2000, não 3000). Por isso o alvo passado pro (a) é
-                    # `max(_novo_cfo, _atual_cfo)`: igual a `_atual_cfo` (não mexe) quando reduz — porque
-                    # o (b) sozinho já leva o CFO ao valor novo — e igual a `_novo_cfo` quando aumenta,
-                    # onde não há resíduo (`_residuo`, calculado acima, já é 0 nesse caso).
-                    _mc.conferencia_pedido(db, ot_af, own_af, orc.projeto_id,
-                                           max(_novo_cfo, _atual_cfo), _residuo,
-                                           ref_base=_ref_af + ":cfo")
+                    _atual_out_forn = round(_mc._mov(db, ot_af, own_af, "2.1.04.14", "credor", None, None,
+                                                     projeto_id=orc.projeto_id), 2)
+                    _novo_out_forn = round(float(itens.get("out_forn") or 0), 2)
+                    _migracao = max(0.0, round(_novo_out_forn - _atual_out_forn, 2))
+                    if _migracao > 0:
+                        _mc.reclassificar_provisao(db, ot_af, own_af, orc.projeto_id,
+                                                   "2.1.04.06", "2.1.04.14", _migracao,
+                                                   ref=_ref_af + ":outros")
                 _mc.disparar_deltas_af(db, ot_af, own_af, orc.projeto_id, _itens_af, ref_base=_ref_af)
                 orc.ramo_financeiro_seq = _seq
                 db.commit()
@@ -14121,6 +14146,80 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=400)
+                except Exception as e:
+                    db.rollback()
+                    self.send_json({"ok": False, "erro": str(e)}, code=500)
+                finally:
+                    db.close()
+                return
+
+            # POST /api/projetos/<nome>/contrato/concluir-financeiro — F2-28 Passo 4 (05/09,
+            # DECIDIDO): fecha a fase FINANCEIRA do contrato (Contrato.financeiro_concluido_em,
+            # distinto de `status` — que continua "vigente" e segue governando o ciclo, intocado).
+            # A partir daqui, reabrir a AF (rev1/rev2) exige Diretor; até aqui, revisão é livre —
+            # princípio #5 (docs/db/PLANO_AJUSTES.md): "nenhuma etapa encerra sem conferir o que
+            # prometeu; nenhuma etapa trava o andamento por causa disso" — os três checks abaixo
+            # travam SÓ este encerramento, nunca o uso do resto do sistema. Recusa tudo ou nada,
+            # sempre lista TUDO que falta (nunca falha muda — mesma família do ACHADO-16/26).
+            m = _re.match(r'^/api/projetos/([^/]+)/contrato/concluir-financeiro$', path)
+            if m:
+                nome_safe = unquote(m.group(1))
+                usuario = get_usuario_sessao(self)
+                if not usuario:
+                    self.send_json({"ok": False, "erro": "Não autenticado"}, code=401)
+                    return
+                import mod_contabil as _mc
+                import mod_ciclo as _mcic
+                req = json.loads(body) if body else {}
+                db = get_session()
+                try:
+                    aprovador = _aprovador_financeiro(db, req.get("login"), req.get("senha"), sessao=usuario)
+                    if not aprovador:
+                        self.send_json({"ok": False, "erro": "Senha/perfil inválido para aprovar"}, code=403); return
+                    ator = _ator_dict(db, usuario)
+                    loja_id, _err = mod_tenancy.escopo_operacional(ator)
+                    if _err:
+                        self.send_json({"ok": False, "erro": _err}, code=403); return
+                    if _projeto_da_loja(db, nome_safe, loja_id) is None:
+                        self.send_json({"ok": False, "erro": "Não encontrado"}, code=404); return
+                    contrato = (db.query(Contrato).filter_by(projeto_nome=nome_safe)
+                               .order_by(Contrato.id.desc()).first())
+                    if not contrato:
+                        self.send_json({"ok": False, "erro": "Contrato não encontrado"}, code=404); return
+                    if contrato.financeiro_concluido_em is not None:
+                        self.send_json({"ok": True, "ja_concluido": True}); return
+                    faltas = []
+                    if contrato.status != "vigente":
+                        faltas.append("Contrato ainda não está vigente (falta assinatura das duas partes).")
+                    for cod, nome_etapa in ((_mcic.AF1, "Aprovação Financeira I"),
+                                            (_mcic.AF2, "Aprovação Financeira II")):
+                        et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=cod).first()
+                        if et is not None and et.status not in _mcic.STATUS_CONCLUSIVOS:
+                            faltas.append("%s está em andamento (status atual: %s)." % (nome_etapa, et.status))
+                    # documentos obrigatórios: só as subfases do PE que este projeto REALMENTE
+                    # concluiu (uma subfase nunca alcançada não é obrigatória aqui — ela tem seu
+                    # próprio portão, mais cedo no ciclo).
+                    for cod, sf in _mcic.SUBFASES_PE.items():
+                        et = db.query(CicloEtapa).filter_by(projeto_nome=nome_safe, etapa_codigo=cod).first()
+                        if et is None or et.status not in _mcic.STATUS_CONCLUSIVOS:
+                            continue
+                        vivo = _docs_vivos(db, projeto_nome=nome_safe, etapa_codigo=cod,
+                                          tipo=sf["tipo_doc"]).first()
+                        if vivo is None:
+                            faltas.append("%s: documento (%s) concluído sem ficar — removido depois?"
+                                         % (sf["nome"], sf["doc_label"]))
+                    ot_fin, own_fin = _mc.resolver_owner(db, {"loja_id": loja_id, "rede_id": None})
+                    divergentes = _mc.conferir_provisao_ativo_par(db, ot_fin, own_fin, nome_safe)
+                    for cod, d in divergentes.items():
+                        faltas.append("%s: provisão %.2f ≠ ativo a apropriar %.2f (diferença %.2f)."
+                                     % (cod, d["provisao"], d["ativo"], d["diferenca"]))
+                    if faltas:
+                        self.send_json({"ok": False, "erro": "Contrato ainda não pode ser concluído.",
+                                       "faltas": faltas}, code=409); return
+                    contrato.financeiro_concluido_em = _mc.agora_no_fuso(db, ot_fin, own_fin)
+                    contrato.financeiro_concluido_por_id = aprovador.id
+                    db.commit()
+                    self.send_json({"ok": True})
                 except Exception as e:
                     db.rollback()
                     self.send_json({"ok": False, "erro": str(e)}, code=500)

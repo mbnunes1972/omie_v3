@@ -777,6 +777,12 @@ def _fin_provisoes_venda_seguro(orc, projeto_id, ref_base):
                 "retencao_com_vendas": d.get("Com_Venda_Orc"),
                 # FASE D2: Custo de Fábrica (= CFO congelado) passa a ser provisionado no contrato (era só na NF-e)
                 "custo_fabrica":       round(float(getattr(orc2, "cfo", 0) or 0), 2),
+                # ACHADO-61 (06/09, percurso Teste_7) — irmão do ACHADO-59: a rubrica já tinha campo
+                # na negociação (Parâmetros) e já entrava no Cust_Var do motor (soma, não desconta do
+                # CFO — mod_provisoes.py), mas nunca nascia no razão no fechamento do contrato. No
+                # CONTRATO é ADITIVO (par próprio 1.1.06.14 × 2.1.04.14, não mexe no CFO); na AF é
+                # SUBSTITUTIVO (migra do CFO pelo delta — já implementado, ver `_migracao`).
+                "outros_forn":         round(float(getattr(orc2, "out_forn", 0) or 0), 2),
                 "impostos":            d.get("Prov_Imp"),
                 # FASE A (resultado da venda): os 4 custos adicionais viram provisão (valores do breakdown;
                 # 0 quando o toggle do custo está desligado → não lança). JÁ deduzidos do Val_Liq, então

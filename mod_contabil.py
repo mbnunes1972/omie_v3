@@ -1657,10 +1657,10 @@ _PROV_FECHAMENTO = {
     "com_proj_exec":       "fechamento_venda_com_proj_exec",
     "retencao_com_vendas": "fechamento_venda_retencao_com_vendas",
     "custo_fabrica":       "fechamento_venda_custo_fabrica",   # FASE D2: 10ª rubrica (era só no faturamento)
-    # ACHADO-59 (05/09): NÃO entra em `constituir_provisoes_fechamento` (nenhum chamador passa
-    # "outros_forn" em `valores` no fechamento — a rubrica nasce vazia e só cresce depois, por
-    # reclassificação ou pela AF). Presente aqui só pra `ajustar_provisao_delta` achar o par
-    # ativo×provisão (1.1.06.14/2.1.04.14) — ver `_AF_ITEM_RUBRICA`.
+    # ACHADO-61 (06/09) — correção do ACHADO-59: a rubrica AGORA nasce no fechamento do contrato
+    # quando `orc.out_forn > 0` (main.py, `_fin_provisoes_venda_seguro`). Segue recebendo, depois,
+    # reclassificação (conferência do pedido, etapa 12) e migração da AF — em namespaces de `ref`
+    # distintos do fechamento, então não colide com o valor constituído aqui.
     "outros_forn":         "fechamento_venda_outros_forn",
     "impostos":            "fechamento_venda_impostos",
     # FASE A (resultado da venda): os 4 custos adicionais

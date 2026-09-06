@@ -244,6 +244,34 @@ fixture `seed` (chama `perfis.recarregar()` no próprio setup), e este teste usa
 falta o que o próprio achado original pedia: bisect real (`pytest-randomly` ou instrumentar
 exatamente o que a conta 2.1.06 lê que poderia vir sujo) — não feito, seguem em aberto.
 
+**Atualização (F2-30 Fatia 4, 06/09) — reclassificado: NÃO é resíduo de vizinho.** Reexaminado
+com a mesma lente que o F2-29 Fatia D usou pra achar o `test_contrato_real_geracao_e_assinatura`
+(procurar o vizinho que suja, não aceitar "não reproduziu de novo" como prova de aleatoriedade).
+Achado estrutural que o texto original não tinha: `test_projeto_com_aditivo_termina_com_2106_
+zerado` é o **PRIMEIRO teste definido no próprio arquivo** — não existe vizinho do MESMO módulo
+rodando antes dele que possa deixar resíduo (o segundo teste do arquivo, que rodaria depois,
+já usa `qual="l2"` de propósito, projeto diferente). E resíduo de OUTRO arquivo já está
+estruturalmente descartado (hipótese (a) acima — `app_db` dropa/recria o schema e dispõe a
+engine por módulo). Ou seja: não há vizinho de módulo nenhum capaz de sujar este teste, nem do
+mesmo arquivo nem de outro — a classe "resíduo de vizinho" (que fechou o F2-29 Fatia D) não se
+aplica aqui, mesmo achado sendo o MESMO padrão de evidência (passa sozinho, passa na maioria das
+rodadas da suíte, falhou uma vez).
+*Bisect real feito, sem reproduzir:* 2 rodadas completas da suíte (sem E2E) com `pytest-randomly`
+(`-p randomly`, ordem embaralhada de verdade, não só rodar de novo na mesma ordem) — nenhuma
+reproduziu a falha deste teste. Combinado com as rodadas anteriores (fixas), são várias tentativas
+sem reprodução — mas, por definição, isso não prova aleatoriedade (é exatamente a inferência que
+já enganou uma vez); é só o resultado de um bisect que não pegou o caso ainda.
+*Hipótese nova, não confirmada:* achado incidental durante esta mesma fatia — `tests/
+test_bateria_ciclo.py` (LP-21, registrado nesta rodada) mostra o MESMO padrão (falha às vezes,
+mesmo sozinho no próprio arquivo, sem vizinho fixo) numa área de código completamente diferente
+(ramo financeira/retenção, não aditivo/2.1.06). Duas classes de teste com o mesmo comportamento
+("falha não determinística, sem vizinho que explique") em código não relacionado sugere uma causa
+mais estrutural do que resíduo de teste — por exemplo, uma condição de corrida real ou
+sensibilidade a hora de parede (classe ACHADO-48) em código de PRODUÇÃO compartilhado, não nos
+testes. Não investigado a fundo (exigiria instrumentação de timing, fora do escopo desta fatia).
+*Recomendação para quem pegar depois:* não tratar como "resíduo de vizinho" (já descartado); focar
+em timing/concorrência real, talvez cruzando com o mesmo esforço de investigação da LP-21.
+
 **LP-17 · Dois testes que ainda comparavam `datetime.utcnow()` com competência já migrada pro
 ACHADO-48 · RESOLVIDO 04/09, `b7bb834`.** Achado ao fechar o F2-18 (03/09, ~00h UTC / 21h
 Brasília — a própria janela do ACHADO-48): `test_indicadores.py::test_endpoint_tenancy_e_venda_

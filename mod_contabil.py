@@ -149,6 +149,15 @@ PLANO_PADRAO = [
     # Assistência/Garantia avulsa fora da cobertura (2026-08-07): cortesia ao cliente, sem projeto
     # e sem provisão associada (é uma despesa nova, não uma execução do que já foi provisionado).
     ("5.3.21", "Concessão a Cliente"),
+    # F2-30 Fatia 2 (DECIDIDO 06/09): compra complementar descoberta na entrega, não prevista na
+    # venda, e que não corresponde a NENHUMA rubrica com provisão — não é efetivação (não há o
+    # que consumir) nem migração (AF fica só com reclassificação). Fica em 5.3 (não em 5.2) de
+    # propósito: `margem_projeto` soma o grupo 5.3 inteiro ("comissao", que apesar do nome já
+    # inclui 5.3.17 Custo Especial de Projeto do mesmo jeito) — é assim que entra na margem sem
+    # precisar de outro termo na fórmula. Própria linha de natureza, nunca misturada com 5.7.01
+    # Despesa de Conciliação (aquela é resíduo de provisão que existiu; esta nunca teve provisão)
+    # — ver MODELO_CONTABIL.md, "os três destinos".
+    ("5.3.22", "Despesa Avulsa de Projeto"),
     ("5.4", "Despesas Administrativas"),
     ("5.4.01", "Aluguel"), ("5.4.02", "Energia Elétrica"), ("5.4.03", "Água"),
     ("5.4.04", "Telefonia Fixa/Móvel e Internet"), ("5.4.05", "Contabilidade"),
@@ -976,7 +985,8 @@ CLASSIFICACAO_GRUPO5_V1 = {
     "5.3.11": ("2.3", "fixo"),     "5.3.12": ("2.3", "variavel"), "5.3.13": ("2.1", "variavel"),
     "5.3.14": ("2.3", "fixo"),     "5.3.15": ("2.1", "variavel"), "5.3.16": ("4.3", "fixo"),
     "5.3.17": ("3.2", "variavel"), "5.3.18": ("3.2", "variavel"), "5.3.19": ("3.2", "variavel"),
-    "5.3.21": ("2.1", "variavel"), "5.4.01": ("1.5", "fixo"),     "5.4.02": ("1.5", "fixo"),
+    "5.3.21": ("2.1", "variavel"), "5.3.22": ("3.2", "variavel"),   # F2-30 Fatia 2: mesmo centro de custo de 5.3.17
+    "5.4.01": ("1.5", "fixo"),     "5.4.02": ("1.5", "fixo"),
     "5.4.03": ("1.5", "fixo"),     "5.4.04": ("4.2", "fixo"),     "5.4.05": ("4.3", "fixo"),
     "5.4.06": ("4.3", "fixo"),     "5.4.07": ("4.3", "fixo"),     "5.4.08": ("1.5", "fixo"),
     "5.4.09": ("1.5", "fixo"),     "5.4.10": ("4.2", "fixo"),     "5.4.11": ("4.3", "fixo"),
@@ -2259,14 +2269,27 @@ def efetivar_provisao(db, owner_tipo, owner_id, projeto_id, codigo_provisao, val
 
 
 def despesa_avulsa(db, owner_tipo, owner_id, codigo_despesa, valor, forma_pagamento, ref, data=None,
-                   historico=""):
-    """Despesa direta, SEM provisão de projeto (2026-08-07 — Assistência/Garantia avulsa: a
-    provisão é uma média estatística por projeto; sem projeto não há o que debitar). Débito na
-    despesa formal (`codigo_despesa` — ex.: 5.2.12 Garantia, 5.2.13 Assistência Técnica, 5.3.21
-    Concessão a Cliente) × crédito Caixa/Bancos ('direto') ou Fornecedores a Pagar ('a_prazo').
-    Idempotente por ref."""
+                   historico="", projeto_id=None):
+    """Despesa direta, sem provisão (2026-08-07 — Assistência/Garantia avulsa: a provisão é uma
+    média estatística por projeto; sem projeto não há o que debitar). Débito na despesa formal
+    (`codigo_despesa` — ex.: 5.2.12 Garantia, 5.2.13 Assistência Técnica, 5.3.21 Concessão a
+    Cliente, 5.3.22 Despesa Avulsa de Projeto) × crédito Caixa/Bancos ('direto') ou Fornecedores
+    a Pagar ('a_prazo'). Idempotente por ref.
+
+    `projeto_id` (F2-30 Fatia 2, DECIDIDO 06/09): compra complementar descoberta na entrega, não
+    prevista na venda — TEM projeto, mas não corresponde a nenhuma rubrica com provisão (senão
+    seria efetivação/migração, não avulsa). `margem_projeto` soma o grupo 5.3 inteiro (por
+    prefixo + projeto_id, sem precisar saber desta conta em particular) — e por não ter
+    contrapartida em `_PROV_DESPESA_POR_ATIVO`, nunca entra em `margem_projetada` (que só desconta
+    o que ainda está no ativo). Continua opcional: o caso avulso-sem-projeto (garantia/concessão,
+    2026-08-07) passa None, como sempre."""
     if forma_pagamento not in ("direto", "a_prazo"):
         raise ValueError("despesa_avulsa: forma_pagamento inválida: %s" % forma_pagamento)
+    if codigo_despesa in (_CONCILIACAO_RECEITA, _CONCILIACAO_DESPESA):
+        # F2-30 Fatia 2: avulsa nunca teve provisão — Conciliação é o resíduo de uma que existiu.
+        # Misturar contaminaria o bloco que mede qualidade de provisionamento (mesmo princípio de
+        # `vereditos_validos_para_saldo`/ACHADO-41: a porta é derivada, nunca digitada por engano).
+        raise ValueError("despesa_avulsa: %s é conta de Conciliação, não de despesa avulsa" % codigo_despesa)
     ja = lancamento_por_ref(db, owner_tipo, owner_id, ref)
     if ja is not None:
         return ja
@@ -2277,7 +2300,7 @@ def despesa_avulsa(db, owner_tipo, owner_id, codigo_despesa, valor, forma_pagame
     cd = _conta_por_codigo(db, owner_tipo, owner_id, codigo_despesa)
     cc_cod = "1.1.01" if forma_pagamento == "direto" else "2.1.01"
     cc = _conta_por_codigo(db, owner_tipo, owner_id, cc_cod)
-    return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data,
+    return lancar(db, owner_tipo, owner_id, cd.id, cc.id, valor, data=data, projeto_id=projeto_id,
                   origem="despesa_avulsa_assistencia", historico=historico, ref=ref)
 
 
